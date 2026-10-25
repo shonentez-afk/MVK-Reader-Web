@@ -1,0 +1,432 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MVK Reader · Full UI</title><script src="/static/plotly.min.js"></script><style>:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#dae4ee;background:#0e1724}*{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button{cursor:pointer;border:1px solid #384f67;background:#1c344b;color:#e6f3ff;padding:9px 13px;border-radius:9px}button:hover{background:#2b4b67}button:disabled{opacity:.5;cursor:default}.shell{display:grid;grid-template-columns:245px minmax(0,1fr);min-height:100vh}aside{background:#121f2f;padding:24px 15px;border-right:1px solid #293e54}.brand{font-weight:800;font-size:23px;color:#91dbff;display:flex;gap:10px;align-items:center}.sub{color:#86a0b7;font-size:12px;margin:8px 0 30px}.nav{display:block;width:100%;text-align:left;margin-bottom:7px;border:0;background:transparent}.nav.active{background:#24435e;color:#89d8ff}main{padding:25px 32px;max-width:1700px;width:100%;margin:auto}h1{font-size:25px;margin:0 0 8px}.hint{color:#8fa9be;font-size:13px;margin:0 0 20px}.tag{display:inline-block;color:#ffc78a;background:#463524;padding:4px 9px;border-radius:15px;font-size:12px}.panel{background:#172638;border:1px solid #304359;border-radius:14px;padding:18px;margin:15px 0}.flex{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{background:#1d3147;padding:14px;border-radius:9px}.stat b{font-size:20px;display:block;margin-top:5px}.muted{color:#9db1c5;font-size:13px}select,input[type=number]{border:1px solid #466078;background:#0c1b2c;color:white;padding:9px;border-radius:8px;max-width:100%}label{font-size:13px;color:#b2c6d9;display:flex;flex-direction:column;gap:7px}#chart{height:520px;width:100%}#notice{min-height:24px;color:#ffd199}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;border-bottom:1px solid #334c61;font-size:13px}tr:hover{background:#203448}.link{color:#89d9ff;text-decoration:none} .link:hover{text-decoration:underline}.hidden{display:none}.upload{border:1px dashed #64819b;padding:17px;border-radius:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:end}.small{font-size:12px}.warn{color:#ffc78a} @media(max-width:950px){.shell{grid-template-columns:1fr}aside{padding:12px}.nav{width:auto;display:inline-block}main{padding:16px}.grid{grid-template-columns:repeat(2,1fr)}#chart{height:400px}}
+
+:root{color-scheme:dark}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #6be3ff}.section-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.btn-primary{background:#166383;border-color:#22799b}.pills{display:flex;gap:7px;flex-wrap:wrap}.pill{padding:8px 12px;border-radius:22px}.panel h3{margin-top:0}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.mutedbox{background:#102034;border:1px dashed #37526a;border-radius:10px;padding:22px;line-height:1.6}.control{min-width:140px;max-width:260px}.fullchart{height:480px;width:100%}.status-dot{display:inline-block;background:#dd9a53;width:9px;height:9px;border-radius:50%;margin-right:7px}.checkboxes{display:flex;flex-wrap:wrap;gap:12px}.checkboxes label{flex-direction:row;align-items:center}.mono{font-variant-numeric:tabular-nums}.note{border-left:3px solid #bd914b;padding-left:12px;color:#ecd5af;font-size:13px} @media(max-width:950px){.grid.two{grid-template-columns:1fr}}
+</style></head><body><div class="shell"><aside><div class="brand">◉ MVK Reader</div><div class="sub">v0.3.24 · ARCHIVE NAVIGATION · лабораторная сборка</div>
+<button class="nav active" data-tab="home">▣ Главная</button><button class="nav" data-tab="calculated">▤ Расчётные данные</button><button class="nav" data-tab="wave">〰 Временной сигнал</button><button class="nav" data-tab="spectrum">▥ Спектр</button><button class="nav" data-tab="recording">◷ Параметры записи</button><button class="nav" data-tab="archive">▦ Архив</button><button class="nav" data-tab="reports">▤ Отчёты</button><button class="nav" data-tab="settings">⚙ Настройки</button>
+<div style="margin:22px 7px" class="tag">● Офлайн + Collector · только чтение</div></aside><main><div class="flex" style="justify-content:space-between"><div><h1 id="heading">Главная</h1><p class="hint" id="subtitle">Серверный архив измерений и анализ МВК01.</p></div><span id="selected" class="muted">Запись не выбрана</span></div><div id="notice" role="status"></div><div class="panel" id="sourceSelector" style="margin-top:8px"><div class="flex"><label>Выбранный МВК01<select id="globalMvkDevice"><option value="">Получение списка приборов…</option></select></label><label>Режим просмотра<select id="globalDataMode"><option value="live">Реальное время</option><option value="archive">Архив</option></select></label><span id="globalSourceState" class="muted" role="status">Ожидание списка приборов</span></div><p class="muted">«Расчётные данные»: Modbus TCP/502. «Временной сигнал» и «Спектр»: TCP/10230. При переключении прибора сбор с других МВК01 не останавливается. Прямой TCP/10230 пока выключен.</p></div>
+<section id="home"><div class="grid" id="overview"></div><div class="panel"><div class="section-head"><h3>Приборы МВК01</h3><span class="tag">Подключения задаются на сервере</span></div><p class="muted">Здесь отображаются только приборы, указанные в конфигурации Collector Server. Статус «Нет опроса» не означает неисправность прибора.</p><div id="liveDevices" class="mutedbox">Загрузка списка приборов…</div><div id="deviceDetail" class="panel hidden"><h3>Последние регистры выбранного прибора</h3><p class="muted">Это сырые данные Modbus. Перевод в физические величины будет добавлен после проверки адресов и типов по руководству.</p><pre id="deviceRaw" style="overflow-x:auto;white-space:pre-wrap"></pre></div></div><div class="panel"><h3>Быстрый доступ</h3><div class="flex"><button onclick="tab('archive')">Открыть архив</button><button onclick="tab('wave')">Временной сигнал</button><button onclick="tab('spectrum')">Спектр</button><button onclick="tab('reports')">Отчёты</button></div></div></section>
+<section id="calculated" class="hidden"><div class="panel"><h3>Расчётные данные МВК01</h3><div class="flex"><label class="control">Номер прибора<select id="calcDevice"></select></label><button id="calcRefresh">Обновить данные</button><span id="calcModeLabel" class="muted" role="status"></span></div><div class="pills" id="calcTabs"></div><p class="note">Состояния датчиков, контрольные зоны, тахометры и штатные СКЗ/ПИК/ПИК-ПИК выдаются прибором через Modbus. Эти параметры отсутствуют в сохранённом BIN и сейчас не выводятся как реальные.</p><div id="calcBody"></div></div></section>
+<section id="wave" class="hidden"><div class="panel"><div class="flex" id="waveRecordNav"></div><h3>Временной сигнал</h3><div class="flex"><label>Источник данных<select id="waveSource"><option value="archive">Архив BIN/TSXML</option><option value="tcp">TCP/10230 · импорт PCAPNG</option></select></label><label>АЦП<select id="waveADC"></select></label><label>Начало PCAPNG, с<input id="wavePcapStart" type="number" min="0" step="0.1" placeholder="С конца записи"></label><label>Длительность PCAPNG<select id="wavePcapSeconds"><option value="0.25">0,25 с</option><option value="1" selected>1 с</option><option value="2">2 с</option><option value="4">4 с</option><option value="8">8 с</option></select></label></div><p id="waveSourceStatus" class="muted">TCP/10230: офлайн-импорт; прибор не опрашивается.</p><div class="flex"><label class="control">Источник<select id="waveChannel"></select></label><label class="control">Фильтр<select id="waveFilter"></select></label><label>Состав<select id="waveMode"><option value="ac">AC</option><option value="acdc">AC+DC</option></select></label><label>Окно<select id="waveDuration"></select></label><label>Вертикальный масштаб<select id="waveScale"></select></label><label>Начало, с<input id="waveStart" type="number" min="0" step="0.01" value="0"></label><button class="btn-primary" id="waveRun">Показать</button></div><p class="muted">Для архива доступны только записанные каналы. AC — локальное удаление среднего; фильтры — локальный расчёт, не точная копия DSP.</p></div><div class="grid" id="waveStats"></div><div class="panel"><div id="waveChart" class="fullchart"></div><div class="flex"><button id="wavePNG">Скачать график PNG</button></div></div></section>
+<section id="spectrum" class="hidden"><div class="panel"><div class="flex" id="spectrumRecordNav"></div><h3>Спектральный анализатор</h3><div class="flex"><label>Источник данных<select id="specSource"><option value="archive">Архив BIN/TSXML</option><option value="tcp">TCP/10230 · импорт PCAPNG</option></select></label><label>АЦП<select id="specADC"></select></label><label>Калибровка, м/с² на отсчёт<input id="specPcapGain" type="number" min="0" step="any" placeholder="Не установлена"></label><label>Начало PCAPNG, с<input id="specPcapStart" type="number" min="0" step="0.1" placeholder="С конца записи"></label><label>Участок PCAPNG, с<input id="specPcapDuration" type="number" min="0.2" max="10" step="0.1" value="4"></label><label>FFT PCAPNG<select id="specPcapFFT"><option>8192</option><option>16384</option><option>32768</option><option selected>65536</option><option>131072</option></select></label></div><p id="specSourceStatus" class="muted">TCP/10230: без калибровки доступна только PSD исходных отсчётов.</p><div class="flex"><label>Источник<select id="specChannel"></select></label><label class="control">Фильтр<select id="specFilter"></select></label><label>Тип спектра<select id="kind"><option value="logarithmic">Логарифмич.</option><option value="acceleration">Линейный ВУ</option><option value="velocity" selected>Линейный ВС</option><option value="displacement">Линейный ВП</option></select></label><label>Разрешение<select id="df"></select></label><label>Граница X<select id="hi"></select></label><label>Масштаб Y<select id="yscale"><option value="auto">Авто</option><option>0.1</option><option>1</option><option selected>10</option><option>100</option><option>1000</option><option>10000</option></select></label><button id="specRun" class="btn-primary">Построить</button></div><p class="note">Линейные спектры рассчитываются по BIN (Welch/Hann). Режим «Логарифмич.» показывает предварительный уровень виброскорости в дБ относительно 1 мм/с; точная логарифмическая шкала MVKView ещё не установлена. CSV экспортирует линейные амплитуды с тем же частотным фильтром; логарифмический пересчёт дБ доступен пока только на графике. Выбранная полосовая фильтрация выполняется локально; метод и значения пока не метрологически эквивалентны MVKView.</p></div><div id="specStats" class="grid"></div><div class="panel"><div id="chart" class="fullchart"></div><div class="flex"><button id="specPNG">Скачать PNG</button><button id="specCSV">Скачать спектр CSV</button></div></div></section>
+
+<section id="recording" class="hidden"><div class="panel"><h3>Параметры записи на сервере</h3><p class="note">Функция запуска онлайн-записи отключена до подтверждения безопасного протокола потока. Эти настройки сохраняются локально в браузере для будущей версии и не передаются прибору.</p><h4>Выбор каналов</h4><div class="checkboxes" id="recChannels"></div><h4>Записываемые параметры</h4><div class="checkboxes" id="recParams"></div><div class="flex"><button id="recSave">Сохранить локальные настройки</button><button disabled title="Нет подтверждённого безопасного канала приёма">Запустить онлайн-запись (недоступно)</button></div></div></section>
+<section id="archive" class="hidden"><div class="panel"><h3>Добавить BIN + TSXML</h3><form id="upload" class="upload"><label>Файл сигнала .bin<input type="file" name="binary" accept=".bin" required></label><label>Описание .bin.tsxml<input type="file" name="description" accept=".tsxml,.xml" required></label><button type="submit" class="btn-primary">Добавить запись</button></form><p class="muted">Поддерживаются проверенные одноканальные Float32 little-endian записи с XML-метаданными.</p></div><div class="panel"><h3>Сохранённые записи</h3><div class="flex"><label>Номер прибора <select id="archiveDevice"><option value="">Все приборы</option></select></label><label>Канал <select id="archiveChannel"><option value="">Все каналы</option></select></label><label>Дата записи с <input id="archiveFrom" type="date"></label><label>по <input id="archiveTo" type="date"></label><button type="button" id="archiveReset">Сбросить фильтры</button></div><p id="archiveCount" class="muted" role="status"></p><div id="records">Загрузка…</div><div id="archiveDetails" class="panel hidden" aria-live="polite"></div></div></section>
+<section id="reports" class="hidden"><div class="panel"><div class="flex" id="reportsRecordNav"></div><h3>Экспорт отчётов и первичных записей</h3><p>Выберите запись в архиве. Экспорт PDF и XLSX содержит фактические данные загруженного сигнала и оценочные спектральные показатели.</p><div class="flex"><button id="pdf">Отчёт PDF</button><button id="xlsx">Отчёт Excel</button><button id="csv">Спектр CSV</button><button id="json">Сводка JSON</button><button id="bin">Исходный BIN</button><button id="tsxml">Исходный TSXML</button></div><p class="note">В отчётах отмечено: расчёты не являются подтверждённым метрологическим эквивалентом MVKView.</p></div></section>
+<section id="settings" class="hidden"><div class="panel"><h3>О приложении и безопасность</h3><table><tr><th>Версия</th><td>0.3.24 LAB</td></tr><tr><th>Сетевой доступ к МВК01</th><td>Отключён</td></tr><tr><th>Команды управления / записи в прибор</th><td>Не реализованы</td></tr><tr><th>Данные</th><td>SQLite + файлы на сервере</td></tr><tr><th>Развёртывание в ЛВС</th><td>Только в доверенной сети, пока нет авторизации</td></tr></table></div></section>
+</main></div><script>
+let current=null,recordInfo=null,active='home';const $=id=>document.getElementById(id),safe=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+// 0.3.37: single presentation selection; no instrument-side operations.
+let globalDeviceId='';let globalDataMode='live';
+async function refreshGlobalDevices(){
+ try {
+  const ds=await api('/api/mvk/devices');
+  const el=$('globalMvkDevice'); const saved=localStorage.getItem('mvk_selected_device')||'';
+  el.innerHTML=ds.devices.map(d=>`<option value="${safe(d.id)}">${safe(d.name)} (${safe(d.ip)})</option>`).join('') || '<option value="">Приборы не настроены</option>';
+  globalDeviceId=ds.devices.some(d=>d.id===saved)?saved:(ds.devices[0]?.id||''); el.value=globalDeviceId;
+  $('globalSourceState').textContent=globalDeviceId?'Выбран: '+globalDeviceId+' · TCP/10230 пока только офлайн':'Добавьте прибор в конфигурацию Collector';
+  if(globalDeviceId && $('calcDevice'))$('calcDevice').value=globalDeviceId;
+ }catch(e){ $('globalSourceState').textContent='Ошибка списка приборов: '+e.message; }
+}
+function setGlobalMode(m){
+ globalDataMode=m;localStorage.setItem('mvk_mode',m);
+ // This affects visualization only: no start/stop connection request.
+ $('globalSourceState').textContent=m==='archive'?'Архив: выбор сохранённой записи':'Реальное время: TCP/502 через Collector; TCP/10230 пока не активен';
+ if(active==='calculated')showCalc();
+ if(m==='live' && (active==='wave'||active==='spectrum'))notify('Живой TCP/10230 заблокирован до проверки инициализации. Доступен офлайн-импорт PCAPNG.');
+}
+document.addEventListener('DOMContentLoaded',()=>{
+ $('globalMvkDevice').addEventListener('change',e=>{globalDeviceId=e.target.value;localStorage.setItem('mvk_selected_device',globalDeviceId);if(active==='calculated' && $('calcDevice')){$('calcDevice').value=globalDeviceId;showCalc();} $('globalSourceState').textContent='Выбран: '+globalDeviceId;});
+ $('globalDataMode').addEventListener('change',e=>setGlobalMode(e.target.value));
+ const saved=localStorage.getItem('mvk_mode');if(saved==='archive'||saved==='live')$('globalDataMode').value=saved;
+ setGlobalMode($('globalDataMode').value);refreshGlobalDevices();
+});
+const titles={home:'Главная',calculated:'Расчётные данные',wave:'Временной сигнал',spectrum:'Спектр',recording:'Параметры записи',archive:'Архив',reports:'Отчёты',settings:'Настройки'};
+async function api(url,opts){const r=await fetch(url,opts);if(!r.ok){let j;try{j=await r.json()}catch{}throw Error(typeof j?.detail==='string'?j.detail:`HTTP ${r.status}`)}return r.json()}
+function notify(t){$('notice').textContent=t;}
+function tab(t){active=t;Object.keys(titles).forEach(k=>$(k).classList.toggle('hidden',k!==t));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.tab===t));$('heading').textContent=titles[t];if(t==='calculated'){populateCalcDevices().then(showCalc)}if(t==='wave')showWave();if(t==='spectrum')showSpectrum();if(t==='calculated')showCalc();}
+document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>tab(n.dataset.tab));
+const tile=(n,v)=>`<div class="stat"><div class="muted">${safe(n)}</div><b class="mono">${safe(v)}</b></div>`;
+function need(){if(!current){notify('Сначала выберите запись в архиве');return false}return true}
+let archiveRecords=[];
+let visibleArchiveRecords=[];
+function sortedArchiveRows(rows){
+ return [...rows].sort((a,b)=>{
+  const ma=archiveMetadata(a),mb=archiveMetadata(b);
+  const da=ma.date||'',db=mb.date||'';
+  return db.localeCompare(da)||String(b.name||'').localeCompare(String(a.name||''));
+ });
+}
+function recordNavigation(target){
+ const area=$(target+'RecordNav');if(!area)return;
+ const items=visibleArchiveRecords.some(r=>r.id===current)?visibleArchiveRecords:sortedArchiveRows(archiveRecords);
+ const pos=items.findIndex(r=>r.id===current);
+ if(pos<0){area.innerHTML='<span class="muted">Выберите запись в архиве.</span>';return;}
+ area.innerHTML='<span class="muted">Запись '+(pos+1)+' из '+items.length+' · '+safe(items[pos].name)+'</span> '+
+ '<button type="button" id="'+target+'Prev" '+(pos===0?'disabled':'')+'>← Предыдущая</button> '+
+ '<button type="button" id="'+target+'Next" '+(pos===items.length-1?'disabled':'')+'>Следующая →</button> '+
+ '<button type="button" id="'+target+'Archive">К архиву</button>';
+ $(target+'Archive').onclick=()=>tab('archive');
+ if(pos>0)$(target+'Prev').onclick=()=>selectArchiveRecord(items[pos-1].id,target);
+ if(pos<items.length-1)$(target+'Next').onclick=()=>selectArchiveRecord(items[pos+1].id,target);
+}
+async function selectArchiveRecord(id,target){
+ const found=archiveRecords.find(r=>r.id===id);
+ if(!found){notify('Запись больше не найдена в архиве');return;}
+ try{
+  const info=await api('/api/recordings/'+encodeURIComponent(id));
+  current=id;recordInfo=info;$('selected').textContent=found.name;
+  const match=String(info.channel||found.channel||'').match(/ADC(\d+)/i);
+  if(match){for(const id of ['waveChannel','specChannel'])$(id).value='АЦП '+Number(match[1]);}
+  tab(target);
+  for(const section of ['wave','spectrum','reports'])recordNavigation(section);
+ }catch(e){notify('Не удалось открыть запись: '+e.message);}
+}
+
+function archiveMetadata(r){
+  // Используем метки имени файла; added — дата загрузки, а не дата измерения.
+  const n=String(r.name||''), m=n.match(/MVK0*(\d+)-ADC(\d+)-(\d{4})-(\d{2})-(\d{2})--/i);
+  const fallback=String(r.channel||'').match(/MVK0*(\d+)-ADC(\d+)/i);
+  return {device:m?.[1]||fallback?.[1]||'',channel:m?.[2]||fallback?.[2]||'',date:m?`${m[3]}-${m[4]}-${m[5]}`:''};
+}
+function fillArchiveOptions(){
+ const d=$('archiveDevice'),c=$('archiveChannel'),dv=d.value,cv=c.value;
+ const devices=[...new Set(archiveRecords.map(r=>archiveMetadata(r).device).filter(Boolean))].sort((a,b)=>Number(a)-Number(b));
+ const channels=[...new Set(archiveRecords.map(r=>archiveMetadata(r).channel).filter(Boolean))].sort((a,b)=>Number(a)-Number(b));
+ d.innerHTML='<option value="">Все приборы</option>'+devices.map(x=>`<option value="${safe(x)}">МВК01 №${safe(x)}</option>`).join('');
+ c.innerHTML='<option value="">Все каналы</option>'+channels.map(x=>`<option value="${safe(x)}">АЦП ${safe(x)}</option>`).join('');
+ if(devices.includes(dv))d.value=dv;if(channels.includes(cv))c.value=cv;
+}
+function renderArchive(){
+ const device=$('archiveDevice').value,channel=$('archiveChannel').value,from=$('archiveFrom').value,to=$('archiveTo').value;
+ if(from&&to&&from>to){$('archiveCount').textContent='Ошибка: начальная дата позже конечной.';$('records').innerHTML='';return;}
+ const filtered=sortedArchiveRows(archiveRecords.filter(r=>{const m=archiveMetadata(r);return (!device||m.device===device)&&(!channel||m.channel===channel)&&(!from||(m.date&&m.date>=from))&&(!to||(m.date&&m.date<=to))}));
+ visibleArchiveRecords=filtered;
+ $('archiveDetails').classList.add('hidden');
+ $('archiveCount').textContent=`Найдено записей: ${filtered.length} из ${archiveRecords.length}. Даты определяются из имён BIN; записи без даты не входят в фильтр по периоду.`;
+ $('records').innerHTML=filtered.length?`<table><tr><th>Запись</th><th>Прибор</th><th>Канал</th><th>Дата измерения</th><th>ЧД</th><th>Длительность</th><th>Действия</th></tr>${filtered.map(r=>{const m=archiveMetadata(r);return `<tr${r.id===current?' style="background:#24435e"':''}><td>${safe(r.name)}</td><td>${m.device?'№'+safe(m.device):'—'}</td><td>${m.channel?'АЦП '+safe(m.channel):safe(r.channel)}</td><td>${safe(m.date||'Не указана')}</td><td>${safe(r.fs)} Гц</td><td>${Number(r.duration).toFixed(3)} с</td><td><button data-info="${safe(r.id)}">Сведения</button> <button data-open="${safe(r.id)}">Осциллограмма</button> <button data-spec="${safe(r.id)}">Спектр</button> <button data-report="${safe(r.id)}">Отчёты</button> <button data-del="${safe(r.id)}">Удалить</button></td></tr>`}).join('')}</table>`:'<p class="muted">В выбранных фильтрах записей нет.</p>';
+ async function showArchiveDetails(id){
+  const area=$('archiveDetails');area.classList.remove('hidden');area.textContent='Загрузка сведений о записи…';
+  try{
+   const r=await api('/api/recordings/'+encodeURIComponent(id));
+   const m=archiveMetadata(r);
+   const device=devicesCache.find(d=>String(Number(d.number))===String(Number(m.device)));
+   area.innerHTML='<h3>Сведения о сохранённой записи</h3><table>'+[
+    ['Имя исходного BIN',r.name],['Прибор',m.device?'МВК01 №'+m.device:'Не определён'],
+    ['Канал',m.channel?'АЦП '+m.channel:r.channel],
+    ['Дата измерения',r.started||m.date||'Не указана'],
+    ['Дата добавления в архив',r.added||'—'],
+    ['Частота дискретизации',r.fs+' Гц'],
+    ['Количество отсчётов',r.count],
+    ['Длительность',Number(r.duration).toFixed(6)+' с'],
+    ['Единицы исходного сигнала',r.unit||'—'],
+    ['Коэффициент из TSXML (справочно)',r.gain_metadata??'—']
+   ].map(([k,v])=>'<tr><th>'+safe(k)+'</th><td>'+safe(v)+'</td></tr>').join('')+'</table>'+(
+    device?'<button id="archiveSqlHistory" type="button">SQL-история этого прибора</button>':'<p class="muted">SQL-история: этот номер прибора не настроен в Collector Server.</p>')+
+    '<p class="muted">BIN/TSXML и SQL — разные источники. Загрузка BIN не создаёт историю расчётных регистров в SQL.</p>';
+   if(device)$('archiveSqlHistory').onclick=async()=>{tab('home');await showDevice(device.id);$('deviceDetail').scrollIntoView({block:'start'});};
+  }catch(e){area.textContent='Не удалось получить сведения о записи: '+e.message;}
+ }
+ document.querySelectorAll('[data-info]').forEach(b=>b.onclick=()=>showArchiveDetails(b.dataset.info));
+ async function open(id,target){await selectArchiveRecord(id,target)}
+ document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>open(b.dataset.open,'wave'));
+ document.querySelectorAll('[data-spec]').forEach(b=>b.onclick=()=>open(b.dataset.spec,'spectrum'));
+ document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>open(b.dataset.report,'reports'));
+ document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить запись с сервера?'))return;try{await api('/api/recordings/'+encodeURIComponent(b.dataset.del),{method:'DELETE'});if(current===b.dataset.del){current=null;recordInfo=null;$('selected').textContent='Запись не выбрана'}await refresh();for(const section of ['wave','spectrum','reports'])recordNavigation(section)}catch(e){notify('Ошибка удаления: '+e.message)}});
+}
+for(const x of ['archiveDevice','archiveChannel','archiveFrom','archiveTo'])$(x).addEventListener('change',renderArchive);
+$('archiveReset').onclick=()=>{for(const x of ['archiveDevice','archiveChannel','archiveFrom','archiveTo'])$(x).value='';renderArchive()};
+async function refresh(){
+ archiveRecords=await api('/api/recordings');
+ $('overview').innerHTML=tile('Записей в архиве',archiveRecords.length)+tile('Источник данных','BIN/TSXML')+tile('Приборы онлайн','См. список ниже')+tile('Режим','Read-only / Collector');
+ fillArchiveOptions();renderArchive();
+}
+$('upload').onsubmit=async e=>{e.preventDefault();try{let r=await api('/api/recordings',{method:'POST',body:new FormData(e.target)});e.target.reset();await refresh();notify('Запись добавлена');await selectArchiveRecord(r.id,'wave')}catch(err){notify(err.message)}};
+const options=(id,values,labels)=>{$(id).innerHTML=values.map((v,i)=>`<option value="${safe(v)}">${safe(labels?.[i]??v)}</option>`).join('')};
+const channels=Array.from({length:8},(_,i)=>'АЦП '+(i+1)).concat(['Тахометр 1','Тахометр 2']);
+options('waveChannel',channels);options('specChannel',channels);
+const filters=['Без фильтра',...['25 кГц','20 кГц','16 кГц','13 кГц','10 кГц','8000 Гц','6300 Гц','5000 Гц','4000 Гц','3150 Гц','2500 Гц','2000 Гц','1600 Гц','1250 Гц','1000 Гц','800 Гц','630 Гц','500 Гц','400 Гц'].map(x=>'1/3окт '+x),...['16 кГц','8000 Гц','4000 Гц','2000 Гц','1000 Гц','500 Гц'].map(x=>'1окт '+x),...['13 кГц','6400 Гц','3200 Гц','1600 Гц','800 Гц','400 Гц'].map(x=>'2окт '+x)];
+// The drop-down is preserved from user screenshots; the filter engine supports valid frequency bands.
+function filterId(s){if(s==='Без фильтра')return 'none';let parts=s.match(/^(1\/3|1|2)окт (.+)$/),hz=parts?.[2];if(!parts)return 'none';let f=parseFloat(hz.replace(',','.'))*(hz.includes('кГц')?1000:1);return `oct:${parts[1]==='1/3'?'0.3333333333333333':parts[1]}:${f}`}
+options('waveFilter',filters);options('specFilter',filters);
+options('waveDuration',[20000,10000,5000,2000,1000,500,200,100,50,20,10,5,2,1].map(String),['20 с','10 с','5 с','2 с','1 с','500 мс','200 мс','100 мс','50 мс','20 мс','10 мс','5 мс','2 мс','1 мс']);$('waveDuration').value='500';
+options('waveScale',['auto',...['1000','500','200','100','50','20','10','5','2','1','0.5','0.2','0.1']],['Авто','1000','500','200','100','50','20','10','5','2','1','0,5','0,2','0,1']);options('df',['0.25','0.5','1','2','4','8'],['1/4 Гц/лин','1/2 Гц/лин','1 Гц/лин','2 Гц/лин','4 Гц/лин','8 Гц/лин']);options('hi',[50,100,200,400,800,1600,3200,6400,12800,25600].map(String),[50,100,200,400,800,1600,3200,6400,12800,25600].map(x=>x+' Гц'));$('hi').value='100';
+const cfg={paper_bgcolor:'#172638',plot_bgcolor:'#0e1b2a',font:{color:'#d4e2ed'},margin:{l:70,r:28,t:30,b:55},xaxis:{gridcolor:'#355064'},yaxis:{gridcolor:'#355064'}};
+async function showWave(){if($('waveSource').value==='tcp')return showPcapWave();if(!need())return;try{if($('waveChannel').value!==`АЦП ${parseInt((recordInfo.channel.match(/ADC(\d+)/)||[])[1]||1)}`){notify('В архиве доступен только реально записанный канал '+recordInfo.channel);return}let q=new URLSearchParams({mode:$('waveMode').value,filter_id:filterId($('waveFilter').value),start:$('waveStart').value,seconds:+$('waveDuration').value/1000});let d=await api('/api/recordings/'+current+'/waveform-plus?'+q);let yScale=$('waveScale').value;let layout=structuredClone(cfg);layout.xaxis.title='Время, с';layout.yaxis.title=d.unit;if(yScale!=='auto')layout.yaxis.range=[-Number(yScale),Number(yScale)];await Plotly.react('waveChart',[{x:d.time_s,y:d.amplitude,mode:'lines',type:'scattergl',line:{color:'#69d5ef',width:1}}],layout,{responsive:true,displaylogo:false});$('waveStats').innerHTML=tile('СКЗ',d.metrics.rms.toFixed(5)+' '+d.unit)+tile('Пик |ампл.|',d.metrics.peak.toFixed(4)+' '+d.unit)+tile('Длительность',d.duration.toFixed(4)+' с')+tile('Режим',$('waveMode').selectedOptions[0].text)}catch(e){notify(e.message)}}
+$('waveRun').onclick=showWave;
+const specParams=()=>new URLSearchParams({filter_id:filterId($('specFilter').value),kind:$('kind').value==='logarithmic'?'velocity':$('kind').value,df:$('df').value,lo:1,hi:$('hi').value});
+async function showSpectrum(){if($('specSource').value==='tcp')return showPcapSpectrum();if(!need())return;try{if($('specChannel').value!==`АЦП ${parseInt((recordInfo.channel.match(/ADC(\d+)/)||[])[1]||1)}`){notify('В архиве доступен только реально записанный канал '+recordInfo.channel);return}let d=await api('/api/recordings/'+current+'/spectrum?'+specParams());let f=d.frequency_hz,a=d.amplitude;let sm=d.metrics;$('specStats').innerHTML=tile('СКЗ спектра (оценка)',sm.spectrum_rms.toFixed(4)+' '+d.unit)+tile('Пиковая частота',sm.peak_frequency_hz.toFixed(2)+' Гц')+tile('Амплитуда пика',sm.peak_rms.toFixed(4)+' '+d.unit)+tile('Отсчёты спектра',a.length);let layout=structuredClone(cfg);layout.xaxis.title='Частота, Гц';const isLog=$('kind').value==='logarithmic';let plotted=a;if(isLog){ // Preliminary amplitude dB representation; MVKView's reference/normalization not yet verified.
+const ref=1;plotted=a.map(v=>v>0?20*Math.log10(v/ref):null);layout.yaxis.title='Уровень, дБ отн. 1 мм/с';layout.yaxis.autorange=true;notify('Логарифмический спектр: 20 log10(A / 1 мм/с). Это предварительный режим, шкала MVKView ещё не подтверждена.');
+}else{layout.yaxis.title=d.unit;if($('yscale').value!=='auto')layout.yaxis.range=[0,+$('yscale').value]}
+$('yscale').disabled=isLog;await Plotly.react('chart',[{x:f,y:plotted,mode:'lines',type:'scattergl',connectgaps:false,line:{color:'#69d5ef',width:1.3}}],layout,{responsive:true,displaylogo:false})}catch(e){notify(e.message)}}
+$('specRun').onclick=showSpectrum;
+function download(path){if(!need())return;const a=document.createElement('a');a.href=path;document.body.append(a);a.click();a.remove()}
+for(let [id,ext] of [['pdf','report.pdf'],['xlsx','report.xlsx'],['csv','spectrum.csv'],['json','report.json']])$(id).onclick=()=>download('/api/recordings/'+current+'/'+ext+'?'+specParams());
+$('bin').onclick=()=>download('/api/recordings/'+current+'/download/bin');$('tsxml').onclick=()=>download('/api/recordings/'+current+'/download/tsxml');$('specCSV').onclick=()=>download('/api/recordings/'+current+'/spectrum.csv?'+specParams());
+$('wavePNG').onclick=()=>Plotly.downloadImage('waveChart',{format:'png',width:1440,height:720,filename:'mvk_wave'});$('specPNG').onclick=()=>Plotly.downloadImage('chart',{format:'png',width:1440,height:720,filename:'mvk_spectrum'});
+const calcNames=['Состояние системы','Контрольные зоны','Все каналы СКЗ','Все каналы ПИК','Все каналы ПИК-ПИК',...channels];let calcTab=calcNames[0];$('calcTabs').innerHTML=calcNames.map((x,i)=>`<button class="pill" data-ct="${i}">${safe(x)}</button>`).join('');document.querySelectorAll('[data-ct]').forEach(b=>b.onclick=()=>{calcTab=calcNames[+b.dataset.ct];showCalc()});
+let calcDeviceList=[];
+async function populateCalcDevices(){
+ try{calcDeviceList=await api('/collector/api/devices');let x=$('calcDevice'),old=x.value;x.innerHTML=calcDeviceList.map(d=>`<option value="${safe(d.id)}">МВК01 №${safe(d.number)}</option>`).join('');if(calcDeviceList.some(d=>d.id===globalDeviceId))x.value=globalDeviceId;else if(calcDeviceList.some(d=>d.id===old))x.value=old;}
+ catch(e){notify('Collector недоступен: '+e.message)}
+}
+function calcNumber(n){return typeof n==='number'&&Number.isFinite(n)?n.toFixed(4):'—'}
+const calcBands=['10-3000','10-2000','10-1000','2-1000','0.62-300','0.62-150','filter1','filter2'];
+const calcKinds=[['acceleration','ВУ, м/с²'],['velocity','ВС, мм/с'],['displacement','ВП, мкм']];
+// v0.3.40: archive mode reads SQLite series, never a live snapshot.
+async function showCalcArchive(){
+ const el=$('calcBody'),id=$('calcDevice').value;
+ if(!id){el.textContent='Выберите прибор МВК01';return}
+ const metric={'Все каналы СКЗ':'rms','Все каналы ПИК':'peak_equivalent','Все каналы ПИК-ПИК':'peak_peak_equivalent'}[calcTab]||'rms';
+ const chan=calcTab.startsWith('АЦП ')?Number(calcTab.split(' ')[1]):null;
+ const chans=chan?[chan]:Array.from({length:8},(_,i)=>i+1);
+ const results=await Promise.all(chans.map(async n=>{
+  const q=new URLSearchParams({channel_type:'adc',channel:String(n),metric,band:'10-3000:velocity',limit:'1'});
+  const v=await api('/collector/api/devices/'+encodeURIComponent(id)+'/series?'+q);
+  return {channel:n,point:(v.points||[]).at(-1)||null};
+ }));
+ if(globalDataMode!=='archive'||$('calcDevice').value!==id)return;
+ let html='<div class="mutedbox"><h3>Архив · '+safe(calcTab)+'</h3><p>МВК01 №'+safe(calcDeviceList.find(d=>d.id===id)?.number??id)+' · SQLite Collector · последние сохранённые значения, НЕ текущие измерения.</p>';
+ html+='<table><tr><th>Канал</th><th>Значение</th><th>Время UTC</th><th>Источник</th></tr>';
+ for(const r of results){const pt=r.point;html+='<tr><td>АЦП '+r.channel+'</td><td>'+safe(pt?calcNumber(pt.value)+' '+(pt.unit||''):'—')+'</td><td>'+safe(pt?.received_at||'—')+'</td><td>'+safe(pt?.source||'—')+'</td></tr>'}
+ html+='</table><p class="muted">Показатель: '+safe(metric)+' · 10–3000 Гц, виброскорость. Полная история и диапазоны времени — раздел «Архив».</p></div>';
+ el.innerHTML=html;
+}
+let calcRequestSerial=0;
+async function showCalc(){
+ let el=$('calcBody'),id=$('calcDevice').value;
+ $('calcModeLabel').textContent=globalDataMode==='archive'?'Архив SQLite · не текущие данные':'Реальное время TCP/502';
+ if(globalDataMode==='archive'){try{await showCalcArchive()}catch(e){el.textContent='Ошибка архивных значений: '+e.message}return;}
+ if(!id){el.innerHTML='<div class="mutedbox">Приборы ещё не заданы на сервере.</div>';return}
+ try{
+ const m=await api('/collector/api/devices/'+encodeURIComponent(id)+'/measurements');
+ let html=`<div class="mutedbox"><h3>${safe(calcTab)} · МВК01 №${safe(calcDeviceList.find(d=>d.id===id)?.number??id)}</h3><p>Источник: ${safe(m.source||'нет показаний')}. Получено: ${safe(m.received_at||'—')} (UTC). Статус: ${safe(m.status||'—')}.</p>`;
+ const metrics={'Все каналы СКЗ':'rms','Все каналы ПИК':'peak_equivalent','Все каналы ПИК-ПИК':'peak_peak_equivalent'};
+ if(metrics[calcTab]){
+  let metric=metrics[calcTab];
+  html+='<div style="overflow:auto"><table><tr><th>Полоса / величина</th>'+Array.from({length:8},(_,i)=>`<th>АЦП ${i+1}</th>`).join('')+'</tr>';
+  for(let band of calcBands)for(let [kind,label] of calcKinds){let key=band+':'+kind;html+=`<tr><td>${safe(band)} Гц · ${label}</td>`+Array.from({length:8},(_,i)=>`<td>${calcNumber(m.channels?.find(c=>c.channel===i+1)?.[metric]?.[key]?.value)}</td>`).join('')+'</tr>'}
+  html+='</table></div><p class="muted">«—» означает отсутствие реально считанного значения. ПИК и ПИК-ПИК — эквивалентные значения прибора.</p>';
+ }else if(calcTab.startsWith('АЦП ')){
+   let index=Number(calcTab.split(' ')[1]),c=m.channels?.find(c=>c.channel===index);
+   if(!c)html+='<p>Для канала пока нет считанных регистров.</p>';
+   else{
+    html+=`<p>Напряжение датчика: ${calcNumber(c.voltage_v)} В; широкополосное СКЗ ускорения: ${calcNumber(c.acceleration_rms_up_to_25khz_m_s2)} м/с². Состояние канала: ${safe(!c.channel_status?.available?'нет данных':c.channel_status.active_flags?.length?c.channel_status.active_flags.map(f=>f.label).join('; '):'нет активных документированных флагов')}.</p>`;
+    html+='<div style="overflow:auto"><table><tr><th>Полоса</th><th>Величина</th><th>СКЗ</th><th>Экв. ПИК</th><th>Экв. ПИК-ПИК</th></tr>';
+    for(let band of calcBands)for(let [kind,label] of calcKinds){let key=band+':'+kind;html+=`<tr><td>${safe(band)} Гц</td><td>${label}</td><td>${calcNumber(c.rms?.[key]?.value)}</td><td>${calcNumber(c.peak_equivalent?.[key]?.value)}</td><td>${calcNumber(c.peak_peak_equivalent?.[key]?.value)}</td></tr>`}
+    html+='</table></div><h4>Третьоктавный спектр виброускорения (СКЗ, м/с²)</h4><div id="calcThirdOctaveChart" style="min-height:340px"></div><div id="calcThirdOctaveInfo" class="muted">Загрузка документированных третьоктавных данных…</div>';
+   }
+ }else if(calcTab.startsWith('Тахометр ')){
+   let t=m.tachometers?.find(x=>x.channel===Number(calcTab.split(' ')[1]));
+   html+=t?`<table><tr><th>Частота вращения, Гц</th><th>Приращение, Гц/оборот</th><th>Ошибка датчика (нерасшифрованное поле)</th></tr><tr><td>${calcNumber(t.frequency_hz)}</td><td>${calcNumber(t.average_frequency_increment_hz_per_rev)}</td><td>${calcNumber(t.sensor_error_raw)}</td></tr></table>`:'<p>Данные тахометра пока не получены.</p>';
+ }else if(calcTab==='Состояние системы'){ const sy=m.system;html+='<table><tr><th>Показатель</th><th>Значение</th></tr>';for(const [title,key] of [['Заводской номер','serial_number'],['Версия ПО','firmware_version'],['Наработка, с','uptime_seconds'],['Системные ошибки (код)','system_errors_raw'],['Объём карты, КБ','sd_memory_kb'],['MD5 DSP','dsp_md5_hex']])html+='<tr><td>'+safe(title)+'</td><td>'+safe(sy?.[key]??'—')+'</td></tr>';html+='</table><p>Флаги ошибок: '+safe(sy?.system_error_flags==null?'нет данных':sy.system_error_flags.length?sy.system_error_flags.map(x=>x.label).join('; '):'активных документированных ошибок нет')+'</p>';}else html+='<p>Контрольные зоны: карта адресов и логика состояний не подтверждены руководством. Данные не выдумываются, изменение конфигурации и квитирование запрещены.</p>'; 
+ html+='</div>';el.innerHTML=html;
+ if(calcTab.startsWith('АЦП ') && $('calcThirdOctaveChart')){
+    const selectedChannel=Number(calcTab.split(' ')[1]);
+    try{
+      const third=await api('/collector/api/devices/'+encodeURIComponent(id)+'/third-octave?channel='+selectedChannel);
+      if($('calcDevice').value!==id || calcTab!=='АЦП '+selectedChannel)return;
+      let bands=third.bands||[];
+      if(!third.available_count){$('calcThirdOctaveInfo').textContent='Третьоктавные значения этого канала ещё не получены от прибора.';return}
+      const x=bands.map(b=>String(b.center_hz));
+      const y=bands.map(b=>b.rms_m_s2);
+      let layout=structuredClone(cfg);
+      layout.xaxis={title:'Средняя частота полосы, Гц',type:'category',tickangle:-55};
+      layout.yaxis={title:'СКЗ виброускорения, м/с²',rangemode:'tozero'};
+      await Plotly.react('calcThirdOctaveChart',[{type:'bar',x,y,hovertemplate:'%{x} Гц: %{y:.6g} м/с²<extra></extra>'}],layout,{responsive:true,displaylogo:false});
+      $('calcThirdOctaveInfo').textContent='Доступно '+third.available_count+' из '+bands.length+' полос. Источник: '+third.source+'. Расчёт прибора, а не FFT архивного BIN. Не проверено на реальном МВК01.';
+    }catch(err){$('calcThirdOctaveInfo').textContent='Ошибка получения третьоктавных данных: '+err.message}
+ }
+ }catch(e){el.textContent='Ошибка загрузки измерений: '+e.message}
+}
+$('calcRefresh').onclick=async()=>{await populateCalcDevices();await showCalc()};$('calcDevice').onchange=showCalc;
+populateCalcDevices().then(showCalc);
+$('recChannels').innerHTML=channels.map(c=>`<label><input type="checkbox" value="${c}">${c}</label>`).join('');$('recParams').innerHTML=['СКЗ','ПИК','ПИК-ПИК','Ускорение','Скорость','Перемещение','Третьоктавные полосы','Временной сигнал','Линейный спектр'].map(c=>`<label><input type="checkbox" value="${c}">${c}</label>`).join('');$('recSave').onclick=()=>{const values=[...document.querySelectorAll('#recording input:checked')].map(e=>e.value);localStorage.setItem('mvk_local_record_preferences',JSON.stringify(values));notify('Настройки сохранены только в этом браузере. Прибор не изменён.')};try{const saved=JSON.parse(localStorage.getItem('mvk_local_record_preferences')||'[]');document.querySelectorAll('#recording input').forEach(e=>e.checked=saved.includes(e.value))}catch{}
+refresh().catch(e=>notify(e.message));
+
+let devicesCache=[];
+let selectedLiveDevice=null;
+let liveEventStream=null;
+async function loadDevices(){
+ try{
+  devicesCache=await api('/collector/api/devices');
+  const area=$('liveDevices');
+  if(!devicesCache.length){area.textContent='Приборы не заданы на сервере.';return}
+  area.innerHTML='<table><tr><th>Номер прибора</th><th>Состояние</th><th>Последние данные (UTC)</th><th></th></tr>'+devicesCache.map(d=>`<tr><td>МВК01 №${safe(d.number)}</td><td>${safe(d.enabled?({connected:'Получены данные',stale:'Данные устарели',connection_error:'Ошибка связи',not_polled:'Опрос не выполнялся'}[d.status]||d.status):'Отключён в конфигурации')}</td><td>${safe(d.received_at||'—')}</td><td><button type="button" data-device="${safe(d.id)}">Подробнее</button></td></tr>`).join('')+'</table>';
+  area.querySelectorAll('[data-device]').forEach(b=>b.addEventListener('click',()=>showDevice(b.dataset.device)));
+ }catch(err){$('liveDevices').textContent='Collector недоступен: '+err.message}
+}
+async function showDevice(id){
+ selectedLiveDevice=id;
+ try{
+ const [x,m]=await Promise.all([api('/collector/api/devices/'+encodeURIComponent(id)+'/live'),api('/collector/api/devices/'+encodeURIComponent(id)+'/measurements')]);
+ $('deviceDetail').classList.remove('hidden');
+ const cols=['10-3000','10-2000','10-1000','2-1000','0.62-300','0.62-150','filter1','filter2'];
+ let output='<h3>Данные МВК01 — '+safe(id)+'</h3><p>Состояние: <strong>'+safe(x.status||'неизвестно')+'</strong>; '+(x.status!=='connected'?'Текущие измерения недоступны, последние значения не считаются актуальными.':'Последние успешно полученные измерения.')+'</p><p>Источник: '+safe(m.source||'ожидание чтения')+'; последнее получение: '+safe(m.received_at||'—')+'</p>';
+ if(m.channels?.length){output+='<table><tr><th>АЦП</th><th>Напряжение датчика, В</th><th>СКЗ ВС 10–3000, мм/с</th><th>Экв. ПИК ВС 10–3000</th><th>Экв. ПИК-ПИК ВС 10–3000</th></tr>';
+ for(const c of m.channels){const v=(name)=>{let z=name==='rms'?c.rms?.['10-3000:velocity']?.value:name==='peak'?c.peak_equivalent?.['10-3000:velocity']?.value:c.peak_peak_equivalent?.['10-3000:velocity']?.value;return z==null?'—':Number(z).toFixed(4)};output+='<tr><td>'+c.channel+'</td><td>'+(c.voltage_v==null?'—':Number(c.voltage_v).toFixed(3))+'</td><td>'+v('rms')+'</td><td>'+v('peak')+'</td><td>'+v('peak_peak')+'</td></tr>'}output+='</table>'}
+ if(m.system){const sy=m.system;output+='<h4>Состояние системы (регистры МВК01)</h4><table><tr><th>Параметр</th><th>Значение</th></tr>';
+ for(const [label,key] of [['Заводской номер','serial_number'],['Версия прошивки','firmware_version'],['Время работы, с','uptime_seconds'],['Карта памяти, КБ','sd_memory_kb'],['Индикатор ошибок (сырой код)','system_errors_raw'],['DSP MD5','dsp_md5_hex']])output+='<tr><td>'+label+'</td><td>'+safe(sy[key]??'—')+'</td></tr>';
+ output+='</table><p>Системные ошибки: '+safe(sy.system_error_flags===null?'нет данных':sy.system_error_flags.length?sy.system_error_flags.map(z=>z.label).join('; '):'не обнаружены в прочитанных битах')+'</p>';
+ output+='<p>Перегрузки АЦП по DSP: '+safe(sy.dsp_overload_channels===null?'нет данных':sy.dsp_overload_channels.length?sy.dsp_overload_channels.join(', '):'нет')+'</p>';
+ output+='<p class="muted">Контрольные зоны и неподтверждённые статусы не интерпретируются. «Нет данных» не означает «исправно».</p>'}
+ if(m.tachometers?.length){output+='<h4>Тахометры</h4><table><tr><th>Канал</th><th>Частота, Гц</th><th>Приращение, Гц/оборот</th></tr>';for(const t of m.tachometers)output+='<tr><td>'+t.channel+'</td><td>'+safe(t.frequency_hz??'—')+'</td><td>'+safe(t.average_frequency_increment_hz_per_rev??'—')+'</td></tr>';output+='</table>'}
+ if(!m.channels?.length&&!m.tachometers?.length)output+='<p>Расшифрованных измерений пока нет. Для них в серверной конфигурации нужны соответствующие диапазоны регистров.</p>';
+ output+='<div class="panel"><h4>История измерений (SQL)</h4><label>Канал АЦП <select id="trendChannel">'+Array.from({length:8},(_,i)=>'<option value="'+(i+1)+'">АЦП '+(i+1)+'</option>').join('')+'</select></label><label>Параметр <select id="trendMetric"><option value="rms">СКЗ</option><option value="peak_equivalent">ПИК</option><option value="peak_peak_equivalent">ПИК-ПИК</option></select></label><label>Полоса <select id="trendBand"><option value="10-3000:velocity">10–3000 Гц · виброскорость</option><option value="10-2000:velocity">10–2000 Гц · виброскорость</option><option value="10-1000:velocity">10–1000 Гц · виброскорость</option><option value="2-1000:velocity">2–1000 Гц · виброскорость</option></select></label><label>С <input id="trendFrom" type="datetime-local"></label><label>По <input id="trendTo" type="datetime-local"></label><button id="trendLoad" type="button">Показать историю</button><button id="trendCsv" type="button" disabled>Полный CSV (SQL)</button><p id="trendStatus" class="muted" role="status" aria-live="polite">Выберите канал и нажмите «Показать историю».</p><div id="trendChart" style="min-height:80px"></div><p class="muted">История содержит только ранее полученные сервером значения. Кнопка не обращается к прибору.</p></div>';
+ output+='<details><summary>Технические данные: исходные регистры (только чтение)</summary><pre>'+safe(JSON.stringify(x,null,2))+'</pre></details>';
+ $('deviceRaw').innerHTML=output;
+ $('trendLoad').onclick=async()=>{
+   const status=$('trendStatus'), button=$('trendLoad'), chart=$('trendChart');
+   if(!status||!button||!chart)return;
+   const ch=Number($('trendChannel').value);
+   const activePanel=$('deviceRaw');
+   const exportButton=$('trendCsv'); exportButton.disabled=true; exportButton.onclick=null;
+   const from=$('trendFrom').value ? new Date($('trendFrom').value).getTime() : null;
+   const to=$('trendTo').value ? new Date($('trendTo').value).getTime() : null;
+   if(from!==null&&to!==null&&from>to){status.textContent='Начало периода позже его окончания.';return;}
+   button.disabled=true;
+   status.textContent='Загрузка истории АЦП '+ch+'…';
+   try{
+     const metric=$('trendMetric').value,band=$('trendBand').value;
+     const query=new URLSearchParams({channel_type:'adc',channel:ch,metric,band,limit:5000});
+     if(from!==null)query.set('start',new Date(from).toISOString());
+     if(to!==null)query.set('end',new Date(to).toISOString());
+     const data=await api('/collector/api/devices/'+encodeURIComponent(id)+'/series-overview?'+new URLSearchParams({...Object.fromEntries(query),buckets:'1000'}));
+     if($('deviceRaw')!==activePanel || !activePanel.contains(chart))return;
+     const allPoints=Array.isArray(data?.points)?data.points:[];
+     const points=allPoints;
+     if(!points.length){
+       if(window.Plotly&&chart.data)Plotly.purge(chart);
+       chart.replaceChildren();
+       status.textContent='История измерений отсутствует: для АЦП '+ch+' пока нет сохранённых значений в SQL.';
+       return;
+     }
+     if(typeof Plotly==='undefined')throw Error('Библиотека графиков Plotly не загружена');
+     await Plotly.react(chart,[{x:points.map(p=>p.received_at),y:points.map(p=>p.value),type:'scatter',mode:'lines+markers'}],{...cfg,xaxis:{title:'Время UTC'},yaxis:{title:$('trendMetric').selectedOptions[0].text+' · '+$('trendBand').selectedOptions[0].text+' (мм/с)'}},{responsive:true,displaylogo:false});
+     status.textContent='Показано '+points.length+' из '+data.total+' записей SQL АЦП '+ch+(data.sampled?' (график: минимумы/максимумы, данные без потери пиков)':'')+'. Время UTC; прибор не опрашивался.';
+     exportButton.disabled=false;
+     exportButton.onclick=()=>{
+       const exportQuery=new URLSearchParams({channel_type:'adc',channel:ch,metric,band});
+       if(from!==null)exportQuery.set('start',new Date(from).toISOString());
+       if(to!==null)exportQuery.set('end',new Date(to).toISOString());
+       const a=document.createElement('a');a.href='/collector/api/devices/'+encodeURIComponent(id)+'/history-export.csv?'+exportQuery;
+       a.download='MVK_'+id+'_ADC'+ch+'_history.csv';document.body.appendChild(a);a.click();a.remove();
+     };
+   }catch(e){if(activePanel.contains(chart)){status.textContent='Ошибка загрузки истории: '+e.message;notify(status.textContent)}}
+   finally{button.disabled=false}
+ };
+
+ }catch(err){notify(err.message)}
+}
+
+// Port ownership: waveform and spectrum -> TCP/10230; calculated -> Modbus TCP/502.
+// v0.3.40: live display refreshes from snapshots; archive display reads historical SQLite rows.
+setInterval(()=>{if(active==='calculated' && globalDataMode==='live' && document.visibilityState==='visible')showCalc();},5000);
+// PCAPNG is loaded offline. No device connection or command is sent here.
+for (const selId of ['waveADC','specADC']){
+  $(selId).innerHTML=Array.from({length:8},(_,i)=>`<option value="${i+1}">АЦП ${i+1}</option>`).join('');
+}
+async function pcapStatus(){try{let s=await api('/api/signal/status');return 'Офлайн TCP/10230 · '+(s.channels||[]).length+' АЦП · соединение с прибором отключено';}catch(e){throw Error('Сначала импортируйте PCAPNG: '+e.message)}}
+async function showPcapWave(){try{
+ $('waveSourceStatus').textContent=await pcapStatus();
+ const adc=Number($('waveADC').value),seconds=$('wavePcapSeconds').value;
+ const opts={seconds,points:'5000'};if($('wavePcapStart').value.trim()!=='')opts.start_s=$('wavePcapStart').value;
+ const w=await api(`/api/signal/adc/${adc}/waveform?`+new URLSearchParams(opts));
+ const layout=structuredClone(cfg);layout.xaxis.title='Время, с';layout.yaxis.title=w.unit;
+ await Plotly.react('waveChart',[{x:w.time_s,y:w.values,type:'scattergl',mode:'lines',line:{color:'#69d5ef',width:1}}],layout,{responsive:true,displaylogo:false});
+ $('waveStats').innerHTML=tile('АЦП',String(adc))+tile('Отсчётов',String(w.samples))+tile('ЧД',w.fs_hz+' Гц')+tile('Единицы','Raw · без калибровки')+tile('Вся запись',w.total_s.toFixed(2)+' с');
+ }catch(e){$('waveSourceStatus').textContent=e.message;notify(e.message)}}
+async function showPcapSpectrum(){try{
+ $('specSourceStatus').textContent=await pcapStatus();
+ const adc=Number($('specADC').value),gain=$('specPcapGain').value.trim();
+ const requested=$('kind').value;let kind=requested==='logarithmic'?'raw':requested;
+ if(kind!=='raw'&&!(Number(gain)>0)){
+   $('specSourceStatus').textContent='Нет проверенной калибровки. Показываем только PSD исходных отсчётов (не физическую виброскорость).';
+   kind='raw';
+ }
+ const q={nperseg:$('specPcapFFT').value,kind,low_hz:'1',high_hz:'1000',filter_kind:'none',duration_s:$('specPcapDuration').value};if($('specPcapStart').value.trim()!=='')q.start_s=$('specPcapStart').value;
+ if(kind!=='raw')q.gain=gain;
+ const d=await api(`/api/signal/adc/${adc}/spectrum?`+new URLSearchParams(q));const sp=d.spectrum;
+ const layout=structuredClone(cfg);layout.xaxis.title='Частота, Гц';layout.yaxis.title=sp.unit;
+ await Plotly.react('chart',[{x:sp.frequencies_hz,y:sp.values,type:'scattergl',mode:'lines',line:{color:'#69d5ef',width:1}}],layout,{responsive:true,displaylogo:false});
+ $('specStats').innerHTML=tile('АЦП',String(adc))+tile('Метод','Welch · PSD')+tile('Единицы',sp.unit)+tile('Отсчётов спектра',String(sp.values.length));
+ }catch(e){$('specSourceStatus').textContent=e.message;notify(e.message)}}
+$('waveSource').onchange=showWave;$('specSource').onchange=showSpectrum;
+$('waveADC').onchange=()=>{if($('waveSource').value==='tcp')showWave()};
+$('specADC').onchange=()=>{if($('specSource').value==='tcp')showSpectrum()};
+$('wavePcapStart').onchange=()=>{if($('waveSource').value==='tcp')showWave()};
+$('specPcapStart').onchange=()=>{if($('specSource').value==='tcp')showSpectrum()};
+$('specPcapDuration').onchange=()=>{if($('specSource').value==='tcp')showSpectrum()};
+$('wavePcapSeconds').onchange=()=>{if($('waveSource').value==='tcp')showWave()};
+$('specPcapFFT').onchange=()=>{if($('specSource').value==='tcp')showSpectrum()};
+$('specPcapGain').onchange=()=>{if($('specSource').value==='tcp')showSpectrum()};
+loadDevices();
+// Updates from server-side cache. Opening Reader Web does NOT initiate instrument polling.
+if(typeof EventSource!=='undefined'){
+ liveEventStream=new EventSource('/collector/api/events');
+ liveEventStream.addEventListener('devices', async ()=>{
+   await loadDevices();
+   if(selectedLiveDevice && !$('deviceDetail').classList.contains('hidden')){
+     // Only redraw the device when its state or timestamp actually changes.
+     const d=devicesCache.find(v=>v.id===selectedLiveDevice);
+     const sig=d?String(d.status)+'/'+String(d.received_at):'';
+     if(sig!==window._lastLiveSignature){window._lastLiveSignature=sig; await showDevice(selectedLiveDevice);}
+   }
+ });
+ liveEventStream.onerror=()=>{ /* browser retries automatically; offline button remains usable */ };
+}else{setInterval(loadDevices,10000)}
+</script>
+<section id="mvkDeviceManager" style="margin:14px 0;padding:14px;border:1px solid #64748b;border-radius:8px">
+  <details><summary><strong>Управление приборами МВК01</strong> (настройки подключения)</summary>
+  <p>Добавление или редактирование карточки не подключает прибор. Для сигнала TCP/10230 живой запуск заблокирован до подтверждения протокола.</p>
+  <label>ID <input id="mvkManageId" placeholder="mvk84"></label>
+  <label>Номер <input id="mvkManageNumber" placeholder="84"></label>
+  <label>IP <input id="mvkManageIP" placeholder="192.0.2.84"></label>
+  <label>Modbus порт <input id="mvkManageModbus" type="number" value="502" min="1" max="65535"></label>
+  <label>Сигнал порт <input id="mvkManageSignal" type="number" value="10230" min="1" max="65535"></label>
+  <button type="button" onclick="mvkSaveDevice(false)">Добавить отключённый прибор</button>
+  <button type="button" onclick="mvkSaveDevice(true)">Изменить отключённый прибор</button>
+  <button type="button" onclick="mvkRemoveDevice()">Удалить отключённый прибор</button>
+  <hr><h4>Подключение Modbus TCP/502 — только FC03</h4>
+  <p>Выберите ID прибора выше. Опрос запускается только по нажатию. Диапазоны чтения должны быть заранее настроены в карточке Collector. TCP/10230 не запускается.</p>
+  <label>Интервал опроса, с <input id="mvkPollInterval" type="number" value="5" min="1" max="3600" step="1"></label>
+  <button type="button" onclick="mvkPollControl('start')">Подключить TCP/502</button>
+  <button type="button" onclick="mvkPollControl('stop')">Отключить TCP/502</button>
+  <button type="button" onclick="mvkPollStatus()">Проверить состояние</button>
+  <pre id="mvkPollReport" style="white-space:pre-wrap"></pre>
+  <div id="mvkDeviceManageStatus" role="status"></div>
+  </details>
+</section>
+<script>
+async function mvkPollControl(action){
+ const id=document.getElementById('mvkManageId').value.trim(), report=document.getElementById('mvkPollReport');
+ if(!id){report.textContent='Укажите ID прибора';return;}
+ if(action==='start'&&!confirm('Разрешить периодические Modbus FC03 чтения с '+id+'?'))return;
+ try{
+  const payload=action==='start'?JSON.stringify({interval_seconds:Number(document.getElementById('mvkPollInterval').value)}):undefined;
+  const r=await fetch('/api/mvk/devices/'+encodeURIComponent(id)+'/modbus/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
+  const d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail||d));report.textContent=JSON.stringify(d,null,2);
+  if(typeof loadGlobalDevices==='function')await loadGlobalDevices();
+ }catch(e){report.textContent='Ошибка: '+e.message;}
+}
+async function mvkPollStatus(){
+ const id=document.getElementById('mvkManageId').value.trim(),report=document.getElementById('mvkPollReport');
+ if(!id){report.textContent='Укажите ID прибора';return;}
+ try{const r=await fetch('/api/mvk/devices/'+encodeURIComponent(id)+'/connection');const d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail||d));report.textContent=JSON.stringify(d,null,2)}catch(e){report.textContent='Ошибка: '+e.message;}
+}
+</script>
+<script>
+async function mvkSaveDevice(update){
+ const g=id=>document.getElementById(id).value.trim();
+ const d={id:g('mvkManageId'),number:g('mvkManageNumber'),ip:g('mvkManageIP'),modbus_port:Number(g('mvkManageModbus')),signal_port:Number(g('mvkManageSignal'))};
+ const url='/api/mvk/devices'+(update?'/'+encodeURIComponent(d.id):'');
+ try{const r=await fetch(url,{method:update?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});const data=await r.json();if(!r.ok)throw Error(JSON.stringify(data.detail||data));document.getElementById('mvkDeviceManageStatus').textContent='Карточка сохранена. Автоподключение выключено.';if(typeof loadGlobalDevices==='function')await loadGlobalDevices();}
+ catch(e){document.getElementById('mvkDeviceManageStatus').textContent='Ошибка: '+e.message;}
+}
+async function mvkRemoveDevice(){
+ const id=document.getElementById('mvkManageId').value.trim();
+ if(!id||!confirm('Удалить отключённый прибор '+id+' из реестра?'))return;
+ try{const r=await fetch('/api/mvk/devices/'+encodeURIComponent(id),{method:'DELETE'});const d=await r.json();if(!r.ok)throw Error(JSON.stringify(d.detail||d));document.getElementById('mvkDeviceManageStatus').textContent='Удалён из реестра: '+id;if(typeof loadGlobalDevices==='function')await loadGlobalDevices();}
+ catch(e){document.getElementById('mvkDeviceManageStatus').textContent='Ошибка: '+e.message;}
+}
+</script>
+</body></html>
