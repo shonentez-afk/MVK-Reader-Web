@@ -1,0 +1,40 @@
+name: Offline syntax and calibration tests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: .
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Syntax-only verification (does not execute app or scripts)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          source_files = sorted(Path("MVK_Reader_Web").rglob("*.py"))
+          source_files += sorted(Path("protocol").rglob("*.py"))
+          source_files += sorted(Path("tools").rglob("*.py"))
+          assert source_files, "No Python sources found"
+          for file in source_files:
+              ast.parse(file.read_text(encoding="utf-8-sig"), filename=str(file))
+          print(f"AST OK: {len(source_files)} Python source files")
+          PY
+      - name: Calibration unit tests (no network, no instrument)
+        run: python -m unittest discover -s protocol -p 'test_mvk_calibration.py' -v
