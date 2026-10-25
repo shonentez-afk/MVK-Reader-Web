@@ -1,0 +1,2 @@
+capture_id,device_alias,adc,recorded_utc,kind,bytes,sha256,calibration_source,calibration_gain,calibration_timestamp_utc,storage_reference,notes
+EXAMPLE_ONLY,device_A,4,2026-10-23T00:00:00Z,pcapng,,,"Modbus FC03",,,"PRIVATE_STORAGE_REFERENCE","Replace with actual verified values; no public IP or credentials"
