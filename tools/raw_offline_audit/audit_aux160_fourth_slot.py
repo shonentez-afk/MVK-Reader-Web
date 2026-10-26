@@ -25,6 +25,7 @@ def analyze(blob):
                         events.append(dict(adc=ch+1,entry=entry+1,index=i,
                             descriptor_before=hex(old[0]),descriptor_after=hex(desc),
                             current=cur,reference=ref,extra_float32=extra,
+                            extra_raw_uint32=struct.unpack_from("<I",blob,p+off+12)[0],
                             reference_equals_current=raw[:4]==raw[8:12],
                             aux4700_latest_peak_factor=preceding[1][ch][46] if preceding else None))
                     last[(ch,entry)]=now
