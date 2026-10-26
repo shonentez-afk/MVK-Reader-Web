@@ -36,6 +36,15 @@ class DecoderTests(unittest.TestCase):
             self.assertLess(band["peak_rel_error"], 1e-6)
             self.assertLess(band["span_rel_error"], 1e-6)
 
+    def test_sensor_voltage_status_flags(self):
+        data = bytearray(fixture())
+        struct.pack_into('<I', data, 28+580, 1024)
+        struct.pack_into('<I', data, 28+584+580, 2048)
+        result = decode_frame(bytes(data))
+        self.assertEqual(result['channels'][0]['status_active_flags'], ['sensor_dc_above_max'])
+        self.assertEqual(result['channels'][1]['status_active_flags'], ['sensor_dc_at_or_below_min'])
+        self.assertEqual(result['channels'][0]['status_unknown_mask'], 0)
+
     def test_reject_truncated(self):
         with self.assertRaises(ValueError):
             decode_frame(fixture()[:-1])
