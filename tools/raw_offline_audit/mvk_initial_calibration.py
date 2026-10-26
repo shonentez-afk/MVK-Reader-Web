@@ -22,6 +22,27 @@ def decode(data):
                          "raw_to_acceleration_gain": g})
     return {"signature": "VAST_MVK", "channels": channels}
 
+class StreamingHeaderDecoder:
+    """Accumulate a fragmented initial header. No socket access."""
+    def __init__(self):
+        self.buffer = bytearray()
+        self.calibration = None
+        self.remaining_bytes = bytearray()
+
+    def feed(self, chunk):
+        if self.calibration is not None:
+            self.remaining_bytes.extend(chunk)
+            return self.calibration
+        needed = HEADER_PREFIX - len(self.buffer)
+        self.buffer.extend(chunk[:needed])
+        self.remaining_bytes.extend(chunk[needed:])
+        if len(self.buffer) < HEADER_PREFIX:
+            return None
+        self.calibration = decode(self.buffer)
+        self.buffer.clear()
+        return self.calibration
+
+
 if __name__ == "__main__":
     for filename in sys.argv[1:]:
         with Path(filename).open("rb") as f:
