@@ -13,6 +13,32 @@ CHANNELS = 8
 RECORD_SIZE = 584
 EXPECTED_TAG0 = 19013632
 STATUS_FLAGS = {0: 'input_overload', 4: 'buffer_fs16_not_ready', 5: 'buffer_fs64_not_ready', 6: 'buffer_fs512_not_ready', 10: 'sensor_dc_above_max', 11: 'sensor_dc_at_or_below_min'}
+BAND_LABELS = (
+    ("10-3000", "acceleration", "m/s2"),
+    ("10-3000", "velocity", "mm/s"),
+    ("10-3000", "displacement", "um"),
+    ("10-2000", "acceleration", "m/s2"),
+    ("10-2000", "velocity", "mm/s"),
+    ("10-2000", "displacement", "um"),
+    ("10-1000", "acceleration", "m/s2"),
+    ("10-1000", "velocity", "mm/s"),
+    ("10-1000", "displacement", "um"),
+    ("2-1000", "acceleration", "m/s2"),
+    ("2-1000", "velocity", "mm/s"),
+    ("2-1000", "displacement", "um"),
+    ("0.8-300", "acceleration", "m/s2"),
+    ("0.8-300", "velocity", "mm/s"),
+    ("0.8-300", "displacement", "um"),
+    ("0.8-150", "acceleration", "m/s2"),
+    ("0.8-150", "velocity", "mm/s"),
+    ("0.8-150", "displacement", "um"),
+    ("custom1", "acceleration", "m/s2"),
+    ("custom1", "velocity", "mm/s"),
+    ("custom1", "displacement", "um"),
+    ("custom2", "acceleration", "m/s2"),
+    ("custom2", "velocity", "mm/s"),
+    ("custom2", "displacement", "um"),
+)
 PADDING = tuple(list(range(44, 46)) + list(range(72, 80)) +
                 list(range(104, 112)) + list(range(136, 144)))
 
@@ -36,7 +62,9 @@ def decode_frame(frame):
         for i in range(24):
             rms, peak, span = values[48+i], values[80+i], values[112+i]
             ratios.append({
-                "band_index": i, "rms": rms, "peak": peak, "span": span,
+                "band_index": i, "frequency_band": BAND_LABELS[i][0],
+                "quantity": BAND_LABELS[i][1], "unit": BAND_LABELS[i][2],
+                "rms": rms, "peak": peak, "span": span,
                 "peak_rel_error": abs(peak-math.sqrt(2)*rms)/max(abs(peak), 1e-30),
                 "span_rel_error": abs(span-2*peak)/max(abs(span), 1e-30)
             })
