@@ -36,7 +36,7 @@ def check(path):
         for offset,idx in EXPECTED.items():
             matches=0; tested=0
             for pos,_,v in a:
-                nearest=min(range(len(b)),key=lambda k:abs(b[k][0]-pos))-1
+                nearest=max((k for k in range(len(b)) if b[k][0] < pos), default=-1)
                 if nearest<0 or nearest>=len(b):continue
                 tested+=1
                 if struct.pack("<f",v[offset])==struct.pack("<f",b[nearest][2][idx]):
