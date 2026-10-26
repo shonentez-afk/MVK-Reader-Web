@@ -75,13 +75,13 @@ def main():
         start=time.monotonic()
         try:
             with socket.create_connection((a.host,10230),timeout=5) as sock, (dest/"capture.raw").open("wb") as raw, (dest/"recv_times.csv").open("w") as times:
-                sock.settimeout(1);times.write("elapsed_seconds,bytes_received\\n")
+                sock.settimeout(1);times.write("elapsed_seconds,bytes_received\n")
                 while time.monotonic()-start<a.seconds:
                     try:b=sock.recv(65536)
                     except socket.timeout:continue
                     if not b:break
                     raw.write(b);sha.update(b);d.feed(b)
-                    times.write("{:.6f},{}\\n".format(time.monotonic()-start,len(b)))
+                    times.write("{:.6f},{}\n".format(time.monotonic()-start,len(b)))
         finally:
             result=d.result();result["sha256"]=sha.hexdigest()
             (dest/"summary.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
