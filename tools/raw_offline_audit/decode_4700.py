@@ -12,6 +12,7 @@ FRAME_SIZE = 4700
 CHANNELS = 8
 RECORD_SIZE = 584
 EXPECTED_TAG0 = 19013632
+STATUS_FLAGS = {0: 'input_overload', 4: 'buffer_fs16_not_ready', 5: 'buffer_fs64_not_ready', 6: 'buffer_fs512_not_ready', 10: 'sensor_dc_above_max', 11: 'sensor_dc_at_or_below_min'}
 PADDING = tuple(list(range(44, 46)) + list(range(72, 80)) +
                 list(range(104, 112)) + list(range(136, 144)))
 
@@ -48,6 +49,8 @@ def decode_frame(frame):
             "broadband_rms_candidate": values[47],
             "bands": ratios,
             "status_bits_uint32": status,
+            "status_active_flags": [name for bit, name in STATUS_FLAGS.items() if status & (1 << bit)],
+            "status_unknown_mask": status & ~sum(1 << bit for bit in STATUS_FLAGS),
             "zero_padding": all(values[i] == 0 for i in PADDING)
         })
     return {"frame_counter": struct.unpack_from("<I", frame, 20)[0],
