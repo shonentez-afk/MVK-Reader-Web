@@ -22,3 +22,5 @@
 | 2026-10-27 | Исследовательский лаг-скан VALUES/BIN | 2-секундные оконные PSD, сдвиги ±6 с с шагом 0.5 с | Максимальные r по полосам 10–3000/2000/1000: 0.4145/0.3653/0.5885 при неодинаковых лагах | Пилотное выравнивание, не измерение реальной задержки, см. `docs/STAGE13_ADC6_VALUES_TIME_ALIGNMENT_20261027_RU.md` |
 
 | 2026-10-27 | Offline ADC4 independent recording | BIN 2212096 samples at 65536 Hz, 10 TABLE, VALUES | RMS 10-3000 = 4.366532 m/s2, VALUES median 4.376 (-0.22%), TABLE median 4.346 (+0.47%) | Separate from ADC6 recording; not time synchronized; no device access |
+
+| 2026-10-27 | Offline Python SciPy | ADC4 and ADC6 BIN, ideal cutoff versus Butterworth bandpass orders 1–8 | Order 3: ADC4 4.365510, ADC6 3.538408 m/s2; close to MVKView medians but post-hoc chosen, not hardware/filter proof | `docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md`; `tools/adc_filter_edge_audit/check.py` |
