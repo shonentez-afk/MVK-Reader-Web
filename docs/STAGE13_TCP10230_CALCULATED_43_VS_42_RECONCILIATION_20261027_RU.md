@@ -12,3 +12,6 @@ Hypothesis to test: text P1.3 may count 42 usable bands excluding 0.63 Hz (then 
 
 ## Consequence / corrections
 Promote TCP/10230 4700-byte calculation frame to the Stage13 input architecture. Reuse the existing offline decoder instead of creating another parser. Respect freeze of production v0.3.40 and no live connections without permission. Sync START_NEW_CHAT_RU.md, PROJECT_STATUS_RU.md and project decisions.
+
+## 27.10: итоговая сверка источников
+В руководстве таблица 4, раздел 5.2, приложение 1 п.1.3 и приложение 2 пп.3.4/3.5.5 независимо задают 43 частоты 0,63–10000 Гц; одно упоминание «42» встречается в тексте П1.3. Позиции 1–43 кадра 4700 байт согласуются с 43 полями, а битовый статус расположен отдельно в позиции 144. По офлайн-аудиту четырёх PCAPNG первая позиция не пустая. **Решение для декодера: сохранять 43 значения; «42» считать вероятной опиской или редакционным несоответствием, без утверждения о доказанной причине.** Коэффициент пересчёта и диагностический статус не следует вставлять внутрь массива. Не повторять обсуждение без новых данных.
