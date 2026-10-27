@@ -28,3 +28,5 @@
 | 2026-10-27 | Offline SciPy spectral model, two exported BIN | Fixed order-3 filter applied across 3 bands on ADC4 and ADC6 | Six VALUES median relative errors under 0.35%; split-half results recorded; non-synchronized | Not a blind confirmation of the true filter; see docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md |
 
 | 2026-10-27 | Анализ документации производителя | ВАРБ.411711.112 РЭ, приложение 1, стр. 41–44 | Документально подтверждён Hann FFT и крайние весовые функции фиксированных полос; Баттерворт 3-го порядка НЕ указан | `docs/MVK01_HANDBOOK_FILTER_ALGORITHM_20261027_RU.md`; документальная, не вычислительная проверка |
+
+| 2026-10-27 | Offline fixed-band scaffold | Код и 3 синтетических unittest добавлены в PR #11 | NOT RUN / НЕ ПРОВЕРЕНЫ в чистом checkout | tools/mvk_fixed_band_lab/, docs/STAGE13_FIXED_BAND_RECONSTRUCTION_20261027_RU.md |
