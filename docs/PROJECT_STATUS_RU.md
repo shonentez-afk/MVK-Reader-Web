@@ -70,3 +70,7 @@ Stage13 27.10: Class-2 3150 Hz third-octave filter nominal band approximately 28
 
 
 Stage13 P1.4 (27 Oct): executed 3/3 synthetic unit tests on equivalent local copied code and independently computed Hann Welch BIN diagnostic for both ADC4/6. Upper 3000-3536 Hz RMS 0.328961 (ADC4), 2.865118 (ADC6) m/s2; exact vendor weight windows remain unknown. Report docs/STAGE13_P14_EXECUTION_20261027_RU.md. No production changes.
+
+
+## 2026-10-27: 55-page handbook inventory
+Full indexed source notes: `docs/MVK01_MANUAL_FULL_ANNOTATED_AUDIT_20261027_RU.md`. New crucial evidence: GOST ISO 2954-2014 fixed-band transfer function including 10-3000 (Appendix 1 sec.1.3); explicit Modbus RMS acceleration 10-3000 at A+0x60 (A=0x2000+N*0x200); unresolved discrepancy of 42 vs 43 one-third-octave values; buffer-not-ready status bits 4-6. Vendor coefficients still unknown, no device access.
