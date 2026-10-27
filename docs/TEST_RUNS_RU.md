@@ -32,3 +32,5 @@
 | 2026-10-27 | Offline fixed-band scaffold | Код и 3 синтетических unittest добавлены в PR #11 | NOT RUN / НЕ ПРОВЕРЕНЫ в чистом checkout | tools/mvk_fixed_band_lab/, docs/STAGE13_FIXED_BAND_RECONSTRUCTION_20261027_RU.md |
 
 | 2026-10-27 | Документальная проверка таблицы 4 ВАРБ.411711.112 РЭ | Полосы и класс третьоктавных фильтров | CLASS 2 по ГОСТ Р 8.714-2010; 10–3000 Гц не перечислена в табл. 4 | docs/MVK01_TABLE4_BANDS_CLASS2_20261027_RU.md; только изучение руководства, не вычислительный тест |
+
+| 2026-10-27 | GOST class 2 documentary audit | Third-octave 3150 Hz and ADC6 peaks | 3105/3313 inside nominal band; fixed-band weights unknown | docs/STAGE13_THIRD_OCTAVE_CLASS2_EDGE_20261027_RU.md |
