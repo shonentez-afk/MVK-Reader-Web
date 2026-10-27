@@ -43,3 +43,5 @@
 | 2026-10-27 | Handbook review | Indexed all 55 pages by main sections, Appendix 1 DSP and Appendix 2 Modbus | Identified GOST ISO 2954-2014 for fixed 10-3000; A+0x60; 42 vs 43; buffer status bits | `docs/MVK01_MANUAL_FULL_ANNOTATED_AUDIT_20261027_RU.md`; documentary, not instrument test |
 
 | 2026-10-27 | Normative cross-check | MVK01 manual Appendix 1 sec 1.3 vs GOST ISO 2954-2014 sec 5.3 | Third-order Butterworth HP+LP directly named by standard; exact DSP still unknown | docs/STAGE13_GOST_ISO2954_BUTTERWORTH3_20261027_RU.md |
+
+| 2026-10-27 | Repository reconciliation | docs/FRAME_4700_MODBUS_MAPPING_20261026_RU.md and decoder | 10230 sends 4700-byte calculated frames; 43 slots proven, reason for 42 in P1.3 unresolved | docs/STAGE13_TCP10230_CALCULATED_43_VS_42_RECONCILIATION_20261027_RU.md |
