@@ -45,3 +45,5 @@
 | 2026-10-27 | Normative cross-check | MVK01 manual Appendix 1 sec 1.3 vs GOST ISO 2954-2014 sec 5.3 | Third-order Butterworth HP+LP directly named by standard; exact DSP still unknown | docs/STAGE13_GOST_ISO2954_BUTTERWORTH3_20261027_RU.md |
 
 | 2026-10-27 | Repository reconciliation | docs/FRAME_4700_MODBUS_MAPPING_20261026_RU.md and decoder | 10230 sends 4700-byte calculated frames; 43 slots proven, reason for 42 in P1.3 unresolved | docs/STAGE13_TCP10230_CALCULATED_43_VS_42_RECONCILIATION_20261027_RU.md |
+
+| 2026-10-27 | Created synthetic tests and offline audit for 4700 calculation frames | tools/raw_offline_audit/test_4700_calculated.py; audit_4700_first_octave.py | NOT RUN, results pending existing RAW / local runtime | docs/STAGE13_4700_DECODER_NEXT_STEP_20261027_RU.md |
