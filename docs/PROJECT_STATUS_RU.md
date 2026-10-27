@@ -40,3 +40,7 @@
 
 ## ADC4 independent record check (2026-10-27 11:18)
 BIN 33.75390625 s, 2212096 float32 LE, fs=65536 Hz. PSD RMS for bands 10-1000/2000/3000 Hz: 4.009376 / 4.314487 / 4.366532 m/s2. VALUES medians 3.947 / 4.300 / 4.376; ten TABLE medians 3.9055 / 4.2695 / 4.3460. Relative difference at 10-3000 Hz vs VALUES median -0.22% (ADC6 ~-20% in a separate recording). Non-simultaneous recordings; do not conclude ADC6 hardware failure. See START_NEW_CHAT_RU.md.
+
+
+## Stage13 — проверка хвоста фильтра (27.10)
+Проверены исходные BIN АЦП4/6 частотным взвешиванием PSD через Butterworth 10–3000 Гц. Для 3-го порядка RMS 4.365510 (АЦП4) и 3.538408 (АЦП6) м/с² против медиан VALUES 4.376 и 3.5385. Это совпадение после выбора порядка из испытанных моделей, а не доказанный фильтр МВК01/MVKView. Полный отчёт: `docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md`.
