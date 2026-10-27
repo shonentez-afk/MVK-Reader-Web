@@ -48,3 +48,7 @@ BIN 33.75390625 s, 2212096 float32 LE, fs=65536 Hz. PSD RMS for bands 10-1000/20
 
 ## Stage13 cross-band fixed model 2026-10-27
 Same order-3 Butterworth response, no order tuning between bands, reproduces six ADC4/ADC6 VALUES medians over 10-1000/2000/3000 Hz within 0.35%. Not a blind test since order 3 originally chosen on ADC6 10-3000. Vendor filter not established; v0.3.40 unchanged. Details docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md.
+
+
+## Прямое документальное подтверждение алгоритма МВК01
+ВАРБ.411711.112 РЭ, Приложение 1, стр.41–44: FIR-децимация, FFT с окном Ханна, третьоктавное спектральное взвешивание и трёхчастная схема расчёта фиксированных полос с краевыми весовыми функциями. Модель Баттерворта 3-го порядка остаётся эмпирическим заменителем, не установленным фильтром производителя. См. `docs/MVK01_HANDBOOK_FILTER_ALGORITHM_20261027_RU.md`.
