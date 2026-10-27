@@ -20,3 +20,5 @@
 | 2026-10-27 | Исследовательский анализ VALUES/BIN, offline, локальная среда Python/SciPy | 124 строки VALUES, номинальная привязка к 61.039-с BIN; PSD 1/2/4 с | 120/118/114 пар окон; отношение 10–3000 BIN/MVKView ~0.804/0.805/0.807; причина не установлена | `docs/STAGE13_ADC6_VALUES_TIME_ALIGNMENT_20261027_RU.md`; инструмент внесён в GitHub, отдельный прогон GitHub-версии ещё не проведён |
 
 | 2026-10-27 | Исследовательский лаг-скан VALUES/BIN | 2-секундные оконные PSD, сдвиги ±6 с с шагом 0.5 с | Максимальные r по полосам 10–3000/2000/1000: 0.4145/0.3653/0.5885 при неодинаковых лагах | Пилотное выравнивание, не измерение реальной задержки, см. `docs/STAGE13_ADC6_VALUES_TIME_ALIGNMENT_20261027_RU.md` |
+
+| 2026-10-27 | Offline ADC4 independent recording | BIN 2212096 samples at 65536 Hz, 10 TABLE, VALUES | RMS 10-3000 = 4.366532 m/s2, VALUES median 4.376 (-0.22%), TABLE median 4.346 (+0.47%) | Separate from ADC6 recording; not time synchronized; no device access |
