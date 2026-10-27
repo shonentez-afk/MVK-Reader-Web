@@ -17,7 +17,7 @@ def packets(path):
    if typ!=6 or len(b)<20:continue
    l=struct.unpack_from("<I",b,12)[0]
    p=b[20:20+l]
-   if len(p)<54 or p[12:14]!=b"\\x08\\x00":continue
+   if len(p)<54 or p[12:14]!=bytes((8,0)):continue
    ip=p[14:];ihl=(ip[0]&15)*4
    if ip[9]!=6:continue
    tcp=ip[ihl:]
