@@ -63,3 +63,7 @@ Same order-3 Butterworth response, no order tuning between bands, reproduces six
 
 
 Stage13 27.10: Class-2 3150 Hz third-octave filter nominal band approximately 2806-3536 Hz includes ADC6 peaks 3105 and 3313 Hz. Unknown weights into fixed 10-3000 indicator; see docs/STAGE13_THIRD_OCTAVE_CLASS2_EDGE_20261027_RU.md.
+
+
+## Исправление П1.4 от 27.10.2026
+Ранее созданный single-PSD трёхзонный каркас НЕ соответствует П1.4 в части источников данных для верхней зоны и середины. Добавлен `tools/mvk_fixed_band_lab/p14_two_spectrum.py`: нижняя зона из high-res acceleration PSD; верхняя и внутренняя из третьоктавных мощностей; контроль перекрытия. Тесты созданы, но НЕ запускались. Точные весовые окна/FIR неизвестны, код не является законченным DSP. См. `docs/STAGE13_P14_TWO_SPECTRUM_CORRECTION_20261027_RU.md`. В дальнейшем сначала проверять первичную документацию, затем гипотезы. 
