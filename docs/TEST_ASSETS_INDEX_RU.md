@@ -25,3 +25,5 @@
 Реальные PCAPNG/BIN/TSXML и JSON опросов могут содержать технические данные предприятия. Не добавлять их целиком в Git без отдельного разрешения/обезличивания. Сохранять описание и SHA256 в `docs/CAPTURE_MANIFEST_TEMPLATE.csv`, сами файлы — в закрытом хранилище вне Git.
 
 | `tools/mvk_fixed_band_lab/` | Hann PSD + три зоны весовой энергии, только офлайн | Код и синтетические тесты опубликованы, запуск ещё не проверен |
+
+| `tools/mvk_fixed_band_lab/bin_hann_preflight.py` | Offline Welch Hann 1-Hz BIN diagnostics, compares spectral energy without vendor weights | Equivalent local analysis executed for ADC4/6; clean GitHub checkout not tested |
