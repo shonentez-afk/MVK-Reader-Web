@@ -24,3 +24,5 @@
 | 2026-10-27 | Offline ADC4 independent recording | BIN 2212096 samples at 65536 Hz, 10 TABLE, VALUES | RMS 10-3000 = 4.366532 m/s2, VALUES median 4.376 (-0.22%), TABLE median 4.346 (+0.47%) | Separate from ADC6 recording; not time synchronized; no device access |
 
 | 2026-10-27 | Offline Python SciPy | ADC4 and ADC6 BIN, ideal cutoff versus Butterworth bandpass orders 1–8 | Order 3: ADC4 4.365510, ADC6 3.538408 m/s2; close to MVKView medians but post-hoc chosen, not hardware/filter proof | `docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md`; `tools/adc_filter_edge_audit/check.py` |
+
+| 2026-10-27 | Offline SciPy spectral model, two exported BIN | Fixed order-3 filter applied across 3 bands on ADC4 and ADC6 | Six VALUES median relative errors under 0.35%; split-half results recorded; non-synchronized | Not a blind confirmation of the true filter; see docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md |
