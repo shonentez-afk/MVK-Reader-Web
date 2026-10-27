@@ -36,3 +36,6 @@
 | 2026-10-27 | GOST class 2 documentary audit | Third-octave 3150 Hz and ADC6 peaks | 3105/3313 inside nominal band; fixed-band weights unknown | docs/STAGE13_THIRD_OCTAVE_CLASS2_EDGE_20261027_RU.md |
 
 | 2026-10-27 | P1.4 two-spectrum scaffold | Added p14_two_spectrum.py and 3 synthetic tests | NOT RUN; no BIN validation, no vendor windows | docs/STAGE13_P14_TWO_SPECTRUM_CORRECTION_20261027_RU.md |
+
+| 2026-10-27 | Local Python + numpy; P1.4 structural test copy | 3 synthetic unit tests | 3 PASS, 0 FAIL; GitHub checkout itself not tested | docs/STAGE13_P14_EXECUTION_20261027_RU.md |
+| 2026-10-27 | Local SciPy Welch Hann, two BIN exports | ADC4/ADC6 independent spectral preflight | RMS 10-3000: 4.366450/2.860347; 3000-3536: 0.328961/2.865118 m/s2 | Offline PSD baseline only, not final P1.4 output |
