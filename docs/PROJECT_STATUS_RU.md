@@ -67,3 +67,6 @@ Stage13 27.10: Class-2 3150 Hz third-octave filter nominal band approximately 28
 
 ## Исправление П1.4 от 27.10.2026
 Ранее созданный single-PSD трёхзонный каркас НЕ соответствует П1.4 в части источников данных для верхней зоны и середины. Добавлен `tools/mvk_fixed_band_lab/p14_two_spectrum.py`: нижняя зона из high-res acceleration PSD; верхняя и внутренняя из третьоктавных мощностей; контроль перекрытия. Тесты созданы, но НЕ запускались. Точные весовые окна/FIR неизвестны, код не является законченным DSP. См. `docs/STAGE13_P14_TWO_SPECTRUM_CORRECTION_20261027_RU.md`. В дальнейшем сначала проверять первичную документацию, затем гипотезы. 
+
+
+Stage13 P1.4 (27 Oct): executed 3/3 synthetic unit tests on equivalent local copied code and independently computed Hann Welch BIN diagnostic for both ADC4/6. Upper 3000-3536 Hz RMS 0.328961 (ADC4), 2.865118 (ADC6) m/s2; exact vendor weight windows remain unknown. Report docs/STAGE13_P14_EXECUTION_20261027_RU.md. No production changes.
