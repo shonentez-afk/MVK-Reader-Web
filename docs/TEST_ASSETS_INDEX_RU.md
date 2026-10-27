@@ -27,3 +27,6 @@
 | `tools/mvk_fixed_band_lab/` | Hann PSD + три зоны весовой энергии, только офлайн | Код и синтетические тесты опубликованы, запуск ещё не проверен |
 
 | `tools/mvk_fixed_band_lab/bin_hann_preflight.py` | Offline Welch Hann 1-Hz BIN diagnostics, compares spectral energy without vendor weights | Equivalent local analysis executed for ADC4/6; clean GitHub checkout not tested |
+
+| `tools/raw_offline_audit/test_4700_calculated.py` | Synthetic calculated frame 4700 tests | Added, execution pending |
+| `tools/raw_offline_audit/audit_4700_first_octave.py` | Offline inspect first 0.63-Hz and last 10000-Hz slots on existing RAW | Added, real-data execution pending |
