@@ -60,3 +60,6 @@ Same order-3 Butterworth response, no order tuning between bands, reproduces six
 
 ## 2026-10-27 — таблица 4 паспорта МВК01
 Уточнены рабочие частоты, паспортные полосовые фильтры и **класс 2 третьоктавных фильтров по ГОСТ Р 8.714-2010**. Полоса 10–3000 Гц не входит в перечисление полосовых фильтров таблицы 4; наличие показателя в MVKView не заменяет доказательства нормативной полосы. См. docs/MVK01_TABLE4_BANDS_CLASS2_20261027_RU.md.
+
+
+Stage13 27.10: Class-2 3150 Hz third-octave filter nominal band approximately 2806-3536 Hz includes ADC6 peaks 3105 and 3313 Hz. Unknown weights into fixed 10-3000 indicator; see docs/STAGE13_THIRD_OCTAVE_CLASS2_EDGE_20261027_RU.md.
