@@ -36,3 +36,7 @@ The order-3 model chosen from ADC6 10-3000 was held fixed and applied without or
 Split-half robustness for 10-3000 order-3: ADC4 first/second = 4.37211/4.35889; ADC6 first/second = 3.51578/3.56091 m/s2. VALUES source medians are not time-matched to these halves; do not use split-half as strict validation of MVKView windows.
 
 Conclusion: six bands reproduce medians within 0.35%. Strong evidence for **some Butterworth-like gradual rolloff**, not proof of the instrument's exact order or implementation. Do not change production code/filter until cross-validated on new independent recordings or supported by vendor documentation.
+
+
+## Исправление интерпретации по паспорту
+После изучения ВАРБ.411711.112 РЭ, Приложение 1, стр. 41–44, установлено, что фиксированные полосы вычисляются по спектру Hann и третьоктавным весовым функциям с раздельными зонами нижнего и верхнего среза. Название или порядок Баттерворта руководство не подтверждает. Результат шести хороших совпадений следует считать **эмпирическим surrogate**, не реальной идентификацией DSP. См. `docs/MVK01_HANDBOOK_FILTER_ALGORITHM_20261027_RU.md`.
