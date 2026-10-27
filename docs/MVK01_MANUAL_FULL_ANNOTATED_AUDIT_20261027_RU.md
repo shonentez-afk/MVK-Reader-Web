@@ -46,3 +46,6 @@
 
 ## Протокол дальнейших исследований
 Сначала искать по руководству (страница, пункт, цитируемая таблица), затем проверять ГОСТ, затем строить измерительный тест. Любая цифра в коде сопровождается классификацией: handbook / standard / measured / hypothesis. Гипотезы Butterworth и постоянного веса 3000-3536 Гц только диагностические. Приложение v0.3.40 остается неизменным; TCP/Modbus к действующим приборам не подключать.
+
+## CORRECTION 27.10.2026 — TCP/10230 calculated data already proven
+Previously 26.10 reverse engineered 4700-byte calculated frame on TCP/10230: 28-byte header, eight 584-byte per-ADC records; 43 third-octave values, 24 RMS, 24 equivalent peaks, 24 spans. Verified on 48 frames/384 channel records; see docs/FRAME_4700_MODBUS_MAPPING_20261026_RU.md and docs/FRAME_4700_REAL_RAW_REGRESSION_20261026_RU.md. TCP/10230 carries waveform AND calculated data. Port 502 is an ALTERNATIVE Modbus calculated/config reader, not the exclusive computed-data path. In the v0.3.40 UI calculated=502 reflects current implementation, not the packet format. P1.3 says 42 but Appendix 2 and real 4700 frame contain 43 slots (0.63-10000 Hz); whether first 0.63-Hz slot is reserved/unused remains unproven. Do not erase the 43rd slot. Detailed docs/STAGE13_TCP10230_CALCULATED_43_VS_42_RECONCILIATION_20261027_RU.md. Respect source priority and do not repeat settled work.
