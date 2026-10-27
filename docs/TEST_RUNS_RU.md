@@ -49,3 +49,5 @@
 | 2026-10-27 | Created synthetic tests and offline audit for 4700 calculation frames | tools/raw_offline_audit/test_4700_calculated.py; audit_4700_first_octave.py | NOT RUN, results pending existing RAW / local runtime | docs/STAGE13_4700_DECODER_NEXT_STEP_20261027_RU.md |
 
 | 2026-10-27 | GitHub evidence cross-check before Stage13 next step | Existing ADC4 screenshot vs 4700, master plan and evidence spec | Prior comparison confirmed NON-SYNCHRONOUS; full 24-field time-aligned MVKView validation not confirmed; do not repeat mapping | docs/MVKVIEW_ADC4_SCREEN_COMPARISON_20261026_RU.md |
+
+| 2026-10-27 | Stage13 normative HP3*LP3 fixed bands | 4 synthetic unittest local and 2 real BIN ADC4/ADC6 | 4 PASS; 10-3000 ADC4 4.365258579, ADC6 3.542213511 m/s2; no synchronized instrument identity proof | docs/STAGE13_NORMATIVE_FIXED_BAND_EXECUTION_20261027_RU.md |
