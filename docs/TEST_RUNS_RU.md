@@ -51,3 +51,5 @@
 | 2026-10-27 | GitHub evidence cross-check before Stage13 next step | Existing ADC4 screenshot vs 4700, master plan and evidence spec | Prior comparison confirmed NON-SYNCHRONOUS; full 24-field time-aligned MVKView validation not confirmed; do not repeat mapping | docs/MVKVIEW_ADC4_SCREEN_COMPARISON_20261026_RU.md |
 
 | 2026-10-27 | Stage13 normative HP3*LP3 fixed bands | 4 synthetic unittest local and 2 real BIN ADC4/ADC6 | 4 PASS; 10-3000 ADC4 4.365258579, ADC6 3.542213511 m/s2; no synchronized instrument identity proof | docs/STAGE13_NORMATIVE_FIXED_BAND_EXECUTION_20261027_RU.md |
+
+| 2026-10-27 | P1.2/P1.3/P1.4 offline orchestrator | Five synthetic unit tests with equivalent local prior P1.4 dependency | 5 PASS locally; clean GitHub checkout NOT TESTED | docs/STAGE13_P12_P14_PIPELINE_IMPLEMENTATION_20261027_RU.md |
