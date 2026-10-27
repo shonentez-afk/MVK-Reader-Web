@@ -109,3 +109,7 @@ Experimentally frozen inference module `tools/mvk_fixed_band_lab/instrument_reco
 
 ## 27.10.2026 — trailing-window frame alignment (Stage13)
 New offline audit `tools/mvk_fixed_band_lab/temporal_4700_audit.py` and report `docs/STAGE13_4700_TRAILING_WINDOW_OFFLINE_AUDIT_20261027_RU.md`. For each selected 4700-byte calculation frame (every fifth), use preceding 2s of same TCP stream ADC samples, frozen MVK-LAB06 coefficients, NO gamma fitting. 4 PCAP, 8 ADC, 11 sampled frames per session = **352 comparisons**. Median signed errors 10–3000: device84 ADC6 recording -8.02%, live -11.84%, confirming persistent discrepancy despite local windows. Device83 recording has known 847-byte TCP gap; exclude from acceptance. THIS IS POSITION ALIGNED, NOT PROVEN DSP TIME ALIGNED; counters/latency still unresolved. Do not claim accuracy acceptance or production rollout. Freeze v0.3.40.
+
+
+## 27.10 Stage13: frozen MVK-LAB06 lag sweep
+Реально проверены сдвиги -2..+2 с в Live83/84 (выбор АЦП 4/5/6/8), отдельно -1/0/+1 с в записи №84 (АЦП5/6). Коэффициенты не изменялись. Для АЦП6 №84 отклонение остаётся -8..-13% на проверенных сдвигах: одна задержка проблему не объясняет; для АЦП4 №84 Live median absolute error уменьшилась с 5.48% при 0 до 1.11% при +0.5 с, но это НЕ доказанная задержка DSP. Подробности docs/STAGE13_LAG_SWEEP_FROZEN_MODEL_20261027_RU.md. Не делать повторный fit на №84; продолжить привязку счётчиков и independent holdout. Freeze v0.3.40.
