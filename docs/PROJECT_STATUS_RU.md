@@ -74,3 +74,6 @@ Stage13 P1.4 (27 Oct): executed 3/3 synthetic unit tests on equivalent local cop
 
 ## 2026-10-27: 55-page handbook inventory
 Full indexed source notes: `docs/MVK01_MANUAL_FULL_ANNOTATED_AUDIT_20261027_RU.md`. New crucial evidence: GOST ISO 2954-2014 fixed-band transfer function including 10-3000 (Appendix 1 sec.1.3); explicit Modbus RMS acceleration 10-3000 at A+0x60 (A=0x2000+N*0x200); unresolved discrepancy of 42 vs 43 one-third-octave values; buffer-not-ready status bits 4-6. Vendor coefficients still unknown, no device access.
+
+## КЛЮЧЕВОЕ НОВОЕ НАХОЖДЕНИЕ 27.10.2026 — ГОСТ ISO 2954-2014
+Паспорт Приложение 1 п.1.3 для фиксированных полос 2-1000 / 10-1000 / 10-2000 / 10-3000 ссылается на ГОСТ ISO 2954-2014, а его п.5.3 прямо устанавливает комбинацию ФВЧ и ФНЧ **Баттерворта третьего порядка** для нормативной АЧХ. Это независимое объяснение раннего совпадения модели третьего порядка на 6 измерениях. Однако НЕ подтверждает конкретную цифровую реализацию DSP, оконные таблицы П1.4, FIR и временные окна. Смотреть `docs/STAGE13_GOST_ISO2954_BUTTERWORTH3_20261027_RU.md` и `docs/MVK01_MANUAL_FULL_ANNOTATED_AUDIT_20261027_RU.md` ПЕРЕД новыми экспериментами. Ветка PR #11, v0.3.40 не менять.
