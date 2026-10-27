@@ -32,3 +32,6 @@ Outliers at individual narrowband bins remain. Hypotheses: genuine class-2 slope
 3. Reconcile synchronized ADC4 BIN and MVKView CSV only if the same measurement session and clock range can be demonstrated.
 4. Then expand fixed, transparent method to other **healthy** channels with status 0; keep pathological ADC6 as later stress test.
 5. Keep frozen production v0.3.40 untouched.
+
+## Critical low-frequency finding from all six bands
+At 0.8-300 Hz the heldout displacement median absolute errors are **241.55% (device83 ADC4)** and **196.54% (device84 ADC4)**. At 0.8-150 Hz they are **241.61% and 197.40%** respectively. These large discrepancies are NOT masked by the good 10-3000 results; they show the simple 1/f^2 integration of raw full-rate PSD is not a substitute for the manufacturer's low-frequency decimated/filtered displacement DSP. At 2-1000 displacement errors are 7.53% (83) and 0.84% (84). For 0.8-300 velocity, errors are 1.39% and 1.23%. Priority: identify LF displacement filtering / suppress drift, time window and transfer functions on ADC4; do not tune upper edge coefficients to fix this.
