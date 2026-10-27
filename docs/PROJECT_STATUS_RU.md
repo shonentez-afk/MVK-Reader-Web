@@ -83,3 +83,7 @@ Previously 26.10 reverse engineered 4700-byte calculated frame on TCP/10230: 28-
 
 
 Stage13 4700 frame 27.10: existing decoder reused; new synthetic tests and per-channel 0.63 Hz first-slot audit added. Not run yet on actual RAW. Full next-step report docs/STAGE13_4700_DECODER_NEXT_STEP_20261027_RU.md. No production changes.
+
+
+## 27.10.2026 — rechecked before next Stage13 gate
+42/43 practically settled: five handbook sections and existing 4700 frame support 43, P1.3 mentions 42 probably editorial error; see docs/STAGE13_TCP10230_CALCULATED_43_VS_42_RECONCILIATION_20261027_RU.md. Next-step comparison partly ALREADY DONE: docs/MVKVIEW_ADC4_SCREEN_COMPARISON_20261026_RU.md compares 4700 ADC4 with MVKView but screenshot timing unknown. Do not redo this or promise exact matching from it. Follow docs/STAGE13_MEASUREMENT_VALIDATION_LAB_MASTER_PLAN_20261026_RU.md and docs/STAGE13_FIELD_EVIDENCE_BUNDLE_SPEC_20261026_RU.md: compare same channel, quantity, band, unit, interval; otherwise NOT_COMPARABLE. Primary unresolved gate is paired/time-proven comparison of 24 calculated fields and end-to-end evidence.
