@@ -39,3 +39,5 @@
 
 | 2026-10-27 | Local Python + numpy; P1.4 structural test copy | 3 synthetic unit tests | 3 PASS, 0 FAIL; GitHub checkout itself not tested | docs/STAGE13_P14_EXECUTION_20261027_RU.md |
 | 2026-10-27 | Local SciPy Welch Hann, two BIN exports | ADC4/ADC6 independent spectral preflight | RMS 10-3000: 4.366450/2.860347; 3000-3536: 0.328961/2.865118 m/s2 | Offline PSD baseline only, not final P1.4 output |
+
+| 2026-10-27 | Handbook review | Indexed all 55 pages by main sections, Appendix 1 DSP and Appendix 2 Modbus | Identified GOST ISO 2954-2014 for fixed 10-3000; A+0x60; 42 vs 43; buffer status bits | `docs/MVK01_MANUAL_FULL_ANNOTATED_AUDIT_20261027_RU.md`; documentary, not instrument test |
