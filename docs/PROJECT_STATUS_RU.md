@@ -44,3 +44,7 @@ BIN 33.75390625 s, 2212096 float32 LE, fs=65536 Hz. PSD RMS for bands 10-1000/20
 
 ## Stage13 — проверка хвоста фильтра (27.10)
 Проверены исходные BIN АЦП4/6 частотным взвешиванием PSD через Butterworth 10–3000 Гц. Для 3-го порядка RMS 4.365510 (АЦП4) и 3.538408 (АЦП6) м/с² против медиан VALUES 4.376 и 3.5385. Это совпадение после выбора порядка из испытанных моделей, а не доказанный фильтр МВК01/MVKView. Полный отчёт: `docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md`.
+
+
+## Stage13 cross-band fixed model 2026-10-27
+Same order-3 Butterworth response, no order tuning between bands, reproduces six ADC4/ADC6 VALUES medians over 10-1000/2000/3000 Hz within 0.35%. Not a blind test since order 3 originally chosen on ADC6 10-3000. Vendor filter not established; v0.3.40 unchanged. Details docs/STAGE13_BUTTERWORTH_EDGE_CHECK_20261027_RU.md.
