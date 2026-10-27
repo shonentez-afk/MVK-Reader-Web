@@ -53,3 +53,5 @@
 | 2026-10-27 | Stage13 normative HP3*LP3 fixed bands | 4 synthetic unittest local and 2 real BIN ADC4/ADC6 | 4 PASS; 10-3000 ADC4 4.365258579, ADC6 3.542213511 m/s2; no synchronized instrument identity proof | docs/STAGE13_NORMATIVE_FIXED_BAND_EXECUTION_20261027_RU.md |
 
 | 2026-10-27 | P1.2/P1.3/P1.4 offline orchestrator | Five synthetic unit tests with equivalent local prior P1.4 dependency | 5 PASS locally; clean GitHub checkout NOT TESTED | docs/STAGE13_P12_P14_PIPELINE_IMPLEMENTATION_20261027_RU.md |
+
+| 2026-10-27 | All-eight ADC offline validation on four PCAPNG | Four saved captures 83/84; stream->gain->HP3*LP3->4700 median | 32 session-channel comparisons produced. Three PCAP show no TCP sequence gaps, recording83 has one missing 847-byte segment; ADC1 recording83 invalid. Most remaining errors within few percent; 83 ADC5 realtime +5.71%. NOT a time-aligned DSP acceptance | docs/STAGE13_ALL8_FOUR_PCAP_NORMATIVE_20261027_RU.md |
