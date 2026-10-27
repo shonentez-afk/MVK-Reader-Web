@@ -1,0 +1,9 @@
+# Stage 13.10 — ADC4 31.5 and 100 Hz filter hypotheses
+
+Directly calculated on actual device83 ADC4 11:18 BIN versus matching independently started VALUES. VALUES column names checked: 31.5 Hz and 100 Hz are indexed correctly. A 1-second Hann periodogram with prior *hypothetical* time offset -0.25s was compared with each corresponding VALUES row. Models: ideal rectangular third-octave and product of smooth frequency-domain high/low transitions with orders 2,3,4,6,8,12. These transitions are **diagnostic only**, neither proven factory filters nor a calibrated normative class-2 design.
+
+On 34 later rows, median device 31.5Hz output 0.15725 m/s2. Rectangular prediction 0.02575 m/s2, median absolute error 83.64%; smooth p12 prediction 0.41709, error 165.28% (other smooth candidates worse). At 100Hz device median 0.26605 m/s2, rectangle 0.07171 (73.84% error), smooth p12 0.30282 (14.22% error). Large energy at approximately 38 and 113Hz (near/outside nominal band limits) affects estimates and makes filter shape critical. Simply adding gentle skirts does not solve both: 31.5Hz greatly overestimates. A wrong VALUES column offset is not the explanation.
+
+Conclusions: Do NOT infer the true filter order from this simple sweep. Need implement physically realizable IEC-style one-third-octave bandpass and validate PSD/filtering against same matched raw data, consider a narrowband 38Hz tone and filter skirt attenuation and time integration. Also check physical epoch independent startup; no fit using heldout targets. Preserve raw 5Hz+ focus; avoid interpreting 0.8-5Hz as validated signal.
+
+Local executed script `mvk_stage13/adc4_stage13_10_filters.py` SHA256 `2be98cd519824a6d6e0e7f47d80196641ef00646e4649b81f176582de48773d5`, outputs `adc4_stage13_10_filter_frames.csv`, `adc4_stage13_10_filter_summary.csv`. Script/CSV remain local until explicitly committed; research documentation only. Production v0.3.40 unchanged.
