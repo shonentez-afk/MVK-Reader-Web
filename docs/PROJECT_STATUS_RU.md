@@ -36,3 +36,7 @@
 
 ## Stage13 — анализ VALUES, 27.10.2026
 Разобран VALUES CSV с 124 временными измерениями каждые ~0.5 с. Пробное выравнивание 61.039-с BIN по предполагаемому времени старта 10:34:14 и PSD по 1/2/4-секундным окнам не устраняет ~20% дефицит независимого RMS в 10–3000 Гц. Например, для 2 с 118 пар: медианы BIN 2.87182 против MVKView 3.5385 м/с², медианное отношение 0.80539. Точный лаг и фильтрация неизвестны; приёмка не пройдена. См. `docs/STAGE13_ADC6_VALUES_TIME_ALIGNMENT_20261027_RU.md` и `tools/adc6_values_alignment/`.
+
+
+## ADC4 independent record check (2026-10-27 11:18)
+BIN 33.75390625 s, 2212096 float32 LE, fs=65536 Hz. PSD RMS for bands 10-1000/2000/3000 Hz: 4.009376 / 4.314487 / 4.366532 m/s2. VALUES medians 3.947 / 4.300 / 4.376; ten TABLE medians 3.9055 / 4.2695 / 4.3460. Relative difference at 10-3000 Hz vs VALUES median -0.22% (ADC6 ~-20% in a separate recording). Non-simultaneous recordings; do not conclude ADC6 hardware failure. See START_NEW_CHAT_RU.md.
