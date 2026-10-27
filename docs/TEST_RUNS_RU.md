@@ -61,3 +61,7 @@
 | 2026-10-27 | Frozen MVK-LAB06 v3 on archived captures | 2 BIN + 4 PCAPNG (192 channel-band comparisons) | Executed; 84 ADC6 10–3000 -10.09/-11.62%; no exact temporal pairing, NOT ACCEPTED | docs/STAGE13_FROZEN_MVK_LAB06_BIN_PCAP_VALIDATION_20261027_RU.md |
 
 | 2026-10-27 | ADC/4700 trailing 2s positional alignment | 4 PCAPNG, every 5th 4700, 8 ADC, 10-3000 | 352 rows, 84 ADC6 median -8.02% record/-11.84% realtime; 83 record TCP gap, not accepted as clock-synchronous | docs/STAGE13_4700_TRAILING_WINDOW_OFFLINE_AUDIT_20261027_RU.md |
+
+
+## 27.10 Stage13: frozen MVK-LAB06 lag sweep
+Реально проверены сдвиги -2..+2 с в Live83/84 (выбор АЦП 4/5/6/8), отдельно -1/0/+1 с в записи №84 (АЦП5/6). Коэффициенты не изменялись. Для АЦП6 №84 отклонение остаётся -8..-13% на проверенных сдвигах: одна задержка проблему не объясняет; для АЦП4 №84 Live median absolute error уменьшилась с 5.48% при 0 до 1.11% при +0.5 с, но это НЕ доказанная задержка DSP. Подробности docs/STAGE13_LAG_SWEEP_FROZEN_MODEL_20261027_RU.md. Не делать повторный fit на №84; продолжить привязку счётчиков и independent holdout. Freeze v0.3.40.
