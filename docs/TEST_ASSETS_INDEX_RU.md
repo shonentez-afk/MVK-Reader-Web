@@ -7,6 +7,7 @@
 | `tools/tcp10230_passive_test/` | Подключение к TCP/10230 без прикладных команд, ограниченный приём | **Ожидает реального теста** |
 | `tools/modbus_calibration_test/` | Только FC03: считывание 17 групп калибровочных регистров | Реальные результаты по двум приборам получены ранее |
 | `tools/adc6_values_alignment/compare.py` | Offline временное сопоставление бинарного RMS с VALUES (1/2/4 с); без сети, параметры выравнивания явные | Создан, исходный расчёт выполнен локально; отдельный тест чистого Git checkout ещё не выполнен |
+| `tools/adc_filter_edge_audit/check.py` | Offline PSD weighting by Butterworth 10–3000 Hz to investigate filter rolloff, no network | Real ADC4/6 BIN processed locally; standalone GitHub checkout not yet tested |
 | `protocol/mvk_calibration.py` | Безсетевой CDAB float32 и преобразование raw*gain | Код опубликован, проверка в CI не настроена |
 | `protocol/test_mvk_calibration.py` | Модульные тесты декодирования коэффициентов | Есть в GitHub |
 | `MVK_Reader_Web/tests/` | Тесты основной программы предыдущих версий | Перенесены из исходного пакета |
