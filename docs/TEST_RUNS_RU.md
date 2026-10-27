@@ -57,3 +57,5 @@
 | 2026-10-27 | All-eight ADC offline validation on four PCAPNG | Four saved captures 83/84; stream->gain->HP3*LP3->4700 median | 32 session-channel comparisons produced. Three PCAP show no TCP sequence gaps, recording83 has one missing 847-byte segment; ADC1 recording83 invalid. Most remaining errors within few percent; 83 ADC5 realtime +5.71%. NOT a time-aligned DSP acceptance | docs/STAGE13_ALL8_FOUR_PCAP_NORMATIVE_20261027_RU.md |
 
 | 2026-10-27 | MVK-LAB-06 imported research review | Uploaded script selftest and JSON statistics | 12/12 selftest PASS, source compiled; actual 83 refit NOT rerun; 84 frozen-weight independent verification TODO | docs/STAGE13_MVK_LAB06_PRIMARY_RECONSTRUCTION_REVIEW_20261027_RU.md |
+
+| 2026-10-27 | Frozen MVK-LAB06 v3 on archived captures | 2 BIN + 4 PCAPNG (192 channel-band comparisons) | Executed; 84 ADC6 10–3000 -10.09/-11.62%; no exact temporal pairing, NOT ACCEPTED | docs/STAGE13_FROZEN_MVK_LAB06_BIN_PCAP_VALIDATION_20261027_RU.md |
