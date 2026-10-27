@@ -1,5 +1,10 @@
 
 
+## 27.10: verified counter cadence from four PCAPNG
+Direct offline parse of all four captures: 4700-frame counter (+20) increments 130 each interval, while each ADC sample stream advances 32768 samples (+12 counter increments 256 per ADC frame), demonstrating a **0.5 s / 2 Hz calculated-frame cadence**, independent of the (unknown) DSP averaging window. Frames: realtime83 59, realtime84 60, record83 60, record84 60. No parsed ADC counter discontinuities across all eight channels in each capture. Known 847-byte TCP gap in record83 and malformed recording tails remain quality caveats. Different ADC channels may be one packet (256 samples = 3.90625ms) out of phase at the exact 4700 packet insertion; this is interleaving, not proven channel-specific DSP latency. Details docs/STAGE13_ADC_4700_COUNTER_CADENCE_AUDIT_20261027_RU.md. Next: distinguish calc and ADC clock epochs via affine counter alignment and examine true DSP lag. Frozen v0.3.40 untouched.
+
+
+
 ## 27.10 Stage13: frozen MVK-LAB06 lag sweep
 Реально проверены сдвиги -2..+2 с в Live83/84 (выбор АЦП 4/5/6/8), отдельно -1/0/+1 с в записи №84 (АЦП5/6). Коэффициенты не изменялись. Для АЦП6 №84 отклонение остаётся -8..-13% на проверенных сдвигах: одна задержка проблему не объясняет; для АЦП4 №84 Live median absolute error уменьшилась с 5.48% при 0 до 1.11% при +0.5 с, но это НЕ доказанная задержка DSP. Подробности docs/STAGE13_LAG_SWEEP_FROZEN_MODEL_20261027_RU.md. Не делать повторный fit на №84; продолжить привязку счётчиков и independent holdout. Freeze v0.3.40.
 
