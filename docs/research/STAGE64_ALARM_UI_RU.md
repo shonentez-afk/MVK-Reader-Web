@@ -1,0 +1,7 @@
+# Stage 64 — Original MVKView alarm/result UI path
+
+Verified statically against original IDR `_Unit128.pas` 10/10 anchors. `0x008443FC` initializes the eight channel alarm cell lists at `Tmvkform.ResultAlarmCellList[0..7]` (object offset 0x1084 + N*4). The refresh routine switches on `tcStatus` at `0x008475F5`. The alarm table branch starts `0x008476B7`; row count is `ResultAlarmCellList[0].GetMaxCells()+1` (`0x00847708..19`). Each row's title comes from `GetTitle` (`0x00847745..5E`). For every column 1..8 the matching channel's `GetValueText` is written to `tabAlarmResult` (`0x00847768..83`); channel loop bound is eight (`0x00847789`). The separate `tabAllResult` branch begins at `0x0084779C` and uses other data-cell lists.
+
+This proves an eight-channel, shared-row-label **presentation path**, not the source of the physical parameter selection. Per manufacturer protocol 1.0.39, the slot-to-physical-parameter number lives in channel configuration at 0x0100+N*0x100+0x60+j*0x10; state is separately at 0x2000+N*0x200+0x130+j*8. Never equate slot number and calculated parameter number without live config.
+
+Local reproduction: `MVKVIEW_STAGE64_ALARM_UI_20261028.zip`, containing Russian technical report and `stage64_verify.py`. Verified 10/10 static anchors; no device contact, no firmware analysis, stable v0.3.40 unchanged. **Next**: trace construction and population of ResultAlarmCellList, distinguish row presentation from configuration definitions.
