@@ -33,3 +33,5 @@
 - `tools/research/stage80b_verify_bin_fft_chain.py` — только офлайн, исходные `_Unit128.pas` и `_Unit115.pas`; проверяет 14 статических опор пути BIN/FFT. Запуск `python tools/research/stage80b_verify_bin_fft_chain.py _Unit128.pas _Unit115.pas`. Никакой сети.
 
 - `tools/research/stage80c_verify_normalization.py` — offline-only, требует оригинальные `_Unit128.pas` и `_Unit115.pas`: `python tools/research/stage80c_verify_normalization.py _Unit128.pas _Unit115.pas`. Проверяет 11 адресных инвариантов нормировки; без сетевых операций.
+
+- `tools/research/stage81_verify_spectrum_modes.py` — offline IDR verification of `_Unit115.pas`, 17 anchors; run `python tools/research/stage81_verify_spectrum_modes.py _Unit115.pas`. No devices/network.
