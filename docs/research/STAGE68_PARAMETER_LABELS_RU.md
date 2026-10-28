@@ -1,0 +1,7 @@
+# Stage 68 — exact measurement-range labels from original executable
+
+Verified against original MVKView PE32 and IDR `_Unit125.pas` function `0x00803FB4`. The Delphi UnicodeString pointer array at virtual address `0x008D303C` contains exactly eight labels, in selector order: `10..3000 Гц`, `10..2000 Гц`, `10..1000 Гц`, `2..1000 Гц`, `0,8..300 Гц`, `0,8..150 Гц`, `Польз. 1`, `Польз. 2`.
+
+Three families of 8 bands × 3 quantities are selected by actual calculated parameter ID: RMS 49–72, equivalent peak 81–104, equivalent peak-to-peak 113–136. The other 43 options are 1/12-octave acceleration bands 2–44. Total 115 distinct selector entries. Quantities are acceleration, velocity, displacement; effective array index is parameter ID minus 1. Confirmed 12 IDR static anchors, all 8 original PE strings and 115 distinct parameter numbers. User-facing complete option texts also use localized abbreviation keys `xVibroAccelerationShort`, `xVibroVelocityShort`, `xVibroDisplacementShort`, `xParamOption0..2` (latter localized texts not extracted yet).
+
+Full local evidence including original executable reader and 115-row mapping: `MVKVIEW_STAGE68_PARAMETER_LABELS_20261028.zip`. No device contact, no change to v0.3.40. Next: trace `TMvkAdvancedCell` serialization and localization resources.
