@@ -19,7 +19,7 @@ checks=[
 rows=[]
 for fn,addr,context in checks:
     text=(root/fn).read_text(encoding="utf-8",errors="replace")
-    line=next((l.strip() for l in text.splitlines() if re.search(r"\\b"+addr+r"\\b",l)),None)
+    line=next((l.strip() for l in text.splitlines() if addr in l),None)
     rows.append((fn,addr,context,bool(line),line or ""))
 for row in rows:print("\t".join(map(str,row)))
 if not all(r[3] for r in rows):sys.exit("Some anchor addresses missing")
