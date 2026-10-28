@@ -46,3 +46,6 @@
 - `tools/research/stage81e_numeric_candidate.py` — offline NumPy synthetic FFT test at N=256,1024,8192; `python tools/research/stage81e_numeric_candidate.py`. Does not validate genuine MVKView archives.
 
 - `tools/research/stage81f_candidate_clone_audit.py` — офлайн аудит кандидата (4 исходных Python-файла), синтаксис и контрольные инварианты. Запуск: `python tools/research/stage81f_candidate_clone_audit.py <каталог_копии>`. Отсутствие настоящих валидационных файлов отражается как OPEN/FAIL, не как результат измерения. Сеть не используется.
+
+- `tools/research/stage82_archive_fft_candidate.py` — offline BIN+TSXML candidate FFT (NumPy); requires no device, output local CSV (not original MVKView export). `python tools/research/stage82_archive_fft_candidate.py --bin RECORD.bin --tsxml RECORD.bin.tsxml --n 8192 --out CHECK.csv`.
+- `tools/research/stage82_archive_fft_selftest.py` — offline synthetic BIN+TSXML regression, `python tools/research/stage82_archive_fft_selftest.py`; executable check pending independent CI report.
