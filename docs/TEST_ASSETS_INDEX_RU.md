@@ -29,3 +29,5 @@
 - `tools/research/stage79c_verify_bin_open.py` — offline-only статические проверки чтения TSXML, fallback и открытия BIN (вход: оригинальный `_Unit128.pas`, без сети/оборудования). Запуск: `python tools/research/stage79c_verify_bin_open.py _Unit128.pas`. Результаты адресной ручной перепроверки: 18/18 строковых опор.
 
 - `tools/research/stage80_verify_storage_signal.py`: offline IDR static verification (14/14 anchors) of `_Unit115.pas`; run `python tools/research/stage80_verify_storage_signal.py _Unit115.pas`.
+
+- `tools/research/stage80b_verify_bin_fft_chain.py` — только офлайн, исходные `_Unit128.pas` и `_Unit115.pas`; проверяет 14 статических опор пути BIN/FFT. Запуск `python tools/research/stage80b_verify_bin_fft_chain.py _Unit128.pas _Unit115.pas`. Никакой сети.
