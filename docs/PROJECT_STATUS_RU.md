@@ -79,3 +79,7 @@
 
 ## Stage80a (2026-10-28)
 Из оригинального `_Unit115.pas` исследованы `TMvkChannelStorage.GetSignal`, кольцевое чтение и пропуски, условное применение FRange, нормировка Byte/255, обратный порядок выхода и RMS. 14/14 статических опор проверены. Отчёт `docs/research/STAGE80_STORAGE_SIGNAL_RU.md`; код `tools/research/stage80_verify_storage_signal.py`. Полный путь BIN -> buffer -> FFT и численная проверка пока открыты. Следующий Stage80b, стабильная v0.3.40 без изменений.
+
+
+## Stage 80b (2026-10-28)
+Найден статический путь BIN → `THandleStream.Read` → `TMvkChannelStorage.ProcessBufferChunk` → `GetSignal`/`GetSpectrum`. Float-буфер может умножаться на `FRange` при установленном `ViewedFileIsNormalized`; частоту и единицы необходимо учитывать отдельно. `GetSpectrum` ограничивает FFT числом 262144. Отчёт `docs/research/STAGE80B_BIN_TO_FFT_CHAIN_RU.md`, тест `tools/research/stage80b_verify_bin_fft_chain.py`. Численная эквивалентность не проверена. Следующий Stage80c: смысл normalization flag, окно и амплитуда FFT, реальные BIN+TSXML. Стабильная версия не изменена.
