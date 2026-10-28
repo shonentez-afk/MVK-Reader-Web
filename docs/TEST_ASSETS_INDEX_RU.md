@@ -42,3 +42,5 @@
 - `tools/research/stage81c_numeric_selftest.py`: offline synthetic window RMS and frequency transform; run: `python tools/research/stage81c_numeric_selftest.py`. This is not a real-data regression.
 
 - `tools/research/stage81d_verify_fft_backend.py` — offline structural IDR check, 15 anchors for FFT core and dB output; command: `python tools/research/stage81d_verify_fft_backend.py _Unit115.pas`. No network/device operations.
+
+- `tools/research/stage81e_numeric_candidate.py` — offline NumPy synthetic FFT test at N=256,1024,8192; `python tools/research/stage81e_numeric_candidate.py`. Does not validate genuine MVKView archives.
