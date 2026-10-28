@@ -83,3 +83,7 @@
 
 ## Stage 80b (2026-10-28)
 Найден статический путь BIN → `THandleStream.Read` → `TMvkChannelStorage.ProcessBufferChunk` → `GetSignal`/`GetSpectrum`. Float-буфер может умножаться на `FRange` при установленном `ViewedFileIsNormalized`; частоту и единицы необходимо учитывать отдельно. `GetSpectrum` ограничивает FFT числом 262144. Отчёт `docs/research/STAGE80B_BIN_TO_FFT_CHAIN_RU.md`, тест `tools/research/stage80b_verify_bin_fft_chain.py`. Численная эквивалентность не проверена. Следующий Stage80c: смысл normalization flag, окно и амплитуда FFT, реальные BIN+TSXML. Стабильная версия не изменена.
+
+
+## Stage 80c (2026-10-28)
+Статически установлен источник `ViewedFileIsNormalized`: в `_Unit128.pas` при отсутствии положительного gain используется fallback по DefaultConfig и флаг 1, при положительном gain флаг 0. Флаг поступает в `_Unit115.pas:TMvkChannelStorage.ProcessBufferChunk` и определяет условное умножение float32 на FRange. Прямые 11/11 опор сверены с оригинальными листингами. Документ `docs/research/STAGE80C_BIN_NORMALIZATION_RU.md`, скрипт `tools/research/stage80c_verify_normalization.py`. Численную точность пока не считать доказанной. Далее Stage81 GetSpectrum/FFT.
