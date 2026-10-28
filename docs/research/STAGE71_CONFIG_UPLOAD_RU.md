@@ -1,0 +1,3 @@
+# Stage 71 — MVKView upload path
+
+Confirmed 17/17 IDR anchors: bConfigUploadClick creates TMVKThread tasks 3 (system), 4 (calibration), 5 (channel configuration), then waits for completion. The thread connects to TCP port 10230, not Modbus 502. Helper 0x00807A40 handles memory-stream data upload. Responses distinguish successful operation and denial. Full local evidence: MVKVIEW_STAGE71_CONFIG_UPLOAD_20261028.zip. Device not contacted. Stable v0.3.40 unchanged.
