@@ -86,3 +86,7 @@
 
 ## Stage 80a (2026-10-28)
 Оригинальный `_Unit115.pas`: подтверждены `TMvkChannelStorage.GetSignal` (`0x007D0C30`), кольцевой буфер, Byte `/255`, заполнение пропусков нулями, условный путь FRange/огибающей и RMS. Отчёт `docs/research/STAGE80_STORAGE_SIGNAL_RU.md`; скрипт `tools/research/stage80_verify_storage_signal.py` (14/14 статических опор после исправления адреса Sqrt). Stage80b: трассировать BIN в ring buffer, затем GetSignal в FFT и проверить на реальных данных. Не считать Stage80 и численную FFT завершёнными. v0.3.40 не изменять.
+
+
+## Stage 80b — новая подтверждённая точка (2026-10-28)
+Из оригинальных `_Unit128.pas` и `_Unit115.pas` доказан статический мост архивного BIN к спектру: `ViewedFile.Seek` (`0x0084F951`) → `InvalidateData` → `AllocBufferChunk` → `THandleStream.Read` (`0x0084F97F`) → `ProcessBufferChunk` (`0x0084F98F`, с флагом `ViewedFileIsNormalized`) → UI `GetSignal` (`0x00847FCF`) / `GetSpectrum` (`0x00848200`). `ProcessBufferChunk` при float и флаге `ApplyRange` умножает на `FRange`, затем сдвигает `FRxPos`. `GetSpectrum` начинается по `0x007D13D4`; FFT длиной больше 262144 отвергается. Отчёт `docs/research/STAGE80B_BIN_TO_FFT_CHAIN_RU.md`, тест `tools/research/stage80b_verify_bin_fft_chain.py`. **Stage 80c следующий**: установить, откуда берётся `ViewedFileIsNormalized`, разобрать оконную функцию/нормировку FFT и выполнить реальную численную сверку BIN+TSXML. Статическая цепочка не равна подтверждённой численной эквивалентности. Не использовать прибор, не трогать v0.3.40.
