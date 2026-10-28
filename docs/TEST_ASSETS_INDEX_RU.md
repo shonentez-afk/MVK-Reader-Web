@@ -35,3 +35,5 @@
 - `tools/research/stage80c_verify_normalization.py` — offline-only, требует оригинальные `_Unit128.pas` и `_Unit115.pas`: `python tools/research/stage80c_verify_normalization.py _Unit128.pas _Unit115.pas`. Проверяет 11 адресных инвариантов нормировки; без сетевых операций.
 
 - `tools/research/stage81_verify_spectrum_modes.py` — offline IDR verification of `_Unit115.pas`, 17 anchors; run `python tools/research/stage81_verify_spectrum_modes.py _Unit115.pas`. No devices/network.
+
+- `tools/research/stage81b_verify_fft_primitives.py` — offline static IDR verifier (16/16 markers); invoke `python tools/research/stage81b_verify_fft_primitives.py _Unit115.pas`. No device/network access.
