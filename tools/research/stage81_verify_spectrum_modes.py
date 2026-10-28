@@ -6,7 +6,7 @@ p=argparse.ArgumentParser()
 p.add_argument("unit115",type=Path)
 a=p.parse_args()
 s=a.unit115.read_text(errors="replace")
-f=s[s.index("function TMvkChannelStorage.GetSpectrum(var Params"):s.index("//007D193D",s.index("function TMvkChannelStorage.GetSpectrum(var Params"))]
+f=s[s.index("//007D13D4"):s.index("//007D1998",s.index("//007D13D4"))]
 markers={
 "limit_262144":"007D1404    cmp         eax,40000",
 "ring_input":"007D14A5    call        007D2228",
