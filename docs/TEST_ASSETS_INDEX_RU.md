@@ -27,3 +27,5 @@
 `tools/research/stage79_verify_tsxml_idr.py` — offline-only статическая проверка опор генерации TSXML по оригинальным `_Unit125.pas`, опционально `_Unit128.pas`. Пример: `python tools/research/stage79_verify_tsxml_idr.py _Unit125.pas --unit128 _Unit128.pas`. Скрипт ничего не пишет в сеть; нужен локальный IDR, не публикуемый в GitHub. 23/23 структурных маркера вручную проверены по листингу; проверка связки с реальным BIN открыта.
 
 - `tools/research/stage79c_verify_bin_open.py` — offline-only статические проверки чтения TSXML, fallback и открытия BIN (вход: оригинальный `_Unit128.pas`, без сети/оборудования). Запуск: `python tools/research/stage79c_verify_bin_open.py _Unit128.pas`. Результаты адресной ручной перепроверки: 18/18 строковых опор.
+
+- `tools/research/stage80_verify_storage_signal.py`: offline IDR static verification (14/14 anchors) of `_Unit115.pas`; run `python tools/research/stage80_verify_storage_signal.py _Unit115.pas`.
