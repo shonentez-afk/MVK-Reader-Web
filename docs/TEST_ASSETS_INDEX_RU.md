@@ -40,3 +40,5 @@
 
 - `tools/research/stage81c_verify_idr.py`: offline, original `_Unit115.pas`, check 6/6 static groups. Run: `python tools/research/stage81c_verify_idr.py _Unit115.pas`.
 - `tools/research/stage81c_numeric_selftest.py`: offline synthetic window RMS and frequency transform; run: `python tools/research/stage81c_numeric_selftest.py`. This is not a real-data regression.
+
+- `tools/research/stage81d_verify_fft_backend.py` — offline structural IDR check, 15 anchors for FFT core and dB output; command: `python tools/research/stage81d_verify_fft_backend.py _Unit115.pas`. No network/device operations.
