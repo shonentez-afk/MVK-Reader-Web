@@ -37,3 +37,6 @@
 - `tools/research/stage81_verify_spectrum_modes.py` — offline IDR verification of `_Unit115.pas`, 17 anchors; run `python tools/research/stage81_verify_spectrum_modes.py _Unit115.pas`. No devices/network.
 
 - `tools/research/stage81b_verify_fft_primitives.py` — offline static IDR verifier (16/16 markers); invoke `python tools/research/stage81b_verify_fft_primitives.py _Unit115.pas`. No device/network access.
+
+- `tools/research/stage81c_verify_idr.py`: offline, original `_Unit115.pas`, check 6/6 static groups. Run: `python tools/research/stage81c_verify_idr.py _Unit115.pas`.
+- `tools/research/stage81c_numeric_selftest.py`: offline synthetic window RMS and frequency transform; run: `python tools/research/stage81c_numeric_selftest.py`. This is not a real-data regression.
