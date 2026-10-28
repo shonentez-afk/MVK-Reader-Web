@@ -49,3 +49,6 @@
 
 - `tools/research/stage82_archive_fft_candidate.py` — offline BIN+TSXML candidate FFT (NumPy); requires no device, output local CSV (not original MVKView export). `python tools/research/stage82_archive_fft_candidate.py --bin RECORD.bin --tsxml RECORD.bin.tsxml --n 8192 --out CHECK.csv`.
 - `tools/research/stage82_archive_fft_selftest.py` — offline synthetic BIN+TSXML regression, `python tools/research/stage82_archive_fft_selftest.py`; executable check pending independent CI report.
+
+- `tools/research/stage83_compare_spectra.py`: offline strict spectrum comparator, requires candidate and reference CSV, provenance manifest; no interpolation or device IO.
+- `tools/research/stage83_compare_selftest.py`: synthetic-only tests for matching data, mismatch and incompatible frequency grids; run `python tools/research/stage83_compare_selftest.py`.
