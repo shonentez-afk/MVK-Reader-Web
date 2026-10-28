@@ -34,3 +34,6 @@
 
 ## Промпт для переноса
 «Продолжи MVK Reader Web из `shonentez-afk/MVK-Reader-Web`, исследовательская ветка `research/stage41-spectrum-chain-20261028`. Прочитай `START_NEW_CHAT_RU.md`, `docs/PROJECT_STATUS_RU.md`, официальный протокол 1.0.39 в ресурсах проекта и отчёты Stage 60–69. Сохрани стабильную v0.3.40. Начни Stage 70: отследи сохранение ID параметра из `TMvkAdvancedCell` через GUI в конфигурационный буфер и путь отправки. Строго разделяй подтверждённые IDR факты и гипотезы; никаких реальных подключений/записей. Добавляй каждый проверочный код и статус в GitHub, готовь локальный архив передачи».
+## Дополнение Stage 70 (2026-10-28)
+Проверено 10/10 IDR опор: `tabConfigAlarmsDblClick` -> `Tmvkeditform.FormShow` -> `bOkClick` -> `TMvkAdvancedCell.GetID` -> `TMvkCellList.InputValue` -> непосредственная запись DWORD в локальный конфигурационный буфер. `bConfigUploadClick` — отдельный обработчик; локальная правка ещё не является передачей в прибор. См. `docs/research/STAGE70_CONFIG_EDIT_COMMIT_RU.md` и `tools/research/stage70_verify_edit_commit.py`. **Новая точка продолжения: Stage 71** — статически проверить обработчик загрузки конфигурации, создание фонового задания и сетевую передачу; не отправлять команды. Полный локальный пакет `MVKVIEW_STAGE70_EDIT_COMMIT_20261028.zip`.
+
