@@ -23,3 +23,10 @@
 
 ## Ограничение работы
 До отдельного решения пользователя **не запускать новую версию**, не подключаться к реальным МВК01. Анализировать сохранённые записи офлайн. Новые тесты и доказательства сохранять в GitHub.
+
+## CORRECTION 27.10.2026 — TCP/10230 calculated data already proven
+Previously 26.10 reverse engineered 4700-byte calculated frame on TCP/10230: 28-byte header, eight 584-byte per-ADC records; 43 third-octave values, 24 RMS, 24 equivalent peaks, 24 spans. Verified on 48 frames/384 channel records; see docs/FRAME_4700_MODBUS_MAPPING_20261026_RU.md and docs/FRAME_4700_REAL_RAW_REGRESSION_20261026_RU.md. TCP/10230 carries waveform AND calculated data. Port 502 is an ALTERNATIVE Modbus calculated/config reader, not the exclusive computed-data path. In the v0.3.40 UI calculated=502 reflects current implementation, not the packet format. P1.3 says 42 but Appendix 2 and real 4700 frame contain 43 slots (0.63-10000 Hz); whether first 0.63-Hz slot is reserved/unused remains unproven. Do not erase the 43rd slot. Detailed docs/STAGE13_TCP10230_CALCULATED_43_VS_42_RECONCILIATION_20261027_RU.md. Respect source priority and do not repeat settled work.
+
+
+## 27.10.2026 — приоритет MVK-LAB-06
+Получен и локально проверен полный исследовательский пакет MVK-LAB-06 (скрипт, отчёт, JSON). 12/12 selftest PASS, статические результаты сверены. Это теперь **основная экспериментальная реконструкция П1.4**; прежние fixed_band_normative.py, p14_two_spectrum.py и p12_p14_pipeline.py сохраняются как контрольные/вспомогательные. Коэффициенты 3000 Гц: энергии полос 3150/4000 с весами 0.40530224/0.10487199; это эмпирическая подгонка на приборе 83, а не доказанные заводские коэффициенты. НЕ утверждать метрологической аттестации, особенно ВС/ВП на 0.8/2 Гц. Обязательно независимое frozen-weights испытание на приборе №84 без повторной подгонки. Реестр и SHA256 исходников: docs/STAGE13_MVK_LAB06_PRIMARY_RECONSTRUCTION_REVIEW_20261027_RU.md. Три полных пользовательских артефакта остаются вложениями проекта, только реестр занесён в GitHub; не утверждать что полный код залит. Продакшн v0.3.40 не менять.

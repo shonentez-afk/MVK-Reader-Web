@@ -6,6 +6,8 @@
 |---|---|---|
 | `tools/tcp10230_passive_test/` | Подключение к TCP/10230 без прикладных команд, ограниченный приём | **Ожидает реального теста** |
 | `tools/modbus_calibration_test/` | Только FC03: считывание 17 групп калибровочных регистров | Реальные результаты по двум приборам получены ранее |
+| `tools/adc6_values_alignment/compare.py` | Offline временное сопоставление бинарного RMS с VALUES (1/2/4 с); без сети, параметры выравнивания явные | Создан, исходный расчёт выполнен локально; отдельный тест чистого Git checkout ещё не выполнен |
+| `tools/adc_filter_edge_audit/check.py` | Offline PSD weighting by Butterworth 10–3000 Hz to investigate filter rolloff, no network | Real ADC4/6 BIN processed locally; standalone GitHub checkout not yet tested |
 | `protocol/mvk_calibration.py` | Безсетевой CDAB float32 и преобразование raw*gain | Код опубликован, проверка в CI не настроена |
 | `protocol/test_mvk_calibration.py` | Модульные тесты декодирования коэффициентов | Есть в GitHub |
 | `MVK_Reader_Web/tests/` | Тесты основной программы предыдущих версий | Перенесены из исходного пакета |
@@ -21,3 +23,10 @@
 
 ## Внешние эталонные данные
 Реальные PCAPNG/BIN/TSXML и JSON опросов могут содержать технические данные предприятия. Не добавлять их целиком в Git без отдельного разрешения/обезличивания. Сохранять описание и SHA256 в `docs/CAPTURE_MANIFEST_TEMPLATE.csv`, сами файлы — в закрытом хранилище вне Git.
+
+| `tools/mvk_fixed_band_lab/` | Hann PSD + три зоны весовой энергии, только офлайн | Код и синтетические тесты опубликованы, запуск ещё не проверен |
+
+| `tools/mvk_fixed_band_lab/bin_hann_preflight.py` | Offline Welch Hann 1-Hz BIN diagnostics, compares spectral energy without vendor weights | Equivalent local analysis executed for ADC4/6; clean GitHub checkout not tested |
+
+| `tools/raw_offline_audit/test_4700_calculated.py` | Synthetic calculated frame 4700 tests | Added, execution pending |
+| `tools/raw_offline_audit/audit_4700_first_octave.py` | Offline inspect first 0.63-Hz and last 10000-Hz slots on existing RAW | Added, real-data execution pending |
