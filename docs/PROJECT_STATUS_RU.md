@@ -87,3 +87,7 @@
 
 ## Stage 80c (2026-10-28)
 Статически установлен источник `ViewedFileIsNormalized`: в `_Unit128.pas` при отсутствии положительного gain используется fallback по DefaultConfig и флаг 1, при положительном gain флаг 0. Флаг поступает в `_Unit115.pas:TMvkChannelStorage.ProcessBufferChunk` и определяет условное умножение float32 на FRange. Прямые 11/11 опор сверены с оригинальными листингами. Документ `docs/research/STAGE80C_BIN_NORMALIZATION_RU.md`, скрипт `tools/research/stage80c_verify_normalization.py`. Численную точность пока не считать доказанной. Далее Stage81 GetSpectrum/FFT.
+
+
+## Stage 81a — четыре режима GetSpectrum (2026-10-28)
+По оригинальному `_Unit115.pas` изучена `TMvkChannelStorage.GetSpectrum` (`0x007D13D4`). Проверены ветви `Params+0x18` с режимами 0–3: код 0 логарифм + коэффициент 10 и заглушка для неположительных значений; коды 1–3 используют `sqrt(value/2)` и масштабирование `FRange/Nbins`; коды 2 и 3 вызывают `0x007D2164` один и два раза соответственно. Предобработка `0x007D1FE8`, частота, отсечение начальных ячеек, выход `N/2` установлены статически. Названия физических величин и оконная нормировка ещё НЕ доказаны, численного сравнения нет. Отчёт `docs/research/STAGE81_SPECTRUM_MODES_RU.md`, скрипт `tools/research/stage81_verify_spectrum_modes.py` (17 статических опор). **Stage81b далее:** проследить `0x007D1FE8`, `0x007D2164`, `0x00447DB8`, константы и реальные BIN+TSXML для численного FFT. Не менять stable v0.3.40, не подключаться к приборам.
