@@ -1,0 +1,5 @@
+# Stage 77 — VALUES CSV header/row writing (2026-10-28)
+
+Verified directly against original `_Unit125.pas` (13/13 static anchors) and 3 real VALUES files. `0x00806334` emits `sep=|`, localized xTime, channel headings, and selected field titles from `TMvkCellList.GetTitle`. Header loops through 8 ADCs (three measurement list types) and two optional tachometers. `0x008066F0` emits time `hh:nn:ss.zzz` and selected values from `TMvkCellList.GetValueText`, pipe delimited. Calls to row writer at `0x008085BD` are gated by task 2 and packet address 0x3100, with ValuesFile open. Time is formed via PC-side function; not yet proven to be DSP measurement timestamp.
+
+Actual cp1251 files: 2026-10-27 10:34 ADC6: 124 data rows/74 columns; 2026-10-27 11:18 ADC4: 69/74; 2026-10-28 10:11 ADC1,3,6: 63/220. All line widths consistent, timestamps valid to milliseconds; cadence near 500 ms (some +/- 2 ms, one 518/482 ms pair). CSV has 3 header rows starting `sep=|`. The field selection UI persistence and all TABLE/TSXML paths remain open. Local full evidence `MVKVIEW_STAGE77_VALUES_CSV_20261028.zip`; no production files uploaded. v0.3.40 untouched.
