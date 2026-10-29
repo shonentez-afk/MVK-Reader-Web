@@ -1,3 +1,5 @@
+> **STAGE111H — ПОДТВЕРЖДЁННЫЙ ИССЛЕДОВАТЕЛЬСКИЙ QA (2026-10-29).** GitHub Actions [run #40866333812](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40866333812) **SUCCESS**, исходный проверенный SHA `537a61150ae5ee246ddadc2fdd0bc418e8a1276b`. Linux core **225/225 PASS**, Windows core **225/225 PASS**, Windows Qt **8/8 PASS**, PyInstaller Windows EXE и SHA256SUMS.txt **SUCCESS**. Артефакт `MVKViewCompatible_Stage111_Windows_Preview`, id **12894485971**, ZIP **66 491 098 байт**, срок до **12.11.2026 11:37:10 UTC**. Эти тесты синтетические и офлайн; оригинальный численный/визуальный Delphi-паритет и реальный прибор **НЕ** принимались. Оригинальные IDP/FIR/PCAP/BIN в GitHub и EXE отсутствуют; штатный DSP только AUX4700.
+
 # Stage 111H — GetNarrowbandValue, GetNoisePeak и независимое сравнение трёх полей Copy
 
 **Дата:** 29.10.2026. **Ветка:** `research/stage111-mvkview-desktop-20261029`. **Цель:** восстановить дополнительную численную функцию оригинальной MVKView и подготовить доказательную сверку показателей `GetSpectrum`. Программа — самостоятельный Windows Qt Desktop, без сервера. **Паритет Delphi не принят.**
