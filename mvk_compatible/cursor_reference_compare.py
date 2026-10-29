@@ -17,6 +17,7 @@ import numpy as np
 
 from .core.tqgrapher_multiseries_idr_candidate import original_multiseries_cursor
 from .core.tqgrapher_canvas_idr_candidate import source_canvas_geometry
+from .core.tqgrapher_crosshair_idr_candidate import original_cursor_crosshair
 
 REFERENCE_LIMIT=8192
 SERIES_LIMIT=2_500_000
@@ -56,6 +57,7 @@ def _canvas_from_metrics(raw: bytes) -> dict:
 
 def compare_cursor_candidate(candidate:dict, original_text:str, *,
                              original_line_pixel:int|None=None,
+                             original_horizontal_pixels:list[int]|tuple[int,...]|None=None,
                              confirm_same_canvas:bool=False)->dict:
     """Exact string comparison without writing actual values to report."""
     if not isinstance(confirm_same_canvas,bool):raise ValueError('Invalid confirmation')
@@ -76,6 +78,24 @@ def compare_cursor_candidate(candidate:dict, original_text:str, *,
             raise ValueError('Original native cursor line pixel must be integer')
         pixel_difference=(abs(candidate.get('snapped_vertical_pixel',-999999)-original_line_pixel)
                           if candidate.get('drawn') else None)
+    horizontal_errors=None
+    horizontal_pixel_exact_match=None
+    if original_horizontal_pixels is not None:
+        if (not isinstance(original_horizontal_pixels,(list,tuple))
+            or not 1<=len(original_horizontal_pixels)<=2
+            or any(not isinstance(p,int) or isinstance(p,bool)
+                   for p in original_horizontal_pixels)):
+            raise ValueError('One/two original native horizontal pixel integers required')
+        actual_y_pixels=candidate.get('horizontal_pixels')
+        if (not candidate.get('drawn') or not isinstance(actual_y_pixels,list)
+            or not all(isinstance(x,int) for x in actual_y_pixels)):
+            raise ValueError('Crosshair horizontal source candidate missing')
+        if len(actual_y_pixels)==len(original_horizontal_pixels):
+            horizontal_errors=[abs(a-b) for a,b in
+                               zip(actual_y_pixels,original_horizontal_pixels)]
+            horizontal_pixel_exact_match=all(d==0 for d in horizontal_errors)
+        else:
+            horizontal_pixel_exact_match=False
     return {
         'source':'LOCAL_ORIGINAL_TQGRAPHER_CURSOR_COMPARISON_CANDIDATE',
         'candidate_drawn':bool(candidate.get('drawn')),
@@ -86,6 +106,10 @@ def compare_cursor_candidate(candidate:dict, original_text:str, *,
         'per_line_equal':equal,
         'first_different_character_index':offset,
         'line_pixel_absolute_error':pixel_difference,
+        'horizontal_pixel_absolute_errors':horizontal_errors,
+        'horizontal_pixel_exact_match':horizontal_pixel_exact_match,
+        'horizontal_line_count_match':(None if original_horizontal_pixels is None
+            else horizontal_errors is not None),
         'operator_confirmed_same_canvas_and_archive':confirm_same_canvas,
         'original_delphi_rtl_parity_verified':False,
         'original_pixel_parity_verified':False,
@@ -102,6 +126,9 @@ def main(argv=None)->int:
     parser.add_argument('--reference',required=True,help='Private original cursor text .txt, CRLF preserved')
     parser.add_argument('--pixel',required=True,type=int,help='Native original absolute TCanvas integer CursorPos')
     parser.add_argument('--line-pixel',type=int,help='Original native CursorDrawnX integer')
+    parser.add_argument('--horizontal-pixels',help='One or two operator-measured CursorDrawnY, comma-separated; no auto-detect')
+    parser.add_argument('--y-scale0',type=float,default=1.,help='Original first series YScale')
+    parser.add_argument('--y-scale1',type=float,default=1.,help='Original second series YScale')
     parser.add_argument('--averaging',type=int,choices=[1,3],default=1)
     parser.add_argument('--no-precise',action='store_true')
     parser.add_argument('--x-name',default='Гц')
@@ -123,8 +150,20 @@ def main(argv=None)->int:
             precise=not args.no_precise,series1=series1,
             x_name=args.x_name,y_name=args.y_name,
             decimal_separator=args.decimal)
+        original_horizontal=None
+        if args.horizontal_pixels is not None:
+            tokens=args.horizontal_pixels.split(',')
+            if (not 1<=len(tokens)<=2 or
+                any(not tok or len(tok)>10 or not tok.lstrip('-').isdigit()
+                    for tok in tokens)):
+                raise ValueError('Use --horizontal-pixels N or N,M with native integer pixels')
+            original_horizontal=[int(tok) for tok in tokens]
+            crosshair=original_cursor_crosshair(
+                candidate,canvas,y_scale0=args.y_scale0,y_scale1=args.y_scale1)
+            candidate['horizontal_pixels']=crosshair.get('horizontal_pixels',[])
         result=compare_cursor_candidate(candidate,text,
             original_line_pixel=args.line_pixel,
+            original_horizontal_pixels=original_horizontal,
             confirm_same_canvas=args.confirm_same_canvas)
         result['metrics_sha256']=hashlib.sha256(metrics_raw).hexdigest()
         result['series0_sha256']=hash0
@@ -138,7 +177,8 @@ def main(argv=None)->int:
             path.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return (0 if (result['exact_cursor_string_equal'] and
-                      (result['line_pixel_absolute_error'] in (None,0))) else 1)
+                      (result['line_pixel_absolute_error'] in (None,0)) and
+                      (result['horizontal_pixel_exact_match'] in (None,True))) else 1)
     except (ValueError,TypeError,KeyError,UnicodeError,OSError,OverflowError) as exc:
         parser.exit(2,'Локальная сверка оригинального курсора отклонена: '+str(exc)+'\n')
 
