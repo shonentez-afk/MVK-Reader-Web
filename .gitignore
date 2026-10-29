@@ -25,3 +25,8 @@ signal_data/
 *.siupdate
 *.exe
 *.dmp
+
+# Stage111E: privately extracted FIR coefficient packs must not enter Git
+*.npz
+*.npy
+.private_envelope/
