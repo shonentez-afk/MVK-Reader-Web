@@ -42,3 +42,34 @@ def test_invalid_locale_rejected_instead_of_guess():
 def test_float32_source_is_explicit():
     x=np.float32(.125)
     assert fmt(float(x))=='0.125'
+
+
+def test_stage111k_source_dynamic_mask_007b2090_exact_number_of_digits():
+    from mvk_compatible.core.cursor_format_candidate import cursor_decimal_mask_candidate as mask
+    assert mask(12.25)['mask']=='0.00'
+    assert mask(0.125)['mask']=='0.0000'
+    assert mask(1000.25)['mask']=='0.'
+    assert mask(.000125)['mask']=='0.0000000'
+    assert mask(2.5,significant_digits=3)['mask']=='0.00'
+    assert mask(-2.5)['source_single']==float(np.float32(-2.5))
+    assert not mask(12.25)['original_delphi_rtl_verified']
+
+
+def test_stage111k_007b2090_zero_nan_and_smallest_single():
+    from mvk_compatible.core.cursor_format_candidate import cursor_decimal_mask_candidate as mask
+    assert mask(0.)['special']=='ZERO'
+    assert mask(-0.)['special']=='ZERO'
+    assert mask(float('nan'))['special']=='NAN'
+    smallest=float(np.nextafter(np.float32(0),np.float32(1)))
+    d=mask(smallest)
+    assert 40<d['decimal_places']<60
+    assert d['mask']=='0.'+'0'*d['decimal_places']
+
+
+def test_stage111k_formatting_and_pattern_are_separate_parity_claims():
+    from mvk_compatible.core.cursor_format_candidate import cursor_decimal_mask_candidate as mask
+    m=mask(12.25,decimal_separator=',')
+    assert m['mask']=='0.00'  # Delphi FormatFloat mask is locale-independent.
+    assert fmt(12.25,decimal_separator=',')=='12,25'
+    assert m['decimal_separator']==','
+    assert m['original_delphi_rtl_verified'] is False
