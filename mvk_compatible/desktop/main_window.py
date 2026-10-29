@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
 from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
+from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
 
@@ -220,9 +221,17 @@ class MainWindow(QMainWindow):
         self.spec_envelope_button.setObjectName('bSpecEnvelopeType')
         self.spec_envelope_button.setFixedHeight(41)
         self.spec_envelope_button.setEnabled(False)
+        self.spec_envelope_button.setCheckable(True)
         self.spec_envelope_button.setToolTip(
-            'Точная огибающая требует оригинальных коэффициентов; пока доступна только отдельная локальная исследовательская функция')
+            'Включить исследовательский GetSpectrum после локальной проверки IDP; не эквивалент original MVKView')
         stack.addWidget(self.spec_envelope_button)
+        self.spec_envelope_code=QComboBox()
+        self.spec_envelope_code.addItem('Код не выбран',0)
+        for code in range(1,32):
+            self.spec_envelope_code.addItem(f'Код {code} · IDR огибающая',code)
+        self.spec_envelope_code.setEnabled(False)
+        self.spec_envelope_code.setToolTip('Исходные коды 1..31, только с проверенным локальным mvkview.idp')
+        stack.addWidget(self.spec_envelope_code)
 
         self.spec_mode=QComboBox()
         self.spec_mode.setObjectName('bSpecType')
@@ -308,10 +317,10 @@ class MainWindow(QMainWindow):
         reload=QPushButton('Обновить спектр')
         reload.clicked.connect(self.refresh_spec)
         stack.addWidget(reload)
-        compare=QPushButton('Сравнить FFT')
-        compare.setToolTip('IDR float32 vs NumPy; НЕ эталонный Delphi')
-        compare.clicked.connect(self.compare_fft)
-        stack.addWidget(compare)
+        self.spec_compare_button=QPushButton('Сравнить FFT')
+        self.spec_compare_button.setToolTip('IDR float32 vs NumPy; НЕ эталонный Delphi')
+        self.spec_compare_button.clicked.connect(self.compare_fft)
+        stack.addWidget(self.spec_compare_button)
         reset=QPushButton('Сбросить масштаб')
         reset.clicked.connect(self.refresh_spec)
         stack.addWidget(reset)
@@ -358,6 +367,8 @@ class MainWindow(QMainWindow):
         self.spec_backend.currentIndexChanged.connect(self.refresh_spec)
         self.spec_last.toggled.connect(self.refresh_spec)
         self.spec_hz.editingFinished.connect(self.refresh_spec)
+        self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
+        self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
 
     def _spec_scroll_changed(self,axis:int,value:int):
         if self._full_spectrum is None:return
@@ -388,6 +399,45 @@ class MainWindow(QMainWindow):
                 bar.setValue(max(0,min(1000,round((lo-full[0])/remaining*1000))))
                 bar.setPageStep(max(1,min(1000,round(span/(full[1]-full[0])*1000))))
             bar.blockSignals(False)
+
+    def _spec_envelope_code_changed(self,*_):
+        if self.spec_envelope_button.isChecked():
+            self._toggle_spec_envelope(True)
+
+    def _toggle_spec_envelope(self,checked):
+        if checked and self.envelope_profile is None:
+            self.spec_envelope_button.blockSignals(True)
+            self.spec_envelope_button.setChecked(False)
+            self.spec_envelope_button.blockSignals(False)
+            self.statusBar().showMessage('Для спектра огибающей нужно выбрать собственный оригинальный IDP')
+            return
+        self.spec_compare_button.setEnabled(not checked)
+        if checked and self.session is not None:
+            try:
+                code=int(self.spec_envelope_code.currentData() or 0)
+                if not code:raise ValueError('Выберите код огибающей 1..31')
+                samples,fs,_,_=self.session.samples(self._ch())
+                valid=[]
+                for i in range(self.spec_n.count()):
+                    n=int(self.spec_n.itemText(i))
+                    try:
+                        plan=required_original_history(n,int(fs),code)
+                        if plan['input_samples']<=len(samples):
+                            valid.append(n)
+                    except ValueError:continue
+                if not valid:raise ValueError('Для такого кода огибающей недостаточно исходной истории BIN')
+                if int(self.spec_n.currentText()) not in valid:
+                    # Do not alter source samples; pick the largest exact N
+                    self.spec_n.setCurrentText(str(max(valid)))
+                    self.statusBar().showMessage('FFT N уменьшен до размера с полной исходной FIR-историей')
+            except (ValueError,OSError,KeyError) as e:
+                self.spec_envelope_button.blockSignals(True)
+                self.spec_envelope_button.setChecked(False)
+                self.spec_envelope_button.blockSignals(False)
+                self.spec_compare_button.setEnabled(True)
+                self.statusBar().showMessage(str(e))
+                return
+        self.refresh_spec()
 
     def _change_spectrum_mode(self,*_):
         self.spec_avg.setCurrentIndex(0 if self.spec_mode.currentIndex()==0 else 1)
@@ -494,6 +544,11 @@ class MainWindow(QMainWindow):
             raise ValueError('Expected verified local EnvelopeProfile')
         self.envelope_profile=profile
         self.wave_envelope_code.setEnabled(True)
+        self.spec_envelope_button.setEnabled(True)
+        self.spec_envelope_button.setText('Огибающая IDR (эксперимент)')
+        self.spec_envelope_code.setEnabled(True)
+        if self.spec_envelope_code.currentIndex()==0:
+            self.spec_envelope_code.setCurrentIndex(20)
         self.wave_envelope_load.setText('Локальные коэффициенты готовы (только этот запуск)')
         self.wave_hint.setText(
             'Огибающая доступна только по исходному IDR профилю; '
@@ -550,9 +605,21 @@ class MainWindow(QMainWindow):
             n_fft=int(self.spec_n.currentText())
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
-            d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
-                                    start,max_hz=1e9,max_points=n_fft//2,
-                                    backend=self._fft_backend())
+            if self.spec_envelope_button.isChecked():
+                if self.envelope_profile is None:
+                    raise ValueError('Для спектра огибающей требуется локальный mvkview.idp')
+                code=int(self.spec_envelope_code.currentData() or 0)
+                # Explicit archive-end choice; original Delphi pointer parity unknown.
+                end_s=None if self.spec_last.isChecked() else (
+                    self.wave_start.value()+self.wave_seconds.value())
+                d=self.session.spectrum_envelope(self._ch(),code,n_fft,
+                       self.envelope_profile,end_s=end_s,
+                       mode=self.spec_mode.currentIndex(),
+                       backend=self._fft_backend(),f_range=1.)
+            else:
+                d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
+                                        start,max_hz=1e9,max_points=n_fft//2,
+                                        backend=self._fft_backend())
             if len(d['amplitude'])!=n_fft//2:
                 raise ValueError('Пиксельный курсор требует все N/2 FFT-бинов')
             self._full_spectrum=d
@@ -574,11 +641,17 @@ class MainWindow(QMainWindow):
             self._sync_spec_scroll()
             self.spec_mean.setText(
                 f"Локальный FFT (не DSP)\ndf={d['df_hz']:.6g} Гц\n"
-                f"N/2={len(xx)} бинов\nБез огибающей")
+                f"N/2={len(xx)} бинов\n"
+                + ("IDR огибающая, исходные коэффициенты локально"
+                   if self.spec_envelope_button.isChecked()
+                   else "Без огибающей"))
             self.spec_hint.setText(
                 f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
-                f"df={d['df_hz']:.7g} Гц · среднее DC {d['removed_mean_m_s2']:.6g} м/с² · "
-                "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
+                f"df={d['df_hz']:.7g} Гц · среднее DC "
+                f"{d.get('raw_mean_removed_m_s2',d.get('removed_mean_m_s2',0.)):.6g} м/с² · "
+                + ("после FIR повторного DC нет · "
+                   if self.spec_envelope_button.isChecked() else "")
+                + "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
         except (OSError,KeyError,ValueError) as e:
             self._full_spectrum=None
             self._error(e)
