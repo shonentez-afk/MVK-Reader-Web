@@ -3,13 +3,24 @@ import os
 import pytest
 
 
-def test_desktop_three_tabs_without_server():
+@pytest.fixture(scope='module')
+def qt_app():
+    """Single QApplication lifetime across tests; avoid PySide6 Windows teardown race."""
     pytest.importorskip('PySide6')
     pytest.importorskip('pyqtgraph')
     os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
     from PySide6.QtWidgets import QApplication
-    from mvk_compatible.desktop.main_window import MainWindow
     app=QApplication.instance() or QApplication([])
+    app.setQuitOnLastWindowClosed(False)
+    yield app
+    app.processEvents()
+    app.quit()
+    app.processEvents()
+
+
+def test_desktop_three_tabs_without_server(qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    app=qt_app
     window=MainWindow()
     assert window.tabs.count()==3
     assert [window.tabs.tabText(i) for i in range(3)]==[
@@ -24,14 +35,10 @@ def test_desktop_three_tabs_without_server():
     window.close()
     app.processEvents()
 
-def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path):
-    pytest.importorskip('PySide6')
-    pytest.importorskip('pyqtgraph')
-    os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-    from PySide6.QtWidgets import QApplication
+def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path,qt_app):
     from mvk_compatible.desktop.main_window import MainWindow
     from .test_offline_core import fixture_zip
-    app=QApplication.instance() or QApplication([])
+    app=qt_app
     window=MainWindow()
     file=fixture_zip(tmp_path)
     window.open_archive(file)
