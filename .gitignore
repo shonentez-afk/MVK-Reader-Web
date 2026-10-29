@@ -13,3 +13,15 @@ __pycache__/
 results/
 captures/
 signal_data/
+
+# Stage111: original proprietary sources and industrial recordings must stay private
+*.raw
+*.tsxml
+*.pcap
+*.7z
+*.idp
+*.dfm
+*.pas
+*.siupdate
+*.exe
+*.dmp
