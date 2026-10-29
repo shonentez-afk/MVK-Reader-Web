@@ -1,6 +1,6 @@
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
-**Дата:** 29.10.2026. **Состояние:** Stage111D TQGrapher PIXEL CURSOR CANDIDATE (Stage111B FFT, Stage111C GetSignal сохраняются), не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
+**Дата:** 29.10.2026. **Состояние:** Stage111E ORIGINAL ENVELOPE FIR + DFM Spectrum + Formatter CANDIDATE. Источник штатных DSP всегда AUX4700; оригинальная побитовая приёмка ещё НЕ закрыта., не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
 
 ## Ключ к статусам
 - **SOURCE_VERIFIED** — оригинальный приборный источник подтверждён Stage109, значения реально получены; не означает, что все элементы GUI совпадают.
@@ -48,7 +48,7 @@
 | `bAdcHScale`/`bAdcVScale`/zoom/scroll | CANDIDATE | Qt масштаб доступен, поведение Delphi не доказано |
 | `TQGrapher.UpdateCursor` и точная выборка | CANDIDATE | Точный sample индекс/значение и переключение хронология BIN / реверс GetSignal; **ориентация оригинальной абсциссы и формат CursorString не подтверждены** |
 | Временное окно, перемещение по записи | IMPLEMENTED_TESTED | Начало и длительность, нет полной навигации GUI |
-| `bAdcEnvelopeType`, `GetAdjustedEnvelopeLength` | TODO | Выявлены таблицы коэффициентов `8CDA58` и квадратурная свёртка `007D1E70`, но коэффициенты и эталон не получены; код явно отвергает `envelope_code>0` вместо имитации |
+| `bAdcEnvelopeType`, `GetAdjustedEnvelopeLength` | CANDIDATE + IMPLEMENTED_TESTED | Stage111E: найдены оригинальные таблицы 8CD980/8D2A58/8CDA00/8CDA2C и 10×512 коэффициентов 8CDA58 в **приватном IDP**, реализованы IDR FIR/декмация/I-Q и выбор 31 кодов после локальной SHA-проверки; реальный эталон Delphi/окно/FRange ещё не подтверждены |
 | Цвета, подписи, СКЗ/среднее и копирование | CANDIDATE + IMPLEMENTED_TESTED | Stage111C: `OutputMean` по оригинальному `GetSignal` фактически СКЗ окна; фиксируем отдельно от DSP/прибора. Оригинальные оси/цвета/экспорт TODO |
 | Live/Archive переключение | TODO | Сейчас только завершённый архив ZIP |
 
@@ -67,11 +67,11 @@
 | FFT IDR float32 / NumPy — два отдельных кандидата | IMPLEMENTED_TESTED | Qt переключатель, сравнение, exact cursor в выбранном backend; не оригинальный DSP |
 | Исключение Nyquist `N/2` | IMPLEMENTED_TESTED | В Stage111A исправлено по Stage81d/110B |
 | `bSpecLines`, частотное разрешение | CANDIDATE | N/df уже есть, оригинальные пресеты надо сверять |
-| `bSpecHScale`/`bSpecVScale`, скроллбары | CANDIDATE | Qt zoom/pan меняет pixel→FFT отображение в реальном времени; пределы и жесты оригинала TQGrapher ещё не сверены |
+| `bSpecHScale`/`bSpecVScale`, скроллбары | CANDIDATE + IMPLEMENTED_TESTED | Stage111E: реальные Qt кнопки масштаба и синхронные H/V QScrollBar 24px по оригинальному DFM, видимость при увеличении, функциональная регрессия; точные Delphi пределы не подтверждены |
 | Пиксельный курсор `TQGrapher.UpdateCursor` | CANDIDATE + IMPLEMENTED_TESTED | Stage111D: `Trunc` pixel→index, **signed maximum по диапазону одного пикселя**, 1/3 усреднение `sqrt(sum squares)` без /3, снап к исходному непрореженному FFT-бину; оригинальное форматирование/geometry ещё TODO |
-| `bSpecEnvelopeType`, спектральные фильтры | TODO | Нужны оригинальные обработчики |
-| `bSpecCopyValue`/`bSpecSaveValue` | TODO | Полный `CursorString`/форматирование `007B2090` и таб-разделители оригинала не подтверждены; не подменять их приближённым копированием |
-| Оригинальные подписи/сетка/логарифмическая ось | TODO | Нужны скриншоты / TQGrapher handlers |
+| `bSpecEnvelopeType`, спектральные фильтры | TODO | Stage111E восстановлена отдельная исходная FIR/IQ цепь огибающей GetSignal; для **спектра** она пока намеренно выключена до сверки original GetSpectrum по тому же BIN и коду |
+| `bSpecCopyValue`/`bSpecSaveValue` | TODO + FORMAT_CANDIDATE_TESTED | Stage111E кандидат числового `007B2090` и TFormatSettings для отображения (без гарантии x87/RTL), настоящие Copy/Save остались отключены до проверки оригинального табличного экспорта |
+| Оригинальные подписи/сетка/логарифмическая ось | CANDIDATE + LAYOUT_IMPLEMENTED_TESTED | Stage111E структура Spectrum: pnSpecTools 177px, оригинальный порядок девяти органов, верхний/правый скроллбар 24px; внешний вид, локализация и точная шкала всё ещё требуют скриншотов |
 
 ## Обязательная последовательность приёмки
 1. Проверить Windows Preview, безопасность локального чтения и целостность реального *частного* экспортного ZIP (файлы не публиковать).
