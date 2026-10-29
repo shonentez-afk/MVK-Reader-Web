@@ -299,18 +299,21 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     x=np.asarray(samples[start:start+n_fft],dtype=np.float64)
     idx=np.arange(n_fft,dtype=np.float64)
     window=(1.0-np.cos(2.0*np.pi*idx/n_fft))/np.sqrt(1.5)
-    power=np.abs(np.fft.rfft(x*window))**2
-    freq=np.fft.rfftfreq(n_fft,1/fs)
-    # Candidate linear mode from Stage81c: sqrt(P/2) * (2/N).
+    # Stage81d / Stage110B: GetSpectrum emits N/2 bins, excluding Nyquist.
+    power=np.abs(np.fft.rfft(x*window)[:n_fft//2])**2
+    power[0]=0.0
+    freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
+    # Stage81c: Hann RMS; Mode1 candidate sqrt(P/2)*(2/N).
     amp=np.sqrt(power/2.0)*(2.0/n_fft)
     amp[0]=0
     if mode==0:
-        # Exact desktop log helper 0x00447DB8 and reference are not yet proven.
-        y=np.full_like(amp,-180.0)
-        positive=amp>0
-        y[positive]=20*np.log10(amp[positive])
-        unit='дБ, кандидатная шкала отн. 1 м/с²'
-        note='НЕ эквивалент MVKView: log helper и опорный уровень не подтверждены; отдельный кандидат'
+        # Original IDR 0x007D15DD: 10*(fn(P)-2*fn(N/2)).
+        # Base-10 fn helper 0x00447DB8 is not independently proven.
+        y=np.full_like(power,-180.0)
+        positive=power>0
+        y[positive]=10*(np.log10(power[positive])-2*np.log10(n_fft//2))
+        unit='дБ (предполагается log10; требует сверки с MVKView)'
+        note='Кандидат по оригинальному IDR: 10*(fn(P)-2*fn(N/2)), P<=0 -> -180 дБ; fn=log10 ещё не доказано по телу 0x00447DB8'
     else:
         if mode==1:
             y=amp
