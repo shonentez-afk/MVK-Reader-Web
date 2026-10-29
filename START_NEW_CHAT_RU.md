@@ -1,3 +1,9 @@
+# ВАЖНО — актуальный старт проекта: STAGE 111 (2026-10-29)
+
+**Текущая ветка:** `research/stage111-mvkview-desktop-20261029`. **Изменение направления принято пользователем:** разработать полный проверяемый аналог оригинальной MVKView как единую Qt Desktop-программу, оставить Web факультативным адаптером, заморозить v0.3.40. **Прежде всего читать:** `docs/ADR_2026_10_29_STAGE111_MVKVIEW_COMPATIBILITY_FIRST_RU.md`, `docs/ADR_2026_10_29_ORIGINAL_MVK_DSP_DATA_SOURCE_RU.md`, `docs/research/STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md`, `mvk_compatible/README_RU.md`. В Stage111 уже есть код, тесты и Windows Qt CI. Текст Stage109/110 ниже — историческая документация, а не новое направление. Не изменять `main`/v0.3.40 и не подключаться к прибору без разрешения.
+
+---
+
 # MVK Reader Web — начать новый чат (актуально 2026-10-29, Stage109)
 
 
