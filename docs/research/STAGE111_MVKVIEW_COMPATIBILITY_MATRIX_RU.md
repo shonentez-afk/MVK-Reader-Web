@@ -1,3 +1,5 @@
+> **АКТУАЛЬНО Stage111O (29.10.2026).** Linux/Windows Qt/Windows EXE для программного SHA `aa3a0dd0a11e9821dfbfd350f16dfbb8bcc19fde` подтверждены SUCCESS CircleCI jobs [#30](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/30) / [#31](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/31) / [#32](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/32). Source-verified Delphi MouseMove обеих вкладок и X dedup реализованы в native Qt, но Canvas/x87/GDI XOR и original FFT parity не приняты. [Отчёт](STAGE111O_ORIGINAL_MOUSEMOVE_CURSOR_RU.md) и [общий статус](STAGE111_CURRENT_STATUS_RU.md).
+
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
 **Дата:** 29.10.2026. **Состояние:** Stage111N signed ScrWidth/source Single/Canvas-DPI private sweep IMPLEMENTED_TESTED (новый CI PENDING), Stage111M source-verified TQGrapher horizontal Crosshair Y independent from averaged cursor label; private 1/2-line pixel reference comparator, offline CI 368 Linux/368 Windows/14 Qt PASS; исходный пиксельный/RTL паритет оригинальной MVKView НЕ принят. Численная/побитовая приёмка оригинальной MVKView ещё НЕ закрыта; это не релиз MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
@@ -161,3 +163,19 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | GitHub Actions push (research ветка) | DISABLED AUTOMATIC, MANUAL AVAILABLE | workflow_dispatch сохранён; причина Stage111N не выделялись runners |
 
 [CircleCI handoff](STAGE111N_CIRCLECI_FALLBACK_RU.md). Исходная Delphi parity по-прежнему НЕ принята.
+
+
+## Stage111O — восстановление оригинального MouseMove
+
+| Элемент | Статус | Подтверждение / ограничение |
+|---|---|---|
+| `pbAdcMouseMove` | SOURCE_VERIFIED + IMPLEMENTED_TESTED | `_Unit128:0084B4AC`, текущая вкладка «Временной сигнал» использует Qt sigMouseMoved; временная ось оригинала не сверена |
+| `pbSpectrumMouseMove` | SOURCE_VERIFIED + IMPLEMENTED_TESTED | `_Unit128:0084C918`, Qt обновляет полную FFT-серию при движении X, без клика |
+| Пропуск повторного целого X | SOURCE_VERIFIED + IMPLEMENTED_TESTED | `_Unit115:007CA75C`, отдельные Qt-координаты, но не настоящий PixelLeft/Right Delphi |
+| Оригинальный GDI XOR / clGreen | SOURCE_VERIFIED STRUCTURE, PIXEL PARITY TODO | `_Unit115:007CA793–7B0`: цвет 0x00008000, pmXor=14, восстановление pmCopy=4; Qt InfiniteLine не соответствует оригинальному пиксельному результату |
+| Кэш Time GetSignal | IMPLEMENTED_TESTED CANDIDATE | Без повторного чтения ZIP каждый пиксель; AC/AC+DC/reversed; входная ориентация оригинального TQGrapher не доказана |
+| Неподтверждённая огибающая / 2 ряда | FAIL-CLOSED / TODO | Без фантомного второго ряда, без подмены FIR/OG |
+| CI Stage111N | VERIFIED SYNTHETIC | Код 11f022925a407495d7bf4b3b7dcb94b21afe7ced, CircleCI [Linux #15](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/15), [Windows/Qt #16](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/16), [EXE #17](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/17): SUCCESS |
+| CI Stage111O | VERIFIED SYNTHETIC | Код aa3a0dd0a11e9821dfbfd350f16dfbb8bcc19fde, CircleCI [Linux #30](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/30), [Windows/Qt #31](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/31), [EXE #32](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/32): SUCCESS |
+
+**Не закрыто:** настоящий Delphi FormatFloat/RTL/x87, Font/DPI, Canvas, оригинальные BIN/FFT/спектральные показатели на одном окне и пользовательская приёмка. [Stage111O](STAGE111O_ORIGINAL_MOUSEMOVE_CURSOR_RU.md).

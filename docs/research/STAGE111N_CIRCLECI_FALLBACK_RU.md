@@ -32,3 +32,7 @@ YAML успешно прочитан PyYAML, локально проверены
 Продолжить Stage111N/111O только после подтверждённого CI. Delphi Font/DPI/Canvas, CursorString, RTL/x87, FFT/GetSpectrum/GetNarrowbandValue/FRange и полное воспроизведение вкладок остаются незакрытыми. Проверенные Stage111M Actions 40900170911 (368 Linux / 368 Windows / 14 Qt / EXE) относятся **только к старому программному SHA** `ba5efaf3e868365a58edaa828bdfbb7953f45fdd`.
 
 CircleCI Windows допускается в выбранном плане/лимитах; фактическую доступность и расход ресурсов проверить в CircleCI, не предполагать заранее.
+
+
+## Проверенная CircleCI-приёмка Stage111N (29.10.2026)
+Программный SHA `11f022925a407495d7bf4b3b7dcb94b21afe7ced`: [Linux Core #15](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/15) **SUCCESS**, [Windows Core/Qt #16](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/16) **SUCCESS**, [Windows EXE #17](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/17) **SUCCESS**. Предыдущие runner=0 в GitHub Actions — исторический блокер, не ошибка текущего CircleCI. Qt и Linux работают в независимых заданиях; EXE бинарную контрольную сумму отдельно ещё не скачивали. [Полный протокол](STAGE111N_CIRCLECI_ACCEPTANCE_RU.md). Синтетические тесты НЕ доказывают Delphi численную/пиксельную идентичность.
