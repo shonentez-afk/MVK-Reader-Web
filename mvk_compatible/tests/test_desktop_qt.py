@@ -369,3 +369,57 @@ def test_qt_stage111i_compares_local_original_clipboard_without_remote_or_raw_du
     assert private.is_file()
     window.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111j_original_spectrum_visible_series_and_cursor_text(tmp_path,qt_app):
+    import numpy as np
+    import pytest
+    from PySide6.QtCore import Qt,QPointF
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    win.spec_mode.setCurrentIndex(1)
+    win.spec_hz.setValue(32768.)
+    win.refresh_spec()
+    qt_app.processEvents()
+    original_dsp=win.session.calculations()
+    n=int(win.spec_n.currentText())
+    original_size=int((n//2)/1.28)
+    assert win._full_spectrum['grapher_series_bins']==original_size
+    assert win._spec_display_contract['full_fft_power_bins']==n//2
+    assert len(win._full_spectrum['amplitude'])==n//2
+    assert len(win.spec_plot.listDataItems())==1
+    assert len(win.spec_plot.listDataItems()[0].xData)==original_size
+    assert win._spec_visible_max_hz==pytest.approx((original_size-1)*65536/n)
+    assert 'TQGRSeries=' in win.spec_hint.text()
+    base=np.asarray(win._full_spectrum['amplitude'])
+    peak=int(np.argmax(base))
+    assert base[peak]>0
+    assert win.spec_input_domain.currentData()=='calibrated_bin'
+    win.spec_f_range.setValue(4.)
+    win.spec_input_domain.setCurrentIndex(1)
+    win.refresh_spec()
+    qt_app.processEvents()
+    changed=win._full_spectrum
+    assert changed['input_domain']=='original_float_storage'
+    assert changed['original_storage_read_divided_by_range']
+    assert changed['original_source_buffer_provenance_verified'] is False
+    assert changed['amplitude'][peak]==pytest.approx(base[peak],rel=1e-4)
+    assert win.session.calculations()==original_dsp
+    vb=win.spec_plot.getViewBox()
+    rect=vb.sceneBoundingRect()
+    class LeftClick:
+        def button(self):return Qt.LeftButton
+        def scenePos(self):return QPointF(rect.left()+rect.width()*.3,
+                                         rect.center().y())
+    win._spec_click(LeftClick())
+    assert 'CursorString IDR-кандидат' in win.spec_hint.text()
+    assert 'snap=' in win.spec_hint.text()
+    assert 'Гц' in win.spec_hint.text()
+    assert 'кандидат' in win.spec_hint.text()
+    win.close()
+    qt_app.processEvents()
