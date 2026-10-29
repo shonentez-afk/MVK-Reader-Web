@@ -22,6 +22,7 @@ from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,appe
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
+from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 
 
 class MainWindow(QMainWindow):
@@ -32,6 +33,9 @@ class MainWindow(QMainWindow):
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
         self._spec_last_cursor=None
+        self._spec_mouse_pixel=None  # Native UpdateCursor ignores unchanged integer X
+        self._wave_mouse_pixel=None
+        self._wave_hover_window=None  # Lazy, one offline BIN read per displayed window
         self._full_spectrum=None
         self._spectrum_summary=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
@@ -195,8 +199,9 @@ class MainWindow(QMainWindow):
         lay.addLayout(envbar)
         self.wave_plot=self._plot('Время, с','Ускорение, м/с²')
         self.wave_plot.scene().sigMouseClicked.connect(self._wave_click)
+        self.wave_plot.scene().sigMouseMoved.connect(self._wave_mouse_move)
         lay.addWidget(self.wave_plot,1)
-        self.wave_hint=QLabel('AC/AC+DC по GetSignal; огибающая не поддерживается до восстановления коэффициентов. Нажмите для точного отсчёта.')
+        self.wave_hint=QLabel('AC/AC+DC по GetSignal; ведите мышью по графику для точного отсчёта (Qt-кандидат).')
         self.wave_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
         lay.addWidget(self.wave_hint)
 
@@ -407,6 +412,7 @@ class MainWindow(QMainWindow):
         self.spec_plot=self._plot('Частота, Гц','Амплитуда')
         self.spec_plot.setObjectName('pbSpectrum')
         self.spec_plot.scene().sigMouseClicked.connect(self._spec_click)
+        self.spec_plot.scene().sigMouseMoved.connect(self._spec_mouse_move)
         chart.addWidget(self.spec_plot,1)
         self.spec_vscroll=QScrollBar(Qt.Vertical)
         self.spec_vscroll.setObjectName('sbSpecVScroll')
@@ -653,7 +659,10 @@ class MainWindow(QMainWindow):
             self.wave_plot.clear()
             self.wave_plot.plot(d['time_s'],d['amplitude'],pen=pg.mkPen('#176c92'))
             self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
+            self.wave_line.setVisible(False)  # Source cursor drawn only after mouse X changes
             self.wave_plot.addItem(self.wave_line)
+            self._wave_hover_window=None
+            self._wave_mouse_pixel=None
             self.wave_plot.enableAutoRange()
             self.wave_hint.setText(descr)
         except (OSError,KeyError,ValueError) as e:self._error(e)
@@ -716,6 +725,7 @@ class MainWindow(QMainWindow):
             self.spec_hline.setVisible(False)  # Original source draws after the cursor is moved
             self.spec_plot.addItem(self.spec_hline)
             self._spec_last_cursor=None
+            self._spec_mouse_pixel=None
             self.spec_plot.setLabel('left',d['unit'])
             self._spec_data_ymin=float(np.min(yy[visible])) if np.any(visible) else 0.
             self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
@@ -759,50 +769,87 @@ class MainWindow(QMainWindow):
             self.spec_canvas_geometry_button.setEnabled(False)
             self._error(e)
 
-    @staticmethod
-    def _clicked_x(plot,event):
-        if event.button()!=Qt.LeftButton or not plot.sceneBoundingRect().contains(event.scenePos()):
-            return None
-        return float(plot.getViewBox().mapSceneToView(event.scenePos()).x())
-
     def _wave_click(self,event):
-        if not self.session:return
-        if self.wave_envelope_code.currentData():
-            self.statusBar().showMessage('Точный курсор исходной огибающей не принят: показана относительная позиция буфера')
+        """Keep explicit click support; original Delphi also uses MouseMove."""
+        if event.button()==Qt.LeftButton:
+            self._wave_at_scene_pos(event.scenePos(),force=True)
+
+    def _wave_mouse_move(self,scene_pos):
+        """Original _Unit128:0084B4AC forwards mouse X, not button or Y."""
+        self._wave_at_scene_pos(scene_pos,force=False)
+
+    def _wave_at_scene_pos(self,pos,*,force=False):
+        if not self.session or self.wave_line is None or not isinstance(pos,QPointF):
             return
-        x=self._clicked_x(self.wave_plot,event)
-        if x is None:return
         try:
-            mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
-            order=self._signal_order()
-            p=self.session.exact_sample(self._ch(),x,self.wave_start.value(),
-                                        self.wave_seconds.value(),mode,order)
+            vb=self.wave_plot.getViewBox()
+            rect=vb.sceneBoundingRect()
+            pixel=math.trunc(pos.x()-rect.left())
+            # Source _Unit115:007CA75C returns immediately on unchanged X.
+            # This is a Qt plot-local pixel, NOT yet original TPaintBox.X.
+            if not force and pixel==self._wave_mouse_pixel:
+                return
+            self._wave_mouse_pixel=pixel
+            if rect.width()<=2 or not 0<pixel<rect.width():
+                self.wave_line.setVisible(False)
+                self.wave_hint.setText(
+                    'CursorString: — (курсор вне временного графика; Qt-кандидат)')
+                return
+            if self.wave_envelope_code.currentData():
+                self.wave_line.setVisible(False)
+                self.statusBar().showMessage(
+                    'Исходный курсор огибающей TQGrapher ещё не принят')
+                return
+            if self._wave_hover_window is None:
+                # Do not re-read the complete ZIP and recompute GetSignal at
+                # every mouse event; retain the exact existing sample candidate.
+                self._wave_hover_window=prepare_waveform_hover_window(
+                    self.session,self._ch(),start_s=self.wave_start.value(),
+                    seconds=self.wave_seconds.value(),
+                    mode=('ac' if self.wave_mode.currentIndex()==0 else 'acdc'),
+                    display_order=self._signal_order())
+            x=float(vb.mapSceneToView(pos).x())
+            p=self._wave_hover_window.pick(x)
             self.wave_line.setPos(p['time_s'])
-            self.wave_hint.setText(f"GetSignal[{p['display_index']}] → BIN[{p['index']}]"
+            self.wave_line.setVisible(True)
+            self.wave_hint.setText(
+                f"GetSignal[{p['display_index']}] → BIN[{p['index']}]"
                 f" · физическое время BIN {p['original_sample_time_s']:.8f} c"
-                f" · {p['value_m_s2']:.8g} м/с² · {mode}"
-                " · координаты оригинального TQGrapher не сверены")
-        except (OSError,KeyError,ValueError) as e:self.statusBar().showMessage(str(e))
+                f" · {p['value_m_s2']:.8g} м/с² · {p['mode']}"
+                ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены')
+        except (OSError,KeyError,TypeError,ValueError,RuntimeError) as exc:
+            self.statusBar().showMessage(str(exc))
 
     def _spec_click(self,event):
-        if not self.session or self._full_spectrum is None:return
-        if event.button()!=Qt.LeftButton:return
+        if event.button()==Qt.LeftButton:
+            self._spec_at_scene_pos(event.scenePos(),force=True)
+
+    def _spec_mouse_move(self,scene_pos):
+        """Original _Unit128:0084C918 forwards mouse X to UpdateCursor."""
+        self._spec_at_scene_pos(scene_pos,force=False)
+
+    def _spec_at_scene_pos(self,pos,*,force=False):
+        if not self.session or self._full_spectrum is None or not isinstance(pos,QPointF):
+            return
         try:
             vb=self.spec_plot.getViewBox()
             rect=vb.sceneBoundingRect()
-            pos=event.scenePos()
-            if not rect.contains(pos):
-                # Original 007CA811..007CA832 clears CursorString and
-                # erases prior X plus both per-series horizontal cursor lines.
+            pixel_native=math.trunc(pos.x()-rect.left())
+            # Only X is relevant to original 007CA811..007CA832; Y is ignored.
+            if not force and pixel_native==self._spec_mouse_pixel:
+                return
+            self._spec_mouse_pixel=pixel_native
+            if rect.width()<=2 or not 0<pixel_native<rect.width():
+                # Original erases previous X and each active series' Y line
+                # and clears CursorString when CursorPos is out of bounds.
                 if self.spec_line:self.spec_line.setVisible(False)
                 if self.spec_hline:self.spec_hline.setVisible(False)
                 self._spec_last_cursor=None
                 self.spec_hint.setText(
                     'CursorString: — (курсор вне области графика; original IDR candidate)')
                 return
-            if rect.width()<=2:return
             width=float(rect.width())
-            pixel=float(math.trunc(pos.x()-rect.left()))
+            pixel=float(pixel_native)
             mid=rect.center().y()
             f_left=float(vb.mapSceneToView(QPointF(rect.left(),mid)).x())
             f_right=float(vb.mapSceneToView(QPointF(rect.right(),mid)).x())
@@ -848,7 +895,7 @@ class MainWindow(QMainWindow):
                 f"\nГоризонталь = raw FFT[{found['selected_bin']}]={raw_y:.8g} {found['unit']}"
                 ' · подпись может отличаться из-за усреднения; пиксели Delphi НЕ приняты'
                 f"\nCursorString IDR-кандидат (не Delphi RTL):\n{cursor['text']}")
-        except (OSError,KeyError,ValueError,OverflowError) as e:
+        except (OSError,KeyError,TypeError,ValueError,OverflowError) as e:
             self.statusBar().showMessage(str(e))
 
     def _run_narrowband(self):
