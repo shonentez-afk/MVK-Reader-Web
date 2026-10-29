@@ -428,7 +428,8 @@ class OfflineSession:
     def narrowband(self,channel:int,frequency_hz:float, *,
                    n_fft:int=4096,start_s:float|None=None,
                    get_noise_peak:bool=False,backend:str='idr_float32',
-                   f_range:float|None=None)->dict:
+                   f_range:float|None=None,
+                   input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
         """Original GetNarrowbandValue / optional GetNoisePeak offline candidate.
 
         This is distinct from DSP AUX4700 and GetSpectrum OutputPeakX/Y.
@@ -446,7 +447,8 @@ class OfflineSession:
         applied,range_source=resolve_f_range(f_range)
         result=narrowband_from_samples(samples[first:last],
              sample_rate_hz=fs,input_frequency_hz=frequency_hz,
-             get_noise_peak=get_noise_peak,f_range=applied,backend=backend)
+             get_noise_peak=get_noise_peak,f_range=applied,backend=backend,
+             input_domain=input_domain)
         result.update(channel=channel,file=filename,
                       f_range_source=range_source,
                       original_f_range_verified=False,
