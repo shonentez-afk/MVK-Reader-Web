@@ -22,7 +22,7 @@ jobs:
       - name: Verify Python syntax
         run: python -m compileall -q mvk_compatible
       - name: Verify offline DSP and archive
-        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py
+        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py mvk_compatible/tests/test_fft_idr_candidate.py
   desktop-windows:
     runs-on: windows-latest
     env:
@@ -34,8 +34,10 @@ jobs:
           python-version: '3.11'
       - name: Install native Qt runtime
         run: python -m pip install -r mvk_compatible/requirements-desktop.txt pytest
-      - name: Verify Qt tabs + pure offline data
-        run: python -m pytest -q mvk_compatible/tests
+      - name: Verify native Qt tabs in separate process
+        run: python -m pytest -q mvk_compatible/tests/test_desktop_qt.py
+      - name: Verify measurement and reconstructed FFT on Windows
+        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py mvk_compatible/tests/test_fft_idr_candidate.py
   windows-exe-preview:
     needs: desktop-windows
     runs-on: windows-latest
