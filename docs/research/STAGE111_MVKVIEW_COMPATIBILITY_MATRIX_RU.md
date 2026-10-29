@@ -1,6 +1,6 @@
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
-**Дата:** 29.10.2026. **Состояние:** Stage111E ORIGINAL ENVELOPE FIR + DFM Spectrum + Formatter CANDIDATE. Источник штатных DSP всегда AUX4700; оригинальная побитовая приёмка ещё НЕ закрыта., не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
+**Дата:** 29.10.2026. **Состояние:** Stage111F ENVELOPE → GETSPECTRUM CANDIDATE + STRICT ORIGINAL REFERENCE COMPARATOR. Все приборные DSP из AUX4700; численная/побитовая Delphi-паритетная приёмка ещё НЕ закрыта., не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
 
 ## Ключ к статусам
 - **SOURCE_VERIFIED** — оригинальный приборный источник подтверждён Stage109, значения реально получены; не означает, что все элементы GUI совпадают.
@@ -57,7 +57,7 @@
 | Функция оригинала | Статус | Условие приёмки |
 |---|---|---|
 | `PageSpectrum` + 8 ADC | IMPLEMENTED_TESTED | Qt spectrum tab, выбор всех каналов |
-| Четыре режима `mSpecType` | CANDIDATE | 0 dB, 1 acceleration, 2 velocity, 3 displacement; IDR счёт не равен принятым оригинальным числам |
+| Четыре режима `mSpecType` | CANDIDATE + IMPLEMENTED_TESTED | Stage111F: огибающая + 4 original IDR режима: 0 log, 1 linear, 2 однократная 007D2164 интеграция мощности, 3 двукратная; отсутствует оригинальная численная сверка и точный FRange |
 | Выбор FFT N 1024..262144 и df | IMPLEMENTED_TESTED | Выбор N и автоматическое уменьшение для короткого ZIP |
 | Hann периодическое RMS `1/sqrt(1.5)` | CANDIDATE | Stage81c статическое IDR, NumPy FFT не битово оригинальна |
 | FFT backend `TDSXFastFourier` | CANDIDATE + IMPLEMENTED_TESTED | Stage111B: собственный float32 radix-2 с bit reversal и twiddle по `_Unit115`, синтетически против NumPy; **x87 и оригинальный runtime ещё не сверены** |
@@ -69,9 +69,13 @@
 | `bSpecLines`, частотное разрешение | CANDIDATE | N/df уже есть, оригинальные пресеты надо сверять |
 | `bSpecHScale`/`bSpecVScale`, скроллбары | CANDIDATE + IMPLEMENTED_TESTED | Stage111E: реальные Qt кнопки масштаба и синхронные H/V QScrollBar 24px по оригинальному DFM, видимость при увеличении, функциональная регрессия; точные Delphi пределы не подтверждены |
 | Пиксельный курсор `TQGrapher.UpdateCursor` | CANDIDATE + IMPLEMENTED_TESTED | Stage111D: `Trunc` pixel→index, **signed maximum по диапазону одного пикселя**, 1/3 усреднение `sqrt(sum squares)` без /3, снап к исходному непрореженному FFT-бину; оригинальное форматирование/geometry ещё TODO |
-| `bSpecEnvelopeType`, спектральные фильтры | TODO | Stage111E восстановлена отдельная исходная FIR/IQ цепь огибающей GetSignal; для **спектра** она пока намеренно выключена до сверки original GetSpectrum по тому же BIN и коду |
+| `bSpecEnvelopeType`, спектральные фильтры | CANDIDATE + IMPLEMENTED_TESTED | Stage111F: исходная IDR-структура `GetSpectrum` через FIR/IQ→Hann→FFT; **однократное DC до огибающей**, 4 режима, полный N/2, строгая FIR-история и SHA-верифицированный **локальный** IDP; точные исходное окно/физический FRange/Delphi FFT ещё не приняты |
 | `bSpecCopyValue`/`bSpecSaveValue` | TODO + FORMAT_CANDIDATE_TESTED | Stage111E кандидат числового `007B2090` и TFormatSettings для отображения (без гарантии x87/RTL), настоящие Copy/Save остались отключены до проверки оригинального табличного экспорта |
 | Оригинальные подписи/сетка/логарифмическая ось | CANDIDATE + LAYOUT_IMPLEMENTED_TESTED | Stage111E структура Spectrum: pnSpecTools 177px, оригинальный порядок девяти органов, верхний/правый скроллбар 24px; внешний вид, локализация и точная шкала всё ещё требуют скриншотов |
+
+## Stage111F — отдельная точка численной сверки
+
+Для приватного сравнения с исходной MVKView реализован `mvk_compatible/reference_compare.py`. Результат строго диагностический: запрещены интерполяция несовпавших частот, автозамена окна, подгонка коэффициента; возвращаются количество несовпадающих бинов, максимум/СКО разностей и SHA256 **локального** CSV. Даже при совпадении вывод содержит `original_app_parity_certified=false`. На момент Stage111F **настоящий оригинальный CSV на тех же параметрах ещё не предъявлен**; допускать только SYNTHETIC CI и частный IDP sanity. Порядок операций подтверждён в `_Unit115` (DC→FIR/IQ→FFT, без двойного DC).
 
 ## Обязательная последовательность приёмки
 1. Проверить Windows Preview, безопасность локального чтения и целостность реального *частного* экспортного ZIP (файлы не публиковать).
