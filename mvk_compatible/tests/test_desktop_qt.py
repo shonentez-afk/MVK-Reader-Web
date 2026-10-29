@@ -298,3 +298,40 @@ def test_qt_stage111h_original_narrowband_and_noise_peak_inspector(tmp_path,qt_a
     assert 'расчёт отклонён' in win.narrow_result.text()
     win.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111i_explicit_f_range_labels_and_narrowband_are_research_only(tmp_path,qt_app):
+    import numpy as np
+    import pytest
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.spec_f_range.value()==1.
+    win.spec_mode.setCurrentIndex(1)
+    qt_app.processEvents()
+    first=win._full_spectrum
+    assert first is not None
+    base=np.asarray(first['amplitude'],dtype=float)
+    idx=int(np.argmax(base))
+    assert base[idx]>0
+    dsp=win.session.calculations()
+    win.spec_f_range.setValue(2.5)
+    win.refresh_spec()
+    qt_app.processEvents()
+    updated=win._full_spectrum
+    assert updated['f_range_used']==2.5
+    assert updated['f_range_source']=='OPERATOR_SUPPLIED_UNVERIFIED'
+    assert updated['amplitude'][idx]==pytest.approx(base[idx]*2.5,rel=1e-5)
+    assert 'FRange=2.5' in win.spec_hint.text()
+    assert 'НЕ доказана' in win.spec_hint.text()
+    win.narrow_frequency.setValue(64.)
+    win.narrow_run.click()
+    qt_app.processEvents()
+    assert 'FRange=2.5' in win.narrow_result.text()
+    assert win.session.calculations()==dsp
+    win.close()
+    qt_app.processEvents()
