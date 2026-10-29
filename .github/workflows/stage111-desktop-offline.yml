@@ -1,4 +1,7 @@
 name: Stage111 native desktop OFFLINE
+concurrency:
+  group: stage111-desktop-${{ github.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches:
