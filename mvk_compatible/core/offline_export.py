@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
+from .signal_idr_candidate import unfiltered_getsignal
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -264,27 +265,39 @@ def reduce_minmax(samples:np.ndarray, fs:float, offset:int, points:int):
 
 
 def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
-                     mode: str='acdc', points:int=4000)->dict:
+                     mode: str='acdc', points:int=4000,
+                     display_order: str='chronological')->dict:
+    """GetSignal no-envelope f32 candidate; separate original buffer from BIN time."""
     if mode not in ('ac','acdc'):
         raise ValueError('Режим должен быть ac или acdc')
+    if display_order not in ('chronological','getsignal_buffer'):
+        raise ValueError('Неизвестный порядок отображения')
     samples, fs, audit, filename=read_samples(path,channel)
-    if not 0<=start_s<=len(samples)/fs or not 0<seconds<=30:
+    if not math.isfinite(start_s) or not math.isfinite(seconds) or not 0<=start_s<=len(samples)/fs or not 0<seconds<=30:
         raise ValueError('Неверные границы окна временного сигнала')
     a=round(start_s*fs)
     b=min(len(samples),a+round(seconds*fs))
     if b<=a:raise ValueError('Нет отсчётов в выбранном окне')
-    selected=samples[a:b].astype(np.float64)
-    mean=float(np.mean(selected))
-    signal=selected-mean if mode=='ac' else selected
+    frame=unfiltered_getsignal(samples[a:b],fs,no_dc=mode=='ac')
+    signal=(frame.chronological if display_order=='chronological' else frame.getsignal_buffer)
     xx,yy=reduce_minmax(signal,fs,a,points)
     return {'version':VERSION,'channel':channel,'sample_rate_hz':fs,
-            'total_samples':int(len(samples)), 'window_samples':int(len(selected)),
+            'total_samples':int(len(samples)), 'window_samples':int(len(signal)),
             'start_s':a/fs,'end_s':b/fs,
             'time_s':xx,'amplitude':yy,'unit':'м/с²',
-            'mean_m_s2':mean, 'rms_m_s2':float(np.sqrt(np.mean(signal*signal))),
+            'mean_m_s2':frame.window_mean,
+            'removed_mean_m_s2':frame.removed_mean,
+            'rms_m_s2':frame.rms_value,
             'peak_m_s2':float(np.max(np.abs(signal))),
-            'mode':mode,'source':'MVK_ADC_CALIBRATED_BIN',
-            'processing_note':('AC: вычтено среднее выбранного окна, локальная операция; точная семантика оригинальной MVKView ещё сравнивается' if mode=='ac' else 'AC+DC: сохранённый физический сигнал без вычитания среднего'),
+            'mode':mode,'display_order':display_order,
+            'source':'MVK_ADC_CALIBRATED_BIN',
+            'local_processing':'GETSIGNAL_NO_ENVELOPE_IDR_CANDIDATE',
+            'time_axis_kind':('ARCHIVE_SAMPLE_TIME' if display_order=='chronological'
+                else 'GETSIGNAL_RETURN_BUFFER_POSITION_NOT_ARCHIVE_TIME'),
+            'original_plot_coordinate_parity_verified':False,
+            'processing_note':('AC: NoDC=True, f32 running-mean subtraction 007D2344; '
+               'AC+DC: NoDC=False; GetSignal returns array reversed 007D0DEC. '
+               'Envelope not implemented; TQGrapher display orientation still unverified.'),
             'file':filename}
 
 
@@ -384,8 +397,8 @@ class OfflineSession:
         return read_samples(self.path,channel)
 
     def waveform(self,channel:int,start_s:float,seconds:float,
-                 mode:str='acdc',points:int=4000)->dict:
-        return waveform_for_zip(self.path,channel,start_s,seconds,mode,points)
+                 mode:str='acdc',points:int=4000,display_order:str='chronological')->dict:
+        return waveform_for_zip(self.path,channel,start_s,seconds,mode,points,display_order)
 
     def spectrum(self,channel:int,n_fft:int=65536,mode:int=1,
                  start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
@@ -393,22 +406,36 @@ class OfflineSession:
         return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend)
 
     def exact_sample(self,channel:int,time_s:float,start_s:float=0.,
-                     seconds:float=1.,mode:str='acdc')->dict:
-        if mode not in ('ac','acdc') or not all(math.isfinite(v) for v in (time_s,start_s,seconds)):
-            raise ValueError('Неверный режим или координата')
+                     seconds:float=1.,mode:str='acdc',
+                     display_order:str='chronological')->dict:
+        if (mode not in ('ac','acdc') or
+            display_order not in ('chronological','getsignal_buffer') or
+            not all(math.isfinite(v) for v in (time_s,start_s,seconds))):
+            raise ValueError('Неверный режим, порядок или координата')
         samples,fs,_,_=self.samples(channel)
         if start_s<0 or seconds<=0 or seconds>30:
             raise ValueError('Неверное временное окно')
         a=round(start_s*fs);b=min(len(samples),a+round(seconds*fs))
         if b<=a or not a/fs<=time_s<b/fs:
             raise ValueError('Курсор вне временного окна')
-        i=min(b-1,max(a,math.floor(time_s*fs+.5)))
-        raw=float(samples[i]);mean=float(np.mean(samples[a:b],dtype=np.float64))
-        return {'channel':channel,'index':i,'time_s':i/fs,
-                'value_m_s2':raw-mean if mode=='ac' else raw,
-                'raw_bin_m_s2':raw,'window_mean_m_s2':mean,
-                'source':'MVK_ADC_CALIBRATED_BIN','mode':mode,
-                'candidate_ac':mode=='ac'}
+        display_idx=min(b-1,max(a,math.floor(time_s*fs+.5)))
+        j=display_idx-a
+        stored_idx=(display_idx if display_order=='chronological' else b-1-j)
+        frame=unfiltered_getsignal(samples[a:b],fs,no_dc=mode=='ac')
+        v=frame.chronological[stored_idx-a]
+        return {'channel':channel,'index':stored_idx,
+                'display_index':display_idx,'time_s':display_idx/fs,
+                'original_sample_time_s':stored_idx/fs,
+                'value_m_s2':float(v),
+                'raw_bin_m_s2':float(samples[stored_idx]),
+                'window_mean_m_s2':frame.window_mean,
+                'removed_mean_m_s2':frame.removed_mean,
+                'window_rms_m_s2':frame.rms_value,
+                'source':'MVK_ADC_CALIBRATED_BIN',
+                'local_processing':'GETSIGNAL_NO_ENVELOPE_IDR_CANDIDATE',
+                'mode':mode,'display_order':display_order,
+                'candidate_ac':mode=='ac',
+                'original_plot_coordinate_parity_verified':False}
 
     def exact_fft_bin(self,channel:int,frequency_hz:float,n_fft:int=65536,
                       mode:int=1,start_s:float|None=None,backend:str='idr_float32')->dict:
