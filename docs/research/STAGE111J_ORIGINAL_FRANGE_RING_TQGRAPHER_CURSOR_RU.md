@@ -1,3 +1,5 @@
+> **STAGE111J — ПРОВЕРЕННАЯ ОФЛАЙН-ПРИЁМКА ИССЛЕДОВАТЕЛЬСКОГО ЭТАПА (29.10.2026).** GitHub Actions [run #40877772000](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40877772000) завершился **SUCCESS** на коде SHA `1bfec2b965c7be70cd41404095c6ce53c2e48749`: Linux Core **291/291 PASS**, Windows Core **291/291 PASS**, Windows Qt **11/11 PASS**. Windows PyInstaller EXE / SHA256SUMS успешно опубликован: artifact **MVKViewCompatible_Stage111_Windows_Preview**, ID **12899735461**, ZIP **66 509 893 байта**, срок до **12.11.2026 13:02:12 UTC**. Все тесты **синтетические и офлайн**; реальный оригинальный Delphi численный, локализованный и визуальный паритет **не доказан**. Никакого доступа к прибору, публикации IDP/PAS/DFM/коэффициентов/производственных BIN не было.
+
 # Stage 111J — цепочка FRange исходного кольцевого буфера и TQGrapher
 
 29.10.2026. Рабочая ветка: research/stage111-mvkview-desktop-20261029. Единое офлайн-приложение MVKView Compatible на Windows Qt; без HTTP/сервера. Main и v0.3.40 не изменять. Исследовательская версия: полная Delphi, пиксельная и реальная численная приёмка **не выполнена**.
