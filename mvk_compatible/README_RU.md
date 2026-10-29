@@ -1,3 +1,5 @@
+> **Первая пробная Windows-сборка доступна:** [GitHub Actions Stage111A — 19 Linux / 21 Windows PASS + Windows EXE](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40847041592). Внизу страницы **Artifacts → MVKViewCompatible_Stage111_Windows_Preview**: внутри `MVKViewCompatible_Stage111_PREVIEW.exe` и `SHA256SUMS.txt`. Срок хранения артефакта до 12.11.2026. В этом EXE нет обязательного веб-сервера. **Это unsigned исследовательская сборка, не релиз и не проверенный полный аналог MVKView.** См. [протокол QA](../docs/research/STAGE111A_WINDOWS_PREVIEW_ACCEPTANCE_RU.md).
+
 # MVKView Compatible — Stage111 Desktop-first
 
 **Не веб-страница и не замена v0.3.40.** Отдельная Python/Qt программа для Windows. Создана 29.10.2026 на отдельной исследовательской ветке.
