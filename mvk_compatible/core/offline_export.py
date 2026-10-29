@@ -345,7 +345,7 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     else:
         y=amp
         unit=('','м/с²','мм/с','мкм')[mode]
-        note='IDR modes 1/2/3: sqrt(P/2)*FRange/(N/2); 2/3 integrate POWER via 007D2164; numerical Delphi parity not proven'
+        note='IDR modes 1/2/3: sqrt(P/2)*FRange/(N/2); 2/3 integrate POWER via 007D2164; численная эквивалентность Delphi ещё не доказана'
     keep=np.flatnonzero(freq<=max_hz)
     if len(keep)>max_points:
         # Retain local maxima rather than throw away narrow resonances.
