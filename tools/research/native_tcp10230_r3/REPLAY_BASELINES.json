@@ -1,0 +1,50 @@
+{
+  "stage": "Stage99 Native R3",
+  "description": "Summary expectations only; raw PCAPNG is not stored here",
+  "offline_only": true,
+  "conflict_policy_required_for_archives": "preserve_assembled (explicit, logged); default reject",
+  "unit_tests": {
+    "passed": 15,
+    "failed": 0
+  },
+  "captures": [
+    {
+      "name": "capture_A_83",
+      "tcp_segments": 108932,
+      "uncovered_tcp_gaps": 0,
+      "initial_register_snapshot_32800": 1,
+      "aux4700_frames": 122,
+      "adc_frames": 125440,
+      "tach_frames": 31360,
+      "overlap_conflicts": 3,
+      "conflicting_bytes": 3,
+      "conflicts_only_in_structured_address": "0x1034",
+      "trailing_incomplete_app_bytes": 988
+    },
+    {
+      "name": "capture_B_1111",
+      "tcp_segments": 151661,
+      "apparent_forward_tcp_sequence_jumps_in_arrival_order": 16,
+      "uncovered_tcp_gaps": 0,
+      "initial_register_snapshot_32800": 0,
+      "aux4700_frames": 170,
+      "adc_frames": 173469,
+      "tach_frames": 43368,
+      "overlap_conflicts": 2,
+      "conflicting_bytes": 2,
+      "conflicts_only_in_structured_address": "0x1034",
+      "trailing_incomplete_app_bytes": 0
+    }
+  ],
+  "totals": {
+    "aux4700_frames": 292,
+    "channel_records": 2336,
+    "bytewise_verified_float32": 336384,
+    "bytewise_verified_status_uint32": 2336
+  },
+  "constraints": [
+    "Capture sessions not synchronized to MVK43 BIN/VALUES",
+    "5 ambiguous bytes in 160-byte frames, no ambiguity detected in AUX4700",
+    "not a validated live TCP client"
+  ]
+}
