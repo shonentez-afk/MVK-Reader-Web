@@ -22,6 +22,7 @@ from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 from .narrowband_idr_candidate import narrowband_from_samples
+from .calibration_candidate import resolve_f_range
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate, _delphi_integration_power)
 
@@ -309,16 +310,7 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
 def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
                      max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32',
                      *, f_range:float|None=None)->dict:
-    if f_range is None:
-        applied_range=1.0
-        range_source='DEFAULT_ONE_NOT_CALIBRATION_VERIFIED'
-    elif isinstance(f_range,bool) or not math.isfinite(f_range) or f_range<=0:
-        raise ValueError('FRange должен быть конечным положительным коэффициентом')
-    else:
-        applied_range=float(np.float32(f_range))
-        if applied_range<=0 or not math.isfinite(applied_range):
-            raise ValueError('FRange нельзя представить как положительный float32')
-        range_source='OPERATOR_SUPPLIED_UNVERIFIED'
+    applied_range,range_source=resolve_f_range(f_range)
     if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
         raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
     if mode not in range(4):raise ValueError('Допустимы четыре режима 0..3')
@@ -438,13 +430,12 @@ class OfflineSession:
         last=first+n_fft
         if last>len(samples):
             raise ValueError('Insufficient real BIN samples for narrowband window')
-        applied=1. if f_range is None else f_range
+        applied,range_source=resolve_f_range(f_range)
         result=narrowband_from_samples(samples[first:last],
              sample_rate_hz=fs,input_frequency_hz=frequency_hz,
              get_noise_peak=get_noise_peak,f_range=applied,backend=backend)
         result.update(channel=channel,file=filename,
-                      f_range_source=('DEFAULT_ONE_NOT_CALIBRATION_VERIFIED'
-                                      if f_range is None else 'OPERATOR_SUPPLIED_UNVERIFIED'),
+                      f_range_source=range_source,
                       original_f_range_verified=False,
                       archive_window_start_s=first/fs,
                       archive_window_end_s=last/fs,
@@ -472,13 +463,12 @@ class OfflineSession:
         if start<0 or end>len(samples):
             raise ValueError('Insufficient actual BIN history for envelope FFT; no padding')
         if end<=start:raise ValueError('Empty original FFT input')
-        applied=1. if f_range is None else f_range
+        applied,range_source=resolve_f_range(f_range)
         result=envelope_spectrum_idr_candidate(
             samples[start:end],int(fs),code,profile,
             n_fft=n_fft,mode=mode,backend=backend,f_range=applied)
         return dict(result,channel=channel,file=filename,
-                    f_range_source=('DEFAULT_ONE_NOT_CALIBRATION_VERIFIED'
-                                    if f_range is None else 'OPERATOR_SUPPLIED_UNVERIFIED'),
+                    f_range_source=range_source,
                     archive_input_start_s=start/fs,archive_input_end_s=end/fs,
                     full_fft_bins=True,
                     original_archive_position_parity_verified=False)
