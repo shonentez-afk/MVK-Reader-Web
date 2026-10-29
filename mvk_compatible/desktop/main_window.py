@@ -710,6 +710,7 @@ class MainWindow(QMainWindow):
             self.spec_plot.clear()
             self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#176c92'))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
+            self.spec_line.setVisible(False)
             self.spec_plot.addItem(self.spec_line)
             self.spec_hline=pg.InfiniteLine(angle=0,pen=pg.mkPen('#a56017'))
             self.spec_hline.setVisible(False)  # Original source draws after the cursor is moved
@@ -790,7 +791,16 @@ class MainWindow(QMainWindow):
             vb=self.spec_plot.getViewBox()
             rect=vb.sceneBoundingRect()
             pos=event.scenePos()
-            if not rect.contains(pos) or rect.width()<=2:return
+            if not rect.contains(pos):
+                # Original 007CA811..007CA832 clears CursorString and
+                # erases prior X plus both per-series horizontal cursor lines.
+                if self.spec_line:self.spec_line.setVisible(False)
+                if self.spec_hline:self.spec_hline.setVisible(False)
+                self._spec_last_cursor=None
+                self.spec_hint.setText(
+                    'CursorString: — (курсор вне области графика; original IDR candidate)')
+                return
+            if rect.width()<=2:return
             width=float(rect.width())
             pixel=float(math.trunc(pos.x()-rect.left()))
             mid=rect.center().y()
@@ -815,6 +825,7 @@ class MainWindow(QMainWindow):
                 precise=self.spec_precise.isChecked(),
                 averaging=(1 if self.spec_avg.currentIndex()==0 else 3))
             self.spec_line.setPos(found['frequency_hz'])
+            self.spec_line.setVisible(True)
             raw_y=float(self._full_spectrum['amplitude'][found['selected_bin']])
             # 007CA9BA..9D3 uses the signed selected raw Y for the drawn line.
             # 007CA9F3..AAE5 computes a DIFFERENT numeric label for averaging=3.
