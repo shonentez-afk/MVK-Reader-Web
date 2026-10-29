@@ -95,3 +95,20 @@ def test_all_original_modes_have_numeric_summary(mode):
 def test_source_summary_uses_full_resolution_not_decimated_curve():
     with pytest.raises(ValueError,match='complete'):
         measure(power()[:100],n_fft=1024,fs_out=32768)
+
+
+def test_stage111i_original_stepwise_float64_power_sum_not_numpy_pairwise():
+    """007D1807 fadd Single -> fstp qword EACH bin, sensitive to sum order."""
+    n=262144
+    a=np.ones(n//2,dtype='f4')
+    a[3]=np.float32(1.e16)
+    d=measure(a,n_fft=n,fs_out=65536)
+    first,last=d['summary_first_bin'],d['summary_last_bin']
+    sequential=0.
+    for p in a[first:last+1]:
+        sequential=float(sequential+float(p))
+    numpy_pairwise=float(np.sum(a[first:last+1].astype(np.float64),dtype=np.float64))
+    assert d['power_sum_order']=='DELPHI_STEPWISE_F64_STORED'
+    assert d['raw_total_band_power']==sequential
+    assert abs(numpy_pairwise-sequential)>1000  # source-visible rounding difference
+    assert not d['original_delphi_numerical_parity_verified']
