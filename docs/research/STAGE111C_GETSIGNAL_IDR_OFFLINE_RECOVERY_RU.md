@@ -1,3 +1,5 @@
+> **Stage111C ПОДТВЕРЖДЁННАЯ ПРИЁМКА ИССЛЕДОВАТЕЛЬСКОЙ СБОРКИ, 2026-10-29.** GitHub Actions [run #40852763963](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40852763963) завершился **SUCCESS**: Linux core **56 passed**, Windows core **56 passed**, Windows Qt **2 passed**, отдельный Windows PyInstaller **EXE PREVIEW build/upload SUCCESS**. Проверено по журналам jobs с exit code 0. Исходный проверенный коммит `b40b9ac8dc2dae2e78782c1ec7644d62823fe8e7`. Артефакт **MVKViewCompatible_Stage111_Windows_Preview**, id **12887453506**, ZIP 66 440 681 байт, доступен до **2026-11-12 09:53:35 UTC**; внутри EXE и SHA256SUMS.txt. **Оригинальная Delphi-паритетная приёмка, длительный рабочий Windows GUI тест и огибающая НЕ завершены**. Последующие изменения документации не модифицируют проверенный код.
+
 # Stage111C — GetSignal: AC/AC+DC, float32, обратный буфер, кольцевой архив (2026-10-29)
 
 **Ветка:** `research/stage111-mvkview-desktop-20261029`. **Статус:** самостоятельный офлайн Desktop и реконструкция пути без огибающей. **Не** приёмка оригинального MVKView/TQGrapher. Не изменять `main`, v0.3.40 и Native R6.1.
