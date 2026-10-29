@@ -156,3 +156,28 @@ def test_input_zero_is_handled_without_approximate_envelope():
     x=np.zeros(required_original_history(1024,65536,20)['input_samples'],dtype='f4')
     out=envelope_spectrum_idr_candidate(x,65536,20,fake_profile(),n_fft=1024,mode=0,backend='numpy')
     assert all(z==-180. for z in out['amplitude'])
+
+
+def test_archive_public_envelope_spectrum_uses_only_actual_bin_history(tmp_path):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    session=OfflineSession.open(fixture_zip(tmp_path))
+    profile=fake_profile(i=1.,q=.4)
+    d=session.spectrum_envelope(1,20,1024,profile,
+                                mode=1,backend='numpy',end_s=.0625)
+    assert d['source']==SOURCE
+    assert d['channel']==1
+    assert d['full_fft_bins'] is True
+    assert d['archive_input_start_s']==pytest.approx((4096-2099)/65536)
+    assert d['archive_input_end_s']==pytest.approx(.0625)
+    assert d['output_sample_rate_hz']==32768
+    assert d['original_archive_position_parity_verified'] is False
+    assert len(d['amplitude'])==512
+    samples,fs,_,_=session.samples(1)
+    direct=envelope_spectrum_idr_candidate(samples[-2099:],int(fs),20,
+        profile,n_fft=1024,mode=1,backend='numpy')
+    np.testing.assert_allclose(d['amplitude'],direct['amplitude'])
+    with pytest.raises(ValueError,match='Insufficient actual BIN history'):
+        session.spectrum_envelope(1,1,1024,profile,backend='numpy')
+    with pytest.raises(ValueError,match='endpoint'):
+        session.spectrum_envelope(1,20,1024,profile,end_s=float('nan'))
