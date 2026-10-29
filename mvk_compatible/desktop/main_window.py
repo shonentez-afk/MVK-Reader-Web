@@ -332,6 +332,23 @@ class MainWindow(QMainWindow):
         reset=QPushButton('Сбросить масштаб')
         reset.clicked.connect(self.refresh_spec)
         stack.addWidget(reset)
+
+        stack.addWidget(QLabel('IDR УЗКАЯ ПОЛОСА · исследование (не DSP)'))
+        stack.addWidget(QLabel('Заданная частота, Гц'))
+        self.narrow_frequency=self._float(0.001,32768,64,3)
+        self.narrow_frequency.setToolTip('TMvkChannelStorage.GetNarrowbandValue InputValue, 007D0E58')
+        stack.addWidget(self.narrow_frequency)
+        self.narrow_noise=QCheckBox('Дополнительно шумовой пик')
+        self.narrow_noise.setToolTip('GetNoisePeak=True: 3-bin scan excluding ±20*radius of reference bin')
+        stack.addWidget(self.narrow_noise)
+        self.narrow_run=QPushButton('Рассчитать узкую полосу')
+        self.narrow_run.setToolTip('Отдельный локальный FFT, без AUX4700, сети, команды прибору или подстановки значений')
+        self.narrow_run.clicked.connect(self._run_narrowband)
+        stack.addWidget(self.narrow_run)
+        self.narrow_result=QLabel('Узкополосный результат: —')
+        self.narrow_result.setWordWrap(True)
+        self.narrow_result.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        stack.addWidget(self.narrow_result)
         stack.addStretch()
         self.spec_tools.setWidget(tools)
         lay.addWidget(self.spec_tools,0)
@@ -741,6 +758,29 @@ class MainWindow(QMainWindow):
                 f" {format_cursor_idr_candidate(found['display_y'])} {found['unit']}")
         except (OSError,KeyError,ValueError,OverflowError) as e:
             self.statusBar().showMessage(str(e))
+
+    def _run_narrowband(self):
+        """Private original IDR candidate; never a substitute for DSP AUX4700."""
+        if not self.session:return
+        try:
+            n_fft=int(self.spec_n.currentText())
+            start=None if self.spec_last.isChecked() else self.wave_start.value()
+            result=self.session.narrowband(
+                self._ch(),self.narrow_frequency.value(),n_fft=n_fft,
+                start_s=start,get_noise_peak=self.narrow_noise.isChecked(),
+                backend=self._fft_backend(),f_range=1.)
+            label=(f"IDR узкополосный (не приборный DSP) · {result['center_bin']} ±"
+                  f"{result['radius_bins']} FFT-бин · значение {result['output_value']:.8g}"
+                  f" (FRange=1, кандидат)")
+            if result['noise_peak_enabled']:
+                label+=(f"\nШумовой пик {result['output_peak_frequency_hz']:.7g} Гц ·"
+                       f" {result['output_peak_y']:.7g},"
+                       f" исключены FFT-бин(ы) {result['noise_excluded_first_bin']}.."
+                       f"{result['noise_excluded_last_bin']}")
+            self.narrow_result.setText(label+"\nЧисленный паритет Delphi ещё не доказан")
+        except (OSError,KeyError,TypeError,ValueError,OverflowError) as exc:
+            self.narrow_result.setText('Узкополосный расчёт отклонён: '+str(exc))
+            self.statusBar().showMessage('Отклонено: '+str(exc))
 
     def _copy_spec_summary(self):
         """Source-confirmed 3-column tab structure; formatter still CANDIDATE."""
