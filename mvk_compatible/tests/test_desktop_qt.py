@@ -335,3 +335,37 @@ def test_qt_stage111i_explicit_f_range_labels_and_narrowband_are_research_only(t
     assert win.session.calculations()==dsp
     win.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111i_compares_local_original_clipboard_without_remote_or_raw_dump(tmp_path,qt_app,monkeypatch):
+    from PySide6.QtWidgets import QFileDialog,QMessageBox
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.spectrum_summary_export_candidate import spectrum_triplet_text
+    from .test_offline_core import fixture_zip
+    window=MainWindow()
+    window.open_archive(fixture_zip(tmp_path))
+    window.show()
+    window.tabs.setCurrentIndex(2)
+    window.spec_mode.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert window.spec_original_copy_compare.isEnabled()
+    original=spectrum_triplet_text(window._spectrum_summary,decimal_separator=',')
+    private=tmp_path/'synthetic-original-copy.txt'
+    private.write_text(original,encoding='utf-8')
+    monkeypatch.setattr(QFileDialog,'getOpenFileName',
+                        lambda *args,**kwargs:(str(private),'Text (*.txt)'))
+    messages=[]
+    monkeypatch.setattr(QMessageBox,'information',
+                        lambda *args:messages.append((args[1],args[2])))
+    window.spec_original_copy_compare.click()
+    qt_app.processEvents()
+    assert len(messages)==1
+    title,body=messages[0]
+    assert 'оригинальной MVKView' in title
+    assert 'ЧИСЛЕННЫЕ ЗНАЧЕНИЯ В ЗАДАННОМ ДОПУСКЕ' in body
+    assert 'Текст 3 полей совпал: да' in body
+    assert 'Полный численный и визуальный паритет НЕ доказан' in body
+    assert original not in body
+    assert private.is_file()
+    window.close()
+    qt_app.processEvents()
