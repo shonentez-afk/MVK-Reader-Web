@@ -83,3 +83,19 @@ def test_backend_and_cursor_share_explicit_input_domain(tmp_path):
                                    input_domain=DOMAIN_ORIGINAL_STORAGE)
     assert d['input_domain']==DOMAIN_ORIGINAL_STORAGE
     assert not d['original_delphi_parity_verified']
+
+
+def test_source_narrowband_007d0f83_original_ring_divide_before_fft(tmp_path):
+    session=OfflineSession.open(fixture_zip(tmp_path))
+    dsp=session.calculations()
+    base=session.narrowband(1,64.,n_fft=4096,start_s=0.,backend='numpy',
+                            f_range=1.,input_domain=DOMAIN_CALIBRATED_BIN)
+    raw=session.narrowband(1,64.,n_fft=4096,start_s=0.,backend='numpy',
+                           f_range=4.,input_domain=DOMAIN_ORIGINAL_STORAGE)
+    multiplier=session.narrowband(1,64.,n_fft=4096,start_s=0.,backend='numpy',
+                                  f_range=4.,input_domain=DOMAIN_CALIBRATED_BIN)
+    assert raw['output_value']==pytest.approx(base['output_value'],rel=1e-5)
+    assert multiplier['output_value']==pytest.approx(base['output_value']*4,rel=1e-5)
+    assert raw['original_storage_read_divided_by_range']
+    assert not raw['original_source_buffer_provenance_verified']
+    assert session.calculations()==dsp
