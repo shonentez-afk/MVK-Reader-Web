@@ -121,3 +121,46 @@ def test_qt_pixel_based_cursor_click_uses_full_bins(tmp_path,qt_app):
     assert 'без /N' in window.spec_hint.text()
     window.close()
     qt_app.processEvents()
+
+
+def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
+    """Check DFM-derived structure, not claim exact Delphi pixel parity."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.spec_tools.objectName()=='pnSpecTools'
+    assert win.spec_tools.width()==177
+    assert win.spec_hscroll.objectName()=='sbSpecHScroll'
+    assert win.spec_vscroll.objectName()=='sbSpecVScroll'
+    assert win.spec_hscroll.height()==24
+    assert win.spec_vscroll.width()==24
+    assert win.spec_mode.objectName()=='bSpecType'
+    assert win.spec_n.objectName()=='bSpecLines'
+    assert win.spec_hscale_button.objectName()=='bSpecHScale'
+    assert win.spec_vscale_button.objectName()=='bSpecVScale'
+    assert win.spec_hint.objectName()=='lbSpecHint'
+    assert not win.spec_envelope_button.isEnabled()  # not faked
+    assert not win.spec_copy_button.isEnabled()      # formatter not accepted
+    assert not win.spec_save_button.isEnabled()      # original export unknown
+    start=win.spec_plot.getViewBox().viewRange()[0]
+    win.spec_hscale_button.click()
+    qt_app.processEvents()
+    mid=win.spec_plot.getViewBox().viewRange()[0]
+    assert (mid[1]-mid[0]) < (start[1]-start[0])
+    assert win.spec_hscroll.isVisible()
+    win.spec_hscroll.setValue(0)
+    qt_app.processEvents()
+    near=win.spec_plot.getViewBox().viewRange()[0]
+    win.spec_hscroll.setValue(1000)
+    qt_app.processEvents()
+    far=win.spec_plot.getViewBox().viewRange()[0]
+    assert far[0]>near[0]
+    win.spec_vscale_button.click()
+    qt_app.processEvents()
+    assert win.spec_vscroll.isVisible()
+    win.close()
+    qt_app.processEvents()
