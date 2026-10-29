@@ -309,6 +309,13 @@ class MainWindow(QMainWindow):
         stack.addWidget(QLabel('Частоты до, Гц'))
         self.spec_hz=self._float(10,32768,10000,1)
         stack.addWidget(self.spec_hz)
+        stack.addWidget(QLabel('FRange · исследовательская калибровка'))
+        self.spec_f_range=self._float(0.000001,1000000.0,1.,6)
+        self.spec_f_range.setToolTip(
+            'Delphi TMvkChannelStorage.FRange; исходный конструктор =1, '
+            'фактическая калибровка архива НЕ подтверждена. '
+            'Не изменяет BIN и не подменяет AUX4700.')
+        stack.addWidget(self.spec_f_range)
         self.spec_last=QCheckBox('Последнее полное окно')
         self.spec_last.setChecked(True)
         stack.addWidget(self.spec_last)
@@ -392,6 +399,7 @@ class MainWindow(QMainWindow):
         self.spec_backend.currentIndexChanged.connect(self.refresh_spec)
         self.spec_last.toggled.connect(self.refresh_spec)
         self.spec_hz.editingFinished.connect(self.refresh_spec)
+        self.spec_f_range.editingFinished.connect(self.refresh_spec)
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
 
@@ -640,11 +648,12 @@ class MainWindow(QMainWindow):
                 d=self.session.spectrum_envelope(self._ch(),code,n_fft,
                        self.envelope_profile,end_s=end_s,
                        mode=self.spec_mode.currentIndex(),
-                       backend=self._fft_backend(),f_range=1.)
+                       backend=self._fft_backend(),f_range=self.spec_f_range.value())
             else:
                 d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
                                         start,max_hz=1e9,max_points=n_fft//2,
-                                        backend=self._fft_backend())
+                                        backend=self._fft_backend(),
+                                        f_range=self.spec_f_range.value())
             if len(d['amplitude'])!=n_fft//2:
                 raise ValueError('Пиксельный курсор требует все N/2 FFT-бинов')
             self._full_spectrum=d
@@ -688,7 +697,9 @@ class MainWindow(QMainWindow):
                 f"{d.get('raw_mean_removed_m_s2',d.get('removed_mean_m_s2',0.)):.6g} м/с² · "
                 + ("после FIR повторного DC нет · "
                    if self.spec_envelope_button.isChecked() else "")
-                + "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
+                + f"FRange={d.get('f_range_used',1.):.7g}, "
+                  "фактическая калибровка НЕ доказана · "
+                  "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
         except (OSError,KeyError,ValueError) as e:
             self._full_spectrum=None
             self._spectrum_summary=None
@@ -768,10 +779,10 @@ class MainWindow(QMainWindow):
             result=self.session.narrowband(
                 self._ch(),self.narrow_frequency.value(),n_fft=n_fft,
                 start_s=start,get_noise_peak=self.narrow_noise.isChecked(),
-                backend=self._fft_backend(),f_range=1.)
+                backend=self._fft_backend(),f_range=self.spec_f_range.value())
             label=(f"IDR узкополосный (не приборный DSP) · {result['center_bin']} ±"
                   f"{result['radius_bins']} FFT-бин · значение {result['output_value']:.8g}"
-                  f" (FRange=1, кандидат)")
+                  f" (FRange={result['f_range_used']:.6g}, кандидат; оригинал НЕ проверен)")
             if result['noise_peak_enabled']:
                 label+=(f"\nШумовой пик {result['output_peak_frequency_hz']:.7g} Гц ·"
                        f" {result['output_peak_y']:.7g},"
@@ -812,7 +823,8 @@ class MainWindow(QMainWindow):
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             d=self.session.compare_fft_backends(self._ch(),int(self.spec_n.currentText()),
-                                                 self.spec_mode.currentIndex(),start)
+                                                 self.spec_mode.currentIndex(),start,
+                                                 f_range=self.spec_f_range.value())
             QMessageBox.information(self,'Сравнение двух расчётов приложения',
                 f"Численный паритет с оригинальным Delphi НЕ доказан.\n"
                 f"IDR float32 vs NumPy, FFT N={d['n_fft']}, режим {d['mode']}\n"
