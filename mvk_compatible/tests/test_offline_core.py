@@ -165,7 +165,7 @@ def test_minmax_times_not_bucket_centers():
 
 def test_no_socket_or_fastapi_dependencies():
     import mvk_compatible.core.offline_export as m
-    text=Path(m.__file__).read_text()
+    text=Path(m.__file__).read_text(encoding='utf-8')
     for term in ('import fastapi','from fastapi','import socket','from PySide6','uvicorn'):
         assert term not in text
 
@@ -187,3 +187,8 @@ def test_reject_link_file(tmp_path):
     try:link.symlink_to(file)
     except OSError:pytest.skip('no symlink support')
     with pytest.raises(ValueError):OfflineSession.open(link)
+
+
+def test_invalid_fft_sizes_are_rejected(session):
+    for n in (0,1000,4097,524288):
+        with pytest.raises(ValueError):session.spectrum(1,n)
