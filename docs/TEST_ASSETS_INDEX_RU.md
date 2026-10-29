@@ -52,3 +52,5 @@
 
 - `tools/research/stage83_compare_spectra.py`: offline strict spectrum comparator, requires candidate and reference CSV, provenance manifest; no interpolation or device IO.
 - `tools/research/stage83_compare_selftest.py`: synthetic-only tests for matching data, mismatch and incompatible frequency grids; run `python tools/research/stage83_compare_selftest.py`.
+
+- `tools/research/stage86_verify_values_time.py` checks five original `_Unit125.pas` IDR anchor groups for VALUES wall-clock timestamp, independent BIN/VALUES start, and TSXML current date; run `python tools/research/stage86_verify_values_time.py _Unit125.pas` (offline).
