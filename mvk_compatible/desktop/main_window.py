@@ -178,15 +178,21 @@ class MainWindow(QMainWindow):
         self.spec_n=QComboBox()
         self.spec_n.addItems(['1024','4096','16384','65536','262144'])
         self.spec_n.setCurrentText('65536')
+        self.spec_backend=QComboBox()
+        self.spec_backend.addItems(['IDR float32 · реконструкция','NumPy · контрольный расчёт'])
         self.spec_hz=self._float(10,32768,10000,1)
         self.spec_last=QCheckBox('Последнее полное окно')
         self.spec_last.setChecked(True)
-        for name,field in (('Режим',self.spec_mode),('FFT N',self.spec_n),('Частоты до, Гц',self.spec_hz)):
+        for name,field in (('Режим',self.spec_mode),('FFT N',self.spec_n),('Алгоритм',self.spec_backend),('Частоты до, Гц',self.spec_hz)):
             bar.addWidget(QLabel(name));bar.addWidget(field)
         bar.addWidget(self.spec_last)
         b=QPushButton('Обновить спектр')
         b.clicked.connect(self.refresh_spec)
         bar.addWidget(b)
+        compare=QPushButton('Сравнить FFT')
+        compare.setToolTip('IDR float32 vs NumPy; НЕ эталонный Delphi')
+        compare.clicked.connect(self.compare_fft)
+        bar.addWidget(compare)
         self._zoom_bar(bar,lambda:self._zoom(self.spec_plot,.5),lambda:self._zoom(self.spec_plot,2))
         bar.addStretch()
         lay.addLayout(bar)
@@ -295,19 +301,23 @@ class MainWindow(QMainWindow):
             self.wave_hint.setText(f"BIN {d['window_samples']} отсчётов · локальное СКЗ окна {d['rms_m_s2']:.7g} м/с² · {mode}")
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
+    def _fft_backend(self):
+        return 'idr_float32' if self.spec_backend.currentIndex()==0 else 'numpy'
+
     def refresh_spec(self,*_):
         if not self.session:return
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             d=self.session.spectrum(self._ch(),int(self.spec_n.currentText()),
-                                    self.spec_mode.currentIndex(),start,self.spec_hz.value())
+                                    self.spec_mode.currentIndex(),start,self.spec_hz.value(),
+                                    backend=self._fft_backend())
             self.spec_plot.clear()
             self.spec_plot.plot(d['frequency_hz'],d['amplitude'],pen=pg.mkPen('#176c92'))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.spec_plot.addItem(self.spec_line)
             self.spec_plot.setLabel('left',d['unit'])
             self.spec_plot.enableAutoRange()
-            self.spec_hint.setText(f"{d['source']} · df={d['df_hz']:.7g} Гц · локальный FFT, НЕ принятый паритет")
+            self.spec_hint.setText(f"{d['source']} · {d['fft_backend']} · среднее вычтено: {d['removed_mean_m_s2']:.6g} м/с² · df={d['df_hz']:.7g} Гц · паритет Delphi НЕ принят")
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
     @staticmethod
@@ -334,10 +344,24 @@ class MainWindow(QMainWindow):
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             p=self.session.exact_fft_bin(self._ch(),x,int(self.spec_n.currentText()),
-                                          self.spec_mode.currentIndex(),start)
+                                          self.spec_mode.currentIndex(),start,backend=self._fft_backend())
             self.spec_line.setPos(p['frequency_hz'])
             self.spec_hint.setText(f"FFT [{p['bin']}] · {p['frequency_hz']:.6f} Гц · {p['value']:.8g} {p['unit']} · кандидат")
         except (OSError,KeyError,ValueError) as e:self.statusBar().showMessage(str(e))
+
+    def compare_fft(self):
+        if not self.session:return
+        try:
+            start=None if self.spec_last.isChecked() else self.wave_start.value()
+            d=self.session.compare_fft_backends(self._ch(),int(self.spec_n.currentText()),
+                                                 self.spec_mode.currentIndex(),start)
+            QMessageBox.information(self,'Сравнение двух расчётов приложения',
+                f"Численный паритет с оригинальным Delphi НЕ доказан.\n"
+                f"IDR float32 vs NumPy, FFT N={d['n_fft']}, режим {d['mode']}\n"
+                f"Вычтенное среднее: {d['window_mean_m_s2']:.8g} м/с²\n"
+                f"Максимальная разница: {d['max_absolute_difference']:.8g}\n"
+                f"Относительно основного пика: {100*d['relative_difference_at_reference_peak']:.6g}%")
+        except (OSError,KeyError,ValueError) as exc:self._error(exc)
 
     def _error(self,exc):
         self.statusBar().showMessage('Ошибка: '+str(exc))
