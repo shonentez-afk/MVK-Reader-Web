@@ -307,7 +307,18 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
 
 
 def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
-                     max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32')->dict:
+                     max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32',
+                     *, f_range:float|None=None)->dict:
+    if f_range is None:
+        applied_range=1.0
+        range_source='DEFAULT_ONE_NOT_CALIBRATION_VERIFIED'
+    elif isinstance(f_range,bool) or not math.isfinite(f_range) or f_range<=0:
+        raise ValueError('FRange должен быть конечным положительным коэффициентом')
+    else:
+        applied_range=float(np.float32(f_range))
+        if applied_range<=0 or not math.isfinite(applied_range):
+            raise ValueError('FRange нельзя представить как положительный float32')
+        range_source='OPERATOR_SUPPLIED_UNVERIFIED'
     if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
         raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
     if mode not in range(4):raise ValueError('Допустимы четыре режима 0..3')
@@ -333,9 +344,9 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     # Mean / peak metrics use the whole original N/2 power array, NOT
     # N bins decimated for visualization. FRange=1 is not yet Delphi verified.
     summary=original_spectrum_summary(display_power,n_fft=n_fft,fs_out=fs,
-                                      f_range=1.0,spectrum_mode=mode)
+                                      f_range=applied_range,spectrum_mode=mode)
     freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
-    amp=np.sqrt(np.asarray(display_power,dtype=np.float64)/2.)*(2./n_fft)
+    amp=np.sqrt(np.asarray(display_power,dtype=np.float64)/2.)*(2.*applied_range/n_fft)
     amp[0]=0
     if mode==0:
         y=np.full_like(power,-180.0)
@@ -359,6 +370,8 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
             'warning':note,'file':filename,
             'fft_backend':backend,'detrended_before_fft':True,
             'spectrum_summary':summary,'original_f_range_verified':False,
+            'f_range_used':applied_range,'f_range_source':range_source,
+            'f_range_applied_to_display':mode!=0,
             'low_bins_zeroed':low_bins,
             'removed_mean_m_s2':removed_mean,'original_delphi_numerical_parity':False}
 
@@ -403,8 +416,9 @@ class OfflineSession:
 
     def spectrum(self,channel:int,n_fft:int=65536,mode:int=1,
                  start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
-                 backend:str='idr_float32')->dict:
-        return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend)
+                 backend:str='idr_float32', *, f_range:float|None=None)->dict:
+        return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend,
+                                f_range=f_range)
 
     def narrowband(self,channel:int,frequency_hz:float, *,
                    n_fft:int=4096,start_s:float|None=None,
@@ -556,7 +570,8 @@ class OfflineSession:
     def pixel_spectrum_cursor(self,channel:int,pixel:float,geometry:CursorGeometry,
                               *,n_fft:int=65536,mode:int=1,
                               start_s:float|None=None,backend:str='idr_float32',
-                              precise:bool=True,averaging:int=1)->dict:
+                              precise:bool=True,averaging:int=1,
+                              f_range:float|None=None)->dict:
         """Original TQGrapher pixel peak candidate over UNDECIMATED FFT bins.
 
         This is not the independently calculated DSP, nor a bitwise verified
@@ -564,23 +579,26 @@ class OfflineSession:
         backend and sample calibration without opening sockets or Qt.
         """
         full=self.spectrum(channel,n_fft,mode,start_s,
-                           max_hz=32768,max_points=n_fft//2,backend=backend)
+                           max_hz=32768,max_points=n_fft//2,backend=backend,
+                           f_range=f_range)
         if len(full['frequency_hz'])!=n_fft//2:
             raise ValueError('Нужен полный непрореженный FFT для пиксельного курсора')
         return cursor_from_spectrum(full,pixel,geometry,
                                     precise=precise,averaging=averaging)
 
     def compare_fft_backends(self,channel:int,n_fft:int=65536,mode:int=1,
-                             start_s:float|None=None)->dict:
+                             start_s:float|None=None, *, f_range:float|None=None)->dict:
         """Compare two APP-DERIVED candidates, not against original Delphi."""
-        a=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'idr_float32')
-        b=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'numpy')
+        a=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'idr_float32',f_range=f_range)
+        b=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'numpy',f_range=f_range)
         x=np.asarray(a['amplitude'],dtype=np.float64)
         y=np.asarray(b['amplitude'],dtype=np.float64)
         err=np.abs(x-y)
         peak=int(np.argmax(y))
         return {'source':'APP_DERIVED_BACKEND_COMPARISON','channel':channel,
                 'n_fft':n_fft,'mode':mode,'df_hz':a['df_hz'],
+                'f_range_used':a['f_range_used'],
+                'f_range_source':a['f_range_source'],
                 'window_mean_m_s2':a['removed_mean_m_s2'],
                 'max_absolute_difference':float(err.max()),
                 'rms_absolute_difference':float(np.sqrt(np.mean(err**2))),
