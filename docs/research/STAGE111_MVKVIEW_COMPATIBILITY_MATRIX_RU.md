@@ -1,6 +1,6 @@
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
-**Дата:** 29.10.2026. **Состояние:** Stage111M source-verified TQGrapher horizontal Crosshair Y independent from averaged cursor label; private 1/2-line pixel reference comparator, offline CI 368 Linux/368 Windows/14 Qt PASS; исходный пиксельный/RTL паритет оригинальной MVKView НЕ принят. Численная/побитовая приёмка оригинальной MVKView ещё НЕ закрыта; это не релиз MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
+**Дата:** 29.10.2026. **Состояние:** Stage111N signed ScrWidth/source Single/Canvas-DPI private sweep IMPLEMENTED_TESTED (новый CI PENDING), Stage111M source-verified TQGrapher horizontal Crosshair Y independent from averaged cursor label; private 1/2-line pixel reference comparator, offline CI 368 Linux/368 Windows/14 Qt PASS; исходный пиксельный/RTL паритет оригинальной MVKView НЕ принят. Численная/побитовая приёмка оригинальной MVKView ещё НЕ закрыта; это не релиз MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
 
 ## Ключ к статусам
 - **SOURCE_VERIFIED** — оригинальный приборный источник подтверждён Stage109, значения реально получены; не означает, что все элементы GUI совпадают.
@@ -130,3 +130,13 @@
 3. Использовать **одинаковый** BIN/окно/N/mode для NumPy кандидата и оригинальной `GetSpectrum`; оценить частоту, амплитуду, log helper, dc/Nyquist, порядок, масштаб и RMS.
 4. Переносить в ядро только доказанную семантику; обновлять отдельные тесты и статус матрицы.
 5. Не объявлять Compatible 1.0 до закрытия всех обязательных строк; экспериментальные расширения Web отдельно от совместимости.
+
+
+## Stage111N — дополнительная совместимость TQGrapher
+
+| Проверка | Уровень | Доказательство / открыто |
+|---|---|---|
+| Signed/reversed ScrWidth, tiny span, ScrHeight, Series.XScale | SOURCE_VERIFIED FORMULAS + IMPLEMENTED_TESTED CANDIDATE | Private _Unit115:007CA4F7–007CA571. Синтетические тесты, новая CI ожидается; Delphi x87 ещё нет |
+| Inverted X native pixel+1 index order | SOURCE_VERIFIED STRUCTURE + CANDIDATE | Отрицательная stoiM допускается, диапазон не переставляется; исходная пиксельная сверка TODO |
+| Canvas/Font/DPI offline batch | IMPLEMENTED_TESTED DIAGNOSTIC | Новый canvas_sweep_reference_compare.py: 14 метрик и оригинальные Pixels/affine по отдельным измерениям; эталонного Canvas пока нет |
+| Stage111N full CI and Windows EXE | PENDING | SHA commit 54462f6c254bb802c603a81e0343d3344878fcf4, итог проверить в Actions; Stage111M SUCCESS относится к прошлому коду |
