@@ -25,7 +25,7 @@ def test_horizontal_line_uses_raw_selected_bin_not_avg3_label():
     assert r['drawn']
     assert r['horizontal_pixels']==[92]   # 100 - 2*raw[12]=92
     assert r['horizontal_lines'][0]['label_display_y']==13.
-    assert r['horizontal_lines'][0]['label_display_y_is_a_separate_operation']
+    assert r['horizontal_lines'][0]['label_y_is_a_separate_operation']
     assert r['horizontal_lines'][0]['selected_bin']==12
     assert r['horizontal_lines'][0]['start_xy']==[10,92]
     assert r['horizontal_lines'][0]['end_xy']==[90,92]
