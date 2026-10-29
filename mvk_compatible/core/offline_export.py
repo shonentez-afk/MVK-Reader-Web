@@ -23,6 +23,7 @@ from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 from .narrowband_idr_candidate import narrowband_from_samples
 from .calibration_candidate import resolve_f_range
+from .storage_f_range_idr_candidate import (prepare_original_fft_input,DOMAIN_CALIBRATED_BIN)
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate, _delphi_integration_power)
 
@@ -309,7 +310,8 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
 
 def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
                      max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32',
-                     *, f_range:float|None=None)->dict:
+                     *, f_range:float|None=None,
+                     input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
     applied_range,range_source=resolve_f_range(f_range)
     if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
         raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
@@ -320,7 +322,13 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
         raise ValueError('Не хватает данных для выбранного окна FFT')
     # Original GetSpectrum (0x007D14B3) ALWAYS removes stored f32 mean.
     # Stage111B reconstructed IDR FFT is still candidate, NOT instrument DSP.
-    power, removed_mean=idr_power_spectrum(samples[start:start+n_fft], backend=backend)
+    prepared=prepare_original_fft_input(
+        samples[start:start+n_fft],f_range=f_range,input_domain=input_domain)
+    # Source 007D149A pushes bool 1: original FAdcDataType==1 storage
+    # reader divides PAdcFloatData by FRange BEFORE mean removal and FFT.
+    # This is an explicit operator hypothesis, never inferred from Native BIN.
+    power, removed_mean=idr_power_spectrum(
+        prepared['samples_before_dc_removal'],backend=backend)
     power=np.asarray(power,dtype=np.float64)
     # Original 007D158B..007D15BC: Max(2, Round((N/fs)*0.5)).
     # Helper 007B1CF0 is unsigned Max, verified in PRIVATE _Unit114.pas.
@@ -364,6 +372,10 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
             'spectrum_summary':summary,'original_f_range_verified':False,
             'f_range_used':applied_range,'f_range_source':range_source,
             'f_range_applied_to_display':mode!=0,
+            'input_domain':input_domain,
+            'original_storage_read_divided_by_range':
+                prepared['original_storage_read_divided_by_range'],
+            'original_source_buffer_provenance_verified':False,
             'low_bins_zeroed':low_bins,
             'removed_mean_m_s2':removed_mean,'original_delphi_numerical_parity':False}
 
@@ -408,9 +420,10 @@ class OfflineSession:
 
     def spectrum(self,channel:int,n_fft:int=65536,mode:int=1,
                  start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
-                 backend:str='idr_float32', *, f_range:float|None=None)->dict:
+                 backend:str='idr_float32', *, f_range:float|None=None,
+                 input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
         return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend,
-                                f_range=f_range)
+                                f_range=f_range,input_domain=input_domain)
 
     def narrowband(self,channel:int,frequency_hz:float, *,
                    n_fft:int=4096,start_s:float|None=None,
@@ -568,7 +581,8 @@ class OfflineSession:
                               *,n_fft:int=65536,mode:int=1,
                               start_s:float|None=None,backend:str='idr_float32',
                               precise:bool=True,averaging:int=1,
-                              f_range:float|None=None)->dict:
+                              f_range:float|None=None,
+                              input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
         """Original TQGrapher pixel peak candidate over UNDECIMATED FFT bins.
 
         This is not the independently calculated DSP, nor a bitwise verified
@@ -577,17 +591,20 @@ class OfflineSession:
         """
         full=self.spectrum(channel,n_fft,mode,start_s,
                            max_hz=32768,max_points=n_fft//2,backend=backend,
-                           f_range=f_range)
+                           f_range=f_range,input_domain=input_domain)
         if len(full['frequency_hz'])!=n_fft//2:
             raise ValueError('Нужен полный непрореженный FFT для пиксельного курсора')
         return cursor_from_spectrum(full,pixel,geometry,
                                     precise=precise,averaging=averaging)
 
     def compare_fft_backends(self,channel:int,n_fft:int=65536,mode:int=1,
-                             start_s:float|None=None, *, f_range:float|None=None)->dict:
+                             start_s:float|None=None, *, f_range:float|None=None,
+                             input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
         """Compare two APP-DERIVED candidates, not against original Delphi."""
-        a=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'idr_float32',f_range=f_range)
-        b=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'numpy',f_range=f_range)
+        a=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'idr_float32',
+                        f_range=f_range,input_domain=input_domain)
+        b=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'numpy',
+                        f_range=f_range,input_domain=input_domain)
         x=np.asarray(a['amplitude'],dtype=np.float64)
         y=np.asarray(b['amplitude'],dtype=np.float64)
         err=np.abs(x-y)
@@ -596,6 +613,7 @@ class OfflineSession:
                 'n_fft':n_fft,'mode':mode,'df_hz':a['df_hz'],
                 'f_range_used':a['f_range_used'],
                 'f_range_source':a['f_range_source'],
+                'input_domain':a['input_domain'],
                 'window_mean_m_s2':a['removed_mean_m_s2'],
                 'max_absolute_difference':float(err.max()),
                 'rms_absolute_difference':float(np.sqrt(np.mean(err**2))),
