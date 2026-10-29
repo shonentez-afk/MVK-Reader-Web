@@ -2,13 +2,9 @@ name: Stage111 native desktop OFFLINE
 concurrency:
   group: stage111-desktop-${{ github.ref }}
   cancel-in-progress: true
+# Stage111N: CircleCI now handles research branch pushes.
+# Keep this workflow available for manual reruns when GitHub runners recover.
 on:
-  push:
-    branches:
-      - research/stage111-mvkview-desktop-20261029
-    paths:
-      - 'mvk_compatible/**'
-      - '.github/workflows/stage111-desktop-offline.yml'
   workflow_dispatch:
 permissions:
   contents: read
