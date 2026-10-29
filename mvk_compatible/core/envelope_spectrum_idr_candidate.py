@@ -16,6 +16,7 @@ import numpy as np
 from .envelope_idr_candidate import (EnvelopeProfile, envelope_plan,
     process_original_envelope_candidate, FIR_TAPS, FIR_DECIM)
 from .fft_idr_candidate import check_n, idr_power_spectrum
+from .calibration_candidate import resolve_f_range
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 
 SOURCE='APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE'
@@ -80,6 +81,7 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
         raise ValueError('Original spectrum modes are 0..3')
     if not math.isfinite(f_range) or f_range<=0:
         raise ValueError('FRange must be positive and finite')
+    f_range,_=resolve_f_range(f_range)
     if not isinstance(profile,EnvelopeProfile):
         raise ValueError('Original local IDP EnvelopeProfile is mandatory')
     plan=required_original_history(n_fft,sample_rate,code)
