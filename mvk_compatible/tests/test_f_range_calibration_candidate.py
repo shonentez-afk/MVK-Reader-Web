@@ -126,3 +126,52 @@ def test_separate_reference_calibration_mismatch_detected(tmp_path,capsys):
     assert not report['within_supplied_tolerances']
     assert report['candidate_f_range_used']==5.
     assert not report['original_delphi_parity_verified']
+
+
+def test_stage111i_source_single_is_not_python_double():
+    from mvk_compatible.core.calibration_candidate import resolve_f_range
+    candidate=1.234567890123
+    got,source=resolve_f_range(candidate)
+    assert got==float(np.float32(candidate))
+    assert got!=candidate
+    assert source=='OPERATOR_SUPPLIED_UNVERIFIED'
+    assert resolve_f_range(None)==(1.,'DEFAULT_ONE_NOT_CALIBRATION_VERIFIED')
+
+
+@pytest.mark.parametrize('value',[0.,-1.,float('nan'),float('inf'),1e-99,1e99,True,'1'])
+def test_stage111i_all_invalid_single_ranges_fail_closed(value):
+    from mvk_compatible.core.calibration_candidate import resolve_f_range
+    with pytest.raises(ValueError,match='FRange'):
+        resolve_f_range(value)
+
+
+def test_stage111i_envelope_and_narrowband_provenance_are_consistent(session):
+    from mvk_compatible.tests.test_envelope_idr_candidate import fake_profile
+    a=session.narrowband(1,64.,n_fft=4096,backend='numpy')
+    b=session.narrowband(1,64.,n_fft=4096,backend='numpy',f_range=2.5)
+    assert a['f_range_source']=='DEFAULT_ONE_NOT_CALIBRATION_VERIFIED'
+    assert b['f_range_source']=='OPERATOR_SUPPLIED_UNVERIFIED'
+    assert not b['original_f_range_verified']
+    c=session.spectrum_envelope(1,20,1024,fake_profile(),end_s=.0625,backend='numpy')
+    d=session.spectrum_envelope(1,20,1024,fake_profile(),end_s=.0625,
+                                backend='numpy',f_range=2.5)
+    assert c['f_range_source']=='DEFAULT_ONE_NOT_CALIBRATION_VERIFIED'
+    assert d['f_range_source']=='OPERATOR_SUPPLIED_UNVERIFIED'
+    assert d['f_range_used']==2.5
+    assert d['spectrum_summary']['output_peak_y']==pytest.approx(
+        c['spectrum_summary']['output_peak_y']*2.5,rel=1e-5)
+
+
+def test_stage111i_direct_envelope_and_narrowband_fail_on_single_overflow():
+    from mvk_compatible.tests.test_envelope_idr_candidate import fake_profile
+    from mvk_compatible.core.envelope_spectrum_idr_candidate import (
+        required_original_history,envelope_spectrum_idr_candidate)
+    from mvk_compatible.core.narrowband_idr_candidate import narrowband_from_full_power
+    with pytest.raises(ValueError,match='FRange'):
+        narrowband_from_full_power(np.zeros(512,dtype='f4'),
+            n_fft=1024,sample_rate_hz=32768,
+            input_frequency_hz=1600.,f_range=1e99)
+    n=required_original_history(1024,65536,20)['input_samples']
+    with pytest.raises(ValueError,match='FRange'):
+        envelope_spectrum_idr_candidate(np.zeros(n,dtype='f4'),65536,20,
+            fake_profile(),n_fft=1024,backend='numpy',f_range=1e99)
