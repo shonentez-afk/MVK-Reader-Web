@@ -30,6 +30,8 @@ class MainWindow(QMainWindow):
         self.session=None
         self.wave_line=None
         self.spec_line=None
+        self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
+        self._spec_last_cursor=None
         self._full_spectrum=None
         self._spectrum_summary=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
@@ -709,6 +711,10 @@ class MainWindow(QMainWindow):
             self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#176c92'))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.spec_plot.addItem(self.spec_line)
+            self.spec_hline=pg.InfiniteLine(angle=0,pen=pg.mkPen('#a56017'))
+            self.spec_hline.setVisible(False)  # Original source draws after the cursor is moved
+            self.spec_plot.addItem(self.spec_hline)
+            self._spec_last_cursor=None
             self.spec_plot.setLabel('left',d['unit'])
             self._spec_data_ymin=float(np.min(yy[visible])) if np.any(visible) else 0.
             self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
@@ -809,6 +815,13 @@ class MainWindow(QMainWindow):
                 precise=self.spec_precise.isChecked(),
                 averaging=(1 if self.spec_avg.currentIndex()==0 else 3))
             self.spec_line.setPos(found['frequency_hz'])
+            raw_y=float(self._full_spectrum['amplitude'][found['selected_bin']])
+            # 007CA9BA..9D3 uses the signed selected raw Y for the drawn line.
+            # 007CA9F3..AAE5 computes a DIFFERENT numeric label for averaging=3.
+            # Plot uses Qt view coordinates; exact original Delphi pixel parity unknown.
+            self.spec_hline.setPos(raw_y)
+            self.spec_hline.setVisible(True)
+            self._spec_last_cursor=found
             y_name=('дБ' if found['mode']==0 else
                     ('','м/с²','мм/с','мкм')[found['mode']])
             cursor=cursor_string_candidate(
@@ -821,6 +834,8 @@ class MainWindow(QMainWindow):
                 f" · avg={found['averaging']} (без /N)"
                 f" · {found['fft_backend']} · кандидат TQGrapher"
                 f" · snap={found['snapped_pixel_original_int_candidate']} px (Qt-геометрия)"
+                f"\nГоризонталь = raw FFT[{found['selected_bin']}]={raw_y:.8g} {found['unit']}"
+                ' · подпись может отличаться из-за усреднения; пиксели Delphi НЕ приняты'
                 f"\nCursorString IDR-кандидат (не Delphi RTL):\n{cursor['text']}")
         except (OSError,KeyError,ValueError,OverflowError) as e:
             self.statusBar().showMessage(str(e))
