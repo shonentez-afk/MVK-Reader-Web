@@ -25,6 +25,8 @@ from fastapi.responses import FileResponse
 VERSION = 'Stage110 three-tab research 0.1'
 MAX_ARCHIVE_MB = 1024
 MAX_BIN_SAMPLES = 10_000_000
+MAX_VALUES_BYTES = 4_000_000
+MAX_AUX_BYTES = 16_000_000
 BIN_NAME_RE = re.compile(r'^MVK\d+-ADC([1-8])-\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}\.bin$')
 router = APIRouter(prefix='/api/stage110', tags=['Stage110 MVKView parity (read-only)'])
 
@@ -56,6 +58,12 @@ def require_members(z: zipfile.ZipFile) -> tuple[list[str], dict]:
     for f in required:
         if f not in files:
             raise ValueError(f'В архиве отсутствует {f}')
+    if len(files) != len(set(files)):
+        raise ValueError('Дублируются имена файлов в ZIP')
+    if z.getinfo('EXPORT_AUDIT.json').file_size > 256_000:
+        raise ValueError('Аудит экспорта слишком велик')
+    if z.getinfo('VALUES_ALL_ADC_RECONSTRUCTED.csv').file_size > MAX_VALUES_BYTES:
+        raise ValueError('VALUES превышает разрешённый размер')
     adc_map = {}
     for name in files:
         if '/' in name or '\\' in name:
@@ -70,6 +78,13 @@ def require_members(z: zipfile.ZipFile) -> tuple[list[str], dict]:
     audit = json.loads(z.read('EXPORT_AUDIT.json'))
     if not isinstance(audit,dict) or 'instrument_serial' not in audit:
         raise ValueError('Нет подтверждённой идентичности сеанса')
+    manifest = audit.get('output_file_sha256')
+    if not isinstance(manifest, dict) or len(manifest) < 18:
+        raise ValueError('Отсутствует полный манифест SHA256 из Native R6.1/Stage107')
+    for file_name in required[1:]:
+        expected = manifest.get(file_name)
+        if not isinstance(expected, str) or len(expected) != 64 or hashlib.sha256(z.read(file_name)).hexdigest() != expected:
+            raise ValueError(f'Нарушена контрольная сумма {file_name} по EXPORT_AUDIT')
     # Protect against a ZIP accidentally containing channels of different sessions.
     stems={(n.rsplit('-ADC',1)[0], n.rsplit('-ADC',1)[1][1:]) for n in adc_map.values()}
     if len(stems)!=1 or next(iter(stems))[0]!=audit['instrument_serial']:
@@ -77,6 +92,14 @@ def require_members(z: zipfile.ZipFile) -> tuple[list[str], dict]:
     for n,name in adc_map.items():
         counterpart = f'{name}.tsxml'
         if counterpart not in files: raise ValueError(f'Нет TSXML АЦП{n}')
+        if z.getinfo(counterpart).file_size > 64_000:
+            raise ValueError(f'TSXML АЦП{n} слишком велик')
+        expected = manifest.get(counterpart)
+        if not isinstance(expected,str) or hashlib.sha256(z.read(counterpart)).hexdigest() != expected:
+            raise ValueError(f'Нарушена контрольная сумма TSXML АЦП{n}')
+        channel_audit = next((c.get('bin_sha256') for c in audit.get('channels',[]) if c.get('adc')==n),None)
+        if manifest.get(name) != channel_audit:
+            raise ValueError(f'Нарушена контрольная сумма BIN АЦП{n} в манифесте')
     return [adc_map[n] for n in range(1,9)], audit
 
 
@@ -116,7 +139,13 @@ def read_validated_aux_tick(z: zipfile.ZipFile, audit: dict, tick_index: int):
     """
     if 'aux4700.jsonl' not in z.namelist() or 'AUX_PROVENANCE.json' not in z.namelist():
         return None
+    if z.getinfo('aux4700.jsonl').file_size > MAX_AUX_BYTES:
+        raise ValueError('Слишком большой AUX4700')
+    if z.getinfo('AUX_PROVENANCE.json').file_size > 10_000:
+        raise ValueError('Слишком большой AUX provenance')
     provenance=json.loads(z.read('AUX_PROVENANCE.json'))
+    if hashlib.sha256(z.read('aux4700.jsonl')).hexdigest() != provenance.get('aux4700_sha256'):
+        raise ValueError('Нарушена контрольная сумма AUX4700 по provenance')
     if provenance.get('source_raw_sha256')!=audit.get('source_raw_sha256'):
         raise ValueError('AUX4700 принадлежит другому RAW-сеансу')
     needed=tick_index+1
@@ -246,12 +275,17 @@ def read_samples(path: Path, channel: int):
 def reduce_minmax(samples:np.ndarray, fs:float, offset:int, points:int):
     """Preserve waveform extrema instead of decimating one point per time bin."""
     count = max(1, (len(samples)+max(1,points//2)-1)//max(1,points//2))
-    lo,hi=[],[]
+    times,values=[],[]
     for i in range(0,len(samples),count):
         block=samples[i:i+count]
-        t=(offset+i+len(block)*.5)/fs
-        lo.extend([t,t]);hi.extend([float(np.min(block)),float(np.max(block))])
-    return lo,hi
+        low=int(np.argmin(block))
+        high=int(np.argmax(block))
+        # Actual sample times, in chronological order, for cursor binary search.
+        picks=(low,) if low==high else tuple(sorted((low,high)))
+        for j in picks:
+            times.append((offset+i+j)/fs)
+            values.append(float(block[j]))
+    return times,values
 
 
 def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
@@ -364,6 +398,9 @@ def spectrum(session_id:str,channel:int=Query(1,ge=1,le=8),n_fft:int=65536,mode:
     try:return spectrum_for_zip(get_archive(session_id),channel,n_fft,mode,start_s,max_hz,max_points)
     except (ValueError,KeyError,zipfile.BadZipFile,ET.ParseError) as e:raise HTTPException(422,str(e)) from e
 
+
+from stage110b_exact_cursor import register_cursor_routes
+register_cursor_routes(router, read_samples, spectrum_for_zip, get_archive)
 
 app=FastAPI(title='MVK Stage110 — три вкладки (исследовательская сборка)',version='0.1',description='OFFLINE ONLY: ZIP Native export; no device networking')
 app.include_router(router)
