@@ -4,14 +4,16 @@ Delphi MVKView parity is IN PROGRESS: FFT and AC remain labelled candidates.
 """
 from __future__ import annotations
 from pathlib import Path
+import math
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView)
 from ..core import OfflineSession
+from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
 
 class MainWindow(QMainWindow):
@@ -20,6 +22,7 @@ class MainWindow(QMainWindow):
         self.session=None
         self.wave_line=None
         self.spec_line=None
+        self._full_spectrum=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
         self.resize(1360,850)
         self.setMinimumSize(960,580)
@@ -183,12 +186,22 @@ class MainWindow(QMainWindow):
         self.spec_n.setCurrentText('65536')
         self.spec_backend=QComboBox()
         self.spec_backend.addItems(['IDR float32 · реконструкция','NumPy · контрольный расчёт'])
+        self.spec_precise=QCheckBox('Пик в пикселе (IDR)')
+        self.spec_precise.setChecked(True)
+        self.spec_precise.setToolTip('В оригинальной MVKView при сжатии FFT выбирается максимум в пиксельном интервале')
+        self.spec_avg=QComboBox()
+        self.spec_avg.addItems(['1 · значение бина','3 · √суммы квадратов, без деления'])
+        self.spec_avg.setCurrentIndex(1)
+        self.spec_avg.setToolTip('IDR: CursorAveraging 1 или 3; при 3 Delphi НЕ делит сумму квадратов на три')
         self.spec_hz=self._float(10,32768,10000,1)
         self.spec_last=QCheckBox('Последнее полное окно')
         self.spec_last.setChecked(True)
         for name,field in (('Режим',self.spec_mode),('FFT N',self.spec_n),('Алгоритм',self.spec_backend),('Частоты до, Гц',self.spec_hz)):
             bar.addWidget(QLabel(name));bar.addWidget(field)
         bar.addWidget(self.spec_last)
+        bar.addWidget(self.spec_precise)
+        bar.addWidget(QLabel('Курсор'))
+        bar.addWidget(self.spec_avg)
         b=QPushButton('Обновить спектр')
         b.clicked.connect(self.refresh_spec)
         bar.addWidget(b)
@@ -205,6 +218,15 @@ class MainWindow(QMainWindow):
         self.spec_hint=QLabel('Локальный FFT — кандидат по Delphi IDR; численный паритет НЕ доказан.')
         self.spec_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
         lay.addWidget(self.spec_hint)
+        self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
+        self.spec_n.currentIndexChanged.connect(self.refresh_spec)
+        self.spec_backend.currentIndexChanged.connect(self.refresh_spec)
+        self.spec_last.toggled.connect(self.refresh_spec)
+        self.spec_hz.editingFinished.connect(self.refresh_spec)
+
+    def _change_spectrum_mode(self,*_):
+        self.spec_avg.setCurrentIndex(0 if self.spec_mode.currentIndex()==0 else 1)
+        self.refresh_spec()
 
     @staticmethod
     def _zoom_bar(layout,inc,dec):
@@ -320,17 +342,32 @@ class MainWindow(QMainWindow):
         if not self.session:return
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
-            d=self.session.spectrum(self._ch(),int(self.spec_n.currentText()),
-                                    self.spec_mode.currentIndex(),start,self.spec_hz.value(),
+            n_fft=int(self.spec_n.currentText())
+            # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
+            # the visual trace, never the original TQGrapher cursor series.
+            d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
+                                    start,max_hz=1e9,max_points=n_fft//2,
                                     backend=self._fft_backend())
+            if len(d['amplitude'])!=n_fft//2:
+                raise ValueError('Пиксельный курсор требует все N/2 FFT-бинов')
+            self._full_spectrum=d
+            xx=np.asarray(d['frequency_hz'],dtype=np.float64)
+            yy=np.asarray(d['amplitude'],dtype=np.float64)
+            visible=xx<=self.spec_hz.value()
             self.spec_plot.clear()
-            self.spec_plot.plot(d['frequency_hz'],d['amplitude'],pen=pg.mkPen('#176c92'))
+            self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#176c92'))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.spec_plot.addItem(self.spec_line)
             self.spec_plot.setLabel('left',d['unit'])
             self.spec_plot.enableAutoRange()
-            self.spec_hint.setText(f"{d['source']} · {d['fft_backend']} · среднее вычтено: {d['removed_mean_m_s2']:.6g} м/с² · df={d['df_hz']:.7g} Гц · паритет Delphi НЕ принят")
-        except (OSError,KeyError,ValueError) as e:self._error(e)
+            self.spec_plot.setXRange(0,self.spec_hz.value(),padding=0)
+            self.spec_hint.setText(
+                f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
+                f"df={d['df_hz']:.7g} Гц · среднее DC {d['removed_mean_m_s2']:.6g} м/с² · "
+                "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
+        except (OSError,KeyError,ValueError) as e:
+            self._full_spectrum=None
+            self._error(e)
 
     @staticmethod
     def _clicked_x(plot,event):
@@ -355,16 +392,40 @@ class MainWindow(QMainWindow):
         except (OSError,KeyError,ValueError) as e:self.statusBar().showMessage(str(e))
 
     def _spec_click(self,event):
-        if not self.session:return
-        x=self._clicked_x(self.spec_plot,event)
-        if x is None:return
+        if not self.session or self._full_spectrum is None:return
+        if event.button()!=Qt.LeftButton:return
         try:
-            start=None if self.spec_last.isChecked() else self.wave_start.value()
-            p=self.session.exact_fft_bin(self._ch(),x,int(self.spec_n.currentText()),
-                                          self.spec_mode.currentIndex(),start,backend=self._fft_backend())
-            self.spec_line.setPos(p['frequency_hz'])
-            self.spec_hint.setText(f"FFT [{p['bin']}] · {p['frequency_hz']:.6f} Гц · {p['value']:.8g} {p['unit']} · кандидат")
-        except (OSError,KeyError,ValueError) as e:self.statusBar().showMessage(str(e))
+            vb=self.spec_plot.getViewBox()
+            rect=vb.sceneBoundingRect()
+            pos=event.scenePos()
+            if not rect.contains(pos) or rect.width()<=2:return
+            width=float(rect.width())
+            pixel=float(math.trunc(pos.x()-rect.left()))
+            mid=rect.center().y()
+            f_left=float(vb.mapSceneToView(QPointF(rect.left(),mid)).x())
+            f_right=float(vb.mapSceneToView(QPointF(rect.right(),mid)).x())
+            df=float(self._full_spectrum['df_hz'])
+            x_start=float(self._full_spectrum['frequency_hz'][0])
+            # Qt view has its own pixel origin. Convert to original source
+            # pixel-to-bin affine map, then let the IDR cursor pick the peak.
+            geom=CursorGeometry(
+                pixel_left=0.,pixel_right=width,
+                stoi_m=(f_right-f_left)/(width*df),
+                stoi_c=(f_left-x_start)/df,
+                x_start=x_start,x_scale=df,y_scale=1.)
+            found=cursor_from_spectrum(
+                self._full_spectrum,pixel,geom,
+                precise=self.spec_precise.isChecked(),
+                averaging=(1 if self.spec_avg.currentIndex()==0 else 3))
+            self.spec_line.setPos(found['frequency_hz'])
+            self.spec_hint.setText(
+                f"IDR pixel {int(pixel)} · bins [{found['pixel_bin_first']}.."
+                f"{found['pixel_bin_last']}] → пик FFT[{found['selected_bin']}]"
+                f" · {found['frequency_hz']:.6g} Гц · {found['display_y']:.7g} {found['unit']}"
+                f" · avg={found['averaging']} (без /N)"
+                f" · {found['fft_backend']} · кандидат TQGrapher")
+        except (OSError,KeyError,ValueError,OverflowError) as e:
+            self.statusBar().showMessage(str(e))
 
     def compare_fft(self):
         if not self.session:return
