@@ -1,0 +1,38 @@
+name: Stage111 native desktop OFFLINE
+on:
+  push:
+    branches:
+      - research/stage111-mvkview-desktop-20261029
+    paths:
+      - 'mvk_compatible/**'
+      - '.github/workflows/stage111-desktop-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NumPy and pytest (no Qt, HTTP or instruments)
+        run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
+      - name: Verify Python syntax
+        run: python -m compileall -q mvk_compatible
+      - name: Verify offline DSP and archive
+        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py
+  desktop-windows:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native Qt runtime
+        run: python -m pip install -r mvk_compatible/requirements-desktop.txt pytest
+      - name: Verify Qt tabs + pure offline data
+        run: python -m pytest -q mvk_compatible/tests
