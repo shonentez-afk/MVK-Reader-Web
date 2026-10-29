@@ -17,6 +17,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import numpy as np
+from .fft_idr_candidate import idr_power_spectrum
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -288,7 +289,7 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
 
 
 def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
-                     max_hz:float=10000.0, max_points:int=5000)->dict:
+                     max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32')->dict:
     if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
         raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
     if mode not in range(4):raise ValueError('Допустимы четыре режима 0..3')
@@ -296,12 +297,11 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     start = max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
     if start<0 or start+n_fft>len(samples):
         raise ValueError('Не хватает данных для выбранного окна FFT')
-    x=np.asarray(samples[start:start+n_fft],dtype=np.float64)
-    idx=np.arange(n_fft,dtype=np.float64)
-    window=(1.0-np.cos(2.0*np.pi*idx/n_fft))/np.sqrt(1.5)
-    # Stage81d / Stage110B: GetSpectrum emits N/2 bins, excluding Nyquist.
-    power=np.abs(np.fft.rfft(x*window)[:n_fft//2])**2
-    power[0]=0.0
+    # Original GetSpectrum (0x007D14B3) ALWAYS removes stored f32 mean.
+    # Stage111B reconstructed IDR FFT is still candidate, NOT instrument DSP.
+    power, removed_mean=idr_power_spectrum(samples[start:start+n_fft], backend=backend)
+    power=np.asarray(power,dtype=np.float64)
+    power[0]=0.0  # original 0th bin (other low bin policy still being traced)
     freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
     # Stage81c: Hann RMS; Mode1 candidate sqrt(P/2)*(2/N).
     amp=np.sqrt(power/2.0)*(2.0/n_fft)
@@ -338,7 +338,9 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
             'start_s':start/fs,'mode':mode,'mode_name':('Логарифмич.','Линейный ВУ','Линейный ВС','Линейный ВП')[mode],
             'frequency_hz':freq[keep].tolist(),'amplitude':y[keep].tolist(),
             'unit':unit,'source':'APP_DERIVED_FFT_MVKVIEW_CANDIDATE',
-            'warning':note,'file':filename}
+            'warning':note,'file':filename,
+            'fft_backend':backend,'detrended_before_fft':True,
+            'removed_mean_m_s2':removed_mean,'original_delphi_numerical_parity':False}
 
 
 
@@ -380,8 +382,9 @@ class OfflineSession:
         return waveform_for_zip(self.path,channel,start_s,seconds,mode,points)
 
     def spectrum(self,channel:int,n_fft:int=65536,mode:int=1,
-                 start_s:float|None=None,max_hz:float=10000.,max_points:int=5000)->dict:
-        return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points)
+                 start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
+                 backend:str='idr_float32')->dict:
+        return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend)
 
     def exact_sample(self,channel:int,time_s:float,start_s:float=0.,
                      seconds:float=1.,mode:str='acdc')->dict:
@@ -402,17 +405,36 @@ class OfflineSession:
                 'candidate_ac':mode=='ac'}
 
     def exact_fft_bin(self,channel:int,frequency_hz:float,n_fft:int=65536,
-                      mode:int=1,start_s:float|None=None)->dict:
+                      mode:int=1,start_s:float|None=None,backend:str='idr_float32')->dict:
         if not math.isfinite(frequency_hz) or frequency_hz<0:
             raise ValueError('Частота курсора должна быть положительной')
-        d=self.spectrum(channel,n_fft,mode,start_s,32768,262144)
+        d=self.spectrum(channel,n_fft,mode,start_s,32768,262144,backend)
         i=math.floor(frequency_hz/d['df_hz']+.5)
         if not 0<=i<len(d['frequency_hz']):
             raise ValueError('FFT-бин вне частотного диапазона')
         return {'channel':channel,'bin':i,'frequency_hz':d['frequency_hz'][i],
                 'value':d['amplitude'][i],'unit':d['unit'],'mode':mode,
                 'df_hz':d['df_hz'],'source':d['source'],
-                'warning':d['warning']}
+                'warning':d['warning'],'fft_backend':backend}
+
+    def compare_fft_backends(self,channel:int,n_fft:int=65536,mode:int=1,
+                             start_s:float|None=None)->dict:
+        """Compare two APP-DERIVED candidates, not against original Delphi."""
+        a=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'idr_float32')
+        b=self.spectrum(channel,n_fft,mode,start_s,32768,n_fft//2,'numpy')
+        x=np.asarray(a['amplitude'],dtype=np.float64)
+        y=np.asarray(b['amplitude'],dtype=np.float64)
+        err=np.abs(x-y)
+        peak=int(np.argmax(y))
+        return {'source':'APP_DERIVED_BACKEND_COMPARISON','channel':channel,
+                'n_fft':n_fft,'mode':mode,'df_hz':a['df_hz'],
+                'window_mean_m_s2':a['removed_mean_m_s2'],
+                'max_absolute_difference':float(err.max()),
+                'rms_absolute_difference':float(np.sqrt(np.mean(err**2))),
+                'reference_peak_bin':peak,
+                'relative_difference_at_reference_peak':float(err[peak]/max(abs(y[peak]),1e-30)),
+                'original_delphi_parity_verified':False,
+                'note':'IDR float32 candidate versus NumPy, NOT original Delphi'}
 
     def verify(self)->dict:
         """Decode and verify all channels and full original DSP source."""
