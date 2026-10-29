@@ -1,0 +1,65 @@
+[
+  {
+    "fixture": "stage107_test1",
+    "zip_sha256": "9b736d0ef8b2344443f70920a88d3e802ae893f0940a43dccba8ca8ea2a81220",
+    "updates": 60,
+    "channels": 8,
+    "third_octave_per_adc": 43,
+    "fixed_rms_per_adc": 24,
+    "has_peak_from_verified_aux": false,
+    "statuses": [
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "0x00000400",
+      "0x00000400"
+    ],
+    "qa": "PASS_8ADC_4LOCAL_FFT_EACH",
+    "elapsed_s": 1.614
+  },
+  {
+    "fixture": "stage107_test2",
+    "zip_sha256": "97b63a2907553d95a922fe625a3e53131526d7d9d5532f3c796be684342b019e",
+    "updates": 60,
+    "channels": 8,
+    "third_octave_per_adc": 43,
+    "fixed_rms_per_adc": 24,
+    "has_peak_from_verified_aux": false,
+    "statuses": [
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "0x00000400",
+      "0x00000400"
+    ],
+    "qa": "PASS_8ADC_4LOCAL_FFT_EACH",
+    "elapsed_s": 1.67
+  },
+  {
+    "fixture": "stage109_real_live",
+    "zip_sha256": "00ba03c12c2211e4d533dc09a5bb4e2b39593d8a92b19c5004747bc4527dbfac",
+    "updates": 60,
+    "channels": 8,
+    "third_octave_per_adc": 43,
+    "fixed_rms_per_adc": 24,
+    "has_peak_from_verified_aux": true,
+    "statuses": [
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "ОК",
+      "0x00000400",
+      "0x00000400"
+    ],
+    "qa": "PASS_8ADC_4LOCAL_FFT_EACH",
+    "elapsed_s": 1.822
+  }
+]

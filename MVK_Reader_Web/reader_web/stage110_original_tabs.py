@@ -1,0 +1,376 @@
+"""Stage110 MVKView 3-tab research adapter (OFFLINE). No network/device commands.
+
+Reads completed Native R6.1/Stage107 export ZIPs as authoritative DSP values
+and calibrated single-channel BIN/TSXML. Spectrum is a LOCAL research FFT,
+not a verified numerical clone of the original Delphi FFT.
+"""
+from __future__ import annotations
+
+import csv
+import hashlib
+import xml.etree.ElementTree as ET
+import io
+import json
+import math
+import os
+import re
+import zipfile
+from pathlib import Path
+from functools import lru_cache
+
+import numpy as np
+from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+
+VERSION = 'Stage110 three-tab research 0.1'
+MAX_ARCHIVE_MB = 1024
+MAX_BIN_SAMPLES = 10_000_000
+BIN_NAME_RE = re.compile(r'^MVK\d+-ADC([1-8])-\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}\.bin$')
+router = APIRouter(prefix='/api/stage110', tags=['Stage110 MVKView parity (read-only)'])
+
+
+def session_dir() -> Path:
+    # Do NOT default to any industrial network location, avoid auto-discovery.
+    return Path(os.getenv('MVK_STAGE110_SESSIONS_DIR', str(Path(__file__).with_name('stage110_sessions')))).resolve()
+
+
+def permitted_archives() -> dict[str, Path]:
+    directory = session_dir()
+    if not directory.is_dir():
+        return {}
+    return {p.stem: p for p in sorted(directory.glob('*.zip'))
+            if p.is_file() and p.stat().st_size <= MAX_ARCHIVE_MB*1024*1024 and not p.is_symlink()}
+
+
+def get_archive(session_id: str):
+    permitted = permitted_archives()
+    file_path = permitted.get(session_id)
+    if file_path is None:
+        raise HTTPException(404, 'Архив сеанса не найден в разрешённой папке')
+    return file_path
+
+
+def require_members(z: zipfile.ZipFile) -> tuple[list[str], dict]:
+    files = z.namelist()
+    required = ('EXPORT_AUDIT.json', 'VALUES_ALL_ADC_RECONSTRUCTED.csv', 'TABLE_LAST_AUX_RECONSTRUCTED.csv')
+    for f in required:
+        if f not in files:
+            raise ValueError(f'В архиве отсутствует {f}')
+    adc_map = {}
+    for name in files:
+        if '/' in name or '\\' in name:
+            continue
+        match = BIN_NAME_RE.fullmatch(name)
+        if match:
+            n = int(match.group(1))
+            if n in adc_map: raise ValueError(f'Дублируется BIN АЦП{n}')
+            adc_map[n] = name
+    if set(adc_map) != set(range(1, 9)):
+        raise ValueError('Нужны восемь BIN из одного комплекта Stage107/R6.1')
+    audit = json.loads(z.read('EXPORT_AUDIT.json'))
+    if not isinstance(audit,dict) or 'instrument_serial' not in audit:
+        raise ValueError('Нет подтверждённой идентичности сеанса')
+    # Protect against a ZIP accidentally containing channels of different sessions.
+    stems={(n.rsplit('-ADC',1)[0], n.rsplit('-ADC',1)[1][1:]) for n in adc_map.values()}
+    if len(stems)!=1 or next(iter(stems))[0]!=audit['instrument_serial']:
+        raise ValueError('BIN принадлежат разным приборам или сеансам')
+    for n,name in adc_map.items():
+        counterpart = f'{name}.tsxml'
+        if counterpart not in files: raise ValueError(f'Нет TSXML АЦП{n}')
+    return [adc_map[n] for n in range(1,9)], audit
+
+
+def read_values(z: zipfile.ZipFile):
+    raw = z.read('VALUES_ALL_ADC_RECONSTRUCTED.csv').decode('cp1251')
+    rows = list(csv.reader(io.StringIO(raw), delimiter='|'))
+    if len(rows)<4 or rows[0][0]!='sep=' or len(rows[1])!=585 or len(rows[2])!=585:
+        raise ValueError('Неверная схема оригинального VALUES 8x73+время')
+    for col in range(1,585):
+        assert_name = f'АЦП {(col-1)//73+1}'
+        if rows[1][col] != assert_name:
+            raise ValueError('Перемешаны каналы в VALUES')
+    data = rows[3:]
+    if not data or any(len(r)!=585 for r in data):
+        raise ValueError('Повреждена или пустая матрица VALUES')
+    return rows[2], data
+
+
+def parse_number(raw: str):
+    s=str(raw).strip().replace(',', '.')
+    try:
+        x=float(s)
+        return x if math.isfinite(x) else None
+    except ValueError:
+        return None
+
+
+def status_at(values: list[str], index: int):
+    return values[index].strip()
+
+
+def read_validated_aux_tick(z: zipfile.ZipFile, audit: dict, tick_index: int):
+    """Optional unrounded full AUX (incl. PIK / PIK-PIK).
+
+    Provenance sidecar is mandatory because a free-floating AUX file could be
+    taken from another 30-second measurement and silently mixed with BIN/VALUES.
+    """
+    if 'aux4700.jsonl' not in z.namelist() or 'AUX_PROVENANCE.json' not in z.namelist():
+        return None
+    provenance=json.loads(z.read('AUX_PROVENANCE.json'))
+    if provenance.get('source_raw_sha256')!=audit.get('source_raw_sha256'):
+        raise ValueError('AUX4700 принадлежит другому RAW-сеансу')
+    needed=tick_index+1
+    out={}
+    for line in z.read('aux4700.jsonl').splitlines():
+        if not line: continue
+        item=json.loads(line)
+        if item.get('update')!=needed: continue
+        ch=item.get('adc')
+        if ch not in range(1,9) or ch in out or any(len(item.get(k, []))!=n for k,n in
+             [('third_octave_acceleration_rms',43),('band_rms',24),('band_peak_equiv',24),('band_span_equiv',24)]):
+            raise ValueError('Повреждён AUX4700 для расчётного обновления')
+        out[ch]=item
+    if set(out)!=set(range(1,9)):
+        raise ValueError('Неполный AUX4700 для выбранного обновления')
+    return out
+
+
+def validate_aux_values_row(aux:dict, row:list[str]):
+    """Validate unrounded AUX against independently exported rounded VALUES.
+
+    Stage107 writes 4 significant digits with decimal comma; this check is
+    exact at the display-precision level and guards against mixed/altered AUX.
+    """
+    for ch in range(1,9):
+        values=row[1+73*(ch-1):1+73*ch]
+        obj=aux[ch]
+        for arr,offset in ((obj['third_octave_acceleration_rms'],0), (obj['band_rms'],49)):
+            for k,value in enumerate(arr):
+                if not math.isfinite(float(value)):
+                    raise ValueError('AUX содержит нечисловые значения')
+                if format(float(value),'.4g')!=values[offset+k].strip().replace(',','.'):
+                    raise ValueError('AUX и VALUES не совпадают: другая запись или повреждение')
+        if 'status_hex' in obj:
+            text_status=values[45].strip().lower()
+            normalized='0x00000000' if text_status in ('ок','ok','0') else text_status
+            if obj['status_hex'].strip().lower()!=normalized:
+                raise ValueError('Статус AUX не совпадает с VALUES')
+
+
+def calculated_for_zip(path: Path, tick: int = -1) -> dict:
+    with zipfile.ZipFile(path) as z:
+        _, audit = require_members(z)
+        headers, rows = read_values(z)
+        if tick < -len(rows) or tick >= len(rows):
+            raise ValueError('Номер расчётного обновления вне диапазона')
+        tick_index=tick if tick>=0 else len(rows)+tick
+        row = rows[tick]
+        aux_tick = read_validated_aux_tick(z, audit, tick_index)
+        if aux_tick is not None:
+            validate_aux_values_row(aux_tick,row)
+        channels = []
+        for channel in range(1,9):
+            off = 1+73*(channel-1)
+            vals = row[off:off+73]
+            # 43 measured third-octave bands, 24 measured RMS fixed/user values.
+            bands = [{'name': headers[off+k], 'rms_m_s2': parse_number(vals[k])}
+                     for k in range(43)]
+            measures = []
+            for k in range(49,73):
+                units = 'м/с²' if (k-49)%3==0 else ('мм/с' if (k-49)%3==1 else 'мкм')
+                measures.append({'name': headers[off+k], 'value': parse_number(vals[k]), 'unit': units})
+            aux_channel = aux_tick.get(channel) if aux_tick else None
+            if aux_channel:
+                for k,item in enumerate(measures):
+                    item['value'] = float(aux_channel['band_rms'][k])
+                for k,item in enumerate(bands):
+                    item['rms_m_s2'] = float(aux_channel['third_octave_acceleration_rms'][k])
+            peak = ([{'name':headers[off+49+k], 'value':float(v), 'unit':measures[k]['unit']}
+                     for k,v in enumerate(aux_channel['band_peak_equiv'])] if aux_channel else None)
+            span = ([{'name':headers[off+49+k], 'value':float(v), 'unit':measures[k]['unit']}
+                     for k,v in enumerate(aux_channel['band_span_equiv'])] if aux_channel else None)
+            channels.append({
+                'channel': channel,
+                'parameters_peak_24':peak,
+                'parameters_peak_peak_24':span,
+                'third_octave': bands,
+                'parameters_24': measures,
+                'sensor_voltage_v': parse_number(vals[46]),
+                'broadband_acceleration_m_s2': parse_number(vals[47]),
+                'crest_factor': parse_number(vals[48]),
+                'overload_status': status_at(vals, 43),
+                'buffer_status': status_at(vals, 44),
+                'sensor_status': status_at(vals, 45),
+                'data_source': ('MVK_DSP_AUX4700_FULL_PRECISION' if aux_channel else 'MVK_DSP_FROM_AUX4700_VIA_VALUES'),
+                'health': 'ALERT' if vals[45].strip().lower() not in ('ок','ok','0x00000000','0') else 'OK',
+            })
+        return {
+            'version':VERSION,'serial':audit['instrument_serial'],
+            'updates':len(rows),'tick':tick_index,
+            'timestamp':row[0], 'time_kind':'HOST_CLOCK_VALUES',
+            'channels':channels,'source':'MVK_DSP',
+            'precision':('unrounded AUX4700' if aux_tick else 'rounded VALUES CSV'),
+            'peak_metrics_available': bool(aux_tick),
+            'warning':'Временные метки VALUES — часы ПК; расчёты не пересчитаны приложением. ПИК/ПИК-ПИК доступны только при проверенном AUX4700 того же RAW.',
+        }
+
+
+def read_samples(path: Path, channel: int):
+    if channel < 1 or channel > 8:
+        raise ValueError('Номер АЦП должен быть 1..8')
+    with zipfile.ZipFile(path) as z:
+        files, audit = require_members(z)
+        name=files[channel-1]
+        info=z.getinfo(name)
+        if info.file_size % 4 or info.file_size > MAX_BIN_SAMPLES*4:
+            raise ValueError('BIN имеет некорректный размер')
+        data=z.read(name)
+        match = next((c for c in audit.get('channels',[]) if c.get('adc')==channel), None)
+        if not match or match.get('bin_sha256') != hashlib.sha256(data).hexdigest():
+            raise ValueError('Нарушена контрольная сумма BIN относительно EXPORT_AUDIT')
+        metadata = ET.fromstring(z.read(name+'.tsxml'))
+        chs = metadata.findall('./Channels/Channel')
+        if len(chs)!=1 or chs[0].findtext('RealDataType')!='Single':
+            raise ValueError('Некорректная структура TSXML')
+        if (int(chs[0].findtext('DataLength') or -1)!=len(data) or
+            int(chs[0].findtext('DataOffset') or -1)!=0 or
+            int(chs[0].findtext('ChannelFrequency') or -1)!=65536):
+            raise ValueError('Размер BIN и частота не совпадают с TSXML')
+        samples=np.frombuffer(data, dtype='<f4')
+        if not np.isfinite(samples).all():
+            raise ValueError('В BIN найдены NaN или Inf')
+        # Native output is *already* calibrated; do not apply K twice.
+        return samples, 65536.0, audit, name
+
+
+def reduce_minmax(samples:np.ndarray, fs:float, offset:int, points:int):
+    """Preserve waveform extrema instead of decimating one point per time bin."""
+    count = max(1, (len(samples)+max(1,points//2)-1)//max(1,points//2))
+    lo,hi=[],[]
+    for i in range(0,len(samples),count):
+        block=samples[i:i+count]
+        t=(offset+i+len(block)*.5)/fs
+        lo.extend([t,t]);hi.extend([float(np.min(block)),float(np.max(block))])
+    return lo,hi
+
+
+def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
+                     mode: str='acdc', points:int=4000)->dict:
+    if mode not in ('ac','acdc'):
+        raise ValueError('Режим должен быть ac или acdc')
+    samples, fs, audit, filename=read_samples(path,channel)
+    if not 0<=start_s<=len(samples)/fs or not 0<seconds<=30:
+        raise ValueError('Неверные границы окна временного сигнала')
+    a=round(start_s*fs)
+    b=min(len(samples),a+round(seconds*fs))
+    if b<=a:raise ValueError('Нет отсчётов в выбранном окне')
+    selected=samples[a:b].astype(np.float64)
+    mean=float(np.mean(selected))
+    signal=selected-mean if mode=='ac' else selected
+    xx,yy=reduce_minmax(signal,fs,a,points)
+    return {'version':VERSION,'channel':channel,'sample_rate_hz':fs,
+            'total_samples':int(len(samples)), 'window_samples':int(len(selected)),
+            'start_s':a/fs,'end_s':b/fs,
+            'time_s':xx,'amplitude':yy,'unit':'м/с²',
+            'mean_m_s2':mean, 'rms_m_s2':float(np.sqrt(np.mean(signal*signal))),
+            'peak_m_s2':float(np.max(np.abs(signal))),
+            'mode':mode,'source':'MVK_ADC_CALIBRATED_BIN',
+            'processing_note':('AC: вычтено среднее выбранного окна, локальная операция; точная семантика оригинальной MVKView ещё сравнивается' if mode=='ac' else 'AC+DC: сохранённый физический сигнал без вычитания среднего'),
+            'file':filename}
+
+
+def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
+                     max_hz:float=10000.0, max_points:int=5000)->dict:
+    if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
+        raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
+    if mode not in range(4):raise ValueError('Допустимы четыре режима 0..3')
+    samples,fs,audit,filename=read_samples(path,channel)
+    start = max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
+    if start<0 or start+n_fft>len(samples):
+        raise ValueError('Не хватает данных для выбранного окна FFT')
+    x=np.asarray(samples[start:start+n_fft],dtype=np.float64)
+    idx=np.arange(n_fft,dtype=np.float64)
+    window=(1.0-np.cos(2.0*np.pi*idx/n_fft))/np.sqrt(1.5)
+    power=np.abs(np.fft.rfft(x*window))**2
+    freq=np.fft.rfftfreq(n_fft,1/fs)
+    # Candidate linear mode from Stage81c: sqrt(P/2) * (2/N).
+    amp=np.sqrt(power/2.0)*(2.0/n_fft)
+    amp[0]=0
+    if mode==0:
+        # Exact desktop log helper 0x00447DB8 and reference are not yet proven.
+        y=np.full_like(amp,-180.0)
+        positive=amp>0
+        y[positive]=20*np.log10(amp[positive])
+        unit='дБ, кандидатная шкала отн. 1 м/с²'
+        note='НЕ эквивалент MVKView: log helper и опорный уровень не подтверждены; отдельный кандидат'
+    else:
+        if mode==1:
+            y=amp
+            unit='м/с²'
+        else:
+            factor=np.zeros_like(freq)
+            positive=freq>0
+            if mode==2:
+                factor[positive]=1000/(2*np.pi*freq[positive])
+                unit='мм/с'
+            else:
+                factor[positive]=1e6/(2*np.pi*freq[positive])**2
+                unit='мкм'
+            y=amp*factor
+        note='Локальный кандидат FFT по Stage81c: Hann RMS, N<=262144; численная равнозначность Delphi ещё НЕ доказана'
+    keep=np.flatnonzero(freq<=max_hz)
+    if len(keep)>max_points:
+        # Retain local maxima rather than throw away narrow resonances.
+        chunk=math.ceil(len(keep)/max_points)
+        keep=np.array([keep[i:i+chunk][np.argmax(y[keep[i:i+chunk]])] for i in range(0,len(keep),chunk)],dtype=np.int64)
+    return {'version':VERSION,'channel':channel,'n_fft':n_fft,'df_hz':fs/n_fft,
+            'start_s':start/fs,'mode':mode,'mode_name':('Логарифмич.','Линейный ВУ','Линейный ВС','Линейный ВП')[mode],
+            'frequency_hz':freq[keep].tolist(),'amplitude':y[keep].tolist(),
+            'unit':unit,'source':'APP_DERIVED_FFT_MVKVIEW_CANDIDATE',
+            'warning':note,'file':filename}
+
+
+@router.get('/sessions')
+def sessions():
+    found=[]
+    for key,path in permitted_archives().items():
+        try:
+            with zipfile.ZipFile(path) as z:
+                _, audit=require_members(z)
+            found.append({'id':key,'serial':audit['instrument_serial'],'source':audit.get('source_program_version','Native export'),
+                          'capture_started_utc':audit.get('capture_started_utc'),
+                          'bytes':path.stat().st_size})
+        except (ValueError,KeyError,zipfile.BadZipFile,json.JSONDecodeError):
+            continue
+    return {'version':VERSION,'sessions':found,'mode':'OFFLINE_READ_ONLY'}
+
+
+@router.get('/sessions/{session_id}/calculated')
+def calculated(session_id: str,tick:int=-1):
+    try:return calculated_for_zip(get_archive(session_id),tick=tick)
+    except (ValueError,KeyError,zipfile.BadZipFile,ET.ParseError) as e:raise HTTPException(422,str(e)) from e
+
+
+@router.get('/sessions/{session_id}/waveform')
+def waveform(session_id:str,channel:int=Query(1,ge=1,le=8),start_s:float=Query(0,ge=0),
+             seconds:float=Query(1,gt=0,le=30),mode:str='acdc',points:int=Query(4000,ge=100,le=10000)):
+    try:return waveform_for_zip(get_archive(session_id),channel,start_s,seconds,mode,points)
+    except (ValueError,KeyError,zipfile.BadZipFile,ET.ParseError) as e:raise HTTPException(422,str(e)) from e
+
+
+@router.get('/sessions/{session_id}/spectrum')
+def spectrum(session_id:str,channel:int=Query(1,ge=1,le=8),n_fft:int=65536,mode:int=Query(1,ge=0,le=3),
+             start_s:float|None=Query(None,ge=0),max_hz:float=Query(10000,gt=0,le=32768),max_points:int=Query(5000,ge=100,le=10000)):
+    try:return spectrum_for_zip(get_archive(session_id),channel,n_fft,mode,start_s,max_hz,max_points)
+    except (ValueError,KeyError,zipfile.BadZipFile,ET.ParseError) as e:raise HTTPException(422,str(e)) from e
+
+
+app=FastAPI(title='MVK Stage110 — три вкладки (исследовательская сборка)',version='0.1',description='OFFLINE ONLY: ZIP Native export; no device networking')
+app.include_router(router)
+
+@app.get('/')
+def index():
+    here=Path(__file__).with_name('stage110_original_tabs.html')
+    if not here.is_file():
+        here=Path(__file__).with_name('static')/'stage110_original_tabs.html'
+    return FileResponse(here)

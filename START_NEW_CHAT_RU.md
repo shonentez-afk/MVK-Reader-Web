@@ -1,5 +1,17 @@
 # MVK Reader Web — начать новый чат (актуально 2026-10-29, Stage109)
 
+
+## Stage110 — начато точное восстановление трёх вкладок оригинальной MVKView (2026-10-29)
+
+**User priority:** полнофункциональная совместимость с ORIGINAL Delphi MVKView во вкладках «Расчётные данные», «Временной сигнал», «Спектр», а не только 3 похожие страницы. Проверены архивные Stage25–96 (DFM, Delphi handlers, GetSignal/GetSpectrum, DSP registers, FFT/Hann, export). **Различать:** рассчитанные оригинальным DSP третьоктавы/СКЗ/ПИК/ПИК-ПИК — оригинальный AUX4700; график FFT вкладки «Спектр» оригинальный MVKView строит локально из BIN, его точная Delphi FFT пока требует численной сверки. Не пересчитывать штатные DSP-результаты приложением.
+
+**Stage110A ВЫПОЛНЕНО (OFFLINE-исследовательский срез):** в исследовательской ветке добавлены `MVK_Reader_Web/reader_web/stage110_original_tabs.py`, `static/stage110_original_tabs.html`, `tests/test_stage110_original_tabs.py`, документация и отдельный read-only router. В существующем Web доступен **только при явном** `MVK_STAGE110_ENABLE=1`, URL `/stage110/`; по умолчанию выключен, **не** открывает соединений с МВК01. 8 ADC×43 третьоктавы +24 штатных RMS, 24 ПИК и 24 ПИК-ПИК только из проверенного same-session AUX, 60 обновлений, статус `0x400`, BIN/TSXML и wave, четыре режима **кандидатного локального FFT** с явной меткой невалидированного происхождения; minmax, курсор, CSV. Read-only fail-closed с SHA256 BIN, проверкой TSXML, AUX RAW provenance и 4 значащих цифр против VALUES, без повторной калибровки.
+
+**QA:** 10/10 синтетических HTTP/источников/ошибок PASS; 3 реальных импортированных сеанса МВК01 №84 (Stage107 Test1/Test2, Stage109 R6.1), 8 каналов и 4 FFT режима по каждому, при наличии полного AUX 60×8×67 = **32160** точных display-precision сверок AUX/VALUES PASS. Это **НЕ** доказывает точного совпадения всего GUI/FFT Delphi MVKView.
+
+Полная карта незакрытых функций, адреса Delphi и критерии приёмки: `docs/research/STAGE110_MVKVIEW_THREE_TABS_GAP_AND_ACCEPTANCE_RU.md`. Инструкция запуска: `docs/research/STAGE110_MVKVIEW_THREE_TABS_README_RU.md`. **Следующий Stage110B/C:** восстановление pbAdcPaint/pbSpectrumPaint/GetAdjustedEnvelopeLength, шкал/подрежимов/горячих клавиш, exact numerical spectrum against ORIGINAL MVKView exported spectrum from SAME BIN+TSXML, затем встройка в Live R6.1 и долгие тесты. Stable main/v0.3.40 **не изменена**. Промышленные ZIP/BIN/RAW/IDR в GitHub не загружались.
+
+
 ## АКТУАЛЬНО НА 2026-10-29 — ПРИОРИТЕТ STAGE109, ADR
 
 **Решение пользователя зафиксировано:** [ADR-2026-10-29 — получение данных МВК01 решено, оригинальные расчёты DSP являются источником истины](docs/ADR_2026_10_29_ORIGINAL_MVK_DSP_DATA_SOURCE_RU.md). Это **важнее старых этапов ниже**, включая заметки, что надо самостоятельно имитировать штатное СКЗ и ждать подтверждения пассивного TCP.

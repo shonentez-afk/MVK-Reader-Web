@@ -279,3 +279,14 @@ def report_pdf(rid:str,kind:str='velocity',df:float=Query(.25,ge=.25,le=8),lo:fl
     c.drawString(35,240,'Отчёт построен офлайн из сохранённого BIN/TSXML; нет данных о состоянии прибора.')
     c.save()
     return Response(content=buf.getvalue(),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="mvk_report.pdf"'})
+
+
+# Stage110 ORIGINAL MVKView tabs — explicitly enabled research-only UI.
+# Default OFF; does not connect to devices or modify verified Native R6.1.
+if os.getenv('MVK_STAGE110_ENABLE', '0') == '1':
+    from stage110_original_tabs import router as _mvk_stage110_router
+    app.include_router(_mvk_stage110_router)
+
+    @app.get('/stage110/', include_in_schema=False)
+    def stage110_original_mvkview_tabs():
+        return FileResponse(ROOT / 'static' / 'stage110_original_tabs.html')
