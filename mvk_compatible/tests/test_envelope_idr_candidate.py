@@ -139,3 +139,23 @@ def test_envelope_fail_closed_on_short_input_and_nonfinite():
 def test_invalid_f_range_does_not_silently_rescale():
     with pytest.raises(ValueError):
         process_original_envelope_candidate(np.ones(1000,dtype='f4'),65536,1,fake_profile(),f_range=0)
+
+
+def test_offline_archive_envelope_uses_only_existing_history(tmp_path):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    sess=OfflineSession.open(fixture_zip(tmp_path))
+    prof=fake_profile(i=1,q=0)
+    d=sess.envelope(1,1,start_s=.02,seconds=.02,profile=prof,
+                    display_order='getsignal_buffer',points=500)
+    assert d['source']=='APP_DERIVED_ENVELOPE_IDR_PRIVATE_COEFFICIENT_CANDIDATE'
+    assert d['x_axis_kind']=='OUTPUT_BUFFER_RELATIVE_POSITION_NOT_ORIGINAL_TIME'
+    assert d['profile_source']=='SYNTHETIC_QA_COEFFICIENTS'
+    assert d['output_samples']>0
+    assert d['output_sample_rate_hz']==16384
+    assert d['original_delphi_numerical_parity_verified'] is False
+    assert all(np.isfinite(d['amplitude']))
+    with pytest.raises(ValueError,match='real BIN history'):
+        sess.envelope(1,1,start_s=0,seconds=.01,profile=prof)
+    with pytest.raises(ValueError):
+        sess.envelope(1,1,start_s=.02,seconds=.02,profile=None)
