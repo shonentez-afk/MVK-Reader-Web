@@ -20,6 +20,7 @@ import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
 from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
+from .spectrum_metrics_idr_candidate import original_spectrum_summary
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate)
 
@@ -323,6 +324,11 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     if low_bins>len(power):
         raise ValueError('Неверная нижняя частотная граница FFT')
     power[:low_bins]=0.0
+    # IDR GetSpectrum: calculate OutputMean/OutputPeakX/OutputPeakY using
+    # the full power series, BEFORE display log/conversion and never DSP AUX.
+    # FRange=1 is a candidate for already calibrated offline BIN input.
+    summary=original_spectrum_summary(power,n_fft=n_fft,fs_out=fs,
+                                        f_range=1.0,spectrum_mode=mode)
     freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
     # Stage81c: Hann RMS; Mode1 candidate sqrt(P/2)*(2/N).
     amp=np.sqrt(power/2.0)*(2.0/n_fft)
@@ -361,6 +367,7 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
             'unit':unit,'source':'APP_DERIVED_FFT_MVKVIEW_CANDIDATE',
             'warning':note,'file':filename,
             'fft_backend':backend,'detrended_before_fft':True,
+            'spectrum_summary':summary,'original_f_range_verified':False,
             'low_bins_zeroed':low_bins,
             'removed_mean_m_s2':removed_mean,'original_delphi_numerical_parity':False}
 
