@@ -266,3 +266,35 @@ def test_qt_stage111g_three_field_copy_and_local_save_candidate(tmp_path,qt_app,
     assert 'кандидат' in lines[1]
     window.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111h_original_narrowband_and_noise_peak_inspector(tmp_path,qt_app):
+    """Original 007D0E58 research control must not alter DSP table or Spectra."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.narrow_result is not None and win.narrow_noise is not None
+    previous=win._full_spectrum
+    dsp=win.session.calculations()
+    win.narrow_frequency.setValue(64.)
+    win.narrow_run.click()
+    qt_app.processEvents()
+    assert 'IDR узкополосный' in win.narrow_result.text()
+    assert '4 ±1 FFT-бин' in win.narrow_result.text()
+    assert 'не приборный DSP' in win.narrow_result.text()
+    win.narrow_noise.setChecked(True)
+    win.narrow_run.click()
+    qt_app.processEvents()
+    assert 'Шумовой пик' in win.narrow_result.text()
+    assert 'исключены FFT-бин(ы)' in win.narrow_result.text()
+    assert win._full_spectrum is previous
+    assert win.session.calculations()==dsp
+    win.narrow_frequency.setValue(32768.)
+    win.narrow_run.click()
+    assert 'расчёт отклонён' in win.narrow_result.text()
+    win.close()
+    qt_app.processEvents()
