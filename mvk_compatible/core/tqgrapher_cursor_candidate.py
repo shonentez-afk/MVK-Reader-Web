@@ -25,6 +25,8 @@ class CursorGeometry:
     x_start: float
     x_scale: float
     y_scale: float = 1.0
+    itos_m: float | None = None
+    itos_c: float | None = None
 
     def validate(self) -> None:
         p=(self.pixel_left,self.pixel_right,self.stoi_m,self.stoi_c,
@@ -32,7 +34,11 @@ class CursorGeometry:
         if (not all(math.isfinite(float(x)) for x in p)
                 or self.pixel_right <= self.pixel_left
                 or self.stoi_m <= 0 or self.x_scale <= 0
-                or self.y_scale == 0):
+                or self.y_scale == 0
+                or ((self.itos_m is None)!=(self.itos_c is None))
+                or (self.itos_m is not None and (
+                    not math.isfinite(self.itos_m) or not math.isfinite(self.itos_c)
+                    or self.itos_m<=0))):
             raise ValueError('Invalid TQGrapher cursor pixel/series geometry')
 
 
@@ -94,6 +100,14 @@ def pick_tqgrapher_cursor(
     # inverse of supplied stoiM/C is only a candidate for line position.
     snapped_pixel=geometry.pixel_left+(center-geometry.stoi_c)/geometry.stoi_m
     snapped_pixel=min(geometry.pixel_right,max(geometry.pixel_left,snapped_pixel))
+    # 007CAB94 computes index*itosM+itosC, STP Single, CLAMP to native
+    # PixelLeft..PixelRight, then Delphi @ROUND. Source independent from
+    # inverse(stoiM/C). Only available if the caller supplied both fields.
+    snapped_original=None
+    if geometry.itos_m is not None:
+        original=float(np.float32(center*geometry.itos_m+geometry.itos_c))
+        original=min(geometry.pixel_right,max(geometry.pixel_left,original))
+        snapped_original=int(round(original))
     return {
         'selected_bin':chosen,
         'pixel':float(pixel),
@@ -101,6 +115,8 @@ def pick_tqgrapher_cursor(
         'pixel_bin_last':last,
         'precise_max_search_used':bool(precise and last>=first),
         'snapped_pixel_candidate':float(snapped_pixel),
+        'snapped_pixel_original_int_candidate':snapped_original,
+        'independent_itos_source_supplied':geometry.itos_m is not None,
         'x_value':x_value,
         'raw_y':float(a[center]),
         'display_y':float(np.float32(y_stored*geometry.y_scale)),
@@ -123,13 +139,18 @@ def cursor_from_spectrum(
     freqs=np.asarray(spectrum['frequency_hz'],dtype=np.float64)
     values=np.asarray(spectrum['amplitude'],dtype=np.float64)
     df=float(spectrum['df_hz'])
+    full_power_bins=len(freqs)
+    grapher_bins=spectrum.get('grapher_series_bins',full_power_bins)
+    if (not isinstance(grapher_bins,int) or isinstance(grapher_bins,bool)
+        or grapher_bins<2 or grapher_bins>full_power_bins):
+        raise ValueError('Invalid source-derived TQGrapher displayed series length')
     if (len(freqs)<2 or len(freqs)!=len(values) or not math.isfinite(df)
         or df<=0 or not isclose(geometry.x_scale,df,rel_tol=1e-6)
         or not isclose(geometry.x_start,float(freqs[0]),rel_tol=1e-6,abs_tol=1e-9)
         or not bool(np.allclose(freqs,geometry.x_start+np.arange(len(freqs))*df,
                                  atol=1e-7,rtol=1e-7))):
         raise ValueError('Cursor requires full-resolution, contiguous FFT bins and matching XScale')
-    found=pick_tqgrapher_cursor(values,pixel,geometry,
+    found=pick_tqgrapher_cursor(values[:grapher_bins],pixel,geometry,
                                precise=precise,averaging=averaging)
     found.update({
         'channel':spectrum['channel'],
@@ -140,7 +161,10 @@ def cursor_from_spectrum(
         'fft_source':spectrum['source'],
         'fft_backend':spectrum.get('fft_backend','unknown'),
         'frequency_hz':float(freqs[found['selected_bin']]),
-        'full_bin_count':len(freqs),
+        'full_bin_count':full_power_bins,
+        'grapher_series_bins':grapher_bins,
+        'original_series_truncated_from_fft':
+            grapher_bins < full_power_bins,
         'chart_decimation_used':False,
     })
     return found
