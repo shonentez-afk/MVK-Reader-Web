@@ -17,6 +17,7 @@ from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
+from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
@@ -295,6 +296,14 @@ class MainWindow(QMainWindow):
             'исходные BIN/IDP не записываются')
         self.spec_save_button.clicked.connect(self._save_spec_summary)
         stack.addWidget(self.spec_save_button)
+        self.spec_original_copy_compare=QPushButton('Сверить 3 поля с MVKView…')
+        self.spec_original_copy_compare.setToolTip(
+            'Только локальный TXT из оригинальной MVKView (TAB, десятичная запятая). '
+            'Не подключается к прибору, не сохраняет исходные данные, '
+            'не подтверждает побитовый паритет Delphi.')
+        self.spec_original_copy_compare.setEnabled(False)
+        self.spec_original_copy_compare.clicked.connect(self._compare_original_copy)
+        stack.addWidget(self.spec_original_copy_compare)
 
         separator=QFrame()
         separator.setFrameShape(QFrame.HLine)
@@ -663,6 +672,7 @@ class MainWindow(QMainWindow):
                 'APP_DERIVED_GETSPECTRUM_PEAK_SUMMARY_IDR_CANDIDATE')
             self.spec_copy_button.setEnabled(valid_summary)
             self.spec_save_button.setEnabled(valid_summary)
+            self.spec_original_copy_compare.setEnabled(valid_summary)
             xx=np.asarray(d['frequency_hz'],dtype=np.float64)
             yy=np.asarray(d['amplitude'],dtype=np.float64)
             visible=xx<=self.spec_hz.value()
@@ -705,6 +715,7 @@ class MainWindow(QMainWindow):
             self._spectrum_summary=None
             self.spec_copy_button.setEnabled(False)
             self.spec_save_button.setEnabled(False)
+            self.spec_original_copy_compare.setEnabled(False)
             self._error(e)
 
     @staticmethod
@@ -792,6 +803,40 @@ class MainWindow(QMainWindow):
         except (OSError,KeyError,TypeError,ValueError,OverflowError) as exc:
             self.narrow_result.setText('Узкополосный расчёт отклонён: '+str(exc))
             self.statusBar().showMessage('Отклонено: '+str(exc))
+
+    def _compare_original_copy(self):
+        """Offline 3-field numeric+text QA, no original export or remote sync."""
+        if self._spectrum_summary is None:return
+        filename,_=QFileDialog.getOpenFileName(
+            self,'Выберите локальный TXT — Copy из оригинальной MVKView',
+            '','Text (*.txt)')
+        if not filename:return
+        try:
+            original=read_operator_triplet_file(
+                Path(filename),separator='\t',decimal_separator=',',
+                encoding='utf-8-sig')
+            report=compare_operator_triplet(
+                self._spectrum_summary,original,
+                abs_tolerance=1e-5,rel_tolerance=.01,
+                operator_confirmed_same_window=False)
+            status=('ЧИСЛЕННЫЕ ЗНАЧЕНИЯ В ЗАДАННОМ ДОПУСКЕ'
+                    if report['within_supplied_tolerances']
+                    else 'ЧИСЛЕННЫЕ ЗНАЧЕНИЯ НЕ СОВПАЛИ')
+            display=('да' if report['candidate_display_text_equal']
+                     else 'нет')
+            diffs=report['absolute_errors']
+            QMessageBox.information(
+                self,'Локальная сверка с оригинальной MVKView — только кандидат',
+                status+'\n'
+                f"Текст 3 полей совпал: {display} (Delphi FormatFloat ещё не принят)\n"
+                f"|Δ среднего|={diffs['output_mean']:.8g}\n"
+                f"|Δ частоты|={diffs['output_peak_frequency_hz']:.8g} Гц\n"
+                f"|Δ амплитуды|={diffs['output_peak_y']:.8g}\n"
+                f"SHA-256 оригинального TXT: {report['reference_sha256']}\n"
+                'Окно, FRange и исходная программа не аттестованы. '
+                'Полный численный и визуальный паритет НЕ доказан.')
+        except (KeyError,OSError,ValueError,UnicodeError,TypeError) as exc:
+            QMessageBox.warning(self,'Сравнение оригинальной MVKView отклонено',str(exc))
 
     def _copy_spec_summary(self):
         """Source-confirmed 3-column tab structure; formatter still CANDIDATE."""
