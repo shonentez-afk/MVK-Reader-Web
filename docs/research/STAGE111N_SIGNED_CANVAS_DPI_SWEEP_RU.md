@@ -36,3 +36,8 @@ Original TCanvas TextWidth/TextHeight, actual Canvas pixel origin and DPI, Windo
 2. Collect private original font/text metrics for multiple DPI settings using the same source archive and native Canvas. Use `python -m mvk_compatible.canvas_sweep_reference_compare --cases C:/private/original-canvas-sweep.json --confirm-same-canvas --report-json C:/private/canvas-errors.json`.
 3. Compare real one- and two-series original CursorString, CursorDrawnX/Y and complete sample arrays against the existing private cursor comparator. Do not infer original metrics from Qt.
 4. Continue Delphi RTL 0042EE10 / rounding/x87, original FFT and all three UI tabs. Never enable Live or rewrite stable branches without separate permission.
+
+
+## GitHub Actions validation blocked (29.10.2026 UTC)
+
+Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40905305758, source SHA `9346557611fa1361bb43885859eba39d36d5fb9c`, `conclusion=failure`. Linux offline-core and Windows desktop-windows both reported `failure` **before a runner was assigned**: `runner_id=0`, empty `runner_name` and `steps=[]`, approximately 2–3 seconds after job creation. Windows EXE was `skipped`. Earlier Stage111N runs 40905127698 and 40905080313 also reported failure. No pytest failure or successful test execution can be inferred from these runs. Diagnose runner/account/repository Actions infrastructure or limits independently, re-run when runners are available, and accept Stage111N only after observing actual Linux/Windows/Qt jobs and an EXE artifact for the exact latest source SHA. Stage111M 40900170911 remains the most recent confirmed successful code CI and is **not** a Stage111N pass.
