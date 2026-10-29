@@ -30,3 +30,9 @@ signal_data/
 *.npz
 *.npy
 .private_envelope/
+
+# Stage111F: local original MVKView numeric reference and private comparison reports
+mvk_compatible/private_reference_exports/
+mvk_compatible/private_reports/
+*.mvkview-reference.csv
+*.mvkview-diff.json
