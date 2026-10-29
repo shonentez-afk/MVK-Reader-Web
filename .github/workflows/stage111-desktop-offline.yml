@@ -36,3 +36,28 @@ jobs:
         run: python -m pip install -r mvk_compatible/requirements-desktop.txt pytest
       - name: Verify Qt tabs + pure offline data
         run: python -m pytest -q mvk_compatible/tests
+  windows-exe-preview:
+    needs: desktop-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native runtime and PyInstaller
+        run: python -m pip install -r mvk_compatible/requirements-desktop.txt pyinstaller
+      - name: Build Windows desktop preview (NO server / device)
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name MVKViewCompatible_Stage111_PREVIEW mvk_compatible/windows_launcher.py
+      - name: Record executable SHA-256
+        shell: pwsh
+        run: |
+          $f='dist/MVKViewCompatible_Stage111_PREVIEW.exe'
+          $hash=(Get-FileHash $f -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  MVKViewCompatible_Stage111_PREVIEW.exe" | Out-File -Encoding ascii 'dist/SHA256SUMS.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MVKViewCompatible_Stage111_Windows_Preview
+          path: |
+            dist/MVKViewCompatible_Stage111_PREVIEW.exe
+            dist/SHA256SUMS.txt
+          retention-days: 14
