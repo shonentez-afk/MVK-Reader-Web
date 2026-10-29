@@ -1,3 +1,5 @@
+> **АКТУАЛЬНЫЙ ПРОГРЕСС Stage111B (29.10.2026).** Новое независимое ядро восстановленного спектра `mvk_compatible/core/fft_idr_candidate.py`, структурно подтверждено по оригинальным Unit114/Unit115, синтетически проверено на NumPy; в оригинальной `GetSpectrum` доказана безусловная f32 mean correction и точная нижняя граница `max(2,Round(N/(2fs)))`. Запущены и прошли Linux 36/36 и Windows 36/36 core + 2/2 Qt тестов; Windows EXE Preview проходит упаковку, проверять последний статус Actions. Следующий этап точная эталонная сверка и `GetSignal`; **нет полной копии MVKView**. Подробности: `docs/research/STAGE111B_ORIGINAL_FFT_IDR_FLOAT32_RECOVERY_RU.md`. `main`/v0.3.40 заморожены.
+
 # ВАЖНО: STAGE111 — НОВОЕ АКТУАЛЬНОЕ НАПРАВЛЕНИЕ (29.10.2026)
 
 Новая программа — **MVKView Compatible Desktop**, отдельный каталог `mvk_compatible/` и ветка `research/stage111-mvkview-desktop-20261029`. v0.3.40 заморожена, не является архитектурной базой. Работа Stage110 и всё ниже — исследовательская история. См. `docs/ADR_2026_10_29_STAGE111_MVKVIEW_COMPATIBILITY_FIRST_RU.md` и `docs/research/STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md`.
