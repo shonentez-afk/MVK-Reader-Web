@@ -423,3 +423,36 @@ def test_qt_stage111j_original_spectrum_visible_series_and_cursor_text(tmp_path,
     assert 'кандидат' in win.spec_hint.text()
     win.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111k_canvas_geometry_shows_source_transforms_without_vendor_claim(
+        tmp_path,qt_app,monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    window=MainWindow()
+    assert not window.spec_canvas_geometry_button.isEnabled()
+    window.open_archive(fixture_zip(tmp_path))
+    window.show()
+    window.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert window.spec_canvas_geometry_button.isEnabled()
+    notices=[]
+    monkeypatch.setattr(QMessageBox,'information',
+                        lambda *args:notices.append((args[1],args[2])))
+    window.spec_canvas_geometry_button.click()
+    qt_app.processEvents()
+    assert len(notices)==1
+    title,body=notices[0]
+    assert 'Canvas' in title
+    assert 'итов' not in title  # numeric source transform, not decorative text
+    assert 'PixelRect' in body
+    assert 'itosM=' in body and 'stoiM=' in body
+    assert 'Это НЕ фактический прямоугольник оригинальной MVKView' in body
+    preview=window._spec_canvas_geometry_preview
+    assert preview['source']=='APP_DERIVED_TQGRAPHER_CANVAS_GEOMETRY_IDR_CANDIDATE'
+    assert preview['pixel_right']>preview['pixel_left']
+    assert not preview['original_pixel_rectangle_verified']
+    assert not preview['original_canvas_font_metrics_verified']
+    window.close()
+    qt_app.processEvents()
