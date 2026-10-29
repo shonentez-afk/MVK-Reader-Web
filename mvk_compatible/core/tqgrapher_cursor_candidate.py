@@ -112,3 +112,35 @@ def pick_tqgrapher_cursor(
         'original_delphi_cursor_parity_verified':False,
         'warning':'Source-confirmed bin selection; pixel transforms, x87 rounding and CursorString formats still require original UI comparisons',
     }
+
+
+def cursor_from_spectrum(
+    spectrum:dict, pixel:float, geometry:CursorGeometry, *,
+    precise:bool=True, averaging:int=1
+)->dict:
+    """Use the FULL, non-decimated candidate FFT bin series, not chart points."""
+    from math import isclose
+    freqs=np.asarray(spectrum['frequency_hz'],dtype=np.float64)
+    values=np.asarray(spectrum['amplitude'],dtype=np.float64)
+    df=float(spectrum['df_hz'])
+    if (len(freqs)<2 or len(freqs)!=len(values) or not math.isfinite(df)
+        or df<=0 or not isclose(geometry.x_scale,df,rel_tol=1e-6)
+        or not isclose(geometry.x_start,float(freqs[0]),rel_tol=1e-6,abs_tol=1e-9)
+        or not bool(np.allclose(freqs,geometry.x_start+np.arange(len(freqs))*df,
+                                 atol=1e-7,rtol=1e-7))):
+        raise ValueError('Cursor requires full-resolution, contiguous FFT bins and matching XScale')
+    found=pick_tqgrapher_cursor(values,pixel,geometry,
+                               precise=precise,averaging=averaging)
+    found.update({
+        'channel':spectrum['channel'],
+        'unit':spectrum['unit'],
+        'mode':spectrum['mode'],
+        'n_fft':spectrum['n_fft'],
+        'df_hz':df,
+        'fft_source':spectrum['source'],
+        'fft_backend':spectrum.get('fft_backend','unknown'),
+        'frequency_hz':float(freqs[found['selected_bin']]),
+        'full_bin_count':len(freqs),
+        'chart_decimation_used':False,
+    })
+    return found
