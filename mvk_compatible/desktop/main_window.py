@@ -11,7 +11,8 @@ from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
-    QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView)
+    QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
+    QScrollBar,QScrollArea,QFrame)
 from ..core import OfflineSession
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
@@ -174,55 +175,201 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.wave_hint)
 
     def _spectrum_tab(self):
+        """DFM-informed panel proportions with FUNCTIONAL Qt scrollbars.
+
+        Original PageSpectrum/pnSpecTools width 177, left command order and
+        24-pixel top/right scrollbars are source-verified. Current controls
+        remain research Qt widgets; no claim of pixel-perfect Delphi layout.
+        """
         tab=QWidget()
         self.tabs.addTab(tab,'Спектр')
-        lay=QVBoxLayout(tab)
-        bar=QHBoxLayout()
+        lay=QHBoxLayout(tab)
+        lay.setContentsMargins(4,6,4,4)
+        lay.setSpacing(0)
+
+        self.spec_tools=QScrollArea()
+        self.spec_tools.setObjectName('pnSpecTools')
+        self.spec_tools.setFixedWidth(177)
+        self.spec_tools.setWidgetResizable(True)
+        self.spec_tools.setFrameShape(QFrame.NoFrame)
+        tools=QWidget()
+        tools.setObjectName('pnSpecToolsBody')
+        stack=QVBoxLayout(tools)
+        stack.setContentsMargins(9,9,6,9)
+        stack.setSpacing(6)
+
+        self.spec_envelope_button=QPushButton('Огибающая — нет')
+        self.spec_envelope_button.setObjectName('bSpecEnvelopeType')
+        self.spec_envelope_button.setFixedHeight(41)
+        self.spec_envelope_button.setEnabled(False)
+        self.spec_envelope_button.setToolTip(
+            'Точная огибающая требует оригинальных коэффициентов; пока доступна только отдельная локальная исследовательская функция')
+        stack.addWidget(self.spec_envelope_button)
+
         self.spec_mode=QComboBox()
-        self.spec_mode.addItems(['0 · логарифмический дБ (кандидат)',
-            '1 · ускорение','2 · скорость','3 · перемещение'])
+        self.spec_mode.setObjectName('bSpecType')
+        self.spec_mode.addItems(['0 · дБ (исследователь.)','1 · ускорение',
+                                 '2 · скорость','3 · перемещение'])
+        self.spec_mode.setFixedHeight(41)
+        stack.addWidget(self.spec_mode)
+
         self.spec_n=QComboBox()
+        self.spec_n.setObjectName('bSpecLines')
         self.spec_n.addItems(['1024','4096','16384','65536','262144'])
         self.spec_n.setCurrentText('65536')
+        self.spec_n.setFixedHeight(41)
+        self.spec_n.setToolTip('Количество отсчётов FFT (оригинальные пресеты bSpecLines требуют дальнейшей сверки)')
+        stack.addWidget(self.spec_n)
+
+        self.spec_hscale_button=QPushButton('Горизонталь +')
+        self.spec_hscale_button.setObjectName('bSpecHScale')
+        self.spec_hscale_button.setFixedHeight(41)
+        self.spec_hscale_button.setToolTip('Реальное горизонтальное увеличение ×2; полоса прокрутки появится после приближения')
+        self.spec_hscale_button.clicked.connect(lambda:self._zoom(self.spec_plot,.5))
+        stack.addWidget(self.spec_hscale_button)
+
+        self.spec_vscale_button=QPushButton('Вертикаль +')
+        self.spec_vscale_button.setObjectName('bSpecVScale')
+        self.spec_vscale_button.setFixedHeight(41)
+        self.spec_vscale_button.setToolTip('Реальное вертикальное увеличение ×2')
+        self.spec_vscale_button.clicked.connect(lambda:self.spec_plot.getViewBox().scaleBy((1,.5)))
+        stack.addWidget(self.spec_vscale_button)
+
+        self.spec_hint=QLabel('Спектр ещё не открыт')
+        self.spec_hint.setObjectName('lbSpecHint')
+        self.spec_hint.setWordWrap(True)
+        self.spec_hint.setMinimumHeight(64)
+        self.spec_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        stack.addWidget(self.spec_hint)
+
+        self.spec_mean=QLabel('Данные спектра: —')
+        self.spec_mean.setObjectName('lbSpecMean')
+        self.spec_mean.setWordWrap(True)
+        stack.addWidget(self.spec_mean)
+
+        self.spec_copy_button=QPushButton('Копировать (не принято)')
+        self.spec_copy_button.setObjectName('bSpecCopyValue')
+        self.spec_copy_button.setFixedHeight(41)
+        self.spec_copy_button.setEnabled(False)
+        self.spec_copy_button.setToolTip('Формат оригинального CursorString/bSpecCopyValue не подтверждён: экспорт отключён, чтобы не имитировать MVKView')
+        stack.addWidget(self.spec_copy_button)
+
+        self.spec_save_button=QPushButton('Сохранить (не принято)')
+        self.spec_save_button.setObjectName('bSpecSaveValue')
+        self.spec_save_button.setFixedHeight(41)
+        self.spec_save_button.setEnabled(False)
+        self.spec_save_button.setToolTip('Оригинальный формат bSpecSaveValue не восстановлен')
+        stack.addWidget(self.spec_save_button)
+
+        separator=QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        stack.addWidget(separator)
+        title=QLabel('ИССЛЕДОВАТЕЛЬСКИЕ НАСТРОЙКИ')
+        title.setWordWrap(True)
+        stack.addWidget(title)
         self.spec_backend=QComboBox()
         self.spec_backend.addItems(['IDR float32 · реконструкция','NumPy · контрольный расчёт'])
-        self.spec_precise=QCheckBox('Пик в пикселе (IDR)')
-        self.spec_precise.setChecked(True)
-        self.spec_precise.setToolTip('В оригинальной MVKView при сжатии FFT выбирается максимум в пиксельном интервале')
-        self.spec_avg=QComboBox()
-        self.spec_avg.addItems(['1 · значение бина','3 · √суммы квадратов, без деления'])
-        self.spec_avg.setCurrentIndex(0)  # Original log-mode cursor uses averaging=1
-        self.spec_avg.setToolTip('IDR: CursorAveraging 1 или 3; при 3 Delphi НЕ делит сумму квадратов на три')
+        stack.addWidget(self.spec_backend)
+
+        stack.addWidget(QLabel('Частоты до, Гц'))
         self.spec_hz=self._float(10,32768,10000,1)
+        stack.addWidget(self.spec_hz)
         self.spec_last=QCheckBox('Последнее полное окно')
         self.spec_last.setChecked(True)
-        for name,field in (('Режим',self.spec_mode),('FFT N',self.spec_n),('Алгоритм',self.spec_backend),('Частоты до, Гц',self.spec_hz)):
-            bar.addWidget(QLabel(name));bar.addWidget(field)
-        bar.addWidget(self.spec_last)
-        bar.addWidget(self.spec_precise)
-        bar.addWidget(QLabel('Курсор'))
-        bar.addWidget(self.spec_avg)
-        b=QPushButton('Обновить спектр')
-        b.clicked.connect(self.refresh_spec)
-        bar.addWidget(b)
+        stack.addWidget(self.spec_last)
+        self.spec_precise=QCheckBox('Пик в пикселе (IDR)')
+        self.spec_precise.setChecked(True)
+        self.spec_precise.setToolTip('Original TQGrapher FindPreciseXValue=1')
+        stack.addWidget(self.spec_precise)
+        self.spec_avg=QComboBox()
+        self.spec_avg.addItems(['1 · значение бина','3 · √суммы квадратов, без деления'])
+        self.spec_avg.setCurrentIndex(0)
+        self.spec_avg.setToolTip('Original CursorAveraging 1/3; 3 uses sqrt(sum squares), NOT RMS')
+        stack.addWidget(self.spec_avg)
+
+        reload=QPushButton('Обновить спектр')
+        reload.clicked.connect(self.refresh_spec)
+        stack.addWidget(reload)
         compare=QPushButton('Сравнить FFT')
         compare.setToolTip('IDR float32 vs NumPy; НЕ эталонный Delphi')
         compare.clicked.connect(self.compare_fft)
-        bar.addWidget(compare)
-        self._zoom_bar(bar,lambda:self._zoom(self.spec_plot,.5),lambda:self._zoom(self.spec_plot,2))
-        bar.addStretch()
-        lay.addLayout(bar)
+        stack.addWidget(compare)
+        reset=QPushButton('Сбросить масштаб')
+        reset.clicked.connect(self.refresh_spec)
+        stack.addWidget(reset)
+        stack.addStretch()
+        self.spec_tools.setWidget(tools)
+        lay.addWidget(self.spec_tools,0)
+
+        graph=QWidget()
+        graph.setObjectName('pnSpecGraph')
+        grid=QVBoxLayout(graph)
+        grid.setContentsMargins(8,8,0,8)
+        grid.setSpacing(0)
+        self.spec_hscroll=QScrollBar(Qt.Horizontal)
+        self.spec_hscroll.setObjectName('sbSpecHScroll')
+        self.spec_hscroll.setFixedHeight(24)
+        self.spec_hscroll.setRange(0,1000)
+        self.spec_hscroll.setPageStep(50)
+        self.spec_hscroll.hide()
+        grid.addWidget(self.spec_hscroll)
+        chart=QHBoxLayout()
+        chart.setContentsMargins(0,0,0,0)
+        chart.setSpacing(0)
         self.spec_plot=self._plot('Частота, Гц','Амплитуда')
+        self.spec_plot.setObjectName('pbSpectrum')
         self.spec_plot.scene().sigMouseClicked.connect(self._spec_click)
-        lay.addWidget(self.spec_plot,1)
-        self.spec_hint=QLabel('Локальный FFT — кандидат по Delphi IDR; численный паритет НЕ доказан.')
-        self.spec_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lay.addWidget(self.spec_hint)
+        chart.addWidget(self.spec_plot,1)
+        self.spec_vscroll=QScrollBar(Qt.Vertical)
+        self.spec_vscroll.setObjectName('sbSpecVScroll')
+        self.spec_vscroll.setFixedWidth(24)
+        self.spec_vscroll.setRange(0,1000)
+        self.spec_vscroll.setPageStep(50)
+        self.spec_vscroll.hide()
+        chart.addWidget(self.spec_vscroll)
+        grid.addLayout(chart,1)
+        lay.addWidget(graph,1)
+        self._spec_data_ymin=0.
+        self._spec_data_ymax=1.
+        self.spec_hscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(0,v))
+        self.spec_vscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(1,v))
+        self.spec_plot.getViewBox().sigRangeChanged.connect(self._sync_spec_scroll)
+
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
         self.spec_n.currentIndexChanged.connect(self.refresh_spec)
         self.spec_backend.currentIndexChanged.connect(self.refresh_spec)
         self.spec_last.toggled.connect(self.refresh_spec)
         self.spec_hz.editingFinished.connect(self.refresh_spec)
+
+    def _spec_scroll_changed(self,axis:int,value:int):
+        if self._full_spectrum is None:return
+        vb=self.spec_plot.getViewBox()
+        bounds=vb.viewRange()[axis]
+        visible=max(1e-12,bounds[1]-bounds[0])
+        limits=((0.,float(self.spec_hz.value())) if axis==0
+                else (self._spec_data_ymin,self._spec_data_ymax))
+        available=max(0.,limits[1]-limits[0]-visible)
+        if available<=0:return
+        lower=limits[0]+(value/1000.)*available
+        if axis==0:vb.setXRange(lower,lower+visible,padding=0)
+        else:vb.setYRange(lower,lower+visible,padding=0)
+
+    def _sync_spec_scroll(self,*_):
+        if self._full_spectrum is None:return
+        vb=self.spec_plot.getViewBox()
+        for axis,bar in ((0,self.spec_hscroll),(1,self.spec_vscroll)):
+            lo,hi=vb.viewRange()[axis]
+            span=hi-lo
+            full=((0.,float(self.spec_hz.value())) if axis==0
+                  else (self._spec_data_ymin,self._spec_data_ymax))
+            remaining=(full[1]-full[0])-span
+            active=bool(remaining>max(1e-8,(full[1]-full[0])*1e-5))
+            bar.blockSignals(True)
+            bar.setVisible(active)
+            if active:
+                bar.setValue(max(0,min(1000,round((lo-full[0])/remaining*1000))))
+                bar.setPageStep(max(1,min(1000,round(span/(full[1]-full[0])*1000))))
+            bar.blockSignals(False)
 
     def _change_spectrum_mode(self,*_):
         self.spec_avg.setCurrentIndex(0 if self.spec_mode.currentIndex()==0 else 1)
@@ -359,8 +506,17 @@ class MainWindow(QMainWindow):
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.spec_plot.addItem(self.spec_line)
             self.spec_plot.setLabel('left',d['unit'])
+            self._spec_data_ymin=float(np.min(yy[visible])) if np.any(visible) else 0.
+            self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
+            if self._spec_data_ymax<=self._spec_data_ymin:
+                self._spec_data_ymax=self._spec_data_ymin+1.
             self.spec_plot.enableAutoRange()
             self.spec_plot.setXRange(0,self.spec_hz.value(),padding=0)
+            self.spec_plot.getViewBox().setLimits(xMin=0,xMax=float(self.spec_hz.value()))
+            self._sync_spec_scroll()
+            self.spec_mean.setText(
+                f"Локальный FFT (не DSP)\ndf={d['df_hz']:.6g} Гц\n"
+                f"N/2={len(xx)} бинов\nБез огибающей")
             self.spec_hint.setText(
                 f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
                 f"df={d['df_hz']:.7g} Гц · среднее DC {d['removed_mean_m_s2']:.6g} м/с² · "
