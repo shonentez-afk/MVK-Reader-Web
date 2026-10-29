@@ -40,7 +40,7 @@ python -m mvk_compatible.triplet_reference_compare --archive "C:\private\session
 
 ## 3. Проверки и границы
 
-Тесты добавлены в `test_narrowband_idr_candidate.py`, `test_triplet_reference_compare.py`, `test_desktop_qt.py`: синтетические бин-центры, nearest-even, радиус, band-sum, ±20*radius исключение, N/8 предел, 3-значный шумовой пик, равные пики, запрет памяти за концом массива, отказ при нехватке BIN, проверка AUX3700/4700 без изменений, восстановление 3-field TAB/CSV локального эталона, Qt-реальное нажатие кнопки.
+Тесты добавлены в `test_narrowband_idr_candidate.py`, `test_triplet_reference_compare.py`, `test_desktop_qt.py`: синтетические бин-центры, nearest-even, радиус, band-sum, ±20*radius исключение, N/8 предел, 3-значный шумовой пик, равные пики, запрет памяти за концом массива, отказ при нехватке BIN, проверка AUX4700 без изменений, восстановление 3-field TAB/CSV локального эталона, Qt-реальное нажатие кнопки.
 
 **Численная приёмка на оригинальной работающей MVKView НЕ проведена:** в текущих приватных материалах нет исходной строки Clipboard с доказанно одинаковыми `channel/FS/N/Start/FRange/EnvelopeCode`. Исследовательские pytest и GitHub Windows CI — не доказательство полного Delphi/x87 совпадения. `FRange` калибровки и точное Archive/Live положение остаются CANDIDATE.
 
