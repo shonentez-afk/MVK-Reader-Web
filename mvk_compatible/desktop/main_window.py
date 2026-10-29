@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
     QScrollBar,QScrollArea,QFrame)
 from ..core import OfflineSession
+from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
 
@@ -24,6 +25,7 @@ class MainWindow(QMainWindow):
         self.wave_line=None
         self.spec_line=None
         self._full_spectrum=None
+        self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
         self.resize(1360,850)
         self.setMinimumSize(960,580)
@@ -167,6 +169,21 @@ class MainWindow(QMainWindow):
         self._zoom_bar(bar,lambda:self._zoom(self.wave_plot,.5),lambda:self._zoom(self.wave_plot,2))
         bar.addStretch()
         lay.addLayout(bar)
+        envbar=QHBoxLayout()
+        self.wave_envelope_load=QPushButton('Открыть локальный оригинальный IDP для огибающей…')
+        self.wave_envelope_load.clicked.connect(self.choose_private_envelope_idp)
+        envbar.addWidget(self.wave_envelope_load)
+        self.wave_envelope_code=QComboBox()
+        self.wave_envelope_code.addItem('Без огибающей',0)
+        for code in range(1,32):
+            self.wave_envelope_code.addItem(
+                f'Код огибающей {code} · таблица {ENVELOPE_RATES[code]} Гц',code)
+        self.wave_envelope_code.setEnabled(False)
+        self.wave_envelope_code.setToolTip(
+            'Режимы по оригинальной таблице IDR; не все доступны при конкретном FSampleRate')
+        self.wave_envelope_code.currentIndexChanged.connect(self.refresh_wave)
+        envbar.addWidget(self.wave_envelope_code)
+        lay.addLayout(envbar)
         self.wave_plot=self._plot('Время, с','Ускорение, м/с²')
         self.wave_plot.scene().sigMouseClicked.connect(self._wave_click)
         lay.addWidget(self.wave_plot,1)
@@ -459,6 +476,28 @@ class MainWindow(QMainWindow):
                 else 'MVK_DSP: штатные значения; локальный FFT обозначен отдельно')
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
+    def choose_private_envelope_idp(self):
+        """Only explicit user-selected local file; no retained bytes/network."""
+        path,_=QFileDialog.getOpenFileName(self,'Оригинальный локальный IDR-проект','','Original IDP (*.idp)')
+        if not path:return
+        try:
+            profile=EnvelopeProfile.from_original_local_idp(path)
+            self.set_envelope_profile(profile)
+            self.statusBar().showMessage(
+                'Локальные коэффициенты проверены SHA-256; огибающая исследовательская, не принята как Delphi parity')
+        except (OSError,ValueError) as exc:
+            QMessageBox.critical(self,'Оригинальные коэффициенты не приняты',str(exc))
+
+    def set_envelope_profile(self,profile:EnvelopeProfile):
+        if not isinstance(profile,EnvelopeProfile):
+            raise ValueError('Expected verified local EnvelopeProfile')
+        self.envelope_profile=profile
+        self.wave_envelope_code.setEnabled(True)
+        self.wave_envelope_load.setText('Локальные коэффициенты готовы (только этот запуск)')
+        self.wave_hint.setText(
+            'Огибающая доступна только по исходному IDR профилю; '
+            'курсоры, исходное время и численный паритет оригинальной MVKView ещё не приняты')
+
     def _signal_order(self):
         return 'chronological' if self.wave_order.currentIndex()==0 else 'getsignal_buffer'
 
@@ -467,19 +506,37 @@ class MainWindow(QMainWindow):
         try:
             mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
             order=self._signal_order()
-            d=self.session.waveform(self._ch(),self.wave_start.value(),
-                                    self.wave_seconds.value(),mode,display_order=order)
+            code=int(self.wave_envelope_code.currentData() or 0)
+            if code:
+                if self.envelope_profile is None:
+                    raise ValueError('Требуются оригинальные локальные коэффициенты IDP')
+                d=self.session.envelope(
+                    self._ch(),code,self.wave_start.value(),
+                    self.wave_seconds.value(),self.envelope_profile,
+                    display_order=order)
+                self.wave_plot.setLabel('bottom',
+                    'Позиция буфера огибающей, с — НЕ время оригинальной MVKView')
+                descr=(f"Огибающая IDR (эксперимент) код {code} · "
+                    f"стадии {d['stages_used']} · отсчёты {d['output_samples']}"
+                    f" · выходная частота {d['output_sample_rate_hz']} Гц"
+                    f" · локальное СКЗ: {d['rms_m_s2']:.7g} м/с²"
+                    " · оригинальный формат/время/курсор НЕ приняты")
+            else:
+                d=self.session.waveform(self._ch(),self.wave_start.value(),
+                                        self.wave_seconds.value(),mode,
+                                        display_order=order)
+                self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
+                    else 'Позиция буфера GetSignal, с (НЕ время BIN)')
+                descr=(f"GetSignal/IDR · {mode} · {order} · {d['window_samples']} отсчётов"
+                    f" · локальное СКЗ: {d['rms_m_s2']:.7g} м/с²"
+                    f" · удалённое DC: {d['removed_mean_m_s2']:.7g} м/с²"
+                    " · паритет TQGrapher НЕ доказан")
             self.wave_plot.clear()
             self.wave_plot.plot(d['time_s'],d['amplitude'],pen=pg.mkPen('#176c92'))
             self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.wave_plot.addItem(self.wave_line)
-            self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
-                else 'Позиция буфера GetSignal, с (НЕ время BIN)')
             self.wave_plot.enableAutoRange()
-            self.wave_hint.setText(f"GetSignal/IDR · {mode} · {order} · {d['window_samples']} отсчётов"
-                f" · локальное СКЗ: {d['rms_m_s2']:.7g} м/с²"
-                f" · удалённое DC: {d['removed_mean_m_s2']:.7g} м/с²"
-                " · огибающая не реализована; паритет TQGrapher НЕ доказан")
+            self.wave_hint.setText(descr)
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
     def _fft_backend(self):
@@ -533,6 +590,9 @@ class MainWindow(QMainWindow):
 
     def _wave_click(self,event):
         if not self.session:return
+        if self.wave_envelope_code.currentData():
+            self.statusBar().showMessage('Точный курсор исходной огибающей не принят: показана относительная позиция буфера')
+            return
         x=self._clicked_x(self.wave_plot,event)
         if x is None:return
         try:
