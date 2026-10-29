@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
     QScrollBar,QScrollArea,QFrame)
 from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
+from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
 
@@ -639,7 +640,9 @@ class MainWindow(QMainWindow):
                 f"{found['pixel_bin_last']}] → пик FFT[{found['selected_bin']}]"
                 f" · {found['frequency_hz']:.6g} Гц · {found['display_y']:.7g} {found['unit']}"
                 f" · avg={found['averaging']} (без /N)"
-                f" · {found['fft_backend']} · кандидат TQGrapher")
+                f" · {found['fft_backend']} · кандидат TQGrapher"
+                f" · текст IDR-кандидат {format_cursor_idr_candidate(found['frequency_hz'])} Гц /"
+                f" {format_cursor_idr_candidate(found['display_y'])} {found['unit']}")
         except (OSError,KeyError,ValueError,OverflowError) as e:
             self.statusBar().showMessage(str(e))
 
