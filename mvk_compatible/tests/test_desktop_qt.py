@@ -456,3 +456,41 @@ def test_qt_stage111k_canvas_geometry_shows_source_transforms_without_vendor_cla
     assert not preview['original_canvas_font_metrics_verified']
     window.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111m_raw_horizontal_crosshair_differs_from_rms_label(tmp_path,qt_app):
+    """Original 007CA9BA draws raw selected FFT Y, not CursorAveraging=3 label."""
+    import numpy as np
+    import pytest
+    from PySide6.QtCore import QPointF,Qt
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    win.spec_mode.setCurrentIndex(1)
+    win.spec_avg.setCurrentIndex(1)  # CursorAveraging 3
+    qt_app.processEvents()
+    win.refresh_spec()
+    qt_app.processEvents()
+    assert win.spec_hline is not None
+    assert not win.spec_hline.isVisible()
+    rect=win.spec_plot.getViewBox().sceneBoundingRect()
+    class MouseClick:
+        def button(self):return Qt.LeftButton
+        def scenePos(self):
+            return QPointF(rect.left()+rect.width()*.36,rect.center().y())
+    win._spec_click(MouseClick())
+    qt_app.processEvents()
+    assert win.spec_hline.isVisible()
+    assert win._spec_last_cursor is not None
+    picked=win._spec_last_cursor
+    value=float(win._full_spectrum['amplitude'][picked['selected_bin']])
+    assert win.spec_hline.value()==pytest.approx(value,rel=1e-6,abs=1e-9)
+    assert picked['averaging']==3
+    assert 'Горизонталь = raw FFT' in win.spec_hint.text()
+    assert 'пиксели Delphi НЕ приняты' in win.spec_hint.text()
+    assert win.session.calculations()['source']=='MVK_DSP'
+    win.close()
+    qt_app.processEvents()
