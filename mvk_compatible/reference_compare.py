@@ -84,17 +84,32 @@ def compare_full_spectrum(candidate:dict,original:dict, *,
     if original_metadata is not None:
         required={'source_app':'MVKView','confirmed_same_signal_and_window':True,
                   'channel':candidate.get('channel'),
-                  'envelope_code':candidate.get('code'),
+                  'envelope_code':candidate.get('code',0),
                   'n_fft':candidate.get('n_fft'),
                   'mode':candidate.get('mode'),
-                  'output_sample_rate_hz':candidate.get('output_sample_rate_hz'),
+                  'output_sample_rate_hz':candidate.get(
+                      'output_sample_rate_hz',
+                      candidate.get('n_fft',0)*candidate.get('df_hz',0)),
                   'original_csv_sha256':original.get('sha256')}
         meta_state=('OPERATOR_ASSERTED_MATCH'
                     if all(original_metadata.get(k)==v for k,v in required.items())
                     else 'MISMATCH_OR_INCOMPLETE')
+    scale_hint=None
+    # Diagnose a nearly constant gain mismatch WITHOUT adjusting any data.
+    # Not applicable to dB or when there is no meaningful reference signal.
+    if candidate.get('mode')!=0:
+        valid=(np.abs(a)>1e-12)&(np.abs(b)>1e-12)
+        if np.count_nonzero(valid)>=8:
+            ratios=b[valid]/a[valid]
+            if np.isfinite(ratios).all():
+                scale_hint=float(np.median(ratios))
     return {'source':'LOCAL_REFERENCE_NUMERIC_DIAGNOSTIC',
             'original_app_parity_certified':False,
             'original_metadata_status':meta_state,
+            'candidate_f_range_used':candidate.get('f_range_used',1.),
+            'candidate_f_range_source':candidate.get('f_range_source','UNKNOWN_OR_NOT_REPORTED'),
+            'candidate_f_range_original_verified':False,
+            'diagnostic_reference_over_candidate_gain_hint_not_applied':scale_hint,
             'within_supplied_numeric_tolerance':passed,
             'n_bins_compared':len(a),
             'frequency_grid_max_abs_error_hz':float(np.max(mismatch)),
@@ -113,15 +128,18 @@ def main(argv=None)->int:
     parser=argparse.ArgumentParser(
         description='MVKView original spectrum vs Stage111F candidate — OFFLINE ONLY')
     parser.add_argument('--archive',required=True,help='Local completed Native R6.1 ZIP')
-    parser.add_argument('--idp',required=True,help='Local original mvkview.idp (private)')
+    parser.add_argument('--idp',help='Private local original IDP, required only for envelope code 1..31')
     parser.add_argument('--reference',required=True,help='Original two-column CSV, never upload')
     parser.add_argument('--reference-metadata',help='Optional locally operator-checked JSON')
     parser.add_argument('--channel',type=int,required=True,choices=range(1,9))
-    parser.add_argument('--code',type=int,required=True,choices=range(1,32))
+    parser.add_argument('--code',type=int,default=0,choices=range(32),
+                        help='0 = original raw FFT without envelope; 1..31 needs original local IDP')
     parser.add_argument('--n-fft',type=int,required=True)
     parser.add_argument('--mode',type=int,required=True,choices=range(4))
-    parser.add_argument('--end-s',type=float,help='End of original candidate raw BIN input window')
-    parser.add_argument('--f-range',type=float,default=1.0)
+    parser.add_argument('--end-s',type=float,help='End of original FIR-envelope input window')
+    parser.add_argument('--start-s',type=float,help='Start of plain BIN FFT input window')
+    parser.add_argument('--f-range',type=float,default=None,
+                        help='Explicit unverified original FRange; omitted = assumed one')
     parser.add_argument('--backend',choices=['idr_float32','numpy'],default='idr_float32')
     parser.add_argument('--delimiter',choices=[';',',','tab'],default=';')
     parser.add_argument('--decimal',choices=[',','.'],default=',')
@@ -134,10 +152,21 @@ def main(argv=None)->int:
         from .core import OfflineSession
         from .core.envelope_idr_candidate import EnvelopeProfile
         session=OfflineSession.open(args.archive)
-        prof=EnvelopeProfile.from_original_local_idp(args.idp)
-        result=session.spectrum_envelope(
-            args.channel,args.code,args.n_fft,prof,end_s=args.end_s,
-            mode=args.mode,backend=args.backend,f_range=args.f_range)
+        if args.code:
+            if not args.idp or args.start_s is not None:
+                raise ValueError('Envelope requires local IDP and only optional --end-s')
+            prof=EnvelopeProfile.from_original_local_idp(args.idp)
+            result=session.spectrum_envelope(
+                args.channel,args.code,args.n_fft,prof,end_s=args.end_s,
+                mode=args.mode,backend=args.backend,
+                f_range=1. if args.f_range is None else args.f_range)
+        else:
+            if args.idp or args.end_s is not None:
+                raise ValueError('Plain original FFT cannot use --idp or --end-s')
+            result=session.spectrum(
+                args.channel,args.n_fft,args.mode,start_s=args.start_s,
+                max_hz=1e9,max_points=args.n_fft//2,
+                backend=args.backend,f_range=args.f_range)
         reference=read_original_two_column_csv(Path(args.reference),
             delimiter='\t' if args.delimiter=='tab' else args.delimiter,
             decimal=args.decimal)
