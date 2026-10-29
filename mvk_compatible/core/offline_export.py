@@ -21,6 +21,7 @@ from .fft_idr_candidate import idr_power_spectrum
 from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
+from .narrowband_idr_candidate import narrowband_from_samples
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate, _delphi_integration_power)
 
@@ -404,6 +405,33 @@ class OfflineSession:
                  start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
                  backend:str='idr_float32')->dict:
         return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend)
+
+    def narrowband(self,channel:int,frequency_hz:float, *,
+                   n_fft:int=4096,start_s:float|None=None,
+                   get_noise_peak:bool=False,backend:str='idr_float32',
+                   f_range:float=1.0)->dict:
+        """Original GetNarrowbandValue / optional GetNoisePeak offline candidate.
+
+        This is distinct from DSP AUX4700 and GetSpectrum OutputPeakX/Y.
+        Archive window selection is explicit and source parity not certified.
+        """
+        samples,fs,_,filename=self.samples(channel)
+        if not isinstance(n_fft,int) or n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
+            raise ValueError('Narrowband FFT N must be a power of 2: 1024..262144')
+        if start_s is not None and (not math.isfinite(start_s) or start_s<0):
+            raise ValueError('Invalid archive start time')
+        first=max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
+        last=first+n_fft
+        if last>len(samples):
+            raise ValueError('Insufficient real BIN samples for narrowband window')
+        result=narrowband_from_samples(samples[first:last],
+             sample_rate_hz=fs,input_frequency_hz=frequency_hz,
+             get_noise_peak=get_noise_peak,f_range=f_range,backend=backend)
+        result.update(channel=channel,file=filename,
+                      archive_window_start_s=first/fs,
+                      archive_window_end_s=last/fs,
+                      original_archive_position_parity_verified=False)
+        return result
 
     def spectrum_envelope(self,channel:int,code:int,n_fft:int,
                           profile:EnvelopeProfile, *,
