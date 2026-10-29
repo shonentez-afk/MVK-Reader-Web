@@ -1,3 +1,6 @@
+> **Stage111 — принятое направление (29.10.2026): MVKView Compatibility First.**
+> Основной новый продукт — единое Windows Desktop-приложение, а НЕ текущая серверная Web-архитектура. Рабочие исходники: [mvk_compatible](mvk_compatible/README_RU.md). [ADR Stage111](docs/ADR_2026_10_29_STAGE111_MVKVIEW_COMPATIBILITY_FIRST_RU.md). Версия v0.3.40 заморожена как исторический прототип; старый текст ниже относится к прошлым этапам и не отменяет Stage111.
+
 # MVK Reader Web
 
 Локальный веб-интерфейс и Collector Server для приборов МВК01: временные сигналы, оригинальные расчётные данные DSP, спектры и архив.
