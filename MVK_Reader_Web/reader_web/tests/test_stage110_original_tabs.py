@@ -61,7 +61,6 @@ def make_fixture(folder: Path, *, with_aux=True, wrong_provenance=False,
              f'<ChannelFrequency>65536</ChannelFrequency></Channel></Channels></MainRoot>')
         items[name]=data
         items[name+'.tsxml']=xml.encode('utf-8')
-    items['EXPORT_AUDIT.json']=json.dumps(metadata).encode()
     items['VALUES_ALL_ADC_RECONSTRUCTED.csv']=csv_bytes()
     items['TABLE_LAST_AUX_RECONSTRUCTED.csv']=b'sep=|\r\n'
     if with_aux:
@@ -76,7 +75,11 @@ def make_fixture(folder: Path, *, with_aux=True, wrong_provenance=False,
                         'status_hex': '0x00000400' if ch>=7 else '0x00000000'}
                 lines.append(json.dumps(fields))
         items['aux4700.jsonl']=('\n'.join(lines)+'\n').encode()
-        items['AUX_PROVENANCE.json']=json.dumps({'source_raw_sha256':'1'*64 if wrong_provenance else '0'*64}).encode()
+        items['AUX_PROVENANCE.json']=json.dumps({'source_raw_sha256':'1'*64 if wrong_provenance else '0'*64,
+            'aux4700_sha256':hashlib.sha256(items['aux4700.jsonl']).hexdigest()}).encode()
+    metadata['output_file_sha256']={name:hashlib.sha256(data).hexdigest() for name,data in items.items()
+        if name.endswith(('.bin','.tsxml')) or name in ('VALUES_ALL_ADC_RECONSTRUCTED.csv','TABLE_LAST_AUX_RECONSTRUCTED.csv')}
+    items['EXPORT_AUDIT.json']=json.dumps(metadata).encode()
     with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED) as z:
         for name,data in items.items():z.writestr(name,data)
     return path
