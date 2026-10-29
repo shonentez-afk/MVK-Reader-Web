@@ -301,7 +301,12 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     # Stage111B reconstructed IDR FFT is still candidate, NOT instrument DSP.
     power, removed_mean=idr_power_spectrum(samples[start:start+n_fft], backend=backend)
     power=np.asarray(power,dtype=np.float64)
-    power[0]=0.0  # original 0th bin (other low bin policy still being traced)
+    # Original 007D158B..007D15BC: Max(2, Round((N/fs)*0.5)).
+    # Helper 007B1CF0 is unsigned Max, verified in PRIVATE _Unit114.pas.
+    low_bins=max(2,round(n_fft/fs*.5))
+    if low_bins>len(power):
+        raise ValueError('Неверная нижняя частотная граница FFT')
+    power[:low_bins]=0.0
     freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
     # Stage81c: Hann RMS; Mode1 candidate sqrt(P/2)*(2/N).
     amp=np.sqrt(power/2.0)*(2.0/n_fft)
@@ -340,6 +345,7 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
             'unit':unit,'source':'APP_DERIVED_FFT_MVKVIEW_CANDIDATE',
             'warning':note,'file':filename,
             'fft_backend':backend,'detrended_before_fft':True,
+            'low_bins_zeroed':low_bins,
             'removed_mean_m_s2':removed_mean,'original_delphi_numerical_parity':False}
 
 
