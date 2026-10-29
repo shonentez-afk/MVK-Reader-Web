@@ -176,3 +176,25 @@ def test_stage111i_cli_strict_text_match_rejects_redundant_zero(tmp_path,capsys)
     assert strict['display_text_match_required']
     assert strict['candidate_display_text_equal'] is False
     assert not strict['original_delphi_parity_verified']
+
+
+def test_stage111j_original_ring_triplet_reference_cli(tmp_path,capsys):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    archive=fixture_zip(tmp_path)
+    session=OfflineSession.open(archive)
+    summ=session.spectrum(1,4096,1,start_s=0,max_hz=32768,
+          max_points=2048,backend='numpy',f_range=4.,
+          input_domain='original_float_storage')['spectrum_summary']
+    copied=spectrum_triplet_text(summ,decimal_separator=',')
+    file=tmp_path/'candidate-storage-triplet.txt'
+    file.write_text(copied,encoding='utf-8')
+    assert main(['--archive',str(archive),'--reference',str(file),
+        '--channel','1','--n-fft','4096','--mode','1',
+        '--start-s','0','--backend','numpy','--f-range','4',
+        '--input-domain','original_float_storage','--require-display-text'])==0
+    d=json.loads(capsys.readouterr().out)
+    assert d['candidate_input_domain']=='original_float_storage'
+    assert d['candidate_original_float_storage_verified'] is False
+    assert d['candidate_display_text_equal'] is True
+    assert not d['original_delphi_parity_verified']
