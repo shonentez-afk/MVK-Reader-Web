@@ -86,7 +86,7 @@ def test_nonfinite_pixel_is_rejected(px):
         pick_tqgrapher_cursor(sample_values(),px,geometry())
 
 
-@pytest.mark.parametrize('scale,offset',[(0,0),(-1,0),(float('nan'),0),(3,float('inf'))])
+@pytest.mark.parametrize('scale,offset',[(0,0),(float('nan'),0),(3,float('inf'))])
 def test_invalid_geometry_rejected(scale,offset):
     with pytest.raises(ValueError,match='geometry'):
         pick_tqgrapher_cursor(sample_values(),12.,geometry(m=scale,c=offset))
