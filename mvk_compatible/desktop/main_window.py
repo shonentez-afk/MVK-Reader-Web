@@ -225,11 +225,17 @@ class MainWindow(QMainWindow):
         try:
             s=OfflineSession.open(Path(path))
             s.calculations()
-            s.samples(1)
+            samples,fs,_,_=s.samples(1)
+            valid_sizes=[int(self.spec_n.itemText(i)) for i in range(self.spec_n.count())
+                         if int(self.spec_n.itemText(i))<=len(samples)]
+            if not valid_sizes:
+                raise ValueError('Для графического FFT требуется не менее 1024 отсчётов')
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
         self.session=s
+        if int(self.spec_n.currentText())>len(samples):
+            self.spec_n.setCurrentText(str(max(valid_sizes)))
         self.title.setText(s.serial+f' · {s.updates} расчётных обновлений')
         self.tick.blockSignals(True)
         self.tick.setRange(1,s.updates)
