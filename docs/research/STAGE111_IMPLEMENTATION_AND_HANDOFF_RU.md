@@ -1,3 +1,5 @@
+> **Stage111A QA обновлено (29.10.2026):** Windows Qt + синтетический ZIP `21 passed`, Linux core `19 passed`, Windows PyInstaller EXE preview собран и загружен. Артефакт `MVKViewCompatible_Stage111_Windows_Preview` (ID 12885936688) в [run #40847041592](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40847041592). Подробности и ограничения: `docs/research/STAGE111A_WINDOWS_PREVIEW_ACCEPTANCE_RU.md`. Проверить код GitHub stage111 и новый head перед началом; GUI визуальный/Delphi parity ещё не принят.
+
 # Stage111A — начало MVKView Compatible Desktop / инструкция следующему чату
 
 **Дата:** 29 октября 2026. **Ветка:** `research/stage111-mvkview-desktop-20261029`.
