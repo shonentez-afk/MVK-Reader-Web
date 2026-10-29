@@ -54,3 +54,5 @@
 - `tools/research/stage83_compare_selftest.py`: synthetic-only tests for matching data, mismatch and incompatible frequency grids; run `python tools/research/stage83_compare_selftest.py`.
 
 - `tools/research/stage86_verify_values_time.py` checks five original `_Unit125.pas` IDR anchor groups for VALUES wall-clock timestamp, independent BIN/VALUES start, and TSXML current date; run `python tools/research/stage86_verify_values_time.py _Unit125.pas` (offline).
+
+- Stage89 real archive validation scripts `validate_stage89.py` and `low_time.py` with 129-band JSON and Russian report supplied in `stage89_validation_package.zip` in conversation; private recordings not published. GitHub report `docs/research/STAGE89_REAL_43_BAND_VALIDATION_RU.md`.
