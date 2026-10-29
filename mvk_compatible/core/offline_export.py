@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
 from .signal_idr_candidate import unfiltered_getsignal
+from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -449,6 +450,23 @@ class OfflineSession:
                 'value':d['amplitude'][i],'unit':d['unit'],'mode':mode,
                 'df_hz':d['df_hz'],'source':d['source'],
                 'warning':d['warning'],'fft_backend':backend}
+
+    def pixel_spectrum_cursor(self,channel:int,pixel:float,geometry:CursorGeometry,
+                              *,n_fft:int=65536,mode:int=1,
+                              start_s:float|None=None,backend:str='idr_float32',
+                              precise:bool=True,averaging:int=1)->dict:
+        """Original TQGrapher pixel peak candidate over UNDECIMATED FFT bins.
+
+        This is not the independently calculated DSP, nor a bitwise verified
+        clone of the original Delphi executable. It uses the common spectrum
+        backend and sample calibration without opening sockets or Qt.
+        """
+        full=self.spectrum(channel,n_fft,mode,start_s,
+                           max_hz=32768,max_points=n_fft//2,backend=backend)
+        if len(full['frequency_hz'])!=n_fft//2:
+            raise ValueError('Нужен полный непрореженный FFT для пиксельного курсора')
+        return cursor_from_spectrum(full,pixel,geometry,
+                                    precise=precise,averaging=averaging)
 
     def compare_fft_backends(self,channel:int,n_fft:int=65536,mode:int=1,
                              start_s:float|None=None)->dict:
