@@ -151,8 +151,11 @@ class MainWindow(QMainWindow):
         self.wave_start=self._float(0,300,0)
         self.wave_seconds=self._float(.001,30,1)
         self.wave_mode=QComboBox()
-        self.wave_mode.addItems(['AC+DC · оригинальный BIN','AC · локальное вычитание среднего (кандидат)'])
-        for name,field in (('Начало, с',self.wave_start),('Окно, с',self.wave_seconds),('Режим',self.wave_mode)):
+        self.wave_mode.addItems(['AC · NoDC / GetSignal f32 (IDR)','AC+DC · без удаления DC'])
+        self.wave_order=QComboBox()
+        self.wave_order.addItems(['Архив: хронология BIN','Буфер GetSignal: обратный порядок'])
+        self.wave_order.setToolTip('Буфер GetSignal возвращается в обратном порядке; координаты оригинального TQGrapher пока не сверены')
+        for name,field in (('Начало, с',self.wave_start),('Окно, с',self.wave_seconds),('Режим',self.wave_mode),('Порядок',self.wave_order)):
             bar.addWidget(QLabel(name));bar.addWidget(field)
         b=QPushButton('Обновить сигнал')
         b.clicked.connect(self.refresh_wave)
@@ -163,7 +166,7 @@ class MainWindow(QMainWindow):
         self.wave_plot=self._plot('Время, с','Ускорение, м/с²')
         self.wave_plot.scene().sigMouseClicked.connect(self._wave_click)
         lay.addWidget(self.wave_plot,1)
-        self.wave_hint=QLabel('Нажмите на график, чтобы прочитать точный отсчёт BIN.')
+        self.wave_hint=QLabel('AC/AC+DC по GetSignal; огибающая не поддерживается до восстановления коэффициентов. Нажмите для точного отсчёта.')
         self.wave_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
         lay.addWidget(self.wave_hint)
 
@@ -287,18 +290,27 @@ class MainWindow(QMainWindow):
                 else 'MVK_DSP: штатные значения; локальный FFT обозначен отдельно')
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
+    def _signal_order(self):
+        return 'chronological' if self.wave_order.currentIndex()==0 else 'getsignal_buffer'
+
     def refresh_wave(self,*_):
         if not self.session:return
         try:
-            mode='acdc' if self.wave_mode.currentIndex()==0 else 'ac'
+            mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
+            order=self._signal_order()
             d=self.session.waveform(self._ch(),self.wave_start.value(),
-                                    self.wave_seconds.value(),mode)
+                                    self.wave_seconds.value(),mode,display_order=order)
             self.wave_plot.clear()
             self.wave_plot.plot(d['time_s'],d['amplitude'],pen=pg.mkPen('#176c92'))
             self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.wave_plot.addItem(self.wave_line)
+            self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
+                else 'Позиция буфера GetSignal, с (НЕ время BIN)')
             self.wave_plot.enableAutoRange()
-            self.wave_hint.setText(f"BIN {d['window_samples']} отсчётов · локальное СКЗ окна {d['rms_m_s2']:.7g} м/с² · {mode}")
+            self.wave_hint.setText(f"GetSignal/IDR · {mode} · {order} · {d['window_samples']} отсчётов"
+                f" · локальное СКЗ: {d['rms_m_s2']:.7g} м/с²"
+                f" · удалённое DC: {d['removed_mean_m_s2']:.7g} м/с²"
+                " · огибающая не реализована; паритет TQGrapher НЕ доказан")
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
     def _fft_backend(self):
@@ -331,10 +343,15 @@ class MainWindow(QMainWindow):
         x=self._clicked_x(self.wave_plot,event)
         if x is None:return
         try:
-            mode='acdc' if self.wave_mode.currentIndex()==0 else 'ac'
-            p=self.session.exact_sample(self._ch(),x,self.wave_start.value(),self.wave_seconds.value(),mode)
+            mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
+            order=self._signal_order()
+            p=self.session.exact_sample(self._ch(),x,self.wave_start.value(),
+                                        self.wave_seconds.value(),mode,order)
             self.wave_line.setPos(p['time_s'])
-            self.wave_hint.setText(f"BIN [{p['index']}] · {p['time_s']:.8f} c · {p['value_m_s2']:.8g} м/с² · {mode}")
+            self.wave_hint.setText(f"GetSignal[{p['display_index']}] → BIN[{p['index']}]"
+                f" · физическое время BIN {p['original_sample_time_s']:.8f} c"
+                f" · {p['value_m_s2']:.8g} м/с² · {mode}"
+                " · координаты оригинального TQGrapher не сверены")
         except (OSError,KeyError,ValueError) as e:self.statusBar().showMessage(str(e))
 
     def _spec_click(self,event):
