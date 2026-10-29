@@ -1,3 +1,5 @@
+> **STAGE111D VERIFIED OFFLINE PREVIEW (29.10.2026):** GitHub Actions [run #40855399287](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40855399287) завершён **SUCCESS**, проверенный исходный коммит `6991bff7a5cd641594314f48c4284c39d10bbad5`. Linux core **76/76**, Windows core **76/76**, Windows Qt **3/3**, PyInstaller EXE Preview и SHA-256 файл **собраны и опубликованы успешно**. Артефакт `MVKViewCompatible_Stage111_Windows_Preview`, id **12888838401**, ZIP **66 447 889 байт**, срок до **2026-11-12 10:13:20 UTC**. EXE содержит исследовательский кандидат TQGrapher, НЕ принятую точную Delphi копию, без сервера и Live прибора. Интеграционное испытание EXE на рабочем ПК ещё требуется; по одному CI-проходу нельзя утверждать идентичность с оригиналом.
+
 # Stage111D — TQGrapher pixel-cursor reconstruction (2026-10-29)
 
 **Статус:** код исследовательского Desktop, полная оригинальная MVKView ещё НЕ ПРИНЯТА. **Ветка:** `research/stage111-mvkview-desktop-20261029`. Никаких Live подключений/прикладных команд прибору и публикации промышленных данных.
