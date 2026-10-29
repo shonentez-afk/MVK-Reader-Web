@@ -12,7 +12,7 @@ from mvk_compatible.tests.test_envelope_idr_candidate import fake_profile
     (1,1024,4193,16384,(1,)),
     (20,1024,2099,32768,(5,)),
     (20,2048,4147,32768,(5,)),
-    (5,1024,4399,8192,(7,2))
+    (5,1024,8495,8192,(7,2))
 ])
 def test_fir_exact_inverse_length(code,n,expected,fs_out,stages):
     plan=required_original_history(n,65536,code)
