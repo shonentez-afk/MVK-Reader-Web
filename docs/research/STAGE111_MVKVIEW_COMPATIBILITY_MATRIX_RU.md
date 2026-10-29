@@ -148,3 +148,16 @@
 ## GitHub Actions validation blocked (29.10.2026 UTC)
 
 Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40905305758, source SHA `9346557611fa1361bb43885859eba39d36d5fb9c`, `conclusion=failure`. Linux offline-core and Windows desktop-windows both reported `failure` **before a runner was assigned**: `runner_id=0`, empty `runner_name` and `steps=[]`, approximately 2–3 seconds after job creation. Windows EXE was `skipped`. Earlier Stage111N runs 40905127698 and 40905080313 also reported failure. No pytest failure or successful test execution can be inferred from these runs. Diagnose runner/account/repository Actions infrastructure or limits independently, re-run when runners are available, and accept Stage111N only after observing actual Linux/Windows/Qt jobs and an EXE artifact for the exact latest source SHA. Stage111M 40900170911 remains the most recent confirmed successful code CI and is **not** a Stage111N pass.
+
+
+## Stage111N — CI-перенос: CircleCI
+
+| Проверка | Статус | Условия |
+|---|---|---|
+| CircleCI Linux Core | CONFIGURED, NOT RUN/NOT VERIFIED | `.circleci/config.yml`: cimg/python:3.11, все core тесты без Qt |
+| CircleCI Windows Core | CONFIGURED, NOT RUN/NOT VERIFIED | Windows Server 2022, Python 3.11+, отдельный junit |
+| CircleCI Windows Qt | CONFIGURED, NOT RUN/NOT VERIFIED | QT_QPA_PLATFORM=offscreen, Qt smoke pytest |
+| CircleCI Windows Preview EXE + SHA | CONFIGURED, NOT RUN/NOT VERIFIED | Только после Linux+Windows pass; dist/EXE, SHA256SUMS, BUILD_INFO |
+| GitHub Actions push (research ветка) | DISABLED AUTOMATIC, MANUAL AVAILABLE | workflow_dispatch сохранён; причина Stage111N не выделялись runners |
+
+[CircleCI handoff](STAGE111N_CIRCLECI_FALLBACK_RU.md). Исходная Delphi parity по-прежнему НЕ принята.
