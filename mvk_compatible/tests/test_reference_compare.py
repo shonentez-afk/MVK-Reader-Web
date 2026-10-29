@@ -100,3 +100,36 @@ def test_reference_is_local_only_no_network():
     s=inspect.getsource(m)
     for token in ('import socket','import requests','import fastapi','urlopen','http.client'):
         assert token not in s
+
+
+def test_complete_private_comparator_cli_with_synthetic_reference(tmp_path,monkeypatch,capsys):
+    """End-to-end CLI under synthetic test injection; no original IDP is read."""
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.core.envelope_idr_candidate import EnvelopeProfile
+    from mvk_compatible.tests.test_envelope_idr_candidate import fake_profile
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    from mvk_compatible.reference_compare import main
+    archive=fixture_zip(tmp_path)
+    profile=fake_profile(i=1.,q=.4)
+    monkeypatch.setattr(EnvelopeProfile,'from_original_local_idp',
+                        classmethod(lambda cls,path:profile))
+    expected=OfflineSession.open(archive).spectrum_envelope(
+        1,20,1024,profile,end_s=.0625,mode=1,backend='numpy')
+    reference=tmp_path/'synthetic-reference.csv'
+    with reference.open('w',encoding='utf-8') as out:
+        out.write('frequency_hz;amplitude\n')
+        for f,a in zip(expected['frequency_hz'],expected['amplitude']):
+            out.write(f'{f!r};{a!r}\n')
+    private_report=tmp_path/'local-report.json'
+    ret=main(['--archive',str(archive),'--idp',str(tmp_path/'fake.idp'),
+        '--reference',str(reference),'--channel','1','--code','20',
+        '--n-fft','1024','--mode','1','--end-s','0.0625',
+        '--backend','numpy','--decimal','.','--report-json',str(private_report)])
+    assert ret==0
+    status=json.loads(capsys.readouterr().out)
+    assert status['n_bins_compared']==512
+    assert status['within_supplied_numeric_tolerance']
+    assert not status['original_app_parity_certified']
+    assert status['original_metadata_status']=='NOT_PROVIDED'
+    assert private_report.is_file()
+    assert 'amplitude' not in json.dumps(status)
