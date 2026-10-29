@@ -16,6 +16,7 @@ import numpy as np
 from .envelope_idr_candidate import (EnvelopeProfile, envelope_plan,
     process_original_envelope_candidate, FIR_TAPS, FIR_DECIM)
 from .fft_idr_candidate import check_n, idr_power_spectrum
+from .spectrum_metrics_idr_candidate import original_spectrum_summary
 
 SOURCE='APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE'
 _INTEGRATION_CONSTANT=159.154943091895  # original 007D217C Extended 1000/(2*pi), documented
@@ -101,6 +102,8 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
     p[:low]=0
     if mode in (2,3):
         p=_delphi_integration_power(p,n_fft,fs_out,mode-1)
+    spectrum_summary=original_spectrum_summary(p,n_fft=n_fft,fs_out=fs_out,
+                                                f_range=f_range,spectrum_mode=mode)
     frequency=np.arange(n_fft//2,dtype=np.float64)*(fs_out/n_fft)
     if mode==0:
         amplitude=np.full(len(p),-180.,dtype=np.float64)
@@ -114,6 +117,7 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
             'frequency_hz':frequency.tolist(),'amplitude':amplitude.tolist(),
             'df_hz':fs_out/n_fft,'output_sample_rate_hz':fs_out,
             'f_range_used':float(f_range),'original_f_range_verified':False,
+            'spectrum_summary':spectrum_summary,
             'low_bins_zeroed':low,'source_history_samples':len(a),
             'envelope_stages':plan['stages'],'output_samples':len(transformed),
             'raw_mean_removed_m_s2':env['removed_mean_m_s2'],
