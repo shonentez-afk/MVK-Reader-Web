@@ -30,6 +30,9 @@ def test_desktop_three_tabs_without_server(qt_app):
     assert window.adc.count()==8
     assert window.spec_mode.count()==4
     assert window.spec_backend.count()==2
+    assert window.spec_precise.isChecked()
+    assert window.spec_avg.count()==2
+    assert window.spec_avg.currentIndex()==0
     assert window.wave_order.count()==2
     assert window.wave_mode.itemText(0).startswith('AC ·')
     window.close()
@@ -59,6 +62,15 @@ def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path,qt_app):
     window.spec_backend.setCurrentIndex(0)
     window.refresh_spec()
     assert 'idr_float32' in window.spec_hint.text()
+    assert window._full_spectrum is not None
+    assert len(window._full_spectrum['amplitude'])==int(window.spec_n.currentText())//2
+    # Original log mode has CursorAveraging=1, others 3.
+    window.spec_mode.setCurrentIndex(1)
+    app.processEvents()
+    assert window.spec_avg.currentIndex()==1
+    assert len(window._full_spectrum['amplitude'])==int(window.spec_n.currentText())//2
+    window.spec_mode.setCurrentIndex(0)
+    assert window.spec_avg.currentIndex()==0
     assert window.wave_mode.currentIndex()==0
     assert 'GetSignal/IDR' in window.wave_hint.text()
     assert 'chronological' in window.wave_hint.text()
@@ -80,3 +92,32 @@ def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path,qt_app):
     assert 'ALERT' in window.calc_status.text()
     window.close()
     app.processEvents()
+
+def test_qt_pixel_based_cursor_click_uses_full_bins(tmp_path,qt_app):
+    from PySide6.QtCore import QPointF,Qt
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    window=MainWindow()
+    window.open_archive(fixture_zip(tmp_path))
+    window.show()
+    qt_app.processEvents()
+    assert window._full_spectrum is not None
+    window.spec_mode.setCurrentIndex(1)
+    qt_app.processEvents()
+    window.spec_avg.setCurrentIndex(0)
+    vb=window.spec_plot.getViewBox()
+    rect=vb.sceneBoundingRect()
+    assert rect.width()>3
+    class LeftClick:
+        def button(self): return Qt.LeftButton
+        def scenePos(self): return QPointF(rect.left()+rect.width()*.25,rect.center().y())
+    window._spec_click(LeftClick())
+    assert 'IDR pixel' in window.spec_hint.text()
+    assert 'FFT[' in window.spec_hint.text()
+    assert 'avg=1' in window.spec_hint.text()
+    window.spec_avg.setCurrentIndex(1)
+    window._spec_click(LeftClick())
+    assert 'avg=3' in window.spec_hint.text()
+    assert 'без /N' in window.spec_hint.text()
+    window.close()
+    qt_app.processEvents()
