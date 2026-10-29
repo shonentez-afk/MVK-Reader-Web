@@ -1,0 +1,9 @@
+# Stage97 — native MVK TCP/10230 decoder R1 (offline only)
+
+User decided NOT to use mvk_tcp_reader_v2 as implementation baseline. Built independent `mvk10230_native/protocol.py` and `test_protocol.py` from verified original IDR and archived frame documentation; downloadable tested archive `mvk10230_native_R1_offline.zip` supplied in conversation. No socket/network code, no command writes, no stable v0.3.40 modifications.
+
+Working functions: strict TCP frame reassembly for 1052 ADC, 284 tach, 44/76/160/4700 structured frames; decoding 256 float32 samples including session sample-rate guard; structured descriptor low16 address/high16 register count; bounds-checked 0x4000-word register image and validity mask; extraction of 43 third-octave accelerations plus 24 band RMS/peak-equivalent/span-equivalent per channel; buffer-ready bits 4/5/6. Correct IDR-derived ACK 0x00010FF0 and DENIED 0x00010FFF. Six offline unit tests PASSED, including synthetic 4700B frame for 8 channels, segmented frame reassembly, invalid packet rejection, and incomplete register image handling.
+
+IMPORTANT: synthetic unit tests are NOT proof of real traffic interoperability, original session startup handshake, correct historical command formats, bytewise real RAW parity, gain into BIN, recording lifecycle, or original DSP filter equivalence. Those remain mandatory before claiming live-ready. No relation should be inferred between PCAP and MVK43 BIN+VALUES sessions. Program port ONLY 10230, official Modbus/502 register docs reference address meanings, not required product transport.
+
+Next: replay real saved 10230 raw PCAP payload frames, verify all markers, counters and numeric AUX4700 fields using independent archived decoder, then original IDR session/ACK state machine and safe recording implementation in research branch, QA before product integration.
