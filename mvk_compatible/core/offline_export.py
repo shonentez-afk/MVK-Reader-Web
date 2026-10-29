@@ -22,7 +22,7 @@ from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
-from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate)
+from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate, _delphi_integration_power)
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -324,38 +324,28 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     if low_bins>len(power):
         raise ValueError('Неверная нижняя частотная граница FFT')
     power[:low_bins]=0.0
-    # IDR GetSpectrum: calculate OutputMean/OutputPeakX/OutputPeakY using
-    # the full power series, BEFORE display log/conversion and never DSP AUX.
-    # FRange=1 is a candidate for already calibrated offline BIN input.
-    summary=original_spectrum_summary(power,n_fft=n_fft,fs_out=fs,
-                                        f_range=1.0,spectrum_mode=mode)
+    # Original 007D2164 modifies POWER in-place before the linear amplitude
+    # and before summary aggregation, not only the plotted amplitude.
+    display_power=(np.asarray(power,dtype=np.float32)
+                   if mode<2 else
+                   _delphi_integration_power(power,n_fft,int(fs),mode-1))
+    # Mean / peak metrics use the whole original N/2 power array, NOT
+    # N bins decimated for visualization. FRange=1 is not yet Delphi verified.
+    summary=original_spectrum_summary(display_power,n_fft=n_fft,fs_out=fs,
+                                      f_range=1.0,spectrum_mode=mode)
     freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
-    # Stage81c: Hann RMS; Mode1 candidate sqrt(P/2)*(2/N).
-    amp=np.sqrt(power/2.0)*(2.0/n_fft)
+    amp=np.sqrt(np.asarray(display_power,dtype=np.float64)/2.)*(2./n_fft)
     amp[0]=0
     if mode==0:
-        # Original IDR 0x007D15DD: 10*(fn(P)-2*fn(N/2)).
-        # Base-10 fn helper 0x00447DB8 is not independently proven.
         y=np.full_like(power,-180.0)
         positive=power>0
         y[positive]=10*(np.log10(power[positive])-2*np.log10(n_fft//2))
         unit='дБ (предполагается log10; требует сверки с MVKView)'
-        note='Кандидат по оригинальному IDR: 10*(fn(P)-2*fn(N/2)), P<=0 -> -180 дБ; fn=log10 ещё не доказано по телу 0x00447DB8'
+        note='IDR candidate 10*(fn(P)-2*fn(N/2)); fn=log10 ещё не доказано по 0x00447DB8'
     else:
-        if mode==1:
-            y=amp
-            unit='м/с²'
-        else:
-            factor=np.zeros_like(freq)
-            positive=freq>0
-            if mode==2:
-                factor[positive]=1000/(2*np.pi*freq[positive])
-                unit='мм/с'
-            else:
-                factor[positive]=1e6/(2*np.pi*freq[positive])**2
-                unit='мкм'
-            y=amp*factor
-        note='Локальный кандидат FFT по Stage81c: Hann RMS, N<=262144; численная равнозначность Delphi ещё НЕ доказана'
+        y=amp
+        unit=('','м/с²','мм/с','мкм')[mode]
+        note='IDR modes 1/2/3: sqrt(P/2)*FRange/(N/2); 2/3 integrate POWER via 007D2164; numerical Delphi parity not proven'
     keep=np.flatnonzero(freq<=max_hz)
     if len(keep)>max_points:
         # Retain local maxima rather than throw away narrow resonances.
