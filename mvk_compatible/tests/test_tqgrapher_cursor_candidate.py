@@ -144,3 +144,18 @@ def test_complete_offline_session_same_candidate_backend(tmp_path):
     assert p['selected_bin']==4
     assert p['frequency_hz']==64.
     assert p['display_y']>=p['raw_y']
+
+
+def test_offline_session_public_pixel_cursor_reuses_full_fft(tmp_path):
+    s=OfflineSession.open(fixture_zip(tmp_path))
+    g=CursorGeometry(pixel_left=0.,pixel_right=64.,stoi_m=4.,stoi_c=0.,
+                     x_start=0.,x_scale=16.,y_scale=1.)
+    result=s.pixel_spectrum_cursor(1,1.,g,n_fft=4096,mode=1,
+                                   start_s=0.,backend='numpy',
+                                   precise=True,averaging=3)
+    assert result['selected_bin']==4
+    assert result['frequency_hz']==64.
+    assert result['full_bin_count']==2048
+    assert result['fft_backend']=='numpy'
+    assert result['averaging']==3
+    assert result['original_delphi_cursor_parity_verified'] is False
