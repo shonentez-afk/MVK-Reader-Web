@@ -1,0 +1,113 @@
+# MVKView Compatible Stage111N - desktop-only CI, no instrument access.
+# Original PAS/DFM/IDP, production BIN and PCAPNG must never be committed.
+version: 2.1
+
+orbs:
+  win: circleci/windows@5.0.0
+
+jobs:
+  linux-core:
+    docker:
+      - image: cimg/python:3.11
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Install pure-core test dependencies
+          command: python -m pip install -r mvk_compatible/requirements-core.txt pytest
+      - run:
+          name: Check Python syntax
+          command: python -m compileall -q mvk_compatible
+      - run:
+          name: Run all offline core regressions (no Qt, no devices)
+          command: |
+            mkdir -p test-results
+            python -m pytest -q mvk_compatible/tests \
+              --ignore=mvk_compatible/tests/test_desktop_qt.py \
+              --junitxml=test-results/linux-core.xml
+      - store_test_results:
+          path: test-results
+
+  windows-core-and-qt:
+    executor: win/server-2022
+    environment:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - checkout
+      - run:
+          name: Create native Windows Python venv (3.11+)
+          command: |
+            & python -m venv .venv
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & .\.venv\Scripts\python.exe -c 'import sys; assert sys.version_info[:2] >= (3,11), sys.version'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run:
+          name: Install Windows Qt and pytest
+          command: |
+            & .\.venv\Scripts\python.exe -m pip install -r mvk_compatible/requirements-desktop.txt pytest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run:
+          name: Run Windows Core regressions
+          command: |
+            New-Item -ItemType Directory -Force test-results | Out-Null
+            & .\.venv\Scripts\python.exe -m compileall -q mvk_compatible
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & .\.venv\Scripts\python.exe -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --junitxml=test-results/windows-core.xml
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run:
+          name: Run native Windows Qt GUI smoke tests (offscreen)
+          command: |
+            & .\.venv\Scripts\python.exe -m pytest -q mvk_compatible/tests/test_desktop_qt.py --junitxml=test-results/windows-qt.xml
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - store_test_results:
+          path: test-results
+
+  windows-exe-preview:
+    executor: win/server-2022
+    steps:
+      - checkout
+      - run:
+          name: Prepare Windows build environment
+          command: |
+            & python -m venv .venv
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & .\.venv\Scripts\python.exe -c 'import sys; assert sys.version_info[:2] >= (3,11), sys.version'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & .\.venv\Scripts\python.exe -m pip install -r mvk_compatible/requirements-desktop.txt pyinstaller
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run:
+          name: Build autonomous Windows Preview EXE (not a release)
+          no_output_timeout: 20m
+          command: |
+            & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name MVKViewCompatible_Stage111_PREVIEW mvk_compatible/windows_launcher.py
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $exe = 'dist/MVKViewCompatible_Stage111_PREVIEW.exe'
+            if (-not (Test-Path -LiteralPath $exe)) { throw 'Windows EXE was not created' }
+            $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
+            "$sha  MVKViewCompatible_Stage111_PREVIEW.exe" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+            "commit=$env:CIRCLE_SHA1" | Set-Content -Encoding ascii dist/BUILD_INFO.txt
+            "branch=$env:CIRCLE_BRANCH" | Add-Content -Encoding ascii dist/BUILD_INFO.txt
+            & .\.venv\Scripts\python.exe --version
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - store_artifacts:
+          path: dist
+          destination: MVKViewCompatible_Stage111_Windows_Preview
+
+workflows:
+  stage111n-desktop-offline:
+    jobs:
+      - linux-core:
+          filters:
+            branches:
+              only: research/stage111-mvkview-desktop-20261029
+      - windows-core-and-qt:
+          filters:
+            branches:
+              only: research/stage111-mvkview-desktop-20261029
+      - windows-exe-preview:
+          requires:
+            - linux-core
+            - windows-core-and-qt
+          filters:
+            branches:
+              only: research/stage111-mvkview-desktop-20261029
