@@ -1,3 +1,5 @@
+> **STAGE111K: ПОДТВЕРЖДЁННОЕ ЗАВЕРШЕНИЕ ОФЛАЙН-РЕГРЕССИИ (29.10.2026).** [GitHub Actions #40880558395](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40880558395) = **SUCCESS**, проверенный исходный SHA `261ee2ca7a8fea73a51d1b5ed96e78b8b8120b68`. Linux core **322/322 PASS**, Windows core **322/322 PASS**, Windows Qt **12/12 PASS**. PyInstaller Windows EXE и SHA256SUMS.txt успешно опубликованы; artifact `MVKViewCompatible_Stage111_Windows_Preview`, ID **12899224333**, ZIP **66 517 066 байт**, срок до **12.11.2026 13:21:30 UTC**. Проверки только **synthetic/offline**; реальная оригинальная MVKView на идентичном архиве, исходный Delphi Canvas/font/DPI, RTL/x87, Live и пользовательское испытание EXE ещё **НЕ ПРИНЯТЫ**. Стабильные main/v0.3.40 не затрагивались, прибор не подключался.
+
 # Stage 111K — геометрия оригинального TQGrapher и числовая маска Delphi
 
 Дата: 29.10.2026. Ветка: research/stage111-mvkview-desktop-20261029. Архитектура: самостоятельная Windows Qt программа MVKView Compatible Desktop, никаких обращений к прибору.
