@@ -19,6 +19,8 @@ def test_desktop_three_tabs_without_server():
     assert window.adc.count()==8
     assert window.spec_mode.count()==4
     assert window.spec_backend.count()==2
+    assert window.wave_order.count()==2
+    assert window.wave_mode.itemText(0).startswith('AC ·')
     window.close()
     app.processEvents()
 
@@ -50,6 +52,22 @@ def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path):
     window.spec_backend.setCurrentIndex(0)
     window.refresh_spec()
     assert 'idr_float32' in window.spec_hint.text()
+    assert window.wave_mode.currentIndex()==0
+    assert 'GetSignal/IDR' in window.wave_hint.text()
+    assert 'chronological' in window.wave_hint.text()
+    window.wave_order.setCurrentIndex(1)
+    window.refresh_wave()
+    assert 'getsignal_buffer' in window.wave_hint.text()
+    assert 'НЕ время BIN' in window.wave_plot.getPlotItem().getAxis('bottom').labelText
+    window.wave_mode.setCurrentIndex(1)
+    window.refresh_wave()
+    assert 'acdc' in window.wave_hint.text()
+    cursor=window.session.exact_sample(1,31/65536,0,.0625,'acdc','getsignal_buffer')
+    assert cursor['index']==4096-1-31
+    window.wave_order.setCurrentIndex(0)
+    window.wave_mode.setCurrentIndex(0)
+    window.refresh_wave()
+    assert 'chronological' in window.wave_hint.text()
     window.adc.setCurrentIndex(6)
     app.processEvents()
     assert 'ALERT' in window.calc_status.text()
