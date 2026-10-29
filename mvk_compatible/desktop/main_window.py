@@ -17,6 +17,7 @@ from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
+from ..core.tqgrapher_canvas_idr_candidate import source_canvas_geometry
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
@@ -305,6 +306,13 @@ class MainWindow(QMainWindow):
         self.spec_original_copy_compare.setEnabled(False)
         self.spec_original_copy_compare.clicked.connect(self._compare_original_copy)
         stack.addWidget(self.spec_original_copy_compare)
+        self.spec_canvas_geometry_button=QPushButton('Геометрия Canvas (Qt-кандидат)')
+        self.spec_canvas_geometry_button.setToolTip(
+            'Независимые исходные TQGrapher itosM/itosC и stoiM/с по 007CA4C8. '
+            'Использует только текущие размеры шрифта Qt, НЕ оригинальный Delphi Canvas.')
+        self.spec_canvas_geometry_button.setEnabled(False)
+        self.spec_canvas_geometry_button.clicked.connect(self._show_canvas_geometry_candidate)
+        stack.addWidget(self.spec_canvas_geometry_button)
 
         separator=QFrame()
         separator.setFrameShape(QFrame.HLine)
@@ -692,6 +700,7 @@ class MainWindow(QMainWindow):
             self.spec_copy_button.setEnabled(valid_summary)
             self.spec_save_button.setEnabled(valid_summary)
             self.spec_original_copy_compare.setEnabled(valid_summary)
+            self.spec_canvas_geometry_button.setEnabled(valid_summary)
             xx=np.asarray(d['frequency_hz'],dtype=np.float64)
             yy=np.asarray(d['amplitude'],dtype=np.float64)
             visible=(xx<=self._spec_visible_max_hz)&(
@@ -740,6 +749,7 @@ class MainWindow(QMainWindow):
             self.spec_copy_button.setEnabled(False)
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)
+            self.spec_canvas_geometry_button.setEnabled(False)
             self._error(e)
 
     @staticmethod
@@ -839,6 +849,39 @@ class MainWindow(QMainWindow):
         except (OSError,KeyError,TypeError,ValueError,OverflowError) as exc:
             self.narrow_result.setText('Узкополосный расчёт отклонён: '+str(exc))
             self.statusBar().showMessage('Отклонено: '+str(exc))
+
+    def _show_canvas_geometry_candidate(self):
+        """Source TQGrapher formulas + *Qt* metrics, never claim Delphi pixels."""
+        if not self._full_spectrum:return
+        try:
+            view=self.spec_plot.viewport()
+            fm=view.fontMetrics()
+            xr,yr=self.spec_plot.getViewBox().viewRange()
+            d=source_canvas_geometry(
+                pixel_width=int(view.width()),pixel_height=int(view.height()),
+                margin=10,
+                zero_text_width=int(fm.horizontalAdvance('0')),
+                six_decimals_text_width=int(fm.horizontalAdvance('0.000000')),
+                zero_text_height=int(fm.height()),
+                x_name_present=True,y_name_present=True,
+                scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
+                scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
+                series_x_start=0.,series_x_scale=float(self._full_spectrum['df_hz']))
+            self._spec_canvas_geometry_preview=d
+            QMessageBox.information(
+                self,'TQGrapher Canvas — только исследовательская геометрия',
+                f"Виртуальный Canvas (Qt): {d['canvas_width']} × {d['canvas_height']} px\n"
+                f"Исходная PixelRect: L={d['pixel_left']}, R={d['pixel_right']}, "
+                f"T={d['pixel_top']}, B={d['pixel_bottom']}\n"
+                f"itosM={d['itos_m']:.9g}, itosC={d['itos_c']:.9g}\n"
+                f"stoiM={d['stoi_m']:.9g}, stoiC={d['stoi_c']:.9g}\n"
+                f"ytosM={d['ytos_m']:.9g}, ytosC={d['ytos_c']:.9g}\n"
+                "ВНИМАНИЕ: размеры текста получены из Qt. "
+                "Это НЕ фактический прямоугольник оригинальной MVKView.\n"
+                "Для pixel-to-pixel приёмки требуются метрики Delphi TCanvas "
+                "и одинаковый размер окна.")
+        except (ValueError,TypeError,KeyError,OverflowError) as exc:
+            QMessageBox.warning(self,'Геометрия Canvas не принята',str(exc))
 
     def _compare_original_copy(self):
         """Offline 3-field numeric+text QA, no original export or remote sync."""
