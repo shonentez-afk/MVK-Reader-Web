@@ -140,3 +140,11 @@
 | Inverted X native pixel+1 index order | SOURCE_VERIFIED STRUCTURE + CANDIDATE | Отрицательная stoiM допускается, диапазон не переставляется; исходная пиксельная сверка TODO |
 | Canvas/Font/DPI offline batch | IMPLEMENTED_TESTED DIAGNOSTIC | Новый canvas_sweep_reference_compare.py: 14 метрик и оригинальные Pixels/affine по отдельным измерениям; эталонного Canvas пока нет |
 | Stage111N full CI and Windows EXE | PENDING | SHA commit 54462f6c254bb802c603a81e0343d3344878fcf4, итог проверить в Actions; Stage111M SUCCESS относится к прошлому коду |
+
+
+### CI BLOCKER Stage111N
+
+
+## GitHub Actions validation blocked (29.10.2026 UTC)
+
+Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40905305758, source SHA `9346557611fa1361bb43885859eba39d36d5fb9c`, `conclusion=failure`. Linux offline-core and Windows desktop-windows both reported `failure` **before a runner was assigned**: `runner_id=0`, empty `runner_name` and `steps=[]`, approximately 2–3 seconds after job creation. Windows EXE was `skipped`. Earlier Stage111N runs 40905127698 and 40905080313 also reported failure. No pytest failure or successful test execution can be inferred from these runs. Diagnose runner/account/repository Actions infrastructure or limits independently, re-run when runners are available, and accept Stage111N only after observing actual Linux/Windows/Qt jobs and an EXE artifact for the exact latest source SHA. Stage111M 40900170911 remains the most recent confirmed successful code CI and is **not** a Stage111N pass.
