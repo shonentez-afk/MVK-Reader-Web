@@ -56,3 +56,6 @@
 - `tools/research/stage86_verify_values_time.py` checks five original `_Unit125.pas` IDR anchor groups for VALUES wall-clock timestamp, independent BIN/VALUES start, and TSXML current date; run `python tools/research/stage86_verify_values_time.py _Unit125.pas` (offline).
 
 - Stage89 real archive validation scripts `validate_stage89.py` and `low_time.py` with 129-band JSON and Russian report supplied in `stage89_validation_package.zip` in conversation; private recordings not published. GitHub report `docs/research/STAGE89_REAL_43_BAND_VALIDATION_RU.md`.
+
+
+Stage90 2026-10-29: independently re-aggregated Stage89 129 real MVK43 band results. Median per-band absolute relative error across all 43 bands vs reference >=0.001 m/s2 vs >=0.01 m/s2: ADC1 6.69/3.38/3.16%, ADC3 7.90/6.75/5.85%, ADC6 10.49/5.51/4.78%. Thus tiny denominator strongly affects global percent error, but high mismatches at significant reference levels remain: ADC1 16Hz 228%, 25Hz 144%; ADC3 40Hz 147%; ADC6 31.5Hz 141%. Stream boundary mismatches are channel-dependent; no evidence one universal off-by-one. Evidence docs/research/STAGE90_LOW_REFERENCE_AND_BAND_BOUNDARIES_RU.md, reproducible stage90_audit_package.zip attached in conversation. Next Stage91 inspect real BIN tonal peaks near these edges and half-record changes. PCAP excluded (different session), stable v0.3.40 unchanged.
