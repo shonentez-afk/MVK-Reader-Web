@@ -117,3 +117,29 @@ def test_offline_window_must_not_pad_short_bin(tmp_path):
     with pytest.raises(ValueError):s.waveform(1,.0625,.001,'ac')
     with pytest.raises(ValueError):s.exact_sample(1,.0625,0,.0625,'ac')
     with pytest.raises(ValueError):s.waveform(1,0,.0625,'ac',display_order='invalid')
+
+def test_synthetic_calibrated_bin_with_dc_offset_does_not_change_dsp(tmp_path):
+    import zipfile, json, hashlib
+    file=fixture_zip(tmp_path)
+    with zipfile.ZipFile(file) as z:
+        items={name:z.read(name) for name in z.namelist()}
+    name=next(s for s in items if s.endswith('.bin') and '-ADC1-' in s)
+    samples=np.frombuffer(items[name],dtype='<f4').copy()
+    samples+=np.float32(6.)
+    items[name]=samples.tobytes()
+    audit=json.loads(items['EXPORT_AUDIT.json'])
+    digest=hashlib.sha256(items[name]).hexdigest()
+    audit['output_file_sha256'][name]=digest
+    audit['channels'][0]['bin_sha256']=digest
+    items['EXPORT_AUDIT.json']=json.dumps(audit).encode('utf-8')
+    with zipfile.ZipFile(file,'w',zipfile.ZIP_DEFLATED) as z:
+        for n,v in items.items():z.writestr(n,v)
+    session=OfflineSession.open(file)
+    dc=session.waveform(1,0,.0625,'acdc',points=10000)
+    ac=session.waveform(1,0,.0625,'ac',points=10000)
+    assert dc['mean_m_s2']>5.99
+    assert dc['removed_mean_m_s2']==0
+    assert ac['removed_mean_m_s2']>5.99
+    assert abs(float(np.mean(ac['amplitude'])))<.003
+    assert dc['source']==ac['source']=='MVK_ADC_CALIBRATED_BIN'
+    assert session.calculations()['source']=='MVK_DSP'
