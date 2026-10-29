@@ -1,6 +1,6 @@
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
-**Дата:** 29.10.2026. **Состояние:** Stage111C GetSignal NO-ENVELOPE IDR CANDIDATE (FFT Stage111B сохраняется), не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
+**Дата:** 29.10.2026. **Состояние:** Stage111D TQGrapher PIXEL CURSOR CANDIDATE (Stage111B FFT, Stage111C GetSignal сохраняются), не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
 
 ## Ключ к статусам
 - **SOURCE_VERIFIED** — оригинальный приборный источник подтверждён Stage109, значения реально получены; не означает, что все элементы GUI совпадают.
@@ -67,10 +67,10 @@
 | FFT IDR float32 / NumPy — два отдельных кандидата | IMPLEMENTED_TESTED | Qt переключатель, сравнение, exact cursor в выбранном backend; не оригинальный DSP |
 | Исключение Nyquist `N/2` | IMPLEMENTED_TESTED | В Stage111A исправлено по Stage81d/110B |
 | `bSpecLines`, частотное разрешение | CANDIDATE | N/df уже есть, оригинальные пресеты надо сверять |
-| `bSpecHScale`/`bSpecVScale`, скроллбары | CANDIDATE | Qt zoom есть, оригинальные пределы/жесты нет |
-| Точный курсор FFT-бина | CANDIDATE | Недецимированный локальный FFT; не исходный `TQGrapher.CursorString` |
+| `bSpecHScale`/`bSpecVScale`, скроллбары | CANDIDATE | Qt zoom/pan меняет pixel→FFT отображение в реальном времени; пределы и жесты оригинала TQGrapher ещё не сверены |
+| Пиксельный курсор `TQGrapher.UpdateCursor` | CANDIDATE + IMPLEMENTED_TESTED | Stage111D: `Trunc` pixel→index, **signed maximum по диапазону одного пикселя**, 1/3 усреднение `sqrt(sum squares)` без /3, снап к исходному непрореженному FFT-бину; оригинальное форматирование/geometry ещё TODO |
 | `bSpecEnvelopeType`, спектральные фильтры | TODO | Нужны оригинальные обработчики |
-| `bSpecCopyValue`/`bSpecSaveValue` | TODO | Не копировать форматированный вывод без принятого эталона |
+| `bSpecCopyValue`/`bSpecSaveValue` | TODO | Полный `CursorString`/форматирование `007B2090` и таб-разделители оригинала не подтверждены; не подменять их приближённым копированием |
 | Оригинальные подписи/сетка/логарифмическая ось | TODO | Нужны скриншоты / TQGrapher handlers |
 
 ## Обязательная последовательность приёмки
