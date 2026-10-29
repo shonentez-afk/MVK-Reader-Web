@@ -132,4 +132,4 @@ def test_complete_private_comparator_cli_with_synthetic_reference(tmp_path,monke
     assert not status['original_app_parity_certified']
     assert status['original_metadata_status']=='NOT_PROVIDED'
     assert private_report.is_file()
-    assert 'amplitude' not in json.dumps(status)
+    assert 'amplitude' not in status and 'frequency_hz' not in status
