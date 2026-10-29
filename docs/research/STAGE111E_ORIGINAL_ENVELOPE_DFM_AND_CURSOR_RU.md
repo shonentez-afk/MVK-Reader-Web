@@ -1,3 +1,5 @@
+> **STAGE111E ПРОВЕРЕННЫЙ QA (2026-10-29):** [GitHub Actions run #40857932274](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40857932274) завершился **SUCCESS** на исходном коде `d5fffd8fad97ac6ab2c16a9757e541c80129b6dc`. Linux core **117/117 PASS**, Windows core **117/117 PASS**, Windows Qt **5/5 PASS**, PyInstaller Windows Preview EXE и SHA256 **собраны и опубликованы**. Артефакт `MVKViewCompatible_Stage111_Windows_Preview`, ID **12889149306**, ZIP **66 466 165 байт**, срок до **2026-11-12 10:31:48 UTC**. Коэффициенты оригинального IDP **не включены** в EXE или GitHub; их выбирают локально. Никакой приёмки оригинальной численной/визуальной Delphi-паритетности или рабочего прибора этим run не утверждается.
+
 # Stage 111E — оригинальная огибающая, DFM-раскладка и числовой курсор
 
 **Дата:** 29.10.2026. **Ветка:** research/stage111-mvkview-desktop-20261029. Отдельное Windows Qt приложение, без HTTP-сервера, без подключения к прибору. Полная идентичность Delphi **НЕ принята**.
