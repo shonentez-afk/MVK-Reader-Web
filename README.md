@@ -1,3 +1,5 @@
+> **STAGE111B — новая точка продолжения (29.10.2026).** Desktop Qt, НЕ сервер. Восстановлены и исследовательски протестированы по Delphi IDR: безусловное вычитание среднего перед `GetSpectrum`, окно Hann RMS, float32 radix-2 FFT, обнуление нижних `max(2, Round(N/(2*fs)))` бинов. В GUI переключатель IDR float32/NumPy; оригинальные DSP из AUX4700 не трогать. Исходники: [mvk_compatible](mvk_compatible/README_RU.md); [научно-технический отчёт](docs/research/STAGE111B_ORIGINAL_FFT_IDR_FLOAT32_RECOVERY_RU.md); [матрица функций](docs/research/STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md). Побитовая и визуальная идентичность оригиналу **не подтверждена**. Stable main/v0.3.40 неизменны.
+
 > **Stage111 — принятое направление (29.10.2026): MVKView Compatibility First.**
 > Основной новый продукт — единое Windows Desktop-приложение, а НЕ текущая серверная Web-архитектура. Рабочие исходники: [mvk_compatible](mvk_compatible/README_RU.md). [ADR Stage111](docs/ADR_2026_10_29_STAGE111_MVKVIEW_COMPATIBILITY_FIRST_RU.md). Версия v0.3.40 заморожена как исторический прототип; старый текст ниже относится к прошлым этапам и не отменяет Stage111.
 
