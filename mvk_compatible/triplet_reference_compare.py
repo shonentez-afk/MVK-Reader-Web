@@ -119,7 +119,8 @@ def main(argv=None)->int:
     parser.add_argument('--idp',help='Local original IDP, only for --code > 0')
     parser.add_argument('--start-s',type=float)
     parser.add_argument('--end-s',type=float)
-    parser.add_argument('--f-range',type=float,default=1.)
+    parser.add_argument('--f-range',type=float,default=None,
+                        help='Operator-entered FRange; if omitted candidate uses unverified 1.0')
     parser.add_argument('--backend',choices=['idr_float32','numpy'],default='idr_float32')
     parser.add_argument('--separator',choices=['tab','pipe'],default='tab')
     parser.add_argument('--decimal',choices=[',','.'],default=',')
@@ -140,19 +141,27 @@ def main(argv=None)->int:
             spectrum=session.spectrum_envelope(
                 args.channel,args.code,args.n_fft,profile,
                 end_s=args.end_s,mode=args.mode,backend=args.backend,
-                f_range=args.f_range)
+                f_range=1.0 if args.f_range is None else args.f_range)
         else:
-            if args.idp or args.end_s is not None or args.f_range!=1.:
-                raise ValueError('Plain BIN FFT accepts --start-s and FRange=1 only')
+            if args.idp or args.end_s is not None:
+                raise ValueError('Plain BIN FFT accepts --start-s without IDP/end-s')
             spectrum=session.spectrum(
                 args.channel,args.n_fft,args.mode,start_s=args.start_s,
-                max_hz=1e9,max_points=args.n_fft//2,backend=args.backend)
+                max_hz=1e9,max_points=args.n_fft//2,backend=args.backend,
+                f_range=args.f_range)
         original=read_operator_triplet_file(
             Path(args.reference),separator='\t' if args.separator=='tab' else '|',
             decimal_separator=args.decimal,encoding=args.encoding)
         report=compare_operator_triplet(spectrum['spectrum_summary'],original,
             abs_tolerance=args.abs_tol,rel_tolerance=args.rel_tol,
             operator_confirmed_same_window=args.confirm_same_window)
+        report['candidate_f_range_used']=spectrum.get('f_range_used',1.0)
+        report['candidate_f_range_source']=spectrum.get(
+            'f_range_source',
+            'OPERATOR_SUPPLIED_UNVERIFIED' if args.f_range is not None
+            else 'DEFAULT_ONE_NOT_CALIBRATION_VERIFIED')
+        report['candidate_f_range_original_verified']=False
+        report['candidate_window_origin_verified']=False
         if args.report_json:
             path=Path(args.report_json)
             if path.is_symlink() or not path.parent.is_dir():
