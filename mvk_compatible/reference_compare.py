@@ -140,6 +140,8 @@ def main(argv=None)->int:
     parser.add_argument('--start-s',type=float,help='Start of plain BIN FFT input window')
     parser.add_argument('--f-range',type=float,default=None,
                         help='Explicit unverified original FRange; omitted = assumed one')
+    parser.add_argument('--input-domain',choices=['calibrated_bin','original_float_storage'],
+                        default='calibrated_bin',help='Operator hypothesis: native BIN or original Delphi float ring')
     parser.add_argument('--backend',choices=['idr_float32','numpy'],default='idr_float32')
     parser.add_argument('--delimiter',choices=[';',',','tab'],default=';')
     parser.add_argument('--decimal',choices=[',','.'],default=',')
@@ -153,8 +155,8 @@ def main(argv=None)->int:
         from .core.envelope_idr_candidate import EnvelopeProfile
         session=OfflineSession.open(args.archive)
         if args.code:
-            if not args.idp or args.start_s is not None:
-                raise ValueError('Envelope requires local IDP and only optional --end-s')
+            if not args.idp or args.start_s is not None or args.input_domain!='calibrated_bin':
+                raise ValueError('Envelope requires local IDP and native calibrated input domain')
             prof=EnvelopeProfile.from_original_local_idp(args.idp)
             result=session.spectrum_envelope(
                 args.channel,args.code,args.n_fft,prof,end_s=args.end_s,
@@ -166,7 +168,8 @@ def main(argv=None)->int:
             result=session.spectrum(
                 args.channel,args.n_fft,args.mode,start_s=args.start_s,
                 max_hz=1e9,max_points=args.n_fft//2,
-                backend=args.backend,f_range=args.f_range)
+                backend=args.backend,f_range=args.f_range,
+                input_domain=args.input_domain)
         reference=read_original_two_column_csv(Path(args.reference),
             delimiter='\t' if args.delimiter=='tab' else args.delimiter,
             decimal=args.decimal)
@@ -180,6 +183,8 @@ def main(argv=None)->int:
             frequency_tolerance_hz=args.freq_tol,
             absolute_tolerance=args.abs_tol,relative_tolerance=args.rel_tol,
             original_metadata=metadata)
+        report['candidate_input_domain']=result.get('input_domain','calibrated_bin')
+        report['candidate_original_float_storage_verified']=False
         if args.report_json:
             out=Path(args.report_json)
             if out.exists() and out.is_symlink():raise ValueError('Refusing symlink report')
