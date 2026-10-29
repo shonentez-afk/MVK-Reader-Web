@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
 from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
+from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
 from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 
@@ -27,6 +28,7 @@ class MainWindow(QMainWindow):
         self.wave_line=None
         self.spec_line=None
         self._full_spectrum=None
+        self._spectrum_summary=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
         self.resize(1360,850)
@@ -274,18 +276,24 @@ class MainWindow(QMainWindow):
         self.spec_mean.setWordWrap(True)
         stack.addWidget(self.spec_mean)
 
-        self.spec_copy_button=QPushButton('Копировать (не принято)')
+        self.spec_copy_button=QPushButton('Копировать (IDR-кандидат)')
         self.spec_copy_button.setObjectName('bSpecCopyValue')
         self.spec_copy_button.setFixedHeight(41)
         self.spec_copy_button.setEnabled(False)
-        self.spec_copy_button.setToolTip('Формат оригинального CursorString/bSpecCopyValue не подтверждён: экспорт отключён, чтобы не имитировать MVKView')
+        self.spec_copy_button.setToolTip(
+            'Только 3 локально вычисленные значения: сумма/пик-частота/пик-амплитуда. '
+            'Табуляция как в 0084BC28; оригинальная Delphi точность не принята')
+        self.spec_copy_button.clicked.connect(self._copy_spec_summary)
         stack.addWidget(self.spec_copy_button)
 
-        self.spec_save_button=QPushButton('Сохранить (не принято)')
+        self.spec_save_button=QPushButton('Сохранить CSV (IDR-кандидат)')
         self.spec_save_button.setObjectName('bSpecSaveValue')
         self.spec_save_button.setFixedHeight(41)
         self.spec_save_button.setEnabled(False)
-        self.spec_save_button.setToolTip('Оригинальный формат bSpecSaveValue не восстановлен')
+        self.spec_save_button.setToolTip(
+            'Только локальный CSV sep=|, отдельный от оригинальных SPEC-FREQ; '
+            'исходные BIN/IDP не записываются')
+        self.spec_save_button.clicked.connect(self._save_spec_summary)
         stack.addWidget(self.spec_save_button)
 
         separator=QFrame()
@@ -623,6 +631,12 @@ class MainWindow(QMainWindow):
             if len(d['amplitude'])!=n_fft//2:
                 raise ValueError('Пиксельный курсор требует все N/2 FFT-бинов')
             self._full_spectrum=d
+            self._spectrum_summary=d.get('spectrum_summary')
+            valid_summary=(isinstance(self._spectrum_summary,dict) and
+                self._spectrum_summary.get('source')==
+                'APP_DERIVED_GETSPECTRUM_PEAK_SUMMARY_IDR_CANDIDATE')
+            self.spec_copy_button.setEnabled(valid_summary)
+            self.spec_save_button.setEnabled(valid_summary)
             xx=np.asarray(d['frequency_hz'],dtype=np.float64)
             yy=np.asarray(d['amplitude'],dtype=np.float64)
             visible=xx<=self.spec_hz.value()
@@ -639,12 +653,18 @@ class MainWindow(QMainWindow):
             self.spec_plot.setXRange(0,self.spec_hz.value(),padding=0)
             self.spec_plot.getViewBox().setLimits(xMin=0,xMax=float(self.spec_hz.value()))
             self._sync_spec_scroll()
-            self.spec_mean.setText(
-                f"Локальный FFT (не DSP)\ndf={d['df_hz']:.6g} Гц\n"
-                f"N/2={len(xx)} бинов\n"
-                + ("IDR огибающая, исходные коэффициенты локально"
-                   if self.spec_envelope_button.isChecked()
-                   else "Без огибающей"))
+            if valid_summary:
+                summ=self._spectrum_summary
+                self.spec_mean.setText(
+                    "GetSpectrum · IDR-кандидат\n"
+                    f"Среднее: {summ['output_mean']:.7g} (FRange пока не проверен)\n"
+                    f"Пик: {summ['output_peak_frequency_hz']:.7g} Гц\n"
+                    f"Амплитуда пика: {summ['output_peak_y']:.7g}\n"
+                    f"Ширина FFT: {d['df_hz']:.7g} Гц, N/2={len(xx)}\n"
+                    + ("Огибающая, исходные FIR локально" if self.spec_envelope_button.isChecked()
+                       else "Без огибающей") + "\nОригинальный численный паритет не доказан")
+            else:
+                self.spec_mean.setText('Нет принятого локального GetSpectrum summary')
             self.spec_hint.setText(
                 f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
                 f"df={d['df_hz']:.7g} Гц · среднее DC "
@@ -654,6 +674,9 @@ class MainWindow(QMainWindow):
                 + "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
         except (OSError,KeyError,ValueError) as e:
             self._full_spectrum=None
+            self._spectrum_summary=None
+            self.spec_copy_button.setEnabled(False)
+            self.spec_save_button.setEnabled(False)
             self._error(e)
 
     @staticmethod
@@ -718,6 +741,31 @@ class MainWindow(QMainWindow):
                 f" {format_cursor_idr_candidate(found['display_y'])} {found['unit']}")
         except (OSError,KeyError,ValueError,OverflowError) as e:
             self.statusBar().showMessage(str(e))
+
+    def _copy_spec_summary(self):
+        """Source-confirmed 3-column tab structure; formatter still CANDIDATE."""
+        if self._spectrum_summary is None:return
+        try:
+            text=spectrum_triplet_text(self._spectrum_summary,decimal_separator=',')
+            QApplication.clipboard().setText(text)
+            self.statusBar().showMessage(
+                'Скопированы 3 исследовательских значения (IDR кандидат; не приборный DSP)')
+        except (KeyError,TypeError,ValueError) as exc:
+            self.statusBar().showMessage('Ошибка Copy candidate: '+str(exc))
+
+    def _save_spec_summary(self):
+        """Explicit user-selected local CSV, never silently overwrite vendor."""
+        if self._spectrum_summary is None:return
+        filename,_=QFileDialog.getSaveFileName(
+            self,'Сохранить исследовательский CSV (не формат оригинальной MVKView)',
+            'MVK_COMPATIBLE_SPEC_CANDIDATE.csv','CSV (*.csv)')
+        if not filename:return
+        try:
+            report=append_research_summary_csv(filename,self._spectrum_summary)
+            self.statusBar().showMessage(
+                f"Сохранены 3 локальных IDR-кандидата: {report['path']} (Delphi parity НЕ доказан)")
+        except (OSError,UnicodeError,KeyError,TypeError,ValueError) as exc:
+            QMessageBox.warning(self,'Локальный CSV не сохранён',str(exc))
 
     def compare_fft(self):
         if not self.session:return
