@@ -193,3 +193,38 @@ def test_qt_optional_user_supplied_envelope_preview_is_explicit(tmp_path,qt_app)
     assert 'GetSignal/IDR' in window.wave_hint.text()
     window.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111f_spectrum_envelope_requires_private_profile(tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.tests.test_envelope_idr_candidate import fake_profile
+    from .test_offline_core import fixture_zip
+    window=MainWindow()
+    window.open_archive(fixture_zip(tmp_path))
+    window.show()
+    window.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert window._full_spectrum['source']=='APP_DERIVED_FFT_MVKVIEW_CANDIDATE'
+    assert not window.spec_envelope_button.isEnabled()
+    assert not window.spec_envelope_button.isChecked()
+    assert not window.spec_envelope_code.isEnabled()
+    window.set_envelope_profile(fake_profile())
+    assert window.spec_envelope_button.isEnabled()
+    assert window.spec_envelope_code.isEnabled()
+    assert window.spec_envelope_code.currentData()==20
+    window.spec_envelope_button.setChecked(True)
+    qt_app.processEvents()
+    assert window.spec_envelope_button.isChecked()
+    assert window.spec_n.currentText()=='1024' # exact source FIR history; no N padding
+    assert window._full_spectrum['source']=='APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE'
+    assert len(window._full_spectrum['amplitude'])==512
+    assert 'повторного DC нет' in window.spec_hint.text()
+    assert not window.spec_compare_button.isEnabled()
+    assert not window.spec_copy_button.isEnabled()
+    assert not window.spec_save_button.isEnabled()
+    window.spec_envelope_button.setChecked(False)
+    qt_app.processEvents()
+    assert window._full_spectrum['source']=='APP_DERIVED_FFT_MVKVIEW_CANDIDATE'
+    assert window.spec_compare_button.isEnabled()
+    window.close()
+    qt_app.processEvents()
