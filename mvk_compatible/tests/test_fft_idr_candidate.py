@@ -79,3 +79,17 @@ def test_stage111b_offline_session_backend_report(tmp_path):
  assert report['source']=='APP_DERIVED_BACKEND_COMPARISON'
  assert report['original_delphi_parity_verified'] is False
  assert report['relative_difference_at_reference_peak']<.01
+
+
+def test_original_low_frequency_cutoff_is_two_bins_for_65536_hz(tmp_path):
+ from mvk_compatible.core import OfflineSession
+ from mvk_compatible.tests.test_offline_core import fixture_zip
+ session=OfflineSession.open(fixture_zip(tmp_path))
+ for backend in ('numpy','idr_float32'):
+  d=session.spectrum(1,4096,1,0,128,100,backend=backend)
+  assert d['low_bins_zeroed']==2
+  assert d['detrended_before_fft'] is True
+  assert d['amplitude'][0]==0 and d['amplitude'][1]==0
+  assert d['frequency_hz'][1]==16
+  log=session.spectrum(1,4096,0,0,128,100,backend=backend)
+  assert log['amplitude'][0]==-180 and log['amplitude'][1]==-180
