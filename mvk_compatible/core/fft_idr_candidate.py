@@ -99,14 +99,26 @@ def fft_idr_float32_real(signal:np.ndarray)->tuple[np.ndarray,np.ndarray]:
     return real,imag
 
 
-def idr_power_spectrum(signal:np.ndarray,backend:str='idr_float32')->tuple[np.ndarray,float]:
-    """P[0..N/2-1] from centered/windowed signal; NOT original verified DSP.
+def idr_power_spectrum(signal:np.ndarray,backend:str='idr_float32', *,
+                       remove_dc:bool=True)->tuple[np.ndarray,float]:
+    """P[0..N/2-1], Hann RMS / original-style unnormalised FFT candidate.
 
-    idr_float32: reconstructed butterfly candidate; numpy: diagnostic baseline.
+    GetSpectrum removes DC ONCE from raw ring samples before optional FIR/IQ.
+    The envelope path passes remove_dc=False because its complex-filter
+    magnitude MUST NOT be mean-subtracted a second time (007D14B3).
+    All existing non-envelope callers keep the original remove_dc=True.
     """
+    if not isinstance(remove_dc,bool):
+        raise ValueError('remove_dc must be an explicit boolean')
     x=np.asarray(signal,dtype=np.float32)
     n=check_n(len(x))
-    centered,removed_mean=mean_center_float32(x)
+    if x.ndim!=1 or not bool(np.isfinite(x).all()):
+        raise ValueError('FFT input must be one-dimensional finite float32')
+    if remove_dc:
+        centered,removed_mean=mean_center_float32(x)
+    else:
+        centered=x.copy()
+        removed_mean=0.0
     windowed=np.asarray(centered.astype(np.float64)*idr_hann_rms(n).astype(np.float64),dtype=np.float32)
     if backend=='idr_float32':
         re,im=fft_idr_float32_real(windowed)
