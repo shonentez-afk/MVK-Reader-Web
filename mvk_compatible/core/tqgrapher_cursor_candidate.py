@@ -34,6 +34,7 @@ class CursorGeometry:
         if (not all(math.isfinite(float(x)) for x in p)
                 or self.pixel_right <= self.pixel_left
                 or self.stoi_m == 0 or self.x_scale <= 0
+                or self.y_scale == 0
                 or ((self.itos_m is None)!=(self.itos_c is None))
                 or (self.itos_m is not None and (
                     not math.isfinite(self.itos_m) or not math.isfinite(self.itos_c)
