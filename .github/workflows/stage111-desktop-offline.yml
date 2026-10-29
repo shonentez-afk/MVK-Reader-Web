@@ -22,7 +22,7 @@ jobs:
       - name: Verify Python syntax
         run: python -m compileall -q mvk_compatible
       - name: Verify offline DSP and archive
-        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py mvk_compatible/tests/test_fft_idr_candidate.py mvk_compatible/tests/test_signal_idr_candidate.py
+        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py mvk_compatible/tests/test_fft_idr_candidate.py mvk_compatible/tests/test_signal_idr_candidate.py mvk_compatible/tests/test_tqgrapher_cursor_candidate.py
   desktop-windows:
     runs-on: windows-latest
     env:
@@ -37,7 +37,7 @@ jobs:
       - name: Verify native Qt tabs in separate process
         run: python -m pytest -q mvk_compatible/tests/test_desktop_qt.py
       - name: Verify measurement and reconstructed FFT on Windows
-        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py mvk_compatible/tests/test_fft_idr_candidate.py mvk_compatible/tests/test_signal_idr_candidate.py
+        run: python -m pytest -q mvk_compatible/tests/test_offline_core.py mvk_compatible/tests/test_fft_idr_candidate.py mvk_compatible/tests/test_signal_idr_candidate.py mvk_compatible/tests/test_tqgrapher_cursor_candidate.py
   windows-exe-preview:
     needs: desktop-windows
     runs-on: windows-latest
