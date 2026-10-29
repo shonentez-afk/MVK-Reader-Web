@@ -164,3 +164,35 @@ def test_invalid_fft_n_rejected(invalid):
     with pytest.raises(ValueError):
         narrowband_from_full_power(power(),n_fft=invalid,
                                    sample_rate_hz=32768,input_frequency_hz=1600.)
+
+
+def test_archive_public_narrowband_and_noise_are_not_dsp(tmp_path):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    sess=OfflineSession.open(fixture_zip(tmp_path))
+    original=sess.calculations()
+    a=sess.narrowband(1,64.,n_fft=4096,start_s=0,backend='numpy')
+    b=sess.narrowband(1,64.,n_fft=4096,start_s=0,
+                      get_noise_peak=True,backend='numpy')
+    assert a['center_bin']==4
+    assert a['output_value']>0
+    assert a['source']==SOURCE and b['source']==NOISE_SOURCE
+    assert b['output_value']==a['output_value']
+    assert b['noise_scan_first_bin']==20
+    assert b['archive_window_start_s']==a['archive_window_start_s']==0.
+    assert a['archive_window_end_s']==4096/65536
+    assert not a['original_archive_position_parity_verified']
+    assert sess.calculations()==original
+    assert original['source']=='MVK_DSP'
+
+
+def test_archive_missing_samples_refused_instead_of_zero_padding(tmp_path):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    sess=OfflineSession.open(fixture_zip(tmp_path))
+    with pytest.raises(ValueError,match='Insufficient real BIN'):
+        sess.narrowband(1,64.,n_fft=4096,start_s=.01)
+    with pytest.raises(ValueError,match='archive start'):
+        sess.narrowband(1,64.,n_fft=4096,start_s=float('nan'))
+    with pytest.raises(ValueError):
+        sess.narrowband(1,64.,n_fft=1023)
