@@ -11,6 +11,7 @@ import math
 import numpy as np
 
 from .fft_idr_candidate import check_n, idr_power_spectrum
+from .calibration_candidate import resolve_f_range
 
 SOURCE = 'APP_DERIVED_NARROWBAND_IDR_CANDIDATE'
 NOISE_SOURCE = 'APP_DERIVED_NOISE_PEAK_IDR_CANDIDATE'
@@ -60,6 +61,7 @@ def narrowband_from_full_power(
         or not math.isfinite(f_range) or f_range <= 0):
         raise ValueError('Frequency, sample rate and FRange must be positive and finite')
 
+    f_range,_=resolve_f_range(f_range)
     a = np.asarray(power, dtype=np.float32)
     half = n // 2
     if (a.ndim != 1 or len(a) != half or not bool(np.isfinite(a).all())
