@@ -1,0 +1,15 @@
+{
+  "stage": 100,
+  "version": "Native R4 offline candidate",
+  "date": "2026-10-29",
+  "offline_only": true,
+  "original_idr_anchors": {"passed": 32, "total": 32},
+  "synthetic_tests": {"passed": 27, "total": 27},
+  "outbound_command": {"observed_bytes": 36, "fragment_lengths": [4, 32], "exact_rate_preview_match": true, "register_address": "0x000E", "sample_rate_hz": 65536},
+  "tsxml_schema_real_files": {"files": 4, "same_schema": 4, "same_comparable_metadata": 4, "same_duration": 4},
+  "real_replay": {
+    "capture_A": {"aux4700": 122, "adc_frames": 125440, "tach_frames": 31360, "full_register_snapshot": true, "identity_frame": true, "conflicting_retransmission_bytes": 3, "trailing_incomplete_bytes": 988},
+    "capture_B": {"aux4700": 170, "adc_frames": 173469, "tach_frames": 43368, "full_register_snapshot": false, "identity_frame": false, "conflicting_retransmission_bytes": 2, "trailing_incomplete_bytes": 0}
+  },
+  "limitations": ["no real device connection", "no automatic outgoing rate/config commands", "not complete GUI or DSP restore", "BIN writer calibration requires separately verified same-device gain", "VALUES/TABLE writer not integrated", "capture A ends on incomplete frame", "archive replay explicitly preserves five ambiguous control bytes"]
+}
