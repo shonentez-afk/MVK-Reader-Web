@@ -494,3 +494,33 @@ def test_qt_stage111m_raw_horizontal_crosshair_differs_from_rms_label(tmp_path,q
     assert win.session.calculations()['source']=='MVK_DSP'
     win.close()
     qt_app.processEvents()
+
+
+def test_qt_stage111m_original_outside_cursor_erases_x_and_y_crosshair(tmp_path,qt_app):
+    """007CA811..007CA832: outside original PixelLeft/Right clears the cursor."""
+    from PySide6.QtCore import QPointF,Qt
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    w=MainWindow()
+    w.open_archive(fixture_zip(tmp_path))
+    w.show()
+    w.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    rect=w.spec_plot.getViewBox().sceneBoundingRect()
+    class Click:
+        def __init__(self,pos):self.pos=pos
+        def button(self):return Qt.LeftButton
+        def scenePos(self):return self.pos
+    assert not w.spec_hline.isVisible()
+    assert not w.spec_line.isVisible()
+    w._spec_click(Click(QPointF(rect.center().x(),rect.center().y())))
+    qt_app.processEvents()
+    assert w.spec_line.isVisible() and w.spec_hline.isVisible()
+    assert w._spec_last_cursor is not None
+    w._spec_click(Click(QPointF(rect.right()+10.,rect.center().y())))
+    assert not w.spec_line.isVisible()
+    assert not w.spec_hline.isVisible()
+    assert w._spec_last_cursor is None
+    assert 'курсор вне области графика' in w.spec_hint.text()
+    w.close()
+    qt_app.processEvents()
