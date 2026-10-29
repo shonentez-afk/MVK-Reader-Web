@@ -114,3 +114,76 @@ def test_exact_text_does_not_silently_strip_terminal_crlf():
     assert result['exact_cursor_string_equal'] is False
     assert result['original_line_count']==3
     assert result['first_different_character_index']==len(candidate['cursor_string'])
+
+
+def test_stage111m_private_horizontal_crosshair_cli_exact_pixel(tmp_path,capsys):
+    from mvk_compatible.core.tqgrapher_crosshair_idr_candidate import original_cursor_crosshair
+    met,sig,txt,pixel,selection=synth(tmp_path)
+    native_canvas=source_canvas_geometry(**metrics())
+    crosshair=original_cursor_crosshair(selection,native_canvas)
+    assert len(crosshair['horizontal_pixels'])==1
+    expected=crosshair['horizontal_pixels'][0]
+    args=['--metrics',str(met),'--series0',str(sig),
+          '--reference',str(txt),'--pixel',str(pixel),
+          '--horizontal-pixels',str(expected),
+          '--line-pixel',str(selection['snapped_vertical_pixel'])]
+    assert main(args)==0
+    result=json.loads(capsys.readouterr().out)
+    assert result['horizontal_pixel_absolute_errors']==[0]
+    assert result['horizontal_pixel_exact_match'] is True
+    assert result['horizontal_line_count_match'] is True
+    assert result['exact_cursor_string_equal']
+    assert not result['original_pixel_parity_verified']
+    assert selection['cursor_string'] not in json.dumps(result)
+
+
+def test_stage111m_original_horizontal_error_is_not_auto_corrected(tmp_path,capsys):
+    from mvk_compatible.core.tqgrapher_crosshair_idr_candidate import original_cursor_crosshair
+    met,sig,txt,pixel,selection=synth(tmp_path)
+    crosshair=original_cursor_crosshair(selection,source_canvas_geometry(**metrics()))
+    expected=crosshair['horizontal_pixels'][0]
+    args=['--metrics',str(met),'--series0',str(sig),
+          '--reference',str(txt),'--pixel',str(pixel),
+          '--horizontal-pixels',str(expected+1)]
+    assert main(args)==1
+    result=json.loads(capsys.readouterr().out)
+    assert result['horizontal_pixel_absolute_errors']==[1]
+    assert result['horizontal_pixel_exact_match'] is False
+    assert result['exact_cursor_string_equal'] is True
+
+
+def test_stage111m_horizontal_count_mismatch_is_rejected(tmp_path,capsys):
+    from mvk_compatible.core.tqgrapher_crosshair_idr_candidate import original_cursor_crosshair
+    met,sig,txt,pixel,selection=synth(tmp_path)
+    horizontal=original_cursor_crosshair(selection,source_canvas_geometry(**metrics()))
+    one=horizontal['horizontal_pixels'][0]
+    args=['--metrics',str(met),'--series0',str(sig),
+          '--reference',str(txt),'--pixel',str(pixel),
+          '--horizontal-pixels',f'{one},{one}']
+    assert main(args)==1
+    result=json.loads(capsys.readouterr().out)
+    assert result['horizontal_line_count_match'] is False
+    assert result['horizontal_pixel_absolute_errors'] is None
+
+
+@pytest.mark.parametrize('bad',['',',','1,2,3','nan','1,inf','10.5','-','true'])
+def test_stage111m_invalid_horizontal_operator_reference_fails_closed(tmp_path,bad):
+    met,sig,txt,pixel,_=synth(tmp_path)
+    with pytest.raises(SystemExit) as result:
+        main(['--metrics',str(met),'--series0',str(sig),
+              '--reference',str(txt),'--pixel',str(pixel),
+              '--horizontal-pixels',bad])
+    assert result.value.code==2
+
+
+def test_stage111m_direct_comparison_does_not_leak_horizontal_coordinates():
+    data={'drawn':True,'cursor_string':'12 Гц\r\n8 м/с²',
+          'snapped_vertical_pixel':45,'horizontal_pixels':[72,84]}
+    from mvk_compatible.cursor_reference_compare import compare_cursor_candidate
+    d=compare_cursor_candidate(data,data['cursor_string'],
+                               original_horizontal_pixels=[72,84],
+                               original_line_pixel=45)
+    assert d['horizontal_pixel_absolute_errors']==[0,0]
+    assert d['horizontal_pixel_exact_match']
+    assert 'horizontal_pixels' not in d
+    assert not d['original_pixel_parity_verified']
