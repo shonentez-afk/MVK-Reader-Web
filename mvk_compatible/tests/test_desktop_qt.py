@@ -164,3 +164,32 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     assert win.spec_vscroll.isVisible()
     win.close()
     qt_app.processEvents()
+
+
+def test_qt_optional_user_supplied_envelope_preview_is_explicit(tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.tests.test_envelope_idr_candidate import fake_profile
+    from .test_offline_core import fixture_zip
+    window=MainWindow()
+    window.open_archive(fixture_zip(tmp_path))
+    window.show()
+    window.tabs.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert window.envelope_profile is None
+    assert window.wave_envelope_code.count()==32
+    assert not window.wave_envelope_code.isEnabled()
+    window.wave_start.setValue(.02)
+    window.wave_seconds.setValue(.02)
+    window.set_envelope_profile(fake_profile())
+    assert window.wave_envelope_code.isEnabled()
+    window.wave_envelope_code.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert 'Огибающая IDR (эксперимент)' in window.wave_hint.text()
+    assert 'оригинальный формат/время/курсор НЕ приняты' in window.wave_hint.text()
+    assert len(window.wave_plot.listDataItems())==1
+    assert 'НЕ время оригинальной MVKView' in window.wave_plot.getPlotItem().getAxis('bottom').labelText
+    window.wave_envelope_code.setCurrentIndex(0)
+    qt_app.processEvents()
+    assert 'GetSignal/IDR' in window.wave_hint.text()
+    window.close()
+    qt_app.processEvents()
