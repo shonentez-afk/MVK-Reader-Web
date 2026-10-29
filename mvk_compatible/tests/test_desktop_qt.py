@@ -607,7 +607,9 @@ def test_qt_stage111o_no_unverified_envelope_mouse_cursor(tmp_path,qt_app):
     qt_app.processEvents()
     rect=win.wave_plot.getViewBox().sceneBoundingRect()
     win.wave_envelope_code.setEnabled(True)
+    win.wave_envelope_code.blockSignals(True)
     win.wave_envelope_code.setCurrentIndex(2)
+    win.wave_envelope_code.blockSignals(False)
     qt_app.processEvents()
     # No source-accepted envelope hover or fabricated FIR values.
     pos=QPointF(rect.left()+rect.width()*.45,rect.center().y())
