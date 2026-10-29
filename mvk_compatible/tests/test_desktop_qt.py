@@ -18,6 +18,7 @@ def test_desktop_three_tabs_without_server():
     assert not window.tabs.isEnabled()
     assert window.adc.count()==8
     assert window.spec_mode.count()==4
+    assert window.spec_backend.count()==2
     window.close()
     app.processEvents()
 
@@ -42,6 +43,13 @@ def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path):
     assert len(window.wave_plot.listDataItems())==1
     assert len(window.spec_plot.listDataItems())==1
     assert 'APP_DERIVED_FFT_MVKVIEW_CANDIDATE' in window.spec_hint.text()
+    assert 'idr_float32' in window.spec_hint.text()
+    window.spec_backend.setCurrentIndex(1)
+    window.refresh_spec()
+    assert 'numpy' in window.spec_hint.text()
+    window.spec_backend.setCurrentIndex(0)
+    window.refresh_spec()
+    assert 'idr_float32' in window.spec_hint.text()
     window.adc.setCurrentIndex(6)
     app.processEvents()
     assert 'ALERT' in window.calc_status.text()
