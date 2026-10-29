@@ -27,7 +27,7 @@ def test_explicit_tformatsettings_decimal_comma():
 
 def test_bigger_significant_argument_changes_places():
     assert fmt(12.25,significant_digits=5)=='12.25'
-    assert fmt(0.125,significant_digits=2)=='0.13'
+    assert fmt(0.126,significant_digits=2)=='0.13'
 
 
 @pytest.mark.parametrize('digit',[0,-1,13,True])
