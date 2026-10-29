@@ -1,6 +1,6 @@
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
-**Дата:** 29.10.2026. **Состояние:** Stage111G ORIGINAL-STYLE POWER SUMMARY + LOCAL COPY/SAVE CANDIDATES. Численная/побитовая приёмка оригинальной MVKView ещё НЕ закрыта; это не релиз MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
+**Дата:** 29.10.2026. **Состояние:** Stage111H GetNarrowbandValue / GetNoisePeak + ORIGINAL-TRIPLET LOCAL COMPARATOR. Численная/побитовая приёмка оригинальной MVKView ещё НЕ закрыта; это не релиз MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
 
 ## Ключ к статусам
 - **SOURCE_VERIFIED** — оригинальный приборный источник подтверждён Stage109, значения реально получены; не означает, что все элементы GUI совпадают.
@@ -68,11 +68,17 @@
 | Исключение Nyquist `N/2` | IMPLEMENTED_TESTED | В Stage111A исправлено по Stage81d/110B |
 | `bSpecLines`, частотное разрешение | CANDIDATE | N/df уже есть, оригинальные пресеты надо сверять |
 | `bSpecHScale`/`bSpecVScale`, скроллбары | CANDIDATE + IMPLEMENTED_TESTED | Stage111E: реальные Qt кнопки масштаба и синхронные H/V QScrollBar 24px по оригинальному DFM, видимость при увеличении, функциональная регрессия; точные Delphi пределы не подтверждены |
-| `GetSpectrum` OutputMean/OutputPeakX/OutputPeakY | SOURCE_VERIFIED + CANDIDATE + IMPLEMENTED_TESTED | Stage111G: оригинальный диапазон бин(ов) `max(2,Round(N/(2fs)))..Trunc(N/2.56)` по 007D1558, сумма мощности, максимум (при равенстве первый), **энергетический центр пяти бинов ±2** через 007D21A8, амплитуда `sqrt(sum(P)/2)*FRange/(N/2)`; FRange/x87/численный оригинальный эталон всё ещё TODO |
+| `GetNarrowbandValue` / `GetNoisePeak` | SOURCE_VERIFIED + CANDIDATE + IMPLEMENTED_TESTED | Stage111H: `007D0E58` исходный центр `Round(N/fs*InputValue)`, ширина `Max(1,Round(center_raw*0.0005))`, узкополосная сумма мощности; с шумовым флагом — поиск трёх соседних бин по диапазону до `N/8`, за исключением `center ± 20*radius`. Полный FFT BIN, отдельная исследовательская панель, отказ при небезопасном крае; численная Delphi parity и `FRange` TODO |\n| `GetSpectrum` OutputMean/OutputPeakX/OutputPeakY | SOURCE_VERIFIED + CANDIDATE + IMPLEMENTED_TESTED | Stage111G: оригинальный диапазон бин(ов) `max(2,Round(N/(2fs)))..Trunc(N/2.56)` по 007D1558, сумма мощности, максимум (при равенстве первый), **энергетический центр пяти бинов ±2** через 007D21A8, амплитуда `sqrt(sum(P)/2)*FRange/(N/2)`; FRange/x87/численный оригинальный эталон всё ещё TODO |
 | Пиксельный курсор `TQGrapher.UpdateCursor` | CANDIDATE + IMPLEMENTED_TESTED | Stage111D: `Trunc` pixel→index, **signed maximum по диапазону одного пикселя**, 1/3 усреднение `sqrt(sum squares)` без /3, снап к исходному непрореженному FFT-бину; оригинальное форматирование/geometry ещё TODO |
 | `bSpecEnvelopeType`, спектральные фильтры | CANDIDATE + IMPLEMENTED_TESTED | Stage111F: исходная IDR-структура `GetSpectrum` через FIR/IQ→Hann→FFT; **однократное DC до огибающей**, 4 режима, полный N/2, строгая FIR-история и SHA-верифицированный **локальный** IDP; точные исходное окно/физический FRange/Delphi FFT ещё не приняты |
 | `bSpecCopyValue`/`bSpecSaveValue` | SOURCE_VERIFIED + CANDIDATE + IMPLEMENTED_TESTED | Stage111G: `0084BC28` — три значения `OutputMean(3) TAB PeakX*XScale(4) TAB PeakY(4)` в локальный clipboard; `0084BD7C` — заголовок `sep=|` и три поля через `|`, append. Работающие Qt действия доступны как **IDR-кандидаты**, локальный CSV с отдельным заголовком защищён от смешивания с оригинальным `SPEC-FREQ`; формат `007B2090`/Delphi RTL, оригинальный `edLibraryPath` и локализация НЕ приняты |
 | Оригинальные подписи/сетка/логарифмическая ось | CANDIDATE + LAYOUT_IMPLEMENTED_TESTED | Stage111E структура Spectrum: pnSpecTools 177px, оригинальный порядок девяти органов, верхний/правый скроллбар 24px; внешний вид, локализация и точная шкала всё ещё требуют скриншотов |
+
+## Stage111H — отдельный Narrowband и доказательная сверка Copy
+
+Точный исходный `GetNarrowbandValue` не равен графическому `GetSpectrum`: отдельный `OutputValue` и опциональный `GetNoisePeak=True` (шумовой пик с окном 3 бина и исключением области ±20 ширин). Кандидат реализован в `narrowband_idr_candidate.py`, публичный `OfflineSession.narrowband` и исследовательские органы Qt. Приборные `MVK_DSP_AUX4700` по-прежнему не подменяются.
+
+`triplet_reference_compare.py` принимает **одну локально скопированную строку** оригинальной MVKView (3 TAB-поля, явная десятичная запятая/точка) и сравнивает с тремя `GetSpectrum` полями исходного BIN. Без оригинального эталона и доказанной идентичности параметров численная Delphi-паритетность **не принята**, независимо от synthetic PASS. Подробнее [Stage111H](STAGE111H_NARROWBAND_NOISE_PEAK_TRIPLET_PARITY_RU.md).
 
 ## Stage111G — пиковые и интегральные значения
 
