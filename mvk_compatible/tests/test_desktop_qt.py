@@ -524,3 +524,95 @@ def test_qt_stage111m_original_outside_cursor_erases_x_and_y_crosshair(tmp_path,
     assert 'курсор вне области графика' in w.spec_hint.text()
     w.close()
     qt_app.processEvents()
+
+def test_qt_stage111o_spec_mousemove_updates_original_x_only_and_clears(tmp_path,qt_app):
+    """0084C918..933 uses X mouse movement; no button and no Y needed."""
+    from PySide6.QtCore import QPointF
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    rect=win.spec_plot.getViewBox().sceneBoundingRect()
+    assert rect.width()>20
+    assert not win.spec_line.isVisible() and not win.spec_hline.isVisible()
+    p=QPointF(rect.left()+rect.width()*.35,rect.center().y())
+    win._spec_mouse_move(p)
+    assert win.spec_line.isVisible() and win.spec_hline.isVisible()
+    first=win._spec_last_cursor
+    assert first is not None
+    assert 'IDR pixel' in win.spec_hint.text()
+    # Same integer mouse X must skip redraw even if Y moves outside plot.
+    win._spec_mouse_move(QPointF(p.x(),rect.top()-20.))
+    assert win._spec_last_cursor is first
+    # Movement X alone must update even with Y outside the plot rectangle.
+    win._spec_mouse_move(QPointF(p.x()+5.,rect.top()-20.))
+    assert win._spec_last_cursor is not first
+    assert win.spec_line.isVisible() and win.spec_hline.isVisible()
+    win._spec_mouse_move(QPointF(rect.right()+10.,rect.center().y()))
+    assert not win.spec_line.isVisible() and not win.spec_hline.isVisible()
+    assert win._spec_last_cursor is None
+    assert 'курсор вне области графика' in win.spec_hint.text()
+    assert win.session.calculations()['source']=='MVK_DSP'
+    win.close()
+    qt_app.processEvents()
+
+
+def test_qt_stage111o_wave_mousemove_uses_cached_full_getsignal(tmp_path,qt_app):
+    """0084B4AC: waveform cursor follows X, not click; cached offline only."""
+    from PySide6.QtCore import QPointF
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(1)
+    qt_app.processEvents()
+    rect=win.wave_plot.getViewBox().sceneBoundingRect()
+    assert rect.width()>30
+    assert not win.wave_line.isVisible()
+    assert win._wave_hover_window is None
+    initial=QPointF(rect.left()+rect.width()*.4,rect.center().y())
+    win._wave_mouse_move(initial)
+    assert win.wave_line.isVisible()
+    assert win._wave_hover_window is not None
+    assert 'MouseMove IDR-кандидат' in win.wave_hint.text()
+    cached=win._wave_hover_window
+    original_pos=win._wave_mouse_pixel
+    old=win.wave_hint.text()
+    win._wave_mouse_move(QPointF(initial.x(),rect.top()-17.))
+    assert win._wave_hover_window is cached
+    assert win._wave_mouse_pixel==original_pos
+    assert win.wave_hint.text()==old
+    win._wave_mouse_move(QPointF(initial.x()+8.,rect.center().y()))
+    assert win._wave_hover_window is cached
+    assert 'BIN[' in win.wave_hint.text()
+    win._wave_mouse_move(QPointF(rect.left()-10.,rect.center().y()))
+    assert not win.wave_line.isVisible()
+    assert 'курсор вне временного графика' in win.wave_hint.text()
+    win.close()
+    qt_app.processEvents()
+
+
+def test_qt_stage111o_no_unverified_envelope_mouse_cursor(tmp_path,qt_app):
+    from PySide6.QtCore import QPointF
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(1)
+    qt_app.processEvents()
+    rect=win.wave_plot.getViewBox().sceneBoundingRect()
+    win.wave_envelope_code.setEnabled(True)
+    win.wave_envelope_code.setCurrentIndex(2)
+    qt_app.processEvents()
+    # No source-accepted envelope hover or fabricated FIR values.
+    pos=QPointF(rect.left()+rect.width()*.45,rect.center().y())
+    win._wave_mouse_move(pos)
+    assert win._wave_hover_window is None
+    assert not win.wave_line.isVisible()
+    win.close()
+    qt_app.processEvents()
