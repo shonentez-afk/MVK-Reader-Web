@@ -133,3 +133,65 @@ def test_complete_private_comparator_cli_with_synthetic_reference(tmp_path,monke
     assert status['original_metadata_status']=='NOT_PROVIDED'
     assert private_report.is_file()
     assert 'amplitude' not in status and 'frequency_hz' not in status
+
+
+def test_stage111i_plain_fft_reference_cli_without_private_idp(tmp_path,capsys):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    from mvk_compatible.reference_compare import main
+    archive=fixture_zip(tmp_path)
+    d=OfflineSession.open(archive).spectrum(
+        1,4096,1,start_s=0,max_hz=32768,max_points=2048,
+        backend='numpy',f_range=2.5)
+    csv=tmp_path/'operator-synthetic-spectrum.csv'
+    with csv.open('w',encoding='utf-8') as stream:
+        stream.write('frequency_hz;amplitude\n')
+        for hz,val in zip(d['frequency_hz'],d['amplitude']):
+            stream.write(f'{hz!r};{val!r}\n')
+    args=['--archive',str(archive),'--reference',str(csv),
+          '--channel','1','--code','0','--n-fft','4096',
+          '--mode','1','--start-s','0','--backend','numpy',
+          '--f-range','2.5','--decimal','.']
+    assert main(args)==0
+    report=json.loads(capsys.readouterr().out)
+    assert report['n_bins_compared']==2048
+    assert report['within_supplied_numeric_tolerance']
+    assert report['candidate_f_range_used']==2.5
+    assert report['candidate_f_range_source']=='OPERATOR_SUPPLIED_UNVERIFIED'
+    assert report['candidate_f_range_original_verified'] is False
+    assert report['original_app_parity_certified'] is False
+
+
+def test_stage111i_reference_scale_hint_not_applied_to_result():
+    a,b=data()
+    a['mode']=1
+    a['amplitude']=[v/3. for v in a['amplitude']]
+    original=list(a['amplitude'])
+    p=compare_full_spectrum(a,b,absolute_tolerance=0,relative_tolerance=.001)
+    assert not p['within_supplied_numeric_tolerance']
+    assert p['diagnostic_reference_over_candidate_gain_hint_not_applied']==pytest.approx(3)
+    assert a['amplitude']==original
+    assert not p['original_app_parity_certified']
+
+
+def test_stage111i_log_mode_never_uses_multiplicative_gain_hint():
+    a,b=data()
+    a['mode']=0
+    a['amplitude']=[x+20 for x in a['amplitude']]
+    report=compare_full_spectrum(a,b)
+    assert report['diagnostic_reference_over_candidate_gain_hint_not_applied'] is None
+
+
+def test_stage111i_metadata_accepts_explicit_no_envelope_code_zero():
+    a,b=data()
+    a['mode']=1
+    a['code']=0
+    a['df_hz']=16
+    meta={'source_app':'MVKView',
+          'confirmed_same_signal_and_window':True,
+          'channel':4,'envelope_code':0,'n_fft':32,
+          'mode':1,'output_sample_rate_hz':512,
+          'original_csv_sha256':'abc'}
+    report=compare_full_spectrum(a,b,original_metadata=meta)
+    assert report['original_metadata_status']=='OPERATOR_ASSERTED_MATCH'
+    assert not report['original_app_parity_certified']
