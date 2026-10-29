@@ -1,3 +1,5 @@
+> **СТАРТ нового чата: Stage111D (29.10.2026).** Desktop `research/stage111-mvkview-desktop-20261029`, а не старый Web. В Stage111C по оригинальным DFM/IDR восстановлены AC/AC+DC (`NoDC`), обратный `GetSignal`, f32 СКЗ, кольцевой wrap, точный курсор и два режима осей Qt. Обязательно читать [STAGE111C](docs/research/STAGE111C_GETSIGNAL_IDR_OFFLINE_RECOVERY_RU.md), [handoff](docs/research/STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md), оба ADR и совместимость. **Ни в коем случае не объявлять** огибающую, графическую TQGrapher ориентацию, FFT или полную MVKView принятой без оригинальной численной сверки.
+
 > **Актуально Stage111B (2026-10-29):** новое ядро FFT и матрица паритета в `research/stage111-mvkview-desktop-20261029`. Читать первым: [Stage111B IDR FFT](docs/research/STAGE111B_ORIGINAL_FFT_IDR_FLOAT32_RECOVERY_RU.md), [общий handoff](docs/research/STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md), [ADR Compatibility First](docs/ADR_2026_10_29_STAGE111_MVKVIEW_COMPATIBILITY_FIRST_RU.md). Прежнее направление Web и v0.3.40 НЕ продолжать; полная эквивалентность ещё не принята.
 
 # ВАЖНО — актуальный старт проекта: STAGE 111 (2026-10-29)
