@@ -1,0 +1,9 @@
+# Stage95 — original IDR TCP10230 parity and recording audit
+
+2026-10-29, offline. Original `_Unit125.pas` in `Projects.7z`, user reader `mvk_tcp_reader_v2(1).py`, and existing Stage59-94 GitHub reports.
+
+**Confirmed defects in v2 reader:** IDR `0x0080804F..0x00808059` identifies positive operation type `0x00010FF0` and denial `0x00010FFF` (base + 0xF). Reader incorrectly labels `T_CONFIG_REPLY=0x00010FF1` and `T_DENIED=0x00011000`. IDR `0x00808232..0x0080823B` compares incoming sample rate against configured `TMVKThread.MvkSampleRate`; v2 checks only broad allowed set. IDR `0x00808464/6F` register descriptor low16 address/high16 register count; `0x00808544..6D` writes into `TRecordMemoryStream` at address*2; `0x0080857C..9A` refreshes calculation UI; address 0x3100 triggers VALUES writer. V2 lacks register image and UI update. IDR `0x008095ED` BIN file creation, `0x008098DB` VALUES creation are distinct recording workflows; V2 writes raw float32 without gain or tsxml/values.
+
+**Already implemented:** `tools/raw_offline_audit/decode_4700.py` splits AUX4700 into 8 channels of 144 float32 plus uint32 status; `MVK_Reader_Web/signal_bridge/stream_engine.py` recognizes 4700 but only feeds ADC into state; existing mapping reports provide 43 third-octaves / 24 RMS, peaks and peak-to-peak. **Do not redo from scratch.** Modbus TCP 502 is the reference register specification only; MVK Reader Web uses TCP 10230. PCAP recordings and MVK43 BIN+VALUES are different sessions. Exact original DSP filters are firmware-level, not proven from PC IDR.
+
+13/13 static IDR anchor checks passed; two Python response constants mismatched. Offline script and report delivered locally as stage95_idr_network_audit.zip. Next trace original task=0/2 session start and stop plus BIN writer exit/error paths, then implement isolated research-only calculated-register pipeline and regression. No device connections, no writes, stable v0.3.40 untouched.
