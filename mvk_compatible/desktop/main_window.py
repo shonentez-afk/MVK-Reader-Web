@@ -824,10 +824,12 @@ class MainWindow(QMainWindow):
             result=self.session.narrowband(
                 self._ch(),self.narrow_frequency.value(),n_fft=n_fft,
                 start_s=start,get_noise_peak=self.narrow_noise.isChecked(),
-                backend=self._fft_backend(),f_range=self.spec_f_range.value())
+                backend=self._fft_backend(),f_range=self.spec_f_range.value(),
+                input_domain=self.spec_input_domain.currentData())
             label=(f"IDR узкополосный (не приборный DSP) · {result['center_bin']} ±"
                   f"{result['radius_bins']} FFT-бин · значение {result['output_value']:.8g}"
-                  f" (FRange={result['f_range_used']:.6g}, кандидат; оригинал НЕ проверен)")
+                  f" (FRange={result['f_range_used']:.6g}, "
+                  f"{result['input_domain']}, кандидат; оригинал НЕ проверен)")
             if result['noise_peak_enabled']:
                 label+=(f"\nШумовой пик {result['output_peak_frequency_hz']:.7g} Гц ·"
                        f" {result['output_peak_y']:.7g},"
