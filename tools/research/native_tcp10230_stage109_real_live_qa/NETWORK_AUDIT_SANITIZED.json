@@ -1,0 +1,30 @@
+{
+  "capture_sha256": "1d1390dc8d4f9a5d38fab89634c122977f01727c863370086a519c2f94eff841",
+  "pcap_bytes": 76076316,
+  "first_packet_utc": "2026-10-29T06:32:12.655403+00:00",
+  "last_packet_utc": "2026-10-29T06:32:42.661087+00:00",
+  "interface_type": "Ethernet",
+  "tcp_client_payload_segments": 0,
+  "tcp_client_application_payload_bytes": 0,
+  "tcp_device_payload_segments": 53600,
+  "tcp_device_unique_payload_bytes": 69687172,
+  "tcp_duplicate_payload_bytes": 1860,
+  "tcp_overlapped_conflicting_bytes": 0,
+  "tcp_gap_bytes": 0,
+  "client_flags": {
+    "SYN": 1,
+    "ACK": 18973,
+    "FIN": 1,
+    "RST": 1
+  },
+  "device_flags": {
+    "SYN": 1,
+    "ACK": 53603,
+    "PSH": 13749,
+    "FIN": 1
+  },
+  "pcap_application_prefix_equals_raw": true,
+  "pcap_additional_terminal_bytes": 1288,
+  "other_errors": [],
+  "client_readonly_handshake": true
+}

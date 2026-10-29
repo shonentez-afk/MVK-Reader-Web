@@ -1,0 +1,54 @@
+{
+  "frame_rows_checked": 84855,
+  "decoded_types": {
+    "00000001/264": 1,
+    "FF800C0D/32800": 1,
+    "FF800ADC/1052": 61429,
+    "FF8001AC/284": 15356,
+    "FF800C0D/44": 7678,
+    "FF800C0D/4700": 60,
+    "FF800C0D/76": 60,
+    "FF800C0D/160": 270
+  },
+  "adc_samples": [
+    1965824,
+    1965824,
+    1965824,
+    1965824,
+    1965824,
+    1965568,
+    1965568,
+    1965568
+  ],
+  "chunk_rows_checked": 15765,
+  "raw_size": 69685884,
+  "raw_sha256": "6c40e1dc93666da1a95c9e54758115d90df710abfd2f1a48916d55f36816a03f",
+  "raw_integrity_ok": true,
+  "output_hashes_checked": 19,
+  "pending_files": 0,
+  "errors": [],
+  "terminal_frame": {
+    "excluded": 816,
+    "raw_bytes": 69685884,
+    "complete_prefix_bytes": 69685068,
+    "trailing_hex": "dc 0a 80 ff 1c 04 00 00 00 00 00 00 00 79 5a 72 00 00 00 00 05 00 00 00 00 00 01 00",
+    "partial_type": "0xff800adc",
+    "partial_len_declared": 1052,
+    "adc_index": 1918531840,
+    "adc_channel": 6
+  },
+  "results_zip": {
+    "compressed_bytes": 50719661,
+    "entry_count": 7,
+    "crc_error_file": null,
+    "names": [
+      "incoming.raw",
+      "chunks.csv",
+      "frames.csv",
+      "aux4700.jsonl",
+      "events.log",
+      "summary.json",
+      "summary_ru.txt"
+    ]
+  }
+}

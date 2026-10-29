@@ -1,0 +1,41 @@
+{
+  "table_compared_to_last_aux_values": 240,
+  "table_mismatch_count": 0,
+  "table_mismatch_examples": [],
+  "values_rows": 60,
+  "values_columns": 585,
+  "table_rows": 39,
+  "update_intervals_seconds": {
+    "n": 59,
+    "mean": 0.500001,
+    "min": 0.47773,
+    "max": 0.520869,
+    "stdev": 0.007665
+  },
+  "sensor_status_rows": {
+    "1": {
+      "ОК": 60
+    },
+    "2": {
+      "ОК": 60
+    },
+    "3": {
+      "ОК": 60
+    },
+    "4": {
+      "ОК": 60
+    },
+    "5": {
+      "ОК": 60
+    },
+    "6": {
+      "ОК": 60
+    },
+    "7": {
+      "0x00000400": 60
+    },
+    "8": {
+      "0x00000400": 60
+    }
+  }
+}
