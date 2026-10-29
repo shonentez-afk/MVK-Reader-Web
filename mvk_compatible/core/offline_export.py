@@ -20,6 +20,7 @@ import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
 from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
+from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -405,6 +406,52 @@ class OfflineSession:
                  start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
                  backend:str='idr_float32')->dict:
         return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend)
+
+    def envelope(self,channel:int,code:int,start_s:float,seconds:float,
+                 profile:EnvelopeProfile,*,f_range:float=1.0,
+                 display_order:str='getsignal_buffer',points:int=4000)->dict:
+        """Only with explicit private local FIR profile; no fabricated envelope.
+
+        For offline BIN the requested time window must include the *entire*
+        GetAdjustedEnvelopeLength history; short archives fail closed.
+        Source GUI absolute time axis for envelope is not verified.
+        """
+        if display_order not in ('chronological','getsignal_buffer'):
+            raise ValueError('Invalid envelope display order')
+        if not all(math.isfinite(v) for v in (start_s,seconds)) or start_s<0 or seconds<=0 or seconds>30:
+            raise ValueError('Invalid envelope window')
+        samples,fs,_,filename=self.samples(channel)
+        if not float(fs).is_integer():
+            raise ValueError('Original envelope requires integer ADC sample rate')
+        rate=int(fs)
+        desired=round(seconds*rate)
+        if desired<1:
+            raise ValueError('Empty output window')
+        plan=envelope_plan(desired,rate,code)
+        end=round((start_s+seconds)*rate)
+        begin=end-plan['adjusted_input_length']
+        if begin<0 or end>len(samples):
+            raise ValueError('Original envelope requires more real BIN history: no zero-padding allowed')
+        processed=process_original_envelope_candidate(
+            samples[begin:end],rate,code,profile,f_range=f_range)
+        raw=(processed['chronological'] if display_order=='chronological'
+             else processed['getsignal_buffer'])
+        # x is output *buffer position*, not yet an original Delphi graph time.
+        output_rate=processed['output_sample_rate_hz']
+        xx,yy=reduce_minmax(raw,output_rate,0,points)
+        return {'version':VERSION,'channel':channel,'code':code,
+                'source':processed['source'],'file':filename,
+                'profile_source':processed['profile_source'],
+                'time_s':xx,'amplitude':yy,'unit':'м/с²',
+                'output_samples':processed['output_samples'],
+                'output_sample_rate_hz':output_rate,
+                'rms_m_s2':processed['rms_m_s2'],
+                'removed_mean_m_s2':processed['removed_mean_m_s2'],
+                'stages_used':processed['stages_used'],
+                'display_order':display_order,
+                'x_axis_kind':'OUTPUT_BUFFER_RELATIVE_POSITION_NOT_ORIGINAL_TIME',
+                'original_delphi_numerical_parity_verified':False,
+                'warning':processed['warning']}
 
     def exact_sample(self,channel:int,time_s:float,start_s:float=0.,
                      seconds:float=1.,mode:str='acdc',
