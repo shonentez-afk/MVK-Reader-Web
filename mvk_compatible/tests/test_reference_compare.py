@@ -195,3 +195,27 @@ def test_stage111i_metadata_accepts_explicit_no_envelope_code_zero():
     report=compare_full_spectrum(a,b,original_metadata=meta)
     assert report['original_metadata_status']=='OPERATOR_ASSERTED_MATCH'
     assert not report['original_app_parity_certified']
+
+
+def test_stage111j_full_reference_cli_original_ring_hypothesis(tmp_path,capsys):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    from mvk_compatible.reference_compare import main
+    archive=fixture_zip(tmp_path)
+    session=OfflineSession.open(archive)
+    ref=session.spectrum(1,4096,1,start_s=0,max_hz=32768,max_points=2048,
+                         backend='numpy',f_range=4.,input_domain='original_float_storage')
+    source=tmp_path/'synthetic-storage-original.csv'
+    with source.open('w',encoding='utf-8') as stream:
+        stream.write('frequency_hz;amplitude\n')
+        for frequency,value in zip(ref['frequency_hz'],ref['amplitude']):
+            stream.write(f'{frequency!r};{value!r}\n')
+    assert main(['--archive',str(archive),'--reference',str(source),
+        '--channel','1','--code','0','--n-fft','4096','--mode','1',
+        '--start-s','0','--backend','numpy','--decimal','.',
+        '--f-range','4','--input-domain','original_float_storage'])==0
+    report=json.loads(capsys.readouterr().out)
+    assert report['within_supplied_numeric_tolerance']
+    assert report['candidate_input_domain']=='original_float_storage'
+    assert not report['candidate_original_float_storage_verified']
+    assert not report['original_app_parity_certified']
