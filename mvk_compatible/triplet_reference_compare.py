@@ -65,6 +65,8 @@ def read_operator_triplet_file(path:Path,*,separator:str='\t',
     values=parse_operator_triplet(raw.decode(encoding),
                     separator=separator,decimal_separator=decimal_separator)
     return {'values':values,'sha256':hashlib.sha256(raw).hexdigest(),
+            'original_text_local_only':raw.decode(encoding).strip('\r\n'),
+            'delimiter':separator,'decimal_separator':decimal_separator,
             'field_count':3,'source':'OPERATOR_SUPPLIED_ORIGINAL_TRIPLET'}
 
 
@@ -92,6 +94,12 @@ def compare_operator_triplet(candidate:dict,original:dict, *,
         delta=abs(val-float(ref))
         differences[key]=delta
         flags[key]=delta <= abs_tolerance+rel_tolerance*abs(float(ref))
+    original_text=original.get('original_text_local_only')
+    candidate_display_equal=None
+    if original_text is not None:
+        candidate_display_equal=(spectrum_triplet_text(
+            candidate,separator=original.get('delimiter','\t'),
+            decimal_separator=original.get('decimal_separator',','))==original_text)
     return {
         'source':'LOCAL_MVKVIEW_TRIPLET_COMPARISON_CANDIDATE',
         'reference_sha256':original.get('sha256'),
@@ -99,6 +107,8 @@ def compare_operator_triplet(candidate:dict,original:dict, *,
         'absolute_errors':differences,
         'within_tolerance_per_field':flags,
         'within_supplied_tolerances':all(flags.values()),
+        'candidate_display_text_equal':candidate_display_equal,
+        'candidate_display_text_comparison':'EXACT_CHARACTERS_NOT_DELPHI_RTL_PARITY',
         'operator_confirmed_same_signal_and_window':operator_confirmed_same_window,
         'original_delphi_parity_verified':False,
         'original_display_text_parity_verified':False,
@@ -128,6 +138,8 @@ def main(argv=None)->int:
     parser.add_argument('--abs-tol',type=float,default=1e-5)
     parser.add_argument('--rel-tol',type=float,default=.01)
     parser.add_argument('--confirm-same-window',action='store_true')
+    parser.add_argument('--require-display-text',action='store_true',
+                        help='Fail diagnostic when candidate formatted 3-field text differs')
     parser.add_argument('--report-json',help='Optional private local summary report')
     args=parser.parse_args(argv)
     try:
@@ -162,13 +174,16 @@ def main(argv=None)->int:
             else 'DEFAULT_ONE_NOT_CALIBRATION_VERIFIED')
         report['candidate_f_range_original_verified']=False
         report['candidate_window_origin_verified']=False
+        report['display_text_match_required']=bool(args.require_display_text)
         if args.report_json:
             path=Path(args.report_json)
             if path.is_symlink() or not path.parent.is_dir():
                 raise ValueError('Refusing nonlocal/symlink report path')
             path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         print(json.dumps(report,ensure_ascii=False,indent=2))
-        return 0 if report['within_supplied_tolerances'] else 1
+        acceptable=report['within_supplied_tolerances'] and (
+            not args.require_display_text or report['candidate_display_text_equal'] is True)
+        return 0 if acceptable else 1
     except (ValueError,TypeError,KeyError,UnicodeError,OSError,OverflowError) as exc:
         parser.exit(2,'Локальное сравнение отклонено: '+str(exc)+'\n')
 
