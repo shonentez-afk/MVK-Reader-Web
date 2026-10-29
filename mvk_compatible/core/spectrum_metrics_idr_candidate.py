@@ -36,7 +36,12 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
         raise ValueError('Invalid original spectral summary interval')
     corrected=a.copy()
     corrected[:first]=0
-    total=float(np.sum(corrected[first:last+1].astype(np.float64),dtype=np.float64))
+    # Original _Unit115:007D1807..007D1810 loads a qword accumulator,
+    # adds ONE Single power bin, then FSTP qword on every iteration.
+    # NumPy sum uses a pairwise reduction and is NOT the source operation.
+    total=0.0
+    for k in range(first,last+1):
+        total=float(total+float(corrected[k]))
     # Source uses strict >, so NumPy argmax correctly keeps first tie.
     candidate=int(np.argmax(corrected[first:last+1]))+first
     peak_raw_power=float(corrected[candidate])
@@ -70,7 +75,8 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
         'fs_out_hz':float(fs_out),'df_hz':float(df),'f_range':float(f_range),
         'summary_first_bin':int(first),'summary_last_bin':int(last),
         'raw_max_power_bin':candidate,'raw_max_power':peak_raw_power,
-        'raw_total_band_power':total,'output_mean':mean,
+        'raw_total_band_power':total,'power_sum_order':'DELPHI_STEPWISE_F64_STORED',
+        'output_mean':mean,
         'output_peak_x_bin':x,'output_peak_frequency_hz':freq,
         'output_peak_y':peak_amp,
         'peak_neighborhood_first_bin':neighborhood[0],
