@@ -191,7 +191,7 @@ class MainWindow(QMainWindow):
         self.spec_precise.setToolTip('В оригинальной MVKView при сжатии FFT выбирается максимум в пиксельном интервале')
         self.spec_avg=QComboBox()
         self.spec_avg.addItems(['1 · значение бина','3 · √суммы квадратов, без деления'])
-        self.spec_avg.setCurrentIndex(1)
+        self.spec_avg.setCurrentIndex(0)  # Original log-mode cursor uses averaging=1
         self.spec_avg.setToolTip('IDR: CursorAveraging 1 или 3; при 3 Delphi НЕ делит сумму квадратов на три')
         self.spec_hz=self._float(10,32768,10000,1)
         self.spec_last=QCheckBox('Последнее полное окно')
