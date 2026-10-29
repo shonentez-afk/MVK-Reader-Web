@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
 from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
+from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
@@ -325,6 +326,15 @@ class MainWindow(QMainWindow):
             'фактическая калибровка архива НЕ подтверждена. '
             'Не изменяет BIN и не подменяет AUX4700.')
         stack.addWidget(self.spec_f_range)
+        stack.addWidget(QLabel('Источник FRange · только исследование'))
+        self.spec_input_domain=QComboBox()
+        self.spec_input_domain.addItem('Native BIN · калиброванные данные', 'calibrated_bin')
+        self.spec_input_domain.addItem('Оригинальное кольцо / FRange · гипотеза', 'original_float_storage')
+        self.spec_input_domain.setToolTip(
+            'Original GetSpectrum для float-кольца сначала делит на FRange, '
+            'после FFT возвращает масштаб. Нельзя считать Native BIN тем же буфером '
+            'без отдельного оригинального эталона.')
+        stack.addWidget(self.spec_input_domain)
         self.spec_last=QCheckBox('Последнее полное окно')
         self.spec_last.setChecked(True)
         stack.addWidget(self.spec_last)
@@ -409,6 +419,7 @@ class MainWindow(QMainWindow):
         self.spec_last.toggled.connect(self.refresh_spec)
         self.spec_hz.editingFinished.connect(self.refresh_spec)
         self.spec_f_range.editingFinished.connect(self.refresh_spec)
+        self.spec_input_domain.currentIndexChanged.connect(self.refresh_spec)
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
 
@@ -417,7 +428,7 @@ class MainWindow(QMainWindow):
         vb=self.spec_plot.getViewBox()
         bounds=vb.viewRange()[axis]
         visible=max(1e-12,bounds[1]-bounds[0])
-        limits=((0.,float(self.spec_hz.value())) if axis==0
+        limits=((0.,float(getattr(self,'_spec_visible_max_hz',self.spec_hz.value()))) if axis==0
                 else (self._spec_data_ymin,self._spec_data_ymax))
         available=max(0.,limits[1]-limits[0]-visible)
         if available<=0:return
@@ -431,7 +442,7 @@ class MainWindow(QMainWindow):
         for axis,bar in ((0,self.spec_hscroll),(1,self.spec_vscroll)):
             lo,hi=vb.viewRange()[axis]
             span=hi-lo
-            full=((0.,float(self.spec_hz.value())) if axis==0
+            full=((0.,float(getattr(self,'_spec_visible_max_hz',self.spec_hz.value()))) if axis==0
                   else (self._spec_data_ymin,self._spec_data_ymax))
             remaining=(full[1]-full[0])-span
             active=bool(remaining>max(1e-8,(full[1]-full[0])*1e-5))
@@ -648,6 +659,8 @@ class MainWindow(QMainWindow):
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
             if self.spec_envelope_button.isChecked():
+                if self.spec_input_domain.currentData()!='calibrated_bin':
+                    raise ValueError('Для исходной огибающей режим кольца FRange ещё не исследован')
                 if self.envelope_profile is None:
                     raise ValueError('Для спектра огибающей требуется локальный mvkview.idp')
                 code=int(self.spec_envelope_code.currentData() or 0)
@@ -662,9 +675,15 @@ class MainWindow(QMainWindow):
                 d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
                                         start,max_hz=1e9,max_points=n_fft//2,
                                         backend=self._fft_backend(),
-                                        f_range=self.spec_f_range.value())
+                                        f_range=self.spec_f_range.value(),
+                                        input_domain=self.spec_input_domain.currentData())
             if len(d['amplitude'])!=n_fft//2:
                 raise ValueError('Пиксельный курсор требует все N/2 FFT-бинов')
+            display_contract=spectrum_display_contract(n_fft,d['df_hz']*n_fft)
+            d['grapher_series_bins']=display_contract['grapher_series_bins']
+            self._spec_display_contract=display_contract
+            self._spec_visible_max_hz=min(self.spec_hz.value(),
+                                           display_contract['grapher_last_frequency_hz'])
             self._full_spectrum=d
             self._spectrum_summary=d.get('spectrum_summary')
             valid_summary=(isinstance(self._spectrum_summary,dict) and
@@ -675,7 +694,8 @@ class MainWindow(QMainWindow):
             self.spec_original_copy_compare.setEnabled(valid_summary)
             xx=np.asarray(d['frequency_hz'],dtype=np.float64)
             yy=np.asarray(d['amplitude'],dtype=np.float64)
-            visible=xx<=self.spec_hz.value()
+            visible=(xx<=self._spec_visible_max_hz)&(
+                np.arange(len(xx))<display_contract['grapher_series_bins'])
             self.spec_plot.clear()
             self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#176c92'))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
@@ -686,8 +706,9 @@ class MainWindow(QMainWindow):
             if self._spec_data_ymax<=self._spec_data_ymin:
                 self._spec_data_ymax=self._spec_data_ymin+1.
             self.spec_plot.enableAutoRange()
-            self.spec_plot.setXRange(0,self.spec_hz.value(),padding=0)
-            self.spec_plot.getViewBox().setLimits(xMin=0,xMax=float(self.spec_hz.value()))
+            self.spec_plot.setXRange(0,self._spec_visible_max_hz,padding=0)
+            self.spec_plot.getViewBox().setLimits(
+                xMin=0,xMax=float(self._spec_visible_max_hz))
             self._sync_spec_scroll()
             if valid_summary:
                 summ=self._spectrum_summary
@@ -696,18 +717,21 @@ class MainWindow(QMainWindow):
                     f"Среднее: {summ['output_mean']:.7g} (FRange пока не проверен)\n"
                     f"Пик: {summ['output_peak_frequency_hz']:.7g} Гц\n"
                     f"Амплитуда пика: {summ['output_peak_y']:.7g}\n"
-                    f"Ширина FFT: {d['df_hz']:.7g} Гц, N/2={len(xx)}\n"
+                    f"Ширина FFT: {d['df_hz']:.7g} Гц, "
+                    f"серия {display_contract['grapher_series_bins']}/{len(xx)} бинов\n"
                     + ("Огибающая, исходные FIR локально" if self.spec_envelope_button.isChecked()
                        else "Без огибающей") + "\nОригинальный численный паритет не доказан")
             else:
                 self.spec_mean.setText('Нет принятого локального GetSpectrum summary')
             self.spec_hint.setText(
                 f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
+                f"TQGRSeries={display_contract['grapher_series_bins']} · "
                 f"df={d['df_hz']:.7g} Гц · среднее DC "
                 f"{d.get('raw_mean_removed_m_s2',d.get('removed_mean_m_s2',0.)):.6g} м/с² · "
                 + ("после FIR повторного DC нет · "
                    if self.spec_envelope_button.isChecked() else "")
                 + f"FRange={d.get('f_range_used',1.):.7g}, "
+                  f"источник={d.get('input_domain','calibrated_bin')} · "
                   "фактическая калибровка НЕ доказана · "
                   "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
         except (OSError,KeyError,ValueError) as e:
