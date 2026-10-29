@@ -105,10 +105,12 @@ def test_center_outside_original_range_rejected():
 
 def test_memory_unsafe_upper_edge_candidate_refused():
     # Delphi center may be valid yet center+radius exceed N/2; avoid OOB.
-    p=power()
+    # At N=8192 the original half-width rounds to two bins at k=4094:
+    # k+2==N/2 would read beyond the original power array.
+    p=power(8192)
     with pytest.raises(ValueError,match='outside FFT'):
-        narrowband_from_full_power(p,n_fft=1024,sample_rate_hz=32768,
-                                   input_frequency_hz=510*32.)
+        narrowband_from_full_power(p,n_fft=8192,sample_rate_hz=32768,
+                                   input_frequency_hz=4094*4.)
 
 
 @pytest.mark.parametrize('bad',[np.nan,np.inf,-1])
