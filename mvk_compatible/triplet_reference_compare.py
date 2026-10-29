@@ -131,6 +131,8 @@ def main(argv=None)->int:
     parser.add_argument('--end-s',type=float)
     parser.add_argument('--f-range',type=float,default=None,
                         help='Operator-entered FRange; if omitted candidate uses unverified 1.0')
+    parser.add_argument('--input-domain',choices=['calibrated_bin','original_float_storage'],
+                        default='calibrated_bin',help='Operator storage hypothesis for plain original FFT')
     parser.add_argument('--backend',choices=['idr_float32','numpy'],default='idr_float32')
     parser.add_argument('--separator',choices=['tab','pipe'],default='tab')
     parser.add_argument('--decimal',choices=[',','.'],default=',')
@@ -147,7 +149,7 @@ def main(argv=None)->int:
         from .core.envelope_idr_candidate import EnvelopeProfile
         session=OfflineSession.open(args.archive)
         if args.code:
-            if not args.idp or args.start_s is not None:
+            if not args.idp or args.start_s is not None or args.input_domain!='calibrated_bin':
                 raise ValueError('Envelope needs explicit local IDP and optional --end-s only')
             profile=EnvelopeProfile.from_original_local_idp(args.idp)
             spectrum=session.spectrum_envelope(
@@ -160,7 +162,7 @@ def main(argv=None)->int:
             spectrum=session.spectrum(
                 args.channel,args.n_fft,args.mode,start_s=args.start_s,
                 max_hz=1e9,max_points=args.n_fft//2,backend=args.backend,
-                f_range=args.f_range)
+                f_range=args.f_range,input_domain=args.input_domain)
         original=read_operator_triplet_file(
             Path(args.reference),separator='\t' if args.separator=='tab' else '|',
             decimal_separator=args.decimal,encoding=args.encoding)
@@ -174,6 +176,8 @@ def main(argv=None)->int:
             else 'DEFAULT_ONE_NOT_CALIBRATION_VERIFIED')
         report['candidate_f_range_original_verified']=False
         report['candidate_window_origin_verified']=False
+        report['candidate_input_domain']=spectrum.get('input_domain','calibrated_bin')
+        report['candidate_original_float_storage_verified']=False
         report['display_text_match_required']=bool(args.require_display_text)
         if args.report_json:
             path=Path(args.report_json)
