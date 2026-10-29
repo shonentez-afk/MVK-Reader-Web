@@ -788,20 +788,30 @@ class MainWindow(QMainWindow):
                 pixel_left=0.,pixel_right=width,
                 stoi_m=(f_right-f_left)/(width*df),
                 stoi_c=(f_left-x_start)/df,
-                x_start=x_start,x_scale=df,y_scale=1.)
+                x_start=x_start,x_scale=df,y_scale=1.,
+                # Native 007CAB94 uses independent itosM/itosC; these
+                # numbers are inferred from Qt's view and are NOT the real
+                # Delphi pixel rectangle.
+                itos_m=width*df/(f_right-f_left),
+                itos_c=(x_start-f_left)*width/(f_right-f_left))
             found=cursor_from_spectrum(
                 self._full_spectrum,pixel,geom,
                 precise=self.spec_precise.isChecked(),
                 averaging=(1 if self.spec_avg.currentIndex()==0 else 3))
             self.spec_line.setPos(found['frequency_hz'])
+            y_name=('дБ' if found['mode']==0 else
+                    ('','м/с²','мм/с','мкм')[found['mode']])
+            cursor=cursor_string_candidate(
+                found['x_value'],found['display_y'],
+                x_name='Гц',y_name=y_name,decimal_separator=',')
             self.spec_hint.setText(
                 f"IDR pixel {int(pixel)} · bins [{found['pixel_bin_first']}.."
                 f"{found['pixel_bin_last']}] → пик FFT[{found['selected_bin']}]"
                 f" · {found['frequency_hz']:.6g} Гц · {found['display_y']:.7g} {found['unit']}"
                 f" · avg={found['averaging']} (без /N)"
                 f" · {found['fft_backend']} · кандидат TQGrapher"
-                f" · текст IDR-кандидат {format_cursor_idr_candidate(found['frequency_hz'])} Гц /"
-                f" {format_cursor_idr_candidate(found['display_y'])} {found['unit']}")
+                f" · snap={found['snapped_pixel_original_int_candidate']} px (Qt-геометрия)"
+                f"\nCursorString IDR-кандидат (не Delphi RTL):\n{cursor['text']}")
         except (OSError,KeyError,ValueError,OverflowError) as e:
             self.statusBar().showMessage(str(e))
 
