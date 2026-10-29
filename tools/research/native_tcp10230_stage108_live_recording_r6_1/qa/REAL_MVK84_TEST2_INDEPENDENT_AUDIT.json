@@ -1,0 +1,92 @@
+{
+  "source_sha256": "50bfc40ce293b56136dbfec3cee79b9a843d2a7edfd0790ad3a1b55eca94e698",
+  "decoded_frames": 84850,
+  "samples_and_values_compared": 15758144,
+  "channels": [
+    {
+      "adc": 1,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "b36ce31b9a5c5e756c3d86ce774e308178f3b1767fd5f54301e2f07727017edc",
+      "actual_sha256": "b36ce31b9a5c5e756c3d86ce774e308178f3b1767fd5f54301e2f07727017edc",
+      "status_counts": {
+        "0": 60
+      }
+    },
+    {
+      "adc": 2,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "9ca79e98523753215a26e4af738dcb058eb4e8b775203788f8f3bf41554126f6",
+      "actual_sha256": "9ca79e98523753215a26e4af738dcb058eb4e8b775203788f8f3bf41554126f6",
+      "status_counts": {
+        "0": 60
+      }
+    },
+    {
+      "adc": 3,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "bcee04fb588fe91136a5bf376368bf66111ba8704c9d1e4908a8031a520da30b",
+      "actual_sha256": "bcee04fb588fe91136a5bf376368bf66111ba8704c9d1e4908a8031a520da30b",
+      "status_counts": {
+        "0": 60
+      }
+    },
+    {
+      "adc": 4,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "18ebaa970c24205838fa280a0b8df81111f2f35fa4b435634f48ddda7b5d25c9",
+      "actual_sha256": "18ebaa970c24205838fa280a0b8df81111f2f35fa4b435634f48ddda7b5d25c9",
+      "status_counts": {
+        "0": 60
+      }
+    },
+    {
+      "adc": 5,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "dc4207b5054f3a16aa447be47fdd53e2a9ac9380d4589fbba16ad232f1bbb842",
+      "actual_sha256": "dc4207b5054f3a16aa447be47fdd53e2a9ac9380d4589fbba16ad232f1bbb842",
+      "status_counts": {
+        "0": 60
+      }
+    },
+    {
+      "adc": 6,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "8078b00fd52a97ace370ad3597246ad781d12cb9101aaa46d85eb71f3ba64744",
+      "actual_sha256": "8078b00fd52a97ace370ad3597246ad781d12cb9101aaa46d85eb71f3ba64744",
+      "status_counts": {
+        "0": 60
+      }
+    },
+    {
+      "adc": 7,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "1d74135748cccf360fa497609abaff107a3f6ff6b9d468c006df819b8b0cfd84",
+      "actual_sha256": "1d74135748cccf360fa497609abaff107a3f6ff6b9d468c006df819b8b0cfd84",
+      "status_counts": {
+        "1024": 60
+      }
+    },
+    {
+      "adc": 8,
+      "samples_compared": 1965568,
+      "byte_exact": true,
+      "computed_bin_sha256": "688e390158a18c86e94eedff309920eb2c148cd8c39bd37751f6d276bf4d370a",
+      "actual_sha256": "688e390158a18c86e94eedff309920eb2c148cd8c39bd37751f6d276bf4d370a",
+      "status_counts": {
+        "1024": 60
+      }
+    }
+  ],
+  "aux_updates": 60,
+  "values_rows": 60,
+  "mismatches": [],
+  "total_mismatches": 0,
+  "checks": "full float32-bit comparison of every ADC sample, 4-digit CSV rounding vs independently decoded AUX registers, TSXML schema/length/gain"
+}

@@ -1,0 +1,21 @@
+{
+  "release": "MVK Reader Web Native R6.1 Stage108",
+  "date": "2026-10-29",
+  "windows_exe": "MVK_Native_R6_1_Stage108_Windows_x64.exe",
+  "exe_sha256": "2fd21c176d4a18677507d70e07f6649220382cc81b875074e0bbb7df65c36053",
+  "selftests_go": 39,
+  "go_vet_linux": "PASS",
+  "go_vet_windows_cross": "PASS",
+  "go_race_linux": "PASS",
+  "offline_real_30s_sessions": 2,
+  "independent_sample_float32_comparisons": 31448064,
+  "independent_AUX_numeric_comparisons": 67200,
+  "mismatches": 0,
+  "live_streamed_bin_spool_comparison": "8/8 on each real replay",
+  "native_windows_runtime_tested": false,
+  "physical_device_R6_1_live_tested": false,
+  "physical_device_R5_1_live_tested": true,
+  "non_public_files_in_release": false,
+  "stable_v0_3_40_modified": false,
+  "files_without_manifest": 26
+}
