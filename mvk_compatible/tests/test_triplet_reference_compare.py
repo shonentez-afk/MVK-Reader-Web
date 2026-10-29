@@ -110,7 +110,69 @@ def test_complete_offline_candidate_vs_operator_text_cli(tmp_path,capsys):
     assert report['within_supplied_tolerances']
     assert report['field_count']==3
     assert report['reference_sha256']
+    assert report['candidate_display_text_equal'] is True
     assert not report['original_delphi_parity_verified']
     assert 'original_samples' not in report
     assert 'frequency_hz' not in report
     assert report_path.is_file()
+
+
+def test_stage111i_text_comparison_is_distinct_from_numeric_match():
+    candidate={'source':SOURCE,'output_mean':1.,'output_peak_frequency_hz':2.,
+               'output_peak_y':3.}
+    original={'source':'OPERATOR_SUPPLIED_ORIGINAL_TRIPLET',
+              'values':(1.,2.,3.),'sha256':'synthetic',
+              'original_text_local_only':'1,0\t2,0\t3,0',
+              'delimiter':'\t','decimal_separator':','}
+    result=compare_operator_triplet(candidate,original)
+    assert result['within_supplied_tolerances'] is True
+    assert result['candidate_display_text_equal'] is False
+    assert result['candidate_display_text_comparison']=='EXACT_CHARACTERS_NOT_DELPHI_RTL_PARITY'
+    assert not result['original_display_text_parity_verified']
+    assert 'original_text_local_only' not in result
+
+
+def test_stage111i_exact_copy_text_only_when_all_three_fields_match():
+    s=summary()
+    from mvk_compatible.core.spectrum_summary_export_candidate import spectrum_triplet_text
+    candidate_text=spectrum_triplet_text(s,decimal_separator=',')
+    orig={'source':'OPERATOR_SUPPLIED_ORIGINAL_TRIPLET',
+          'values':parse_operator_triplet(candidate_text),
+          'sha256':'synthetic',
+          'original_text_local_only':candidate_text,
+          'delimiter':'\t','decimal_separator':','}
+    matched=compare_operator_triplet(s,orig)
+    assert matched['candidate_display_text_equal'] is True
+    assert matched['within_supplied_tolerances']
+    assert not matched['original_delphi_parity_verified']
+    orig['original_text_local_only']=candidate_text+' '
+    # Original parser rejects malformed space only when used as number; directly
+    # supplied in-memory fixture tests exact formatting independently.
+    mismatch=compare_operator_triplet(s,orig)
+    assert mismatch['candidate_display_text_equal'] is False
+
+
+def test_stage111i_cli_strict_text_match_rejects_redundant_zero(tmp_path,capsys):
+    from mvk_compatible.core import OfflineSession
+    from mvk_compatible.tests.test_offline_core import fixture_zip
+    from mvk_compatible.core.spectrum_summary_export_candidate import spectrum_triplet_text
+    archive=fixture_zip(tmp_path)
+    data=OfflineSession.open(archive).spectrum(
+        1,4096,1,start_s=0,max_hz=32768,max_points=2048,backend='numpy')
+    text=spectrum_triplet_text(data['spectrum_summary'],decimal_separator=',')
+    fields=text.split('\t')
+    fields[0]+= '0' if ',' in fields[0] else ',0'
+    ref=tmp_path/'synthetic-original.txt'
+    ref.write_text('\t'.join(fields),encoding='utf-8')
+    arg=['--archive',str(archive),'--reference',str(ref),
+         '--channel','1','--n-fft','4096','--mode','1',
+         '--start-s','0','--backend','numpy']
+    assert main(arg)==0  # Numeric tolerance passes.
+    out=json.loads(capsys.readouterr().out)
+    assert out['within_supplied_tolerances']
+    assert out['candidate_display_text_equal'] is False
+    assert main(arg+['--require-display-text'])==1
+    strict=json.loads(capsys.readouterr().out)
+    assert strict['display_text_match_required']
+    assert strict['candidate_display_text_equal'] is False
+    assert not strict['original_delphi_parity_verified']
