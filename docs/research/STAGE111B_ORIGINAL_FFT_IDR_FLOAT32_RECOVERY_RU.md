@@ -1,3 +1,5 @@
+> **Stage111B ПОДТВЕРЖДЁННЫЙ QA (2026-10-29):** [GitHub Actions run #40850520062](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40850520062) завершился **SUCCESS**, Linux **36/36**, Windows pure core **36/36**, Windows Qt **2/2**, PyInstaller Windows PREVIEW build и upload **SUCCESS**. Проверено непосредственно в GitHub, а не по локальному обещанию. Артефакт `MVKViewCompatible_Stage111_Windows_Preview` ID `12887052221`, ZIP ~66.4 MB, доступен до **2026-11-12 09:36 UTC**. Внутри PREVIEW.exe + SHA256SUMS.txt. Испытание EXE на рабочем ПК, визуальный и численный паритет с оригинальной MVKView ещё **НЕ ПРОВЕДЕНЫ**.
+
 # Stage111B — восстановление GetSpectrum: mean, float32 FFT и нулевые нижние бины
 
 **Дата:** 2026-10-29. **Ветка:** `research/stage111-mvkview-desktop-20261029`.
