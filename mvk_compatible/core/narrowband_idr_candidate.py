@@ -12,6 +12,7 @@ import numpy as np
 
 from .fft_idr_candidate import check_n, idr_power_spectrum
 from .calibration_candidate import resolve_f_range
+from .storage_f_range_idr_candidate import prepare_original_fft_input,DOMAIN_CALIBRATED_BIN
 
 SOURCE = 'APP_DERIVED_NARROWBAND_IDR_CANDIDATE'
 NOISE_SOURCE = 'APP_DERIVED_NOISE_PEAK_IDR_CANDIDATE'
@@ -134,7 +135,8 @@ def narrowband_from_full_power(
 def narrowband_from_samples(
     samples: np.ndarray, *, sample_rate_hz: float, input_frequency_hz: float,
     get_noise_peak: bool = False, f_range: float = 1.0,
-    backend: str = 'idr_float32'
+    backend: str = 'idr_float32',
+    input_domain: str = DOMAIN_CALIBRATED_BIN
 ) -> dict:
     """007D0F7D..007D0FA7: raw f32 history -> remove DC once -> FFT.
 
@@ -145,7 +147,10 @@ def narrowband_from_samples(
     if values.ndim != 1 or not bool(np.isfinite(values).all()):
         raise ValueError('Expected a one-dimensional finite BIN time window')
     n = check_n(len(values))
-    power, removed = idr_power_spectrum(values, backend=backend, remove_dc=True)
+    prepared=prepare_original_fft_input(values,f_range=f_range,
+                                        input_domain=input_domain)
+    power, removed = idr_power_spectrum(
+        prepared['samples_before_dc_removal'], backend=backend, remove_dc=True)
     result = narrowband_from_full_power(
         power, n_fft=n, sample_rate_hz=sample_rate_hz,
         input_frequency_hz=input_frequency_hz, f_range=f_range,
@@ -153,5 +158,8 @@ def narrowband_from_samples(
     result['removed_mean_m_s2'] = float(removed)
     result['fft_backend'] = backend
     result['window_samples'] = n
+    result['input_domain']=input_domain
+    result['original_storage_read_divided_by_range']=prepared['original_storage_read_divided_by_range']
+    result['original_source_buffer_provenance_verified']=False
     result['raw_archive_position_parity_verified'] = False
     return result
