@@ -144,8 +144,8 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     assert win.spec_vscale_button.objectName()=='bSpecVScale'
     assert win.spec_hint.objectName()=='lbSpecHint'
     assert not win.spec_envelope_button.isEnabled()  # not faked
-    assert not win.spec_copy_button.isEnabled()      # formatter not accepted
-    assert not win.spec_save_button.isEnabled()      # original export unknown
+    assert win.spec_copy_button.isEnabled()           # explicit research candidate
+    assert win.spec_save_button.isEnabled()           # safe user-selected research CSV
     start=win.spec_plot.getViewBox().viewRange()[0]
     win.spec_hscale_button.click()
     qt_app.processEvents()
@@ -220,11 +220,49 @@ def test_qt_stage111f_spectrum_envelope_requires_private_profile(tmp_path,qt_app
     assert len(window._full_spectrum['amplitude'])==512
     assert 'повторного DC нет' in window.spec_hint.text()
     assert not window.spec_compare_button.isEnabled()
-    assert not window.spec_copy_button.isEnabled()
-    assert not window.spec_save_button.isEnabled()
+    assert window.spec_copy_button.isEnabled()
+    assert window.spec_save_button.isEnabled()
     window.spec_envelope_button.setChecked(False)
     qt_app.processEvents()
     assert window._full_spectrum['source']=='APP_DERIVED_FFT_MVKVIEW_CANDIDATE'
     assert window.spec_compare_button.isEnabled()
+    window.close()
+    qt_app.processEvents()
+
+
+def test_qt_stage111g_three_field_copy_and_local_save_candidate(tmp_path,qt_app,monkeypatch):
+    from pathlib import Path
+    from PySide6.QtWidgets import QApplication,QFileDialog
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    window=MainWindow()
+    window.open_archive(fixture_zip(tmp_path))
+    window.show()
+    window.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert window._full_spectrum is not None
+    assert window._spectrum_summary is not None
+    assert 'GetSpectrum' in window.spec_mean.text()
+    assert 'Пик:' in window.spec_mean.text()
+    assert 'паритет' in window.spec_mean.text()
+    assert window.spec_copy_button.isEnabled()
+    assert window.spec_save_button.isEnabled()
+    window.spec_copy_button.click()
+    qt_app.processEvents()
+    copied=QApplication.clipboard().text()
+    assert len(copied.split('\t'))==3
+    assert all(copied.split('\t'))
+    # Intercept the *user action* file picker; never open a real directory.
+    path=tmp_path/'candidate-export.csv'
+    monkeypatch.setattr(QFileDialog,'getSaveFileName',
+                        lambda *a,**k:(str(path),'CSV (*.csv)'))
+    window.spec_save_button.click()
+    qt_app.processEvents()
+    assert path.exists()
+    lines=path.read_text(encoding='utf-8').splitlines()
+    assert lines[0]=='sep=|'
+    assert len(lines)==3
+    assert len(lines[-1].split('|'))==3
+    assert 'кандидат' in lines[1]
     window.close()
     qt_app.processEvents()
