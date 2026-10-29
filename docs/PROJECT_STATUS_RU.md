@@ -1,3 +1,9 @@
+# ВАЖНО: STAGE111 — НОВОЕ АКТУАЛЬНОЕ НАПРАВЛЕНИЕ (29.10.2026)
+
+Новая программа — **MVKView Compatible Desktop**, отдельный каталог `mvk_compatible/` и ветка `research/stage111-mvkview-desktop-20261029`. v0.3.40 заморожена, не является архитектурной базой. Работа Stage110 и всё ниже — исследовательская история. См. `docs/ADR_2026_10_29_STAGE111_MVKVIEW_COMPATIBILITY_FIRST_RU.md` и `docs/research/STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md`.
+
+---
+
 # MVK Reader Web — состояние проекта (актуально 2026-10-29, Stage109)
 
 
