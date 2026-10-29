@@ -47,8 +47,30 @@ def source_canvas_geometry(*, pixel_width:int, pixel_height:int,
             series_x_start,series_x_scale)
     if any(not math.isfinite(float(x)) for x in floats):
         raise ValueError('Original screen and series coordinates must be finite')
-    if (scr_width<=1e-6 or scr_height<=1e-6 or series_x_scale<=0):
-        raise ValueError('Unsupported source screen span or series X scale')
+    # TQGrapher stores all Scr/Series coordinates as Delphi Single.
+    # _Unit115:007CA4F7..007CA571 explicitly accepts REVERSED ScrWidth:
+    # tiny positive/zero -> +1e-6; tiny negative -> -1e-6.
+    # ScrHeight <= +1e-6 -> +1e-6; Series.XScale <= 0 -> +1.
+    # These are mutations of the original object BEFORE computing itos/stoi.
+    with np.errstate(over='ignore',invalid='ignore'):
+        scr_left,scr_width,scr_bottom,scr_height,series_x_start,series_x_scale=(
+            float(np.float32(v)) for v in floats)
+    if not all(math.isfinite(v) for v in (
+        scr_left,scr_width,scr_bottom,scr_height,series_x_start,series_x_scale)):
+        raise ValueError('Original Single coordinate input overflow')
+    min_span=float(np.float32(1e-6))
+    original_scr_width=scr_width
+    original_scr_height=scr_height
+    original_series_x_scale=series_x_scale
+    scr_width_clamped=abs(scr_width)<min_span
+    scr_height_clamped=scr_height<min_span
+    series_x_scale_clamped=series_x_scale<=0.
+    if scr_width_clamped:
+        scr_width=(-min_span if scr_width<0. else min_span)
+    if scr_height_clamped:
+        scr_height=min_span
+    if series_x_scale_clamped:
+        series_x_scale=1.
 
     # Source clamps Margin to 10 and canvas width/height to 3*Margin.
     margin=max(10,int(margin))
@@ -80,8 +102,8 @@ def source_canvas_geometry(*, pixel_width:int, pixel_height:int,
     if not all(math.isfinite(x) for x in
                (itos_m,itos_c,stoi_m,stoi_c,ytos_m,ytos_c)):
         raise ValueError('Original transform not representable as Single')
-    if itos_m<=0 or stoi_m<=0:
-        raise ValueError('Nonpositive original X coordinate transform')
+    if itos_m==0 or stoi_m==0:
+        raise ValueError('Unrepresentable zero original X coordinate transform')
 
     return {
         'source':SOURCE,
@@ -91,10 +113,14 @@ def source_canvas_geometry(*, pixel_width:int, pixel_height:int,
         'pixel_plot_width':dx,'pixel_plot_height':dy,
         'x_fallback_to_margin':x_fallback,'y_fallback_to_margin':y_fallback,
         'x_name_present':x_name_present,'y_name_present':y_name_present,
-        'scr_left':float(scr_left),'scr_width':float(scr_width),
-        'scr_bottom':float(scr_bottom),'scr_height':float(scr_height),
-        'series_x_start':float(series_x_start),
-        'series_x_scale':float(series_x_scale),
+        'scr_left':scr_left,'scr_width':scr_width,
+        'scr_bottom':scr_bottom,'scr_height':scr_height,
+        'series_x_start':series_x_start,'series_x_scale':series_x_scale,
+        'screen_x_reversed':scr_width<0.,
+        'scr_width_source_clamped':scr_width_clamped,
+        'scr_height_source_clamped':scr_height_clamped,
+        'series_x_scale_source_clamped':series_x_scale_clamped,
+        'source_single_inputs':True,
         'itos_m':itos_m,'itos_c':itos_c,
         'stoi_m':stoi_m,'stoi_c':stoi_c,
         'ytos_m':ytos_m,'ytos_c':ytos_c,

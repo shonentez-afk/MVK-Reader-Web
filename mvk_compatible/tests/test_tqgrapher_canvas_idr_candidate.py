@@ -87,8 +87,7 @@ def test_tqgrapher_canvas_minimum_margin_and_dimensions():
 
 @pytest.mark.parametrize('kw',[{'pixel_width':0},{'margin':-1},
     {'pixel_width':2.5},{'zero_text_width':True},
-    {'zero_text_height':0},{'scr_width':0},{'scr_width':1e-9},
-    {'series_x_scale':0},{'scr_height':0},
+    {'zero_text_height':0},{'scr_width':float('inf')},
     {'scr_left':float('nan')},{'x_name_present':1}])
 def test_invalid_metrics_and_spans_fail_closed(kw):
     with pytest.raises(ValueError):
@@ -98,3 +97,51 @@ def test_invalid_metrics_and_spans_fail_closed(kw):
 def test_invalid_external_canvas_dict_rejected():
     with pytest.raises(ValueError):
         cursor_geometry_from_canvas({'source':'not original'})
+
+
+def test_stage111n_original_negative_scr_width_reverses_both_independent_x_transforms():
+    r=sample(scr_left=80.,scr_width=-40.,series_x_start=0.)
+    assert r['screen_x_reversed'] is True
+    assert r['scr_width']==-40.
+    assert r['itos_m']==float(np.float32(-708*2/40))
+    assert r['stoi_m']==float(np.float32(-40/708/2))
+    assert r['itos_c']==float(np.float32(82+(0.-80.)*708/-40))
+    assert r['stoi_c']==40.
+    assert r['pixel_left']==82 and r['pixel_right']==790
+    geom=cursor_geometry_from_canvas(r)
+    assert geom.stoi_m<0 and geom.itos_m<0
+    samples=np.arange(64,dtype='f4')
+    chosen=pick_tqgrapher_cursor(samples,300.,geom,precise=True)
+    assert 0<=chosen['selected_bin']<64
+    assert chosen['snapped_pixel_original_int_candidate'] is not None
+
+
+@pytest.mark.parametrize('width,expected_sign',[
+    (0.,1.),(1e-9,1.),(-1e-9,-1.),(-0.,1.)])
+def test_stage111n_signed_scr_width_minimum_is_source_normalization(width,expected_sign):
+    r=sample(scr_width=width)
+    assert r['scr_width_source_clamped']
+    assert r['scr_width']==expected_sign*float(np.float32(1e-6))
+    assert r['screen_x_reversed']==(expected_sign<0)
+
+
+def test_stage111n_scr_height_and_series_scale_are_normalized_before_y_transform():
+    r=sample(scr_height=0.,series_x_scale=0.)
+    assert r['scr_height_source_clamped']
+    assert r['series_x_scale_source_clamped']
+    assert r['scr_height']==float(np.float32(1e-6))
+    assert r['series_x_scale']==1.
+    assert r['itos_m']==float(np.float32(708/200))
+    assert r['ytos_m']==float(np.float32(-436/float(np.float32(1e-6))))
+    reversed_height=sample(scr_height=-10.,series_x_scale=-2.)
+    assert reversed_height['scr_height_source_clamped']
+    assert reversed_height['scr_height']==float(np.float32(1e-6))
+
+
+def test_stage111n_source_inputs_are_stored_single_not_unbounded_python_double():
+    precise=sample(scr_left=0.123456789,series_x_start=0.333333333)
+    assert precise['source_single_inputs']
+    assert precise['scr_left']==float(np.float32(.123456789))
+    assert precise['series_x_start']==float(np.float32(.333333333))
+    with pytest.raises(ValueError,match='Single coordinate input overflow'):
+        sample(scr_left=1e100)

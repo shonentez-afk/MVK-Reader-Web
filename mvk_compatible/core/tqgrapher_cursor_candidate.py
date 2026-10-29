@@ -33,17 +33,16 @@ class CursorGeometry:
            self.x_start,self.x_scale,self.y_scale)
         if (not all(math.isfinite(float(x)) for x in p)
                 or self.pixel_right <= self.pixel_left
-                or self.stoi_m <= 0 or self.x_scale <= 0
-                or self.y_scale == 0
+                or self.stoi_m == 0 or self.x_scale <= 0
                 or ((self.itos_m is None)!=(self.itos_c is None))
                 or (self.itos_m is not None and (
                     not math.isfinite(self.itos_m) or not math.isfinite(self.itos_c)
-                    or self.itos_m<=0))):
+                    or self.itos_m==0))):
             raise ValueError('Invalid TQGrapher cursor pixel/series geometry')
 
 
 def _index_at(pixel:float, geometry:CursorGeometry, length:int) -> int:
-    """007CABE4: trunc toward zero then saturate 0..DataSize-1."""
+    """007CABE4: trunc then clamp. A negative stoiM reverses the X axis."""
     position=math.trunc((pixel-geometry.pixel_left)*geometry.stoi_m+geometry.stoi_c)
     return max(0,min(length-1,position))
 

@@ -108,8 +108,11 @@ def original_multiseries_cursor(
     x_scale=float(canvas['series_x_scale']);x_start=float(canvas['series_x_start'])
     vals=(stoi_m,stoi_c,itos_m,itos_c,x_scale,x_start)
     if (not all(math.isfinite(v) for v in vals)
-        or stoi_m<=0 or itos_m<=0 or x_scale<=0):
+        or stoi_m==0 or itos_m==0 or x_scale<=0):
         raise ValueError('Invalid original Single X transforms')
+    # Native ScrWidth may be negative (reversed horizontal axis). Original
+    # still computes index(pixel+1)-1: the precise-search loop may therefore
+    # be empty; never silently sort/reverse the pixel indices.
     # Integer pixel+1 as in original rather than a floating point epsilon.
     first=_native_bin(pixel,left=left,stoi_m=stoi_m,stoi_c=stoi_c,
                       data_size=len(raw[0]))
