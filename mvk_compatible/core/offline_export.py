@@ -21,6 +21,7 @@ from .fft_idr_candidate import idr_power_spectrum
 from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
+from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate)
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -406,6 +407,35 @@ class OfflineSession:
                  start_s:float|None=None,max_hz:float=10000.,max_points:int=5000,
                  backend:str='idr_float32')->dict:
         return spectrum_for_zip(self.path,channel,n_fft,mode,start_s,max_hz,max_points,backend)
+
+    def spectrum_envelope(self,channel:int,code:int,n_fft:int,
+                          profile:EnvelopeProfile, *,
+                          end_s:float|None=None,mode:int=1,
+                          backend:str='idr_float32',f_range:float=1.0)->dict:
+        """Archival candidate of Delphi GetSpectrum envelope path, read-only.
+
+        Process exactly the real FIR history needed to yield n_fft samples,
+        then compute the un-decimated spectrum without a second DC removal.
+        end_s is a local input-window selection, NOT proven MVKView position.
+        """
+        samples,fs,_,filename=self.samples(channel)
+        if not float(fs).is_integer():
+            raise ValueError('Original envelope FFT requires integer ADC sample rate')
+        plan=required_original_history(n_fft,int(fs),code)
+        if end_s is not None and (not math.isfinite(end_s) or end_s<=0):
+            raise ValueError('Invalid endpoint for archival window')
+        end=len(samples) if end_s is None else round(end_s*fs)
+        start=end-plan['input_samples']
+        if start<0 or end>len(samples):
+            raise ValueError('Insufficient actual BIN history for envelope FFT; no padding')
+        if end<=start:raise ValueError('Empty original FFT input')
+        result=envelope_spectrum_idr_candidate(
+            samples[start:end],int(fs),code,profile,
+            n_fft=n_fft,mode=mode,backend=backend,f_range=f_range)
+        return dict(result,channel=channel,file=filename,
+                    archive_input_start_s=start/fs,archive_input_end_s=end/fs,
+                    full_fft_bins=True,
+                    original_archive_position_parity_verified=False)
 
     def envelope(self,channel:int,code:int,start_s:float,seconds:float,
                  profile:EnvelopeProfile,*,f_range:float=1.0,
