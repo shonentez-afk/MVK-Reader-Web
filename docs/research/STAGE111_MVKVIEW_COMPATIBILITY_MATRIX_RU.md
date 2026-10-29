@@ -1,6 +1,6 @@
 # Stage111 — матрица приёмки точного аналога MVKView (три вкладки)
 
-**Дата:** 29.10.2026. **Состояние:** Stage111B FFT IDR CANDIDATE (Stage111A Archive preview), не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
+**Дата:** 29.10.2026. **Состояние:** Stage111C GetSignal NO-ENVELOPE IDR CANDIDATE (FFT Stage111B сохраняется), не MVKView Compatible 1.0. Обновлять при каждом техническом Stage. Базовые документы: ADR Compatibility First, ADR original DSP, Stage81c/d, Stage109, Stage110/110B.
 
 ## Ключ к статусам
 - **SOURCE_VERIFIED** — оригинальный приборный источник подтверждён Stage109, значения реально получены; не означает, что все элементы GUI совпадают.
@@ -42,14 +42,14 @@
 | Функция оригинала | Статус | Условие приёмки |
 |---|---|---|
 | `PageAdc`, выбор 8 ADC | IMPLEMENTED_TESTED | Qt-таб и кнопки выбора |
-| `GetSignal` чтение хранилища / BIN | CANDIDATE | Прямая BIN data есть, но кольцо, реверс и `FRange` не повторены |
+| `GetSignal` чтение хранилища / BIN | CANDIDATE + IMPLEMENTED_TESTED | Stage111C: оригинальный `007D2228` float32 ring wrap/zero-prefix, `007D0DEC` **обратный выходной буфер** и отсутствие двойного `FRange` без огибающей; exact TQGrapher ось ещё TODO |
 | Осциллограмма из калиброванного BIN | IMPLEMENTED_TESTED | pyqtgraph, экстремумы и порядок времени |
-| `AC/AC+DC` | CANDIDATE | AC — вычитание среднего окна, Delphi семантика не доказана |
+| `AC/AC+DC` | SOURCE_VERIFIED + IMPLEMENTED_TESTED | DFM: AC Tag0/NoDC=1, AC+DC Tag1/NoDC=0; `007D2344` последовательно вычитает f32 среднее, SCЗ окна отдельное от DSP AUX |
 | `bAdcHScale`/`bAdcVScale`/zoom/scroll | CANDIDATE | Qt масштаб доступен, поведение Delphi не доказано |
-| `TQGrapher.UpdateCursor` и точная выборка | CANDIDATE | Точный sample по BIN; подписи/привязка Delphi ещё TODO |
+| `TQGrapher.UpdateCursor` и точная выборка | CANDIDATE | Точный sample индекс/значение и переключение хронология BIN / реверс GetSignal; **ориентация оригинальной абсциссы и формат CursorString не подтверждены** |
 | Временное окно, перемещение по записи | IMPLEMENTED_TESTED | Начало и длительность, нет полной навигации GUI |
-| `bAdcEnvelopeType`, `GetAdjustedEnvelopeLength` | TODO | Фильтры и огибающая оригинала |
-| Цвета, подписи, СКЗ/среднее и копирование | CANDIDATE | Локальное RMS не выдавать за приборный RMS |
+| `bAdcEnvelopeType`, `GetAdjustedEnvelopeLength` | TODO | Выявлены таблицы коэффициентов `8CDA58` и квадратурная свёртка `007D1E70`, но коэффициенты и эталон не получены; код явно отвергает `envelope_code>0` вместо имитации |
+| Цвета, подписи, СКЗ/среднее и копирование | CANDIDATE + IMPLEMENTED_TESTED | Stage111C: `OutputMean` по оригинальному `GetSignal` фактически СКЗ окна; фиксируем отдельно от DSP/прибора. Оригинальные оси/цвета/экспорт TODO |
 | Live/Archive переключение | TODO | Сейчас только завершённый архив ZIP |
 
 ## Вкладка «Спектр»
