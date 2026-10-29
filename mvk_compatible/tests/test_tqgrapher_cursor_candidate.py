@@ -159,3 +159,34 @@ def test_offline_session_public_pixel_cursor_reuses_full_fft(tmp_path):
     assert result['fft_backend']=='numpy'
     assert result['averaging']==3
     assert result['original_delphi_cursor_parity_verified'] is False
+
+
+def test_stage111j_cursor_respects_original_truncated_series_not_all_fft_bins():
+    spectrum=synthetic_full_spectrum()
+    spectrum['grapher_series_bins']=25  # original DataSize vs full N/2
+    p=cursor_from_spectrum(spectrum,18.,geometry())
+    assert p['selected_bin']==24
+    assert p['grapher_series_bins']==25
+    assert p['full_bin_count']==32
+    assert p['original_series_truncated_from_fft'] is True
+    assert not p['chart_decimation_used']
+    spectrum['grapher_series_bins']=50
+    with pytest.raises(ValueError,match='series length'):
+        cursor_from_spectrum(spectrum,18.,geometry())
+
+
+def test_stage111j_independent_itos_single_round_and_clamp():
+    geom=CursorGeometry(10.,30.,3.,0.,0.,.5,2.,itos_m=1./3.,itos_c=10.)
+    data=sample_values()
+    r=pick_tqgrapher_cursor(data,12.,geom)
+    assert r['selected_bin']==7
+    assert r['snapped_pixel_candidate']==pytest.approx(12.+1/3.)
+    assert r['snapped_pixel_original_int_candidate']==12
+    assert r['independent_itos_source_supplied']
+    assert not r['original_delphi_cursor_parity_verified']
+
+
+def test_stage111j_independent_itos_fails_closed_with_half_pair():
+    geom=CursorGeometry(10.,30.,3.,0.,0.,.5,2.,itos_m=1./3.)
+    with pytest.raises(ValueError,match='geometry'):
+        pick_tqgrapher_cursor(sample_values(),12.,geom)
