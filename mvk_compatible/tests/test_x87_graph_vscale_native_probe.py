@@ -19,7 +19,7 @@ from mvk_compatible.core.spectrum_graph_default_vscale_idr_candidate import (
 
 
 @pytest.fixture(scope='module')
-def native_x87_probe(tmp_path_factory):
+def native_x87_executable(tmp_path_factory):
     gcc = shutil.which('gcc')
     if not gcc or platform.machine().lower() not in (
         'x86_64', 'amd64', 'i386', 'i486', 'i586', 'i686', 'x86'
@@ -38,7 +38,22 @@ def native_x87_probe(tmp_path_factory):
         capture_output=True, text=True, timeout=30, check=False,
     )
     assert compile_result.returncode == 0, compile_result.stderr[-1600:]
-    result = subprocess.run([str(output), '--selftest'],
+    return output
+
+
+@pytest.fixture(scope='module')
+def native_x87_probe(native_x87_executable):
+    result = subprocess.run([str(native_x87_executable), '--selftest'],
+                            capture_output=True, text=True,
+                            timeout=15, check=False)
+    assert result.returncode == 0, result.stderr[-1600:]
+    assert result.stderr == ''
+    return result.stdout.splitlines()
+
+
+@pytest.fixture(scope='module')
+def native_x87_precision_sweep(native_x87_executable):
+    result = subprocess.run([str(native_x87_executable), '--precision-sweep'],
                             capture_output=True, text=True,
                             timeout=15, check=False)
     assert result.returncode == 0, result.stderr[-1600:]
@@ -98,3 +113,24 @@ def test_hardware_mode_multipliers_0_1_2_3_are_checked(native_x87_probe):
     assert rows[1][2] == pytest.approx(.5)
     assert rows[2][2] == pytest.approx(5.)
     assert rows[3][2] == pytest.approx(50.)
+
+
+def test_x87_control_word_pc24_pc53_pc64_precision_sweep(native_x87_precision_sweep):
+    """Delphi FPU control word remains unknown; distinct PC must be visible."""
+    rows=native_x87_precision_sweep
+    assert len(rows)==19
+    assert rows[0].startswith('# source=STAGE111V_X87_PRECISION_SWEEP')
+    output={}
+    for record in rows[1:]:
+        control,raw,step,value=record.split(',')
+        cw=int(control,16)
+        assert (cw & 0x0300) in (0x0000,0x0200,0x0300)
+        assert float(value)>0
+        output[((cw & 0x0300),float(raw))]=(int(step),float(value))
+    assert len(output)==18
+    assert output[(0x0000,2.)][0]==output[(0x0200,2.)][0]==output[(0x0300,2.)][0]==5
+    # The branch stays 5, but Single result changes because PC24 x87
+    # rounds intermediate power() operations more aggressively.
+    assert output[(0x0000,2.)][1] < output[(0x0200,2.)][1]
+    assert output[(0x0200,2.)][1] == pytest.approx(5.)
+    assert output[(0x0000,20.)][1] < output[(0x0300,20.)][1]

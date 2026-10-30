@@ -107,9 +107,32 @@ static int spectrum_graph_default_scale(float f_range, int mode,
 
 int main(int argc, char **argv) {
     /* Machine-readable *synthetic-only* selftest: no sensitive values. */
-    if(argc!=2 || strcmp(argv[1],"--selftest")!=0) {
-        fputs("usage: x87_graph_vscale_probe --selftest\n",stderr);
+    if(argc!=2 || (strcmp(argv[1],"--selftest")!=0 &&
+                   strcmp(argv[1],"--precision-sweep")!=0)) {
+        fputs("usage: x87_graph_vscale_probe --selftest|--precision-sweep\n",stderr);
         return 2;
+    }
+    if(strcmp(argv[1],"--precision-sweep")==0) {
+        unsigned short original_cw;
+        __asm__ volatile("fnstcw %0":"=m"(original_cw));
+        printf("# source=STAGE111V_X87_PRECISION_SWEEP original_cw=0x%04x\n",original_cw);
+        const float border[]={0.2f,0.5f,2.0f,5.0f,10.0f,20.0f};
+        const unsigned precision[]={0x0000u,0x0200u,0x0300u};
+        for(unsigned setting=0;setting<3;setting++) {
+            unsigned short cw=(unsigned short)((original_cw & ~0x0300u)|precision[setting]);
+            __asm__ volatile("fldcw %0"::"m"(cw));
+            for(unsigned row=0;row<sizeof(border)/sizeof(border[0]);row++) {
+                float output=0.0f,frac=0.0f;int step=0;
+                int ok=spectrum_graph_default_scale(border[row],1,&output,&step,&frac);
+                if(!ok) {
+                    __asm__ volatile("fldcw %0"::"m"(original_cw));
+                    return 3;
+                }
+                printf("0x%04x,%.9g,%d,%.9g\n",cw,border[row],step,output);
+            }
+        }
+        __asm__ volatile("fldcw %0"::"m"(original_cw));
+        return 0;
     }
     const float values[]={0.05f,0.2f,0.5f,1.0f,2.0f,5.0f,10.0f,
         20.0f,50.0f,0.031f,0.31f,0.81f,3.1f,7.1f,12.1f,
