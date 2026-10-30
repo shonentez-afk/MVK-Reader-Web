@@ -7,7 +7,7 @@
 - Stage 111O: оба курсора обновляются движением X, GetSignal кеширован, предыдущий программный коммит `aa3a0dd0a11e9821dfbfd350f16dfbb8bcc19fde` получил Linux #30, Windows Core/Qt #31, Windows EXE #32 SUCCESS.
 - Stage 111O документация HEAD `8c4d199c115168a31fe21248c33d328b35ddef3f`: CircleCI Linux #34, Windows+Qt #33, EXE #35 SUCCESS.
 - Stage 111P: восстановлена точная **SOURCE-STRUCTURE** последовательность GDI clGreen/pmXor, erase X + до двух Y, LineTo endpoint exclusive, возврат pmCopy. Новый независимый RGB XOR raster candidate, локальная приватная screenshot-сверка и native Win32 GDI тест.
-- Stage 111P локальная синтетическая проверка: 9 XOR и 3 приватного сравнителя PASS. CircleCI source SHA выше: [Linux #39](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/39) SUCCESS; [Windows Core/Qt #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) и Windows EXE проверить до приёмки.
+- Stage 111P локальная синтетическая проверка: 9 XOR и 3 приватного сравнителя PASS. CircleCI source SHA выше: [Linux #39](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/39) SUCCESS; [Windows Core/Qt #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) SUCCESS; [Windows EXE #41](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/41) SUCCESS. Скачанный EXE SHA ещё не сверен.
 - Оригинальный DSP AUX4700/VALUES только приборный; никаких производственных коэффициентов, приватных BIN/PCAPNG/PAS/DFM/IDP не публиковалось; прибор не использовался.
 
 ## Не завершено

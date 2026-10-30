@@ -36,8 +36,8 @@
 
 **CI для программного SHA `38a895fd797e300fbc967f7e97700828c4330106`:**
 - Linux Core: [CircleCI #39](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/39) — SUCCESS по GitHub status.
-- Windows Core и Qt: [CircleCI #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) — проверить итог; на момент подготовки отчёта PENDING.
-- Windows Preview EXE: проверить новый job после успешного Windows; приёмка SHA/артефакта ещё не закрыта.
+- Windows Core и Qt: [CircleCI #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) — SUCCESS; включён оригинальный Win32 GDI synthetic benchmark.
+- Windows Preview EXE: [CircleCI #41](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/41) — SUCCESS (job); бинарный SHA скачанного EXE ещё НЕ сравнивался с SHA256SUMS.txt.
 
 Предыдущий успешно проверенный HEAD до Stage 111P: `8c4d199c115168a31fe21248c33d328b35ddef3f`, [Linux #34](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/34), [Windows Core+Qt #33](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/33), [EXE #35](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/35): SUCCESS. Цифры количества pytest и SHA скачанного EXE по одному GitHub status API **неизвестны**.
 
