@@ -394,3 +394,15 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | 262143 | Не снят | `2F80EF9C` (гипотеза) | `2F80EF9D` | **TODO original x32dbg** |
 
 Исходные наблюдения относятся к **отдельным коэффициентам**, а не к полной таблице или к FFT output. Нужно снять `dword:[A6DA34]` и `dword:[A6DA44]`; после подтверждения выполнить адресную коррекцию для N=262144, не затрагивая остальные размеры. [Отчёт Stage111Z.6](STAGE111Z6_ORIGINAL_HANN_RUNTIME_TWO_POINT_GOLDEN_RU.md).
+
+
+## Stage111Z.6 — полный комплект четырех original Hann runtime точек (30.10.2026)
+
+| Индекс original Hann | DWORD из x32dbg | Native x87 CW1372 | NumPy до исправления | Статус в кандидатном приложении |
+|---:|---|---|---|---|
+| 1 | `2F80EF9C` | `2F80EF9C` | `2F80EF9D` | **PATCHED EXACT BIT** |
+| 5 | `31C97664` | `31C97664` | `31C97663` | **PATCHED EXACT BIT** |
+| 262139 | `31C97664` | `31C97664` | `31C97663` | **PATCHED EXACT BIT** |
+| 262143 | `2F80EF9C` | `2F80EF9C` | `2F80EF9D` | **PATCHED EXACT BIT** |
+
+Четыре значения подтверждены оригинальной работающей MVKView (со слов оператора), не CI. Для FFT N<262144 эти нечётные индексы не используются; вне четырёх точек NumPy кандидатный массив **не аттестован**. Текущая реализация в `mvk_compatible/core/fft_idr_candidate.py`, строгие тесты в `mvk_compatible/tests/test_stage111z6_original_hann_runtime_golden.py`. [Итоговый отчёт Stage111Z.6](STAGE111Z6_FOUR_HANN_RUNTIME_GOLDEN_PATCH_RU.md). Следом Stage111Z.7 — численные original GetSpectrum/bin parity.
