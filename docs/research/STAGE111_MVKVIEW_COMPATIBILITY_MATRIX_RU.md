@@ -222,3 +222,22 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111Q latest program CI | Linux SUCCESS, Windows/EXE awaiting | Code SHA d8c44318a09d328ecfd14a3a92f1bb987209999b; [Linux #55](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/55) SUCCESS, [Windows #54](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/54) проверить, Preview EXE/SHA не принят |
 
 [Технический отчёт Stage111Q](STAGE111Q_PAINTBOX_FONT_DPI_RU.md); дальнейшая оригинальная Canvas/RTL/FFT-паритет остаётся неподтверждённым.
+
+
+## Stage111R — Qt/native Canvas bridge и строгая проверка EXE
+
+| Модуль / свойство | Статус | Проверенное / ограничения |
+|---|---|---|
+| Исходные Delphi PaintBox/Canvas/Font/DPI | SOURCE_VERIFIED STRUCTURE, RUNTIME TODO | Старый оригинальный _Unit115/_Unit128 и приватный DFM; новый runtime оригинальный TCanvas пока **не измерен** |
+| Qt ViewBox→TPaintBox coordinate bridge | IMPLEMENTED_TESTED RESEARCH CANDIDATE | `core/tqgrapher_qt_canvas_bridge_candidate.py`, явные границы Qt/native PixelRect; режим DPR записывается, но не умножает native coordinates; оригинальный паритет FALSE |
+| Проверка независимых совпадающих landmark X/Y | IMPLEMENTED_TESTED DIAGNOSTIC | `compare_measured_landmarks` сообщает **только ошибки** и не публикует координаты; без эталона реальной MVKView нельзя считать паритет доказанным |
+| Исследовательский GUI Canvas | IMPLEMENTED_TESTED CANDIDATE | Qt показывает scaleX/scaleY с предупреждением. Основные курсоры графиков не подменены предположением |
+| Windows Preview PE/EXE/manifest | INTEGRATED FAIL-CLOSED BUILD CHECK | `verify_windows_preview_artifact.py` повторно читает PE и считает SHA256, проверяет BUILD_INFO SHA/branch и SHA256SUMS; `BUILD_VERIFICATION.json` перед `store_artifacts`. Тесты порчи EXE/манифестов |
+| Программный Stage111R CircleCI | Linux+Windows PASS, EXE CHECK REQUIRED | Code SHA `aa8e3b87671034636a4a63dc6486d0432c3b72c3`; [Linux #61](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/61) SUCCESS, [Windows Core+Qt #60](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/60) SUCCESS; [EXE #62](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/62) проверить |
+
+Интеграция проверяет **сборочный артефакт внутри CircleCI**, но отдельно скачанный EXE не сверён: `separate_download_integrity_verified=False`. Original Delphi/FFT parity не доказана. [Отчёт](STAGE111R_QT_GDI_REGISTRATION_AND_EXE_INTEGRITY_RU.md).
+
+
+### Stage111R — безопасная публикация verified-dist (последнее исправление)
+
+**Финальный программный SHA:** `8c9f0d29895a8a2ae68ad09c42e678cfffe01bee`. CircleCI `store_artifacts` выполняется даже после неудачного `run`; публикация непосредственно `dist/` была недостаточно безопасной. Теперь исходный EXE и SHA проверяются, затем файлы копируются в `verified-dist.tmp`, проходят вторую полную проверку, и только после этого atomic rename создаёт `verified-dist`; CircleCI публикует только `verified-dist`. [Linux #64](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/64) SUCCESS; [Windows #63](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/63) итог проверить, EXE job после Core. **Побитовая проверка скачанного EXE и original Delphi parity всё ещё не подтверждены.** См. [Stage111R](STAGE111R_QT_GDI_REGISTRATION_AND_EXE_INTEGRITY_RU.md).
