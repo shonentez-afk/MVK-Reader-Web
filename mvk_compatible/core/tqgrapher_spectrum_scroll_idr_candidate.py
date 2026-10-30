@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import math
 import numbers
 import numpy as np
+from .mvk_original_scale_tables_idr_candidate import HORIZONTAL_HZ
 
 SOURCE='APP_DERIVED_DELPHI_SPECTRUM_SCROLLBARS_IDR_CANDIDATE'
 DELPHI_H_FIRST_MENU_SCALE_HZ=0x6400
@@ -57,7 +58,8 @@ class NativeScrollContract:
             raise ValueError('Preset provenance flag must be boolean')
         if self.source_menu_preset_verified:
             if (self.axis!='horizontal'
-                    or full!=DELPHI_H_FIRST_MENU_SCALE_HZ or page!=full):
+                    or full!=DELPHI_H_FIRST_MENU_SCALE_HZ
+                    or page not in HORIZONTAL_HZ):
                 raise ValueError('Unknown original menu presets are not verified')
 
     def view(self)->dict:

@@ -85,8 +85,9 @@ def test_invalid_or_unsafe_scroll_contract_is_rejected(axis,full,page,pos):
 
 
 def test_wrong_source_flags_and_mode_mismatch_are_rejected():
+    assert NativeScrollContract('horizontal',25600,6400,0,True).view()['source_menu_preset_verified']
     with pytest.raises(ValueError,match='preset'):
-        NativeScrollContract('horizontal',25600,6400,0,True)
+        NativeScrollContract('horizontal',25600,7000,0,True)
     with pytest.raises(ValueError,match='preset'):
         NativeScrollContract('vertical',150,150,0,True)
     with pytest.raises(ValueError,match='direction'):

@@ -12,14 +12,17 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
-    QScrollBar,QScrollArea,QFrame)
+    QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy)
 from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
 from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
-from ..core.tqgrapher_spectrum_scroll_idr_candidate import source_spectrum_h_scr
+from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
+    source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
+from ..core.mvk_original_scale_tables_idr_candidate import (
+    HORIZONTAL_HZ,original_h_scale_options,validate_source_h_scale)
 from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
@@ -265,11 +268,31 @@ class MainWindow(QMainWindow):
         self.spec_n.setToolTip('Количество отсчётов FFT (оригинальные пресеты bSpecLines требуют дальнейшей сверки)')
         stack.addWidget(self.spec_n)
 
-        self.spec_hscale_button=QPushButton('Горизонталь +')
+        # Original bSpecHScale is a VCL split button with ten numeric
+        # source-defined menu presets. Preserve quick-click zoom while
+        # exposing verified original menu values in the arrow popup.
+        self.spec_hscale_button=QToolButton()
+        self.spec_hscale_button.setText('Горизонталь +')
         self.spec_hscale_button.setObjectName('bSpecHScale')
         self.spec_hscale_button.setFixedHeight(41)
-        self.spec_hscale_button.setToolTip('Реальное горизонтальное увеличение ×2; полоса прокрутки появится после приближения')
-        self.spec_hscale_button.clicked.connect(lambda:self._zoom(self.spec_plot,.5))
+        self.spec_hscale_button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
+        self.spec_hscale_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.spec_hscale_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.spec_hscale_button.setToolTip(
+            'Стрелка: десять восстановленных шкал оригинальной MVKView. '
+            'Основное нажатие выбирает ближайший меньший оригинальный масштаб.')
+        self.spec_hscale_menu=QMenu(self.spec_hscale_button)
+        self._spec_hscale_actions=[]
+        self._spec_original_hscale_selected=None
+        for entry in original_h_scale_options():
+            a=self.spec_hscale_menu.addAction(entry['caption'])
+            a.setCheckable(True)
+            a.setData(entry['hz'])
+            a.triggered.connect(
+                lambda checked=False,hz=entry['hz']:self._select_original_hscale(hz))
+            self._spec_hscale_actions.append(a)
+        self.spec_hscale_button.setMenu(self.spec_hscale_menu)
+        self.spec_hscale_button.clicked.connect(self._cycle_original_hscale)
         stack.addWidget(self.spec_hscale_button)
 
         self.spec_vscale_button=QPushButton('Вертикаль +')
@@ -449,6 +472,54 @@ class MainWindow(QMainWindow):
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
 
+    def _cycle_original_hscale(self):
+        """Main part of split button: next source-verified smaller scale."""
+        if self._full_spectrum is None:return
+        x0,x1=self.spec_plot.getViewBox().viewRange()[0]
+        current=float(x1-x0)
+        for hz in HORIZONTAL_HZ:
+            if float(hz)<current-.01:
+                self._select_original_hscale(hz)
+                return
+        self._select_original_hscale(HORIZONTAL_HZ[-1])
+
+    def _select_original_hscale(self,hz):
+        """Original _Unit128:0084C3AC menu Tag→DWORD table.
+
+        The source frequency table is recovered exactly. The current data
+        window and original Delphi runtime Canvas are *not* identical.
+        """
+        hz=validate_source_h_scale(hz)
+        if self._full_spectrum is None:return
+        full=HORIZONTAL_HZ[0]
+        vb=self.spec_plot.getViewBox()
+        selected=self._spec_original_hscale_selected
+        # Never mix a normalized Qt zoom position with the source VCL
+        # menu's integer Hz position when switching domains.
+        if selected in HORIZONTAL_HZ:
+            native=int(self.spec_hscroll.value())
+            old=NativeScrollContract(
+                'horizontal',full,selected,
+                max(0,min(full-selected,native)),True)
+            pos=rescale_scroll(old,selected_page=hz).position
+        else:
+            pos=0
+        self._spec_original_hscale_selected=None
+        self.spec_hz.blockSignals(True)
+        self.spec_hz.setValue(float(full))
+        self.spec_hz.blockSignals(False)
+        self._spec_visible_max_hz=float(full)
+        vb.setLimits(xMin=0.,xMax=float(full))
+        vb.setXRange(float(pos),float(pos+hz),padding=0.)
+        self._spec_original_hscale_selected=hz
+        self.spec_hscale_button.setText(f'Горизонталь: {hz} Гц')
+        for action in self._spec_hscale_actions:
+            action.setChecked(action.data()==hz)
+        self._sync_spec_scroll()
+        self.statusBar().showMessage(
+            f'Исходный H-пресет {hz} Гц; численная FFT/Canvas '
+            'идентичность с Delphi ещё НЕ подтверждена')
+
     def _spec_scroll_changed(self,axis:int,value:int):
         if self._full_spectrum is None:return
         vb=self.spec_plot.getViewBox()
@@ -502,7 +573,14 @@ class MainWindow(QMainWindow):
                 bar.setValue(src['delphi_position'])
                 self._spec_hscroll_source_candidate={
                     **src,'page_size_from_qt_view_candidate':True,
-                    'original_plot_coordinate_parity_verified':False}
+                    'original_plot_coordinate_parity_verified':False,
+                    'source_presets_from_private_idp_verified':True}
+                if (self._spec_original_hscale_selected is not None and
+                        native_page!=self._spec_original_hscale_selected):
+                    self._spec_original_hscale_selected=None
+                    self.spec_hscale_button.setText('Горизонталь +')
+                    for action in self._spec_hscale_actions:
+                        action.setChecked(False)
                 bar.setVisible(active and src['delphi_visible'])
             else:
                 # Vertical slider still awaits the 10 original menu values.
@@ -715,6 +793,10 @@ class MainWindow(QMainWindow):
 
     def refresh_spec(self,*_):
         if not self.session:return
+        self._spec_original_hscale_selected=None
+        self.spec_hscale_button.setText('Горизонталь +')
+        for action in self._spec_hscale_actions:
+            action.setChecked(False)
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             n_fft=int(self.spec_n.currentText())

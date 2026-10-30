@@ -687,3 +687,53 @@ def test_qt_stage111q_source_margin_and_scrollbar_registration(tmp_path,qt_app,m
     assert 'Это НЕ фактический прямоугольник оригинальной MVKView' in body
     win.close()
     qt_app.processEvents()
+
+def test_qt_stage111s_all_original_h_scale_menu_entries_and_position(tmp_path,qt_app):
+    """Native popup has exactly 10 recovered Delphi presets; NFFT still research."""
+    from PySide6.QtWidgets import QToolButton
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.mvk_original_scale_tables_idr_candidate import (
+        HORIZONTAL_HZ,original_h_scale_options)
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert isinstance(win.spec_hscale_button,QToolButton)
+    actions=win.spec_hscale_button.menu().actions()
+    assert len(actions)==10
+    assert [a.data() for a in actions]==list(HORIZONTAL_HZ)
+    assert [a.text() for a in actions]==[r['caption'] for r in original_h_scale_options()]
+    assert win._spec_original_hscale_selected is None
+    # Initial research 10 kHz view: main-button click picks the next
+    # actual smaller original preset, rather than fabricating 5000 Hz.
+    win.spec_hscale_button.click()
+    qt_app.processEvents()
+    assert win._spec_original_hscale_selected==6400
+    assert sum(a.isChecked() for a in actions)==1
+    assert actions[2].isChecked()
+    assert win.spec_hscroll.maximum()==25600-6400
+    assert win.spec_hscroll.pageStep()==6400
+    assert win.spec_hscroll.singleStep()==640
+    win.spec_hscroll.setValue(1200)
+    qt_app.processEvents()
+    left=win.spec_plot.getViewBox().viewRange()[0][0]
+    assert abs(left-1200)<2
+    # Original H rescale holds previous Position until clamped by Full-Page.
+    actions[3].trigger()  # Tag=3 -> 3200Hz
+    qt_app.processEvents()
+    assert win._spec_original_hscale_selected==3200
+    assert win.spec_hscroll.value()==1200
+    assert win.spec_hscroll.maximum()==25600-3200
+    assert win.spec_hscroll.pageStep()==3200
+    assert actions[3].isChecked() and not actions[2].isChecked()
+    assert abs(win.spec_plot.getViewBox().viewRange()[0][0]-1200)<2
+    actions[0].trigger()  # Full 25600Hz resets to left edge and hides bar.
+    qt_app.processEvents()
+    assert win._spec_original_hscale_selected==25600
+    assert win.spec_hscroll.maximum()==0
+    assert not win.spec_hscroll.isVisible()
+    assert actions[0].isChecked()
+    win.close()
+    qt_app.processEvents()
