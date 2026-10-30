@@ -41,9 +41,16 @@ def test_single_step_reconstructs_one_source_intermediate_store():
     assert _bits(collapsed_real)==0xBE635275
     # Adding an imaginary temp Single store is ALSO incorrect: the x87
     # source evaluates the expression before one final wi FSTP Single.
-    wrong_stored_imag=np.float32(float(alpha)*float(wi)-float(beta)*float(wr))
-    wrong_next_wi=np.float32(float(wi)-float(wrong_stored_imag))
-    assert _bits(wrong_next_wi)!=_bits(next_wi)
+    wr2,wi2,alpha2,beta2=map(np.float32,(
+        -0.6754682064056396, 0.5891702771186829,
+        0.002579387277364731, 0.5616893768310547
+    ))
+    correct_imag=_twiddle_step_with_single_stores(wr2,wi2,alpha2,beta2)[1]
+    wrong_stored_imag=np.float32(
+        float(alpha2)*float(wi2)-float(beta2)*float(wr2))
+    wrong_next_wi=np.float32(float(wi2)-float(wrong_stored_imag))
+    assert _bits(correct_imag)==0x3E553EC5
+    assert _bits(wrong_next_wi)==0x3E553EC6
 
 
 def _independent_recurrence(half: int):
