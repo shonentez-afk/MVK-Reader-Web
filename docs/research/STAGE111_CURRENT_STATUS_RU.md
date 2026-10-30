@@ -1,3 +1,13 @@
+# MVKView Compatible — Stage111Z.4: original FFT twiddle rounding (30.10.2026)
+
+**Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`; цель автономная Windows Qt/PySide6. [Полный отчёт Stage111Z.4](STAGE111Z4_ORIGINAL_FFT_TWIDDLE_SINGLE_STORE_RU.md).
+
+Оригинальный приватный FFT source по 7 окнам SHA подтверждён; GetSpectrum вызывает **+2π** wrapper `007CC3F8`, другой `−2π` wrapper не перепутан. Twiddle recurrence: intermediate **real** `FSTP Single` 007CC325, imaginary intermediate остается extended, финальные Wi/Wr Single 007CC33A/007CC344. Исправлен локальный `fft_idr_candidate.py` без изменения оригинальных файлов; добавлены bitwise synthetic tests и private IDP audit. Синтетический тест half=8192 показывает 989/8192 отличий коэффициентов от прежнего Double-пути, FFT N8192 имеет 1857/4096 изменений power. Это не исходная runtime FFT golden.
+
+**CI:** SHA `0e231f2f59bd7f9ef6003f10f524b79a94d267f1` Linux #147 и Windows Core+Qt #148 — SUCCESS; SHA `5ae3c87737b4721a8e4f5d0564384cfad9373fd5` Linux #154 — SUCCESS, Windows и EXE отдельно проверять. Следующий этап Stage111Z.5: Hann table source/sin, x87 FFT и оригинальные архивные спектры, курсор, Canvas; никакой подмены Qt Y-оси без true golden. `main`, Web v0.3.40, прибор и приватные материалы не затрагивать.
+
+---
+
 # MVKView Compatible — Stage111Z.3 (30.10.2026): оригинальный x87-путь спектра проверен
 
 **Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`; автономная Windows Qt/PySide6, не Web v0.3.40. **Последний исходный отчёт:** [Stage111Z.3](STAGE111Z3_SOURCE_SPECTRUM_X87_AUDIT_RU.md).

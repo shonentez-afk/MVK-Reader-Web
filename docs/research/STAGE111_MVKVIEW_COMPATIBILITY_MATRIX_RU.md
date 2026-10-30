@@ -356,3 +356,16 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Privileged source audit | **IMPLEMENTED + SYNTHETIC TESTED** `private_spectrum_x87_path_audit.py` | Полный original IDP только локально, не в CI |
 
 [Отчёт Stage111Z.3](STAGE111Z3_SOURCE_SPECTRUM_X87_AUDIT_RU.md) · [Источник runtime Stage111Z](STAGE111Z_FIRST_RUNTIME_X32DBG_GOLDEN_RU.md). Цель остаётся: автономная Windows-программа, не Web.
+
+
+## Stage111Z.4 — FFT исходная точность и знак (30.10.2026)
+
+| Функция | Статус | Примечание |
+|---|---|---|
+| Спектральный FFT wrapper и знак | **SOURCE-VERIFIED** | GetSpectrum по 007D2083 вызывает +2π (007CC3F8); противоположный wrapper 007CC404 отдельно |
+| Twiddle recurrence Single-store | **SOURCE-VERIFIED + IMPLEMENTED_TESTED** | temp real записан Single на 007CC325; imaginary intermediate НЕ записывается; Wi/Wr final Single на 007CC33A/007CC344 |
+| Hann × Sample, DC running mean | **SOURCE-VERIFIED STRUCTURE** | Исходные окна SHA сверены, но битовое совпадение runtime Hann и sinus table пока TODO |
+| FFT Float32 power | **SOURCE-DERIVED CANDIDATE + SYNTHETIC TESTED** | После source-aligned intermediate округления синтетика изменилась; настоящий Delphi FFT/архивный спектр всё ещё TODO |
+| Private FFT auditor | **IMPLEMENTED + SYNTHETIC TESTED** | Семь локальных SHA fingerprint; IDP/EXE/измерения не в CI |
+
+[Stage111Z.4 технический отчёт](STAGE111Z4_ORIGINAL_FFT_TWIDDLE_SINGLE_STORE_RU.md) · [Известный runtime scale golden](STAGE111Z_FIRST_RUNTIME_X32DBG_GOLDEN_RU.md).
