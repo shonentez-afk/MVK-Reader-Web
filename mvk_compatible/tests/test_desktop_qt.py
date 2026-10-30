@@ -654,6 +654,12 @@ def test_qt_stage111q_source_margin_and_scrollbar_registration(tmp_path,qt_app,m
     assert not g['qt_viewbox_and_paintbox_registration_verified']
     assert not g['original_dpi_parity_verified']
     assert not g['original_font_identity_verified']
+    assert g['dfm_design_form_font_family']=='Tahoma'
+    assert g['dfm_design_form_font_height']==-13
+    assert g['dfm_design_pixels_per_inch']==96
+    assert g['dfm_design_spectrum_paintbox_size']==(767,716)
+    assert g['original_dfm_runtime_canvas_font_verified'] is False
+    assert 'DFM design-time:' in body
     assert 'Margin по оригиналу' in body
     assert 'Scrollbars оригинал/TPaintBox' in body
     assert 'DPR=' in body

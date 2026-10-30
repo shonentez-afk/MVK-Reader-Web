@@ -18,6 +18,9 @@ from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
+from ..core.tqgrapher_dfm_design_idr_candidate import (
+    DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
+    DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
@@ -944,6 +947,11 @@ class MainWindow(QMainWindow):
             d['qt_viewport_logical_dpi_x']=int(view.logicalDpiX())
             d['qt_viewport_logical_dpi_y']=int(view.logicalDpiY())
             d['qt_font_family_candidate']=view.font().family()
+            d['dfm_design_form_font_family']=DFM_DESIGN_FONT_FAMILY
+            d['dfm_design_form_font_height']=DFM_DESIGN_FONT_HEIGHT
+            d['dfm_design_pixels_per_inch']=DFM_DESIGN_PIXELS_PER_INCH
+            d['dfm_design_spectrum_paintbox_size']=PAINTBOX_DIMENSIONS['spectrum']
+            d['original_dfm_runtime_canvas_font_verified']=False
             self._spec_canvas_geometry_preview=d
             QMessageBox.information(
                 self,'TQGrapher Canvas — только исследовательская геометрия',
@@ -961,6 +969,11 @@ class MainWindow(QMainWindow):
                 f" V.Height={d['spectrum_vertical_scroll_height']}\n"
                 f"Qt Font={d['qt_font_family_candidate']}, DPR={d['qt_viewport_device_pixel_ratio']:.3g},"
                 f" logical DPI={d['qt_viewport_logical_dpi_x']}×{d['qt_viewport_logical_dpi_y']}\n"
+                f"DFM design-time: {d['dfm_design_form_font_family']}"
+                f" Height={d['dfm_design_form_font_height']},"
+                f" PPI={d['dfm_design_pixels_per_inch']},"
+                f" pbSpectrum={d['dfm_design_spectrum_paintbox_size']}"
+                " (НЕ текущий исходный Canvas)\n"
                 "ВНИМАНИЕ: размеры текста получены из Qt, не оригинального TPaintBox.Canvas. "
                 "Это НЕ фактический прямоугольник оригинальной MVKView.\n"
                 "Для pixel-to-pixel приёмки требуются метрики Delphi TCanvas "
