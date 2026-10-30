@@ -286,3 +286,18 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111U regression | LOCAL 37 PASS, LINUX+WINDOWS QT PASS, EXE PENDING | Code SHA `a2a0651903c04638bc08fb983a415563df74c7f4`; [Linux #85](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/85) SUCCESS, [Windows Qt #84](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/84) SUCCESS, [EXE #86](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/86) PENDING; downloaded hash separately unverified |
 
 [Stage111U technical report](STAGE111U_GRAPH_DEFAULT_VSCALE_RU.md). Stage111T code `35f13a6fd0d420bb2b8f70eb7f9fe7495093c390`: Linux #79, Windows Qt #78, EXE #80 SUCCESS. Эти CI-прохождения не делают независимую скачанную копию EXE сверенной и не подтверждают настоящий Delphi x87/Canvas/FFT паритет.
+
+
+## Stage111V — x87 power/log10 helpers и влияние control word
+
+| Объект | Уровень восстановления | Необходимое подтверждение |
+|---|---|---|
+| 00447DB8 log10(Single) | SOURCE INSTRUCTIONS VERIFIED | FLDLG2/FLD Single/FYL2X, возвращает x87 Extended, не эквивалент Python math.log10 по всем битам |
+| 00447DF0 Power Extended, 00447EF8 Power Single | SOURCE INSTRUCTIONS VERIFIED | Целочисленная ветвь и FLDLN2/FYL2X/F2XM1/FSCALE восстановлены; окончательная битовая идентичность Delphi 32-bit ещё не принята |
+| System.@FpuInit 00409570 и x87 CW | SOURCE STRUCTURE VERIFIED | FLDCW читает исходную глобальную переменную 008C2028; конкретное значение в работающем ORIGINAL процессе пока неизвестно |
+| Native GCC x87 selftest | IMPLEMENTED, LOCAL SYNTHETIC 27 VALUES | x86/x86_64 GCC, real x87 instructions; результаты согласованы с Python-кандидатом на синтетике; НЕ оригинальные golden |
+| x87 precision-control sweep | IMPLEMENTED TESTED 18 SYNTHETIC COMBINATIONS | PC24, PC53, PC64. Для x=2: 4.99999952 против 5.0; для x=20: 49.9999962 против 50.0. Восстанавливает CW после теста |
+| Cross-platform Python ULP regression | IMPLEMENTED TESTED | Отдельная проверка соседних float32 ниже/на/выше 2, 5, 10, branch <=0 log10 и 4 режимов спектра |
+| Stage111V последний кодовый CI | Linux/Windows Core PASS; EXE проверяется отдельно | Программный SHA f87ea7a38d3d62e1d91479a661b713a69d6bd8bf: [Linux #91](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/91) SUCCESS, [Windows Qt #90](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/90) SUCCESS. Оригинальная Delphi x87 runtime и скачанный EXE SHA256 не приняты |
+
+Исходные PAS/DFM/IDP остаются приватными. Декодирование source-структуры и локальный тест на другом CPU/CW не дают фактического Original Delphi parity. [Отчёт Stage111V](STAGE111V_X87_MATH_HELPER_RU.md).

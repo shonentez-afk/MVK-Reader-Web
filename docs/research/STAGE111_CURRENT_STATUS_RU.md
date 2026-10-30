@@ -1,23 +1,27 @@
-# MVKView Compatible — текущий статус Stage111U (30.10.2026)
+# MVKView Compatible — актуальный статус Stage111V (30.10.2026)
 
-**Цель:** полноценная автономная Windows MVKView Compatible, Qt/PySide6, только `mvk_compatible/` на ветке `research/stage111-mvkview-desktop-20261029`. `main` и старую Web v0.3.40 не менять.
+**Цель:** полноценная автономная Windows MVKView Compatible на Qt/PySide6 в папке mvk_compatible/. Рабочая ветка research/stage111-mvkview-desktop-20261029. Замороженные main и старая Web v0.3.40 не менять.
 
-**Последний программный SHA:** `a2a0651903c04638bc08fb983a415563df74c7f4` (расчётный модуль, приватный компаратор и Qt-диагностика).
+**Последний программный SHA:** f87ea7a38d3d62e1d91479a661b713a69d6bd8bf.
 
-## Подтверждённые изменения
+## Сохранённое состояние
 
-- Stage111T SHA `35f13a6fd0d420bb2b8f70eb7f9fe7495093c390`: [Linux #79](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/79), [Windows Core/Qt #78](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/78), [Windows verified-dist EXE #80](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/80) — все SUCCESS. **Отдельно скачанный** EXE не сравнивали по SHA256SUMS.
-- Stage111U: приватный оригинальный Delphi (`Projects.7z`) подтвердил спектральный `sub_0084B4E8` / `0084B5D3..0084B882` и источник `TMvkChannelStorage.FRange` (+0x04). ADC `sub_0084AB98` — отдельный обработчик. Множители спектра: ×1 (0/1), ×10 (2), ×100 (3), затем log10/TRUNC, Single и ступени 1–2–5–10×10^k. Исходный конструктор задаёт FRange=1.0, **но фактический FRange архива неизвестен**.
-- `core/spectrum_graph_default_vscale_idr_candidate.py`: явная исходная модель с независимым Decimal ceil и диагностикой граничного несовпадения; `original_math_helpers_x87_rounding_verified=False`.
-- `desktop/main_window.py`: отдельный показатель `GraphDefaultVScale` по ручному `spec_f_range`. При выборе оригинального V scale рассчитывается параллельная исходная модель ScrollHeight/Bottom, а настоящая видимая Qt Y-ось пока по локальным спектральным данным — нельзя считать пиксельную идентичность доказанной.
-- `graph_vscale_reference_compare.py`: офлайн-контроль пользовательских приватных эталонов, выводит только агрегатные ошибки, не публикует исходные числа.
-- Локально 37 синтетических тестов расчёта/компаратора PASS, тест Qt дополнен. [Linux #85](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/85) SUCCESS; [Windows Qt #84](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/84) SUCCESS; [Windows Preview verified-dist EXE #86](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/86) PENDING.
-- Прибор не подключался, AUX4700/VALUES не подменяются вычисляемым FFT; оригинальные PAS/DFM/IDP/BIN/PCAPNG/коэффициенты не публиковались.
+- **Stage111U полностью прошёл CircleCI** на исходном SHA a2a0651903c04638bc08fb983a415563df74c7f4: Linux #85 SUCCESS, Windows Qt #84 SUCCESS, Windows Preview EXE #86 SUCCESS. Скачать и независимо проверить байты EXE по SHA256SUMS ещё не удалось. Артефакт внутри CircleCI опубликован только из verified-dist.
+- Stage111V: из оригинальных приватных Delphi реконструкций Projects.7z прочитаны тела математических helpers 00447DB8 (FLDLG2/FYL2X), 00447DF0 (Power Extended), 00447EF8 (Power Single, целая ветвь/FSCALE). System.@FpuInit по адресу 00409570 загружает управляющее слово из 008C2028. **Настоящий original runtime FPU CW неизвестен.**
+- Добавлен source-derived native x87 C-пробник без сети, без ввода реальных данных и без подключения МВК. Он выполняет команды x87 на x86/AMD64 и проверяет 27 синтетических комбинаций mode/FRange и 18 контрольных комбинаций PC=24/53/64. Пробник в пользовательский Windows EXE не включён.
+- При синтетическом Linux CW=0x037F обнаружено совпадение Python-кандидата с аппаратным x87 по 27 случаям. PC24 изменяет младшие биты степенного расчёта: x=2 → 4.99999952 вместо 5.0 при PC53/64; x=20 → 49.9999962 вместо 50.0. Это НЕ эталон оригинальной MVKView.
+- Локально 56 PASS на наборах Stage111U+111V (37 прежних и 19 новых). Новые Windows/Linux Core regression тесты проверяют ULP/режимы; native pytest SKIP без GNU x87.
+- Последний source SHA f87ea7a38d3d62e1d91479a661b713a69d6bd8bf: [Linux #91](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/91) SUCCESS, [Windows Core+Qt #90](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/90) SUCCESS. Windows Preview EXE/скачанный SHA256 проверить по этому SHA отдельно.
+- Qt-Y по-прежнему использует исследовательский ViewBox/data-derived GraphDefaultVScale; реальная source-driven калибровка не включена без оригинального golden.
+- AUX4700/VALUES не заменялись локальным FFT; реальный прибор не подключался. Приватные PAS/DFM/IDP/BIN/PCAPNG не копировались в репозиторий.
 
-## Открыто — точка Stage111V
+## Непроверенное / следующий этап Stage111W
 
-Нужны независимые фактические оригинальные FRange и GraphDefaultVScale на одинаковом канале/режиме, особенно на точных границах 2/5/10 и значениях менее 1; семантика Delphi x87 helper `00447DB8/00447DF0/00447EF8`; оригинальные TPaintBox Canvas.Font/Size/DPI/PixelRect/CursorString, FormatFloat, GetSpectrum/GetNarrowbandValue/FRange/FFT. До золотой сверки не включать source-model как авторитетный Y Qt.
+1. В приватной работающей оригинальной MVKView прочитать Get8087CW перед _Unit128:0084B631, исходное word 008C2028, оригинальное TMvkChannelStorage.FRange (+0x04) и реальный GraphDefaultVScale [esi+62C] по режимам 0–3. Доступ к прибору без отдельного разрешения запрещён.
+2. Сопоставить частные Delphi golden с x87 helper-кандидатом при точных CW и FRange; затем проверять побитовый FormatFloat/x87/TRUNC, особенно вблизи 2/5/10. Пока original_math_helpers_x87_rounding_verified=False.
+3. Проверить исходный runtime TPaintBox Canvas.Font/TextExtent/PixelRect/DPI, CursorString, GetSpectrum/GetNarrowbandValue/FRange/FFT, реальную вертикальную калибровку и UX трёх вкладок.
+4. Для Stage111V/будущего HEAD проверить Windows Preview verified-dist EXE, BUILD_VERIFICATION.json и независимую копию по SHA256SUMS.
 
-[Полный отчёт Stage111U](STAGE111U_GRAPH_DEFAULT_VSCALE_RU.md) · [матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [новый чат](../../START_NEW_CHAT_RU.md).
+[Отчёт Stage111V](STAGE111V_X87_MATH_HELPER_RU.md) · [матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [новый чат](../../START_NEW_CHAT_RU.md).
 
-Проверить все CI на SHA `a2a0651903c04638bc08fb983a415563df74c7f4`, `verified-dist/BUILD_VERIFICATION.json` и скачанную копию EXE по SHA256. Стабильный main/Web v0.3.40 и реальный прибор без разрешения не трогать.
+**Не утверждать полной исходной численной/пиксельной идентичности, пока оригинальный golden не проверен.**
