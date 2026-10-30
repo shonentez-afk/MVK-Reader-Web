@@ -105,8 +105,88 @@ static int spectrum_graph_default_scale(float f_range, int mode,
     return isfinite(*output) && *output>0;
 }
 
+
+/* Stage111Z.2: replay one explicitly supplied Float32 FRange under an observed
+ * x87 CW, using the existing source-derived arithmetic above.
+ * Read-only, offline, no built-in original measurements, and NOT an original
+ * Delphi oracle. A bounded input protects against unmasked CW exceptions.
+ */
+static uint32_t single_bits(float value) {
+    uint32_t bits = 0;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+static int parse_hex_fixed(const char *input, unsigned digits, uint32_t *result) {
+    uint32_t bits = 0;
+    unsigned i = 0;
+    for (; i < digits && input[i]; ++i) {
+        const char ch = input[i];
+        unsigned nibble;
+        if (ch >= '0' && ch <= '9') nibble = (unsigned)(ch - '0');
+        else if (ch >= 'a' && ch <= 'f') nibble = (unsigned)(ch - 'a' + 10);
+        else if (ch >= 'A' && ch <= 'F') nibble = (unsigned)(ch - 'A' + 10);
+        else return 0;
+        bits = (bits << 4) | nibble;
+    }
+    if (i != digits || input[i]) return 0;
+    *result = bits;
+    return 1;
+}
+
+static int run_bitwise_replay(const char *f_range_hex, const char *cw_hex) {
+    uint32_t raw = 0, cw_bits = 0;
+    if (!parse_hex_fixed(f_range_hex, 8, &raw) ||
+        !parse_hex_fixed(cw_hex, 4, &cw_bits) ||
+        (cw_bits != 0x1332u && cw_bits != 0x1372u)) {
+        fputs("invalid Float32 HEX or unsupported observed CW\n", stderr);
+        return 2;
+    }
+    float f_range;
+    memcpy(&f_range, &raw, sizeof(f_range));
+    /* Avoid FPU traps with the original CW's unmasked exception bits. */
+    if (!isfinite(f_range) || f_range < 1.0e-8f || f_range > 1.0e8f) {
+        fputs("Float32 must be finite and within safe positive range\n", stderr);
+        return 2;
+    }
+    unsigned short caller_cw = 0, active_cw = 0, restored_cw = 0;
+    const unsigned short requested_cw = (unsigned short)cw_bits;
+    float scaled[4], results[4], fractions[4];
+    int steps[4];
+    int ok = 1;
+    __asm__ volatile("fnstcw %0" : "=m"(caller_cw));
+    __asm__ volatile("fldcw %0" :: "m"(requested_cw));
+    __asm__ volatile("fnstcw %0" : "=m"(active_cw));
+    for (int mode = 0; mode < 4 && ok; ++mode) {
+        int factor = (mode == 2 ? 10 : (mode == 3 ? 100 : 1));
+        scaled[mode] = store_single_x87((long double)f_range * factor);
+        ok = spectrum_graph_default_scale(f_range, mode,
+                      &results[mode], &steps[mode], &fractions[mode]);
+    }
+    __asm__ volatile("fnclex\n\tfldcw %0" :: "m"(caller_cw));
+    __asm__ volatile("fnstcw %0" : "=m"(restored_cw));
+    if (!ok || (active_cw & (unsigned short)~0x0040u) !=
+               (requested_cw & (unsigned short)~0x0040u) ||
+        restored_cw != caller_cw) {
+        fputs("native x87 replay failed or failed to restore CW\n", stderr);
+        return 3;
+    }
+    printf("# source=STAGE111Z2_NATIVE_X87_REPLAY requested_cw=0x%04X active_cw=0x%04X restored=1\n",
+           requested_cw, active_cw);
+    for (int mode = 0; mode < 4; ++mode) {
+        printf("%d,%08X,%08X,%d,%08X\n", mode,
+               (unsigned)single_bits(scaled[mode]),
+               (unsigned)single_bits(results[mode]),
+               steps[mode], (unsigned)single_bits(fractions[mode]));
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     /* Machine-readable *synthetic-only* selftest: no sensitive values. */
+    if (argc == 4 && strcmp(argv[1], "--replay-hex") == 0)
+        return run_bitwise_replay(argv[2], argv[3]);
+
     if(argc!=2 || (strcmp(argv[1],"--selftest")!=0 &&
                    strcmp(argv[1],"--precision-sweep")!=0 &&
                    strcmp(argv[1],"--source-static-cw")!=0)) {
