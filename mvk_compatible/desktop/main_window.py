@@ -18,6 +18,7 @@ from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
+from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
 from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
@@ -952,6 +953,15 @@ class MainWindow(QMainWindow):
             d['dfm_design_pixels_per_inch']=DFM_DESIGN_PIXELS_PER_INCH
             d['dfm_design_spectrum_paintbox_size']=PAINTBOX_DIMENSIONS['spectrum']
             d['original_dfm_runtime_canvas_font_verified']=False
+            scene=self.spec_plot.getViewBox().sceneBoundingRect()
+            # Both coordinate frames must be explicit. This is only an affine
+            # hypothesis, not a measured original MVKView runtime registration.
+            bridge=QtPaintBoxBridge(
+                source_canvas=d,
+                qt_scene_left=float(scene.left()),qt_scene_right=float(scene.right()),
+                qt_scene_top=float(scene.top()),qt_scene_bottom=float(scene.bottom()),
+                qt_device_pixel_ratio=d['qt_viewport_device_pixel_ratio'])
+            d['qt_to_tpaintbox_bridge_candidate']=bridge.describe()
             self._spec_canvas_geometry_preview=d
             QMessageBox.information(
                 self,'TQGrapher Canvas — только исследовательская геометрия',
@@ -974,6 +984,10 @@ class MainWindow(QMainWindow):
                 f" PPI={d['dfm_design_pixels_per_inch']},"
                 f" pbSpectrum={d['dfm_design_spectrum_paintbox_size']}"
                 " (НЕ текущий исходный Canvas)\n"
+                "Qt→TPaintBox affine-кандидат: "
+                f"scaleX={d['qt_to_tpaintbox_bridge_candidate']['qt_scene_x_to_native_x_scale']:.9g}, "
+                f"scaleY={d['qt_to_tpaintbox_bridge_candidate']['qt_scene_y_to_native_y_scale']:.9g}; "
+                "DPR не применяется к исходным пикселям без измерения.\n"
                 "ВНИМАНИЕ: размеры текста получены из Qt, не оригинального TPaintBox.Canvas. "
                 "Это НЕ фактический прямоугольник оригинальной MVKView.\n"
                 "Для pixel-to-pixel приёмки требуются метрики Delphi TCanvas "

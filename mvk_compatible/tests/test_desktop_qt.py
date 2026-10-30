@@ -659,6 +659,13 @@ def test_qt_stage111q_source_margin_and_scrollbar_registration(tmp_path,qt_app,m
     assert g['dfm_design_pixels_per_inch']==96
     assert g['dfm_design_spectrum_paintbox_size']==(767,716)
     assert g['original_dfm_runtime_canvas_font_verified'] is False
+    bridge=g['qt_to_tpaintbox_bridge_candidate']
+    assert bridge['qt_scene_x_to_native_x_scale']>0
+    assert bridge['qt_scene_y_to_native_y_scale']>0
+    assert bridge['device_pixel_ratio_not_applied_to_native_transform'] is True
+    assert bridge['original_delphi_pixel_parity_verified'] is False
+    assert bridge['native_mouse_integer_rounding_parity_verified'] is False
+    assert 'Qt→TPaintBox affine-кандидат' in body
     assert 'DFM design-time:' in body
     assert 'Margin по оригиналу' in body
     assert 'Scrollbars оригинал/TPaintBox' in body

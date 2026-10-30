@@ -89,6 +89,11 @@ jobs:
             "branch=$env:CIRCLE_BRANCH" | Add-Content -Encoding ascii dist/BUILD_INFO.txt
             & .\.venv\Scripts\python.exe --version
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run:
+          name: Independently verify Windows PE, SHA256SUMS and source SHA before publishing
+          command: |
+            & .\.venv\Scripts\python.exe -m mvk_compatible.verify_windows_preview_artifact --dist dist --expected-commit $env:CIRCLE_SHA1 --expected-branch $env:CIRCLE_BRANCH --receipt-json dist/BUILD_VERIFICATION.json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - store_artifacts:
           path: dist
           destination: MVKViewCompatible_Stage111_Windows_Preview
