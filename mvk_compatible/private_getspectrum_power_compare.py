@@ -12,6 +12,8 @@ conversion. No device connections, network, original EXE or IDP are used.
 Only aggregate error metrics are emitted. Never print original values,
 samples, bins, raw binary, private local filenames or complete paths.
 This tool CANNOT authenticate that supplied dumps came from original Delphi.
+Stage111Z.8: empty/uninformative captures are returned as quality diagnostics
+WITHOUT running FFT or claiming trivial zero agreement.
 """
 from __future__ import annotations
 
@@ -27,6 +29,8 @@ import numpy as np
 from .core.fft_idr_candidate import (
     idr_power_spectrum, idr_hann_rms, fft_idr_float32_real,
 )
+
+from .private_getspectrum_capture_preflight import _quality
 
 SOURCE = "OPERATOR_SUPPLIED_ORIGINAL_GETSPECTRUM_FFT_POWER_PAIR_COMPARISON"
 SCHEMA = "MVKVIEW_ORIGINAL_FFT_POWER_PAIR_V1"
@@ -136,8 +140,29 @@ def compare_original_fft_power_pair(manifest_file: str | Path) -> dict:
 
     before = _local_dump(path.parent, payload["before_fft_file"], n * 4)
     after = _local_dump(path.parent, payload["after_power_file"], (n // 2) * 4)
-    if bool(np.signbit(after).any()):
-        raise ValueError("Original squared spectrum must not have negative signs")
+    # Stage111Z.8: a zero-capture is valid binary data but NOT evidence of
+    # FFT numerical parity. Never let 131072 trivial zero equalities be
+    # presented as an original Delphi acceptance result.
+    quality = _quality(before, after)
+    report = {
+        "source": SOURCE,
+        "schema": SCHEMA,
+        "operator_supplied_fft_n": n,
+        "operator_supplied_before_after_same_original_invocation_authenticated": False,
+        "operator_supplied_original_channel_frange_authenticated": False,
+        "original_delphi_fft_bitwise_parity_accepted": False,
+        "pre_fft_original_buffer_recentered_or_mutated": False,
+        "source_original_fft_power_is_before_mode_integration": True,
+        "optional_complex_fft_reference_compared": False,
+        "private_original_values_or_paths_in_report": False,
+        "capture_quality": quality,
+        "fft_numeric_comparison_performed": quality[
+            "capture_informative_for_fft_numeric_parity"
+        ],
+        "comparisons": {},
+    }
+    if not quality["capture_informative_for_fft_numeric_parity"]:
+        return report
     evaluations = {}
     for backend, name in (("idr_float32", "source_derived_float32_fft"),
                           ("numpy", "numpy_float64_fft_cast_to_single")):
@@ -172,19 +197,9 @@ def compare_original_fft_power_pair(manifest_file: str | Path) -> dict:
             "numpy_imag_cast_to_single": _comparison(
                 original_complex[1::2], native.imag, signed=True),
         }
-    return {
-        "source": SOURCE,
-        "schema": SCHEMA,
-        "operator_supplied_fft_n": n,
-        "operator_supplied_before_after_same_original_invocation_authenticated": False,
-        "operator_supplied_original_channel_frange_authenticated": False,
-        "original_delphi_fft_bitwise_parity_accepted": False,
-        "pre_fft_original_buffer_recentered_or_mutated": False,
-        "source_original_fft_power_is_before_mode_integration": True,
-        "optional_complex_fft_reference_compared": "complex_fft_file" in payload,
-        "private_original_values_or_paths_in_report": False,
-        "comparisons": evaluations,
-    }
+    report["optional_complex_fft_reference_compared"] = "complex_fft_file" in payload
+    report["comparisons"] = evaluations
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
