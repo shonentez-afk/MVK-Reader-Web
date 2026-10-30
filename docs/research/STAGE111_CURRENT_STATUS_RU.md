@@ -1,3 +1,17 @@
+# MVKView Compatible — Stage111Z.7: original FFT checkpoints + safe offline compare (30.10.2026)
+
+**Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. **Главная цель:** единая автономная Windows-программа MVKView Compatible, не Web v0.3.40. [Stage111Z.7 полный отчёт](STAGE111Z7_GETSPECTRUM_FFT_PREPOST_CAPTURE_RU.md) и [оригинальный x32dbg capture guide](STAGE111Z7_X32DBG_FFT_POWER_CAPTURE_RU.md).
+
+**Статическая верификация оригинала:** из приватного `Projects.7z/_Unit115.pas` и `mvkview.idp` сверены четыре machine-code SHA. Подлинные stop sites: `007D153D` — N Float32 входа FFT (после GetSignal/DC/envelope) по `[ebp-2C]`; `007D154B` — N/2 Float32 FFT powers в том же буфере, до mode integration; факультативное `007D2088` — complex FOutBuffer `dword:[dword:[ebp-8]+48]` (N complex pairs, 8N bytes). Metadata: `[ebx+4]` N, `[ebx+18]` Tag 0..3, `[ebx+8]` envelope, `[ebx+2C]` Fs, `dword:[dword:[ebp-4]+4]` FRange. **Реального оригинального FFT pre/power/complex runtime capture пока нет.**
+
+Добавлены offline `private_getspectrum_power_compare.py` (агрегированные bitwise/ULP+error для обеих backend, опционально signed Re/Im), source SHA auditor `private_getspectrum_capture_source_audit.py` и два synthetic-only pytest файла. Предобработанный оригиналом вход НЕ центрировать повторно (`remove_dc=False`). Приватные raw дампы/EXE/IDP не передавать в GitHub или CircleCI, только локальный агрегат после сравнения.
+
+**Проверено CI:** comparator+synthetic code SHA `f2f536f7a993e8aa000ec7144bd57304453f7873`, Linux #202 SUCCESS, Win Core+Qt #201 SUCCESS; original-source audit SHA `9be1756cac127ec49d0099557885cd38b9d8fbfa`, Linux #207 SUCCESS, Win Core+Qt #208 SUCCESS; расширение optional complex SHA `7b94a1b6e93f1d0bf127e5bd0f078b6df13263d9`, Linux #219 SUCCESS, Windows #220 и EXE отдельно смотреть. Документационные изменения ещё проверять по их точному SHA.
+
+**NEXT Stage111Z.8:** один офлайн x32dbg оригинальный GetSpectrum, сохранить два обязательных (и при возможности третий complex) raw Float32 дампа, выполнить private aggregate compare и затем точечно исправлять Hann/FFT/power только по полученной оригинальной bitwise информации. `main`, старую Web v0.3.40 и реальный МВК не трогать.
+
+---
+
 # MVKView Compatible — Stage111Z.6: проверены четыре оригинальных Hann-бита, внесён адресный патч (30.10.2026)
 
 **Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. Оригинальный Windows x32dbg оператор подтвердил index1=`2F80EF9C`, index5=`31C97664`, index262139=`31C97664`, index262143=`2F80EF9C` при базовом адресе BSS `0096DA48`. Все четыре совпали по битам с независимой source-derived нативной x87 моделью, NumPy baseline расходился на 1 ULP. В `fft_idr_candidate.py` исправлены **только четыре** значения Float32, всё остальное — исследовательский NumPy/FFT кандидат; полная исходная таблица/биновый Delphi golden не получены. Для FFT N<262144 (power-of-two) исходный stride чётный и эти четыре значения не выбираются. Тесты на четыре exact `uint32`, native, неизменность меньших N и cached table в `test_stage111z6_original_hann_runtime_golden.py`.

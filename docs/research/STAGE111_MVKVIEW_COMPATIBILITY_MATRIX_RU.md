@@ -406,3 +406,16 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | 262143 | `2F80EF9C` | `2F80EF9C` | `2F80EF9D` | **PATCHED EXACT BIT** |
 
 Четыре значения подтверждены оригинальной работающей MVKView (со слов оператора), не CI. Для FFT N<262144 эти нечётные индексы не используются; вне четырёх точек NumPy кандидатный массив **не аттестован**. Текущая реализация в `mvk_compatible/core/fft_idr_candidate.py`, строгие тесты в `mvk_compatible/tests/test_stage111z6_original_hann_runtime_golden.py`. [Итоговый отчёт Stage111Z.6](STAGE111Z6_FOUR_HANN_RUNTIME_GOLDEN_PATCH_RU.md). Следом Stage111Z.7 — численные original GetSpectrum/bin parity.
+
+
+## Stage111Z.7 — оригинальные точки захвата FFT и компаратор (30.10.2026)
+
+| Участок | Статус | Эталон / блокер |
+|---|---|---|
+| Original GetSpectrum preFFT `007D153D` | **SOURCE-VERIFIED** (4 private IDP code-window SHA) | `[ebp-2C]` = N × Float32 после DC и опциональной огибающей; original dump TODO |
+| Original FFT complex `007D2088` | **SOURCE-VERIFIED STRUCTURE, OPTIONAL CAPTURE TODO** | `[[ebp-8]+48]` = N пар Re,Im Float32; origin Win32 не снимался |
+| Original postFFT power `007D154B` | **SOURCE-VERIFIED** | в исходном buffer `N/2` Float32 powers до интегрирования режима и логарифмирования; original dump TODO |
+| Python `private_getspectrum_power_compare.py` | **IMPLEMENTED/SYNTHETIC TESTED**, источник оригинальной пары ПОКА НЕ ПОЛУЧЕН | Вход: два .bin + private JSON, optional complex .bin; выход только bitwise/ULP/aggregate error; `remove_dc=False`; не аттестует Delphi |
+| Read-only original capture source audit | **IMPLEMENTED + SYNTHETIC CI TESTED** | `private_getspectrum_capture_source_audit.py` четыре original SHA-окна, проверка rel32 calls, Float32 store, mode/N/ptr |
+
+[Stage111Z.7 отчёт](STAGE111Z7_GETSPECTRUM_FFT_PREPOST_CAPTURE_RU.md) · [Операторская инструкция x32dbg](STAGE111Z7_X32DBG_FFT_POWER_CAPTURE_RU.md). Следом Stage111Z.8: **Оригинальная** runtime пара и сравнение нескольких режимов на одном архиве.
