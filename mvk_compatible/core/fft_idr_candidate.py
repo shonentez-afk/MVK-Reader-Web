@@ -6,7 +6,8 @@ Evidence from ORIGINAL but PRIVATE Delphi disassembly (do not publish it):
   007D1FE8: windowed complex float32 samples -> single |FFT|**2
   007CC198: positive-angle, radix-2 FFT with bit reversal/twiddle recurrence
   007CC3F8: unnormalised forward FFT
-Exact x87 rounding, window constants and Delphi executable parity are UNVERIFIED.
+Stage111Z.4: source verified four Single stores within FFT twiddle recurrence.
+Exact x87 sin(), the window generator and complete Delphi numerical parity remain UNVERIFIED.
 """
 from __future__ import annotations
 import math
@@ -56,8 +57,26 @@ def _bit_reverse_indices(n:int)->np.ndarray:
     return out
 
 
+def _twiddle_step_with_single_stores(wr:np.float32, wi:np.float32,
+                                    alpha:np.float32, beta:np.float32
+                                    )->tuple[np.float32,np.float32]:
+    """007CC325/007CC33A/007CC344: four source FSTP Single boundaries.
+
+    The original x87 stores BOTH (alpha*wr+beta*wi) and
+    (alpha*wi-beta*wr) as Single before subtracting from wr/wi.
+    Collapsing the intermediate arithmetic into float64 silently changes
+    recurrence bits even when the final twiddles are float32.
+    """
+    old_wr,old_wi=float(wr),float(wi)
+    temp_real=np.float32(float(alpha)*old_wr+float(beta)*old_wi)
+    temp_imag=np.float32(float(alpha)*old_wi-float(beta)*old_wr)
+    next_wi=np.float32(old_wi-float(temp_imag))
+    next_wr=np.float32(old_wr-float(temp_real))
+    return next_wr,next_wi
+
+
 def _twiddles_recurrent_float32(half:int)->tuple[np.ndarray,np.ndarray]:
-    """Stage angle=+2pi/(2*half); float32 twiddle recurrence per 007CC317."""
+    """Stage angle=+2pi/(2*half); Single-stored twiddle recurrence per 007CC316."""
     angle=np.float32(np.float32(2.*math.pi)/np.float32(2*half))
     ss=np.float32(math.sin(float(angle)/2.))
     alpha=np.float32(2.*float(ss)**2)
@@ -67,9 +86,7 @@ def _twiddles_recurrent_float32(half:int)->tuple[np.ndarray,np.ndarray]:
     wr,wi=np.float32(1.),np.float32(0.)
     for j in range(half):
         rr[j]=wr; ii[j]=wi
-        ar,ai=float(wr),float(wi)
-        wi=np.float32(ai-(float(alpha)*ai-float(beta)*ar))
-        wr=np.float32(ar-(float(alpha)*ar+float(beta)*ai))
+        wr,wi=_twiddle_step_with_single_stores(wr,wi,alpha,beta)
     return rr,ii
 
 
