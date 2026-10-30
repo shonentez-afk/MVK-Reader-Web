@@ -369,3 +369,16 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Private FFT auditor | **IMPLEMENTED + SYNTHETIC TESTED** | Семь локальных SHA fingerprint; IDP/EXE/измерения не в CI |
 
 [Stage111Z.4 технический отчёт](STAGE111Z4_ORIGINAL_FFT_TWIDDLE_SINGLE_STORE_RU.md) · [Известный runtime scale golden](STAGE111Z_FIRST_RUNTIME_X32DBG_GOLDEN_RU.md).
+
+
+## Stage111Z.5 — original Hann FFT window (30.10.2026)
+
+| Узел | Статус | Основание и следующий шаг |
+|---|---|---|
+| Runtime Hann generator | **SOURCE-VERIFIED** по 5 SHA оригинального IDP | .itext 008C1064: 262144 Float32, x87 FCOS/FSQRT, 2π Extended и деление sqrt(1.5); actual CW at init still unknown |
+| Таблица Hann BSS | **SOURCE-VERIFIED STRUCTURE, RUNTIME BITS TODO** | base `0096DA48`, берётся каждый `262144/N` элемент; original Win32 memory нужно считать через x32dbg |
+| Синтетический native x87 oracle | **IMPLEMENTED/TESTED, NOT DELPHI GOLDEN** | полный N=262144: 4 × 1 ULP расхождения против NumPy на i=1,5,262139,262143; N<=131072 power-of-two локально совпадает |
+| Исходный Python Hann/FFT в приложении | **CANDIDATE, НЕ ПОДМЕНЕН** | ожидать четыре runtime Single HEX из original; нет автоматической смены максимальных N |
+| Private IDP Hann audit | **IMPLEMENTED + SYNTHETIC CI TESTED** | пять code/const SHA и helper/call/stride/final Single, без original content в CI |
+
+[Отчёт Stage111Z.5](STAGE111Z5_HANN_SOURCE_AND_X87_PROBE_RU.md) · [Stage111Z.4 FFT](STAGE111Z4_ORIGINAL_FFT_TWIDDLE_SINGLE_STORE_RU.md).

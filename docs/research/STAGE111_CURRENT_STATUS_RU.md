@@ -1,3 +1,15 @@
+# MVKView Compatible — Stage111Z.5 (30.10.2026): original Hann source + native x87 comparison
+
+**Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. Цель: полноценная автономная Windows Qt/PySide6 MVKView Compatible, не Web/сервер. [Полный отчёт Stage111Z.5](STAGE111Z5_HANN_SOURCE_AND_X87_PROBE_RU.md).
+
+Оригинальный `mvkview.idp` локально read-only подтверждён по пяти SHA окна Hann-init `.itext:008C1064`, constants `008C10D0`, RTL FCOS `00407C00`, FSQRT `00407C58`, FFT consumer `007D2044..007D2088`. Таблица 262144 Float32 в BSS `0096DA48`: на индекс i — (1−x87.cos(2π*i/262144))/x87.sqrt(1.5), Extended temp, Single result, FFT stride=262144/N. Нативный source-derived GCC/x87 CW0x1372 vs текущий NumPy полный 262144 float32: **4 × 1 ULP различия** только i=1,5,262139,262143; на меньших FFT N с stride>=2 локально нет различий. **Original Delphi Windows runtime table и CW на её инициализации пока НЕ измерены**, поэтому автоматического изменения FFT candidate не делали.
+
+**Новые файлы:** `private_hann_source_audit.py`, `native_probe/x87_hann_table_probe.c`, `tests/test_private_hann_source_audit.py`, `tests/test_stage111z5_native_hann_probe.py`. `Linux Core #172` SUCCESS на code SHA `3089c1c0e29dbedd05b847dba2a5c8324e8ac8be`; Windows Core+Qt/EXE и финальный docs commit отдельно проверять.
+
+**NEXT Stage111Z.6:** x32dbg original read-only `dword:[96DA4C]` (index 1), `dword:[96DA5C]` (5), `dword:[9ADA48]` (65536), `dword:[9EDA48]` (131072). Сверить native/NumPy с true Delphi и только тогда при необходимости уточнить максимальный N=262144. Затем actual original FFT power/get-spectrum/cursor из архива; стабильные исходники и прибор не менять.
+
+---
+
 # MVKView Compatible — Stage111Z.4: original FFT twiddle rounding (30.10.2026)
 
 **Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`; цель автономная Windows Qt/PySide6. [Полный отчёт Stage111Z.4](STAGE111Z4_ORIGINAL_FFT_TWIDDLE_SINGLE_STORE_RU.md).
