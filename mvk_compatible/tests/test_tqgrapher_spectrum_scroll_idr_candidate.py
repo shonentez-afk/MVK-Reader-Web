@@ -65,11 +65,11 @@ def test_vertical_source_has_different_db_and_non_db_bottom_math():
     db=source_spectrum_v_scr(20,75,150,db_mode=True,
                             graph_default_v_scale=4.,scale_divisor=2)
     assert db['scr_height_single']==75
-    assert db['scr_bottom_single']==-55
+    assert db['scr_bottom_single']==-95
     eng=source_spectrum_v_scr(5,20,100,db_mode=False,
                              graph_default_v_scale=80.,scale_divisor=4)
     assert eng['scr_height_single']==20.
-    assert eng['scr_bottom_single']==-55.
+    assert eng['scr_bottom_single']==55.
     assert not eng['original_vertical_menu_values_verified']
 
 

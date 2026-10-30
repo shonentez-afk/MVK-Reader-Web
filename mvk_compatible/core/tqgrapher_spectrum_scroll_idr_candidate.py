@@ -120,9 +120,12 @@ def source_spectrum_v_scr(position:int,page:int,full:int,*,
                           scale_divisor:int=1)->dict:
     """Original dB/other unit vertical ScrollBottom branches.
 
-    dB: ScrHeight=PageSize; ScrBottom=Pos*Height/Page-Height.
+    dB: ScrHeight=PageSize; ScrBottom=-Height-Pos*Height/Page.
     Other: ScrHeight=GraphDefaultVScale/divisor;
-    ScrBottom=Pos*Height/Page-(GraphDefaultVScale-Height).
+    ScrBottom=(GraphDefaultVScale-Height)-Pos*Height/Page.
+    The Intel x87 FSUBRP ST(1),ST(0) subtracts the original ST(1)
+    from the new ST(0), not the reverse. Vertical Position increases
+    toward lower/negative Y in both original branches.
     Real original vertical menu tables are not yet established.
     """
     if not isinstance(db_mode,bool):
@@ -132,8 +135,9 @@ def source_spectrum_v_scr(position:int,page:int,full:int,*,
     if default<=0:raise ValueError('GraphDefaultVScale must be positive')
     divisor=_integer('scale_divisor',scale_divisor,low=1)
     height=_native_float('ScrHeight',page if db_mode else float(default)/divisor)
+    position_term=float(position)*height/page
     bottom=_native_float('ScrBottom',
-        (float(position)*height/page) - (height if db_mode else (default-height)))
+        (-height-position_term) if db_mode else ((default-height)-position_term))
     return {**contract.view(),'db_mode':db_mode,
             'scr_height_single':height,'scr_bottom_single':bottom,
             'original_vertical_menu_values_verified':False,
