@@ -90,12 +90,21 @@ jobs:
             & .\.venv\Scripts\python.exe --version
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run:
-          name: Independently verify Windows PE, SHA256SUMS and source SHA before publishing
+          name: Verify PE and SHA twice, publish ONLY after verified copy succeeds
           command: |
-            & .\.venv\Scripts\python.exe -m mvk_compatible.verify_windows_preview_artifact --dist dist --expected-commit $env:CIRCLE_SHA1 --expected-branch $env:CIRCLE_BRANCH --receipt-json dist/BUILD_VERIFICATION.json
+            & .\.venv\Scripts\python.exe -m mvk_compatible.verify_windows_preview_artifact --dist dist --expected-commit $env:CIRCLE_SHA1 --expected-branch $env:CIRCLE_BRANCH
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # CircleCI store_artifacts executes even after a run-step failure.
+            # Never point it at unverified dist/; create verified-dist atomically.
+            New-Item -ItemType Directory -Path verified-dist.tmp -ErrorAction Stop | Out-Null
+            foreach ($file in @('MVKViewCompatible_Stage111_PREVIEW.exe', 'SHA256SUMS.txt', 'BUILD_INFO.txt')) {
+              Copy-Item -LiteralPath (Join-Path dist $file) -Destination (Join-Path verified-dist.tmp $file) -ErrorAction Stop
+            }
+            & .\.venv\Scripts\python.exe -m mvk_compatible.verify_windows_preview_artifact --dist verified-dist.tmp --expected-commit $env:CIRCLE_SHA1 --expected-branch $env:CIRCLE_BRANCH --receipt-json verified-dist.tmp/BUILD_VERIFICATION.json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Rename-Item -LiteralPath verified-dist.tmp -NewName verified-dist -ErrorAction Stop
       - store_artifacts:
-          path: dist
+          path: verified-dist
           destination: MVKViewCompatible_Stage111_Windows_Preview
 
 workflows:
