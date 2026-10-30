@@ -272,3 +272,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111T CI | Linux/Windows Qt PASS, EXE PENDING | SHA `35f13a6fd0d420bb2b8f70eb7f9fe7495093c390`; [Linux #79](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/79) SUCCESS. [Windows Core+Qt #78](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/78) SUCCESS, [EXE #80](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/80) PENDING, downloaded SHA256 separately unverified |
 
 Синтетические/CI тесты не подтверждают Delphi FFT/GetSpectrum/FRange/FormatFloat/x87, оригинальные TPaintBox Font/DPI/PixelRect или фактический GraphDefaultVScale. [Полный отчёт](STAGE111T_VERTICAL_AND_SOURCE_FFT_RU.md).
+
+
+## Stage111U — источник GraphDefaultVScale и приватная численная сверка
+
+| Компонент | Источник / статус | Точное условие приёмки |
+|---|---|---|
+| GraphDefaultVScale для спектра | **SOURCE STRUCTURE VERIFIED**, `_Unit128:0084B5D3–B882` | Исходный `TMvkChannelStorage.FRange` ×1(dB/acc) / ×10(velocity) / ×100(displacement), затем log10/TRUNC, Single и сравнение с log10(2)/log10(5); исходные x87 math-helper побитовые результаты НЕ измерены |
+| FRange выбранного канала | Конструктор `_Unit115:007D0A61` **source verified** | Начальное FRange=1.0f; фактическое значение канала после конфигурации/обработки ещё НЕ подтверждено. UI FRange остаётся ручным/исследовательским |
+| Нормализация «красивой» шкалы | IMPLEMENTED_TESTED **CANDIDATE** | `core/spectrum_graph_default_vscale_idr_candidate.py`: Single staged simulation vs независимое Decimal 1–2–5 ceiling; граничные 2/5 могут расходиться, поэтому `original_math_helpers_x87_rounding_verified=False` |
+| Qt Spectrum Y/GraphDefault | GUI DIAGNOSTIC; ORIGINAL PIXEL PARITY FALSE | В GUI показан исходный кандидат по ручному FRange и отдельная Qt data-derived ось. Не подменять исходные пиксели Y без golden original |
+| Частный numeric oracle | OFFLINE IMPLEMENTED_TESTED | `graph_vscale_reference_compare.py` принимает локальные mode/FRange/original GraphDefault и возвращает только агрегатную ошибку, без оригинальных значений, имён файлов или сетевых запросов |
+| Stage111U regression | LOCAL 37 PASS, LINUX+WINDOWS QT PASS, EXE PENDING | Code SHA `a2a0651903c04638bc08fb983a415563df74c7f4`; [Linux #85](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/85) SUCCESS, [Windows Qt #84](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/84) SUCCESS, [EXE #86](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/86) PENDING; downloaded hash separately unverified |
+
+[Stage111U technical report](STAGE111U_GRAPH_DEFAULT_VSCALE_RU.md). Stage111T code `35f13a6fd0d420bb2b8f70eb7f9fe7495093c390`: Linux #79, Windows Qt #78, EXE #80 SUCCESS. Эти CI-прохождения не делают независимую скачанную копию EXE сверенной и не подтверждают настоящий Delphi x87/Canvas/FFT паритет.
