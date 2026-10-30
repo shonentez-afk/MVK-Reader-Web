@@ -343,3 +343,16 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Предыдущая CI | **3/3 SUCCESS** | Stage111X программный SHA `0d1c36f4...`: Linux #97, Windows Qt #96, EXE #98 SUCCESS |
 
 [Stage111Y технический отчёт](STAGE111Y_ORIGINAL_EXE_IDENTITY_AND_RUNTIME_CAPTURE_RU.md). **Отсутствие live runtime наблюдений нельзя заменять совпадением секций EXE/IDP**. EXE/IDP/архив и пользовательские оригинальные данные не публиковать.
+
+
+## Stage111Z.3 — источник x87 Spectrum GraphDefaultVScale (30.10.2026)
+
+| Узел | Подтверждение | Оставшийся барьер |
+|---|---|---|
+| Original Spectrum source handler + 3 math helper | **SOURCE-VERIFIED** SHA256 приватного IDP в `0084B5D3..0084B882`, `00447DB8`, `00447DF0`, `00447EF8` | Нельзя считать статическую реконструкцию полным runtime parity |
+| Source mode FRange | **SOURCE-VERIFIED** Tag0/1/2/3 = ×1/×1/×10/×100; 8 FSTP Single в scale field | Фактический FRange других архивов неизвестен |
+| Оригинальные 4 режима runtime | **OPERATOR-REPORTED GOLDEN** (Stage111Z); нативный source-derived x87 при CW1372 совпал 4/4 битово | CW других 3 режимов отдельно не измерялся, другие FRange и границы TODO |
+| Оригинальные пограничные 2/5/10/1000 | **UNVERIFIED**; Python vs native x87 известное различие на 1000 | Нужен оригинальный офлайн golden; без него не менять рабочую Qt Y-ось |
+| Privileged source audit | **IMPLEMENTED + SYNTHETIC TESTED** `private_spectrum_x87_path_audit.py` | Полный original IDP только локально, не в CI |
+
+[Отчёт Stage111Z.3](STAGE111Z3_SOURCE_SPECTRUM_X87_AUDIT_RU.md) · [Источник runtime Stage111Z](STAGE111Z_FIRST_RUNTIME_X32DBG_GOLDEN_RU.md). Цель остаётся: автономная Windows-программа, не Web.

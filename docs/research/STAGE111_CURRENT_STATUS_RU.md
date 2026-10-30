@@ -1,3 +1,15 @@
+# MVKView Compatible — Stage111Z.3 (30.10.2026): оригинальный x87-путь спектра проверен
+
+**Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`; автономная Windows Qt/PySide6, не Web v0.3.40. **Последний исходный отчёт:** [Stage111Z.3](STAGE111Z3_SOURCE_SPECTRUM_X87_AUDIT_RU.md).
+
+По приватному оригинальному IDP локально криптографически проверены исходный spectrum handler 0084B5D3..0084B882 и три math helper окна. Внутри 16 вызовов log10, 7 TRUNC, 4 Power Extended, 2 Power Single, восемь FSTP Single и multiplier 1/1/10/100. Добавлены безопасный приватный аудитор и synthetic-only tests; приватные bytes/measurement paths не публикуются. Четыре user-reported x32dbg golden Stage111Z (FRange=43FF4853, CW1372 при Tag0) совпали с нативным GNU x87 replay при этом CW, **это не всеобъемлющий оригинальный Delphi паритет**.
+
+**Проверенный кодовый SHA теста:** `a1d5fb7976f322771c7e41339f976b95b94dce76`: [CircleCI Linux #123](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/123) SUCCESS, [Windows Core+Qt #124](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/124) SUCCESS. Windows EXE #125 и CI новых doc/комментариев — отдельно проверить. Подлинная Original Delphi на граничных FRange=2/5/10/1000 и Canvas/FFT/Cursor остаётся TODO; на 1000 native x87 vs Python кандидата имеются расхождения, не исправлять формулу вслепую.
+
+**Следующий этап Stage111Z.4:** original runtime borderline golden без записи в прибор, потом точная проверка FFT/GetSpectrum/FormatFloat/TPaintBox; original и stable main/Web v0.3.40 не менять.
+
+---
+
 # MVKView Compatible — Stage111Z.2: native x87 CW1372 повтор четырёх runtime измерений (30.10.2026)
 
 **Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. **Завершённый исследовательский шаг:** original x32dbg Tag0..3 ↔ нативный GCC x87; четыре выходных IEEE754 Single HEX совпали побитово с пользовательскими оригинальными наблюдениями при CW `1372`. Исходный x87 CW подтверждён у оригинала на Tag0, на остальных режимах CW ещё не снимался. **Это не аттестация всех x87 случаев или графики.**
