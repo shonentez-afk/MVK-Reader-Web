@@ -1,20 +1,19 @@
-# MVKView Compatible — текущий статус Stage111O (2026-10-29)
+# MVKView Compatible — текущий статус Stage 111P (30.10.2026)
 
-**Основной продукт:** автономная Windows Qt MVKView Compatible; исходники `mvk_compatible/`, ветка `research/stage111-mvkview-desktop-20261029`. Web v0.3.40/main заморожены. Штатный приборный DSP — **только AUX4700/VALUES**.
+**Ветка:** `research/stage111-mvkview-desktop-20261029`; **программный SHA:** `38a895fd797e300fbc967f7e97700828c4330106`. Единственная целевая архитектура — автономный Windows PySide6/Qt, `mvk_compatible/`. Стабильные `main` и Web v0.3.40 не редактируются.
 
-## Проверенные программные SHA / CI
+## Работает и подтверждено
 
-- Stage111N `11f022925a407495d7bf4b3b7dcb94b21afe7ced`: [Linux #15](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/15) SUCCESS, [Windows Core/Qt #16](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/16) SUCCESS, [Windows EXE #17](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/17) SUCCESS.
-- Stage111O `aa3a0dd0a11e9821dfbfd350f16dfbb8bcc19fde`: [Linux #30](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/30) SUCCESS, [Windows Core/Qt #31](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/31) SUCCESS, [Windows EXE #32](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/32) SUCCESS.
+- Stage 111O: оба курсора обновляются движением X, GetSignal кеширован, предыдущий программный коммит `aa3a0dd0a11e9821dfbfd350f16dfbb8bcc19fde` получил Linux #30, Windows Core/Qt #31, Windows EXE #32 SUCCESS.
+- Stage 111O документация HEAD `8c4d199c115168a31fe21248c33d328b35ddef3f`: CircleCI Linux #34, Windows+Qt #33, EXE #35 SUCCESS.
+- Stage 111P: восстановлена точная **SOURCE-STRUCTURE** последовательность GDI clGreen/pmXor, erase X + до двух Y, LineTo endpoint exclusive, возврат pmCopy. Новый независимый RGB XOR raster candidate, локальная приватная screenshot-сверка и native Win32 GDI тест.
+- Stage 111P локальная синтетическая проверка: 9 XOR и 3 приватного сравнителя PASS. CircleCI source SHA выше: [Linux #39](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/39) SUCCESS; [Windows Core/Qt #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) и Windows EXE проверить до приёмки.
+- Оригинальный DSP AUX4700/VALUES только приборный; никаких производственных коэффициентов, приватных BIN/PCAPNG/PAS/DFM/IDP не публиковалось; прибор не использовался.
 
-Оба этапа имеют подтверждённые synthetic/offline job statuses; точные счётчики pytest и скачанный EXE SHA отдельно не аттестованы. Это НЕ численная или пиксельная приёмка оригинальной Delphi MVKView.
+## Не завершено
 
-## Stage111O — реализовано
+Оригинальный TCanvas Font/DPI/PixelRect/GDI снимки, паритет оригинального CursorString/Delphi RTL/x87, получение реального FFT/FRange/GetSpectrum/Narrowband по совпадающему окну/алгоритму и полный интерфейс трёх вкладок. Натуральный Win32 GDI synthetic PASS (если получен) НЕ равен пиксельной приёмке оригинального окна. Скачанный EXE SHA256 ещё не проверен.
 
-Подтверждено из приватного оригинала: курсор Time/Spectrum обновляется **при движении мыши по X**, повторный целый X пропускается, Y не участвует в UpdateCursor, исходная отрисовка использует clGreen/pmXor. В Qt работают оба MouseMove, Time hover кеширует окно GetSignal для O(1) выбора отсчётов без повторного чтения ZIP. Qt/TCanvas/GDI пиксели пока не тождественны.
+[Отчёт Stage111P](STAGE111P_GDI_XOR_RASTER_RU.md) · [Матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [Handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [Новый чат](../../START_NEW_CHAT_RU.md).
 
-## Нерешённое и следующий Stage111P
-
-Нужны оригинальные Canvas/TextWidth/TextHeight/DPI и 1/2-row CursorString/DrawnX/Y на идентичном BIN, Delphi x87/RTL FormatFloat, FFT/GetSpectrum/Narrowband/FRange, полный интерфейс всех трёх вкладок. Получить фактический SHA Windows EXE; продолжить GDI XOR и приватную сверку Original. Без Live/приборных команд, без публикации оригинальных PAS/DFM/IDP/BIN/PCAPNG.
-
-[Технический Stage111O](STAGE111O_ORIGINAL_MOUSEMOVE_CURSOR_RU.md) · [Stage111N QA](STAGE111N_CIRCLECI_ACCEPTANCE_RU.md) · [Compatibility Matrix](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [Handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md).
+**Продолжение:** Stage 111Q — оригинальная pixel/DPI/screenshot-сверка, затем осторожная интеграция XOR в Qt, FormatFloat и численные DSP кандидаты. На реальный прибор не подключаться.

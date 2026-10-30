@@ -179,3 +179,18 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | CI Stage111O | VERIFIED SYNTHETIC | Код aa3a0dd0a11e9821dfbfd350f16dfbb8bcc19fde, CircleCI [Linux #30](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/30), [Windows/Qt #31](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/31), [EXE #32](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/32): SUCCESS |
 
 **Не закрыто:** настоящий Delphi FormatFloat/RTL/x87, Font/DPI, Canvas, оригинальные BIN/FFT/спектральные показатели на одном окне и пользовательская приёмка. [Stage111O](STAGE111O_ORIGINAL_MOUSEMOVE_CURSOR_RU.md).
+
+
+## Stage111P — GDI XOR raster / source-derived pixel behavior
+
+| Совместимость | Статус | Доказательство / непроверенное |
+|---|---|---|
+| `TPen.Color=clGreen`, `TPen.Mode=pmXor` и возврат pmCopy | SOURCE_VERIFIED STRUCTURE | Приватный `_Unit115:007CA793–007CAB03`, enum VCL `0x0E/0x04`; GDI mode 7 проверен по Win32 документации |
+| Порядок erase-old-X → erase-old-Y0/Y1 → draw-new-X/Y | SOURCE_VERIFIED STRUCTURE + IMPLEMENTED_TESTED CANDIDATE | `core/tqgrapher_gdi_xor_idr_candidate.py`; независимая 1/2-line state machine, same X no-op |
+| `LineTo` конечный пиксель исключается | WIN32_SOURCE_VERIFIED + IMPLEMENTED_TESTED | Документ Microsoft, синтетический RGB XOR-пиксельный тест, Windows GDI on host test; исходный Delphi Canvas parity TODO |
+| Win32-native R2_XORPEN vs raster candidate | IMPLEMENTED_TESTED, ORIGINAL PARITY TODO | `tests/test_tqgrapher_gdi_xor_win32.py`, CreateDIBSection/MoveToEx/LineTo; Windows Core+Qt CI PASS; это **НЕ оригинальное окно MVKView** |
+| Приватная before/after bitmap сверка | IMPLEMENTED_TESTED DIAGNOSTIC | `gdi_xor_reference_compare.py` с ограниченными локальными .npy + JSON, SHA256/ошибки без raw pixels; оригинальный эталон не предоставлен |
+| Перенос XOR на реальный Qt PlotWidget | TODO | Qt InfiniteLine пока работает как исследовательская UX-линия, GDI/Canvas/Font/DPI реальные пиксели НЕ приняты |
+| Stage111P CI | Linux+Windows PASS, EXE pending at writing | Program SHA `38a895fd797e300fbc967f7e97700828c4330106`; [Linux #39](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/39) SUCCESS, [Windows Core+Qt #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) SUCCESS, [EXE #41](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/41) CHECK |
+
+[Технический отчёт](STAGE111P_GDI_XOR_RASTER_RU.md). Все проверки synthetic/offline, никакого original Pascal/IDP/BIN или реального прибора в CI. Оригинальный x87/FormatFloat/FFT/FRange и пиксельный parity ещё TODO.
