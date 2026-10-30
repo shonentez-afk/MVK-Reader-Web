@@ -1,6 +1,6 @@
-"""Stage111Z.6: user-reported original Windows Hann runtime reference at two indices.
+"""Stage111Z.6: user-reported original Windows Hann runtime reference at four indices.
 
-These two Single bit patterns were read by the operator in x32dbg from the
+These four Single bit patterns were read by the operator in x32dbg from the
 running original MVKView (BSS at 0x0096DA48), with the Spectrum tab opened.
 They were NOT independently captured inside CI. Do not claim full 262144
 table parity, general Delphi/Win32 parity, or instrument-signal provenance.
@@ -19,10 +19,13 @@ from mvk_compatible.tests.test_stage111z5_native_hann_probe import (
 
 
 # Original x32dbg memory observations: dword:[0096DA48 + 4*index].
-# Stage111Z.6 has only two observations; symmetric last two not yet sampled.
+# All four anomalous positions observed separately by the operator.
+# These are NOT a complete original runtime table golden.
 USER_REPORTED_ORIGINAL_RUNTIME_HANN_BITS = {
     1: 0x2F80EF9C,
     5: 0x31C97664,
+    262139: 0x31C97664,
+    262143: 0x2F80EF9C,
 }
 
 
@@ -38,7 +41,7 @@ def test_original_hann_reference_indexes_and_capture_coverage():
 def test_user_reported_original_hann_bits_match_native_cw1372(
     native_hann_executable,
 ):
-    """Exact 2-point x87 replay comparison, not complete Delphi acceptance."""
+    """Exact 4-point x87 replay comparison, not complete Delphi acceptance."""
     result = _run(native_hann_executable, "--summary")
     assert result.returncode == 0, result.stderr
     lines = result.stdout.splitlines()
@@ -53,18 +56,28 @@ def test_user_reported_original_hann_bits_match_native_cw1372(
         assert native_samples[index] == original_bits
 
 
-def test_numpy_difference_is_at_most_one_ulp_and_may_be_fixed_later():
-    """Allow candidate improvement: do not require existing discrepancies."""
-    current_candidate = idr_hann_rms(MAX_FFT_N).view(np.uint32)
+def test_full_hann_table_uses_all_four_exact_original_runtime_bits():
+    full = idr_hann_rms(MAX_FFT_N)
+    assert full.dtype == np.float32 and len(full) == MAX_FFT_N
+    bits = full.view(np.uint32)
     for index, original_bits in USER_REPORTED_ORIGINAL_RUNTIME_HANN_BITS.items():
-        # Both values are finite positive Float32 (ordered unsigned bits).
-        assert abs(int(current_candidate[index]) - original_bits) <= 1
+        assert int(bits[index]) == original_bits
+    # Public API returns a fresh copy and cannot corrupt cached FFT data.
+    full[1] = np.float32(0)
+    assert int(idr_hann_rms(MAX_FFT_N).view(np.uint32)[1]) == 0x2F80EF9C
 
 
 @pytest.mark.parametrize("n", [256, 1024, 4096, 8192, 65536, 131072])
-def test_original_two_odd_edge_indices_are_not_sampled_for_smaller_fft(n):
-    """The original stride samples only even table indices when N < 262144."""
+def test_original_four_odd_edge_indices_do_not_change_smaller_fft(n):
+    """Original Hann stride samples only even indices for N < 262144."""
     stride = MAX_FFT_N // n
     assert stride >= 2 and (stride & (stride - 1)) == 0
     assert all(index % stride != 0
                for index in USER_REPORTED_ORIGINAL_RUNTIME_HANN_BITS)
+    # Independent unpatched NumPy baseline: previous behavior is preserved.
+    indices = np.arange(n, dtype=np.float64) * stride
+    baseline = np.asarray(
+        (1. - np.cos((2. * np.pi / MAX_FFT_N) * indices)) /
+        np.sqrt(1.5), dtype=np.float32)
+    actual = idr_hann_rms(n)
+    np.testing.assert_array_equal(actual.view(np.uint32), baseline.view(np.uint32))
