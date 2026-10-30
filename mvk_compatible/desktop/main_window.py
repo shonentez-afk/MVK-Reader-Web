@@ -28,6 +28,8 @@ from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
     RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
     source_vertical_selection,fft_source_archive_gate)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import source_spectrum_v_scr
+from ..core.spectrum_graph_default_vscale_idr_candidate import (
+    spectrum_graph_default_vscale)
 from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
@@ -405,6 +407,18 @@ class MainWindow(QMainWindow):
             'фактическая калибровка архива НЕ подтверждена. '
             'Не изменяет BIN и не подменяет AUX4700.')
         stack.addWidget(self.spec_f_range)
+        self.spec_graph_default_label=QLabel(
+            'GraphDefaultVScale: исходный расчёт ещё не применён')
+        self.spec_graph_default_label.setObjectName('lbSpecGraphDefaultVScaleCandidate')
+        self.spec_graph_default_label.setWordWrap(True)
+        self.spec_graph_default_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.spec_graph_default_label.setToolTip(
+            'Восстановленная последовательность _Unit128:0084B5D3..0084B882: '
+            'FRange канала ×1/10/100, округление 1–2–5×10^n. '
+            'Здесь FRange — введённая гипотеза, не подтверждённая исходным каналом; '
+            'точный x87/Delphi и оригинальные пиксели Y не приняты.')
+        self._spec_graph_default_vscale_candidate=None
+        stack.addWidget(self.spec_graph_default_label)
         stack.addWidget(QLabel('Источник FRange · только исследование'))
         self.spec_input_domain=QComboBox()
         self.spec_input_domain.addItem('Native BIN · калиброванные данные', 'calibrated_bin')
@@ -557,6 +571,15 @@ class MainWindow(QMainWindow):
             choice['delphi_position'],choice['page'],choice['full'],
             db_mode=db,graph_default_v_scale=default_scale,
             scale_divisor=divisor)
+        source_scale=spectrum_graph_default_vscale(
+            self.spec_f_range.value(),mode)
+        native_with_source_frange_candidate=source_spectrum_v_scr(
+            choice['delphi_position'],choice['page'],choice['full'],
+            db_mode=db,
+            graph_default_v_scale=source_scale['candidate_graph_default_vscale_single'],
+            scale_divisor=divisor)
+        self._spec_graph_default_vscale_candidate=source_scale
+        self._update_original_vscale_candidate_label(source_scale)
         # Original dB ScrBottom is relative to 0; real candidate amplitude
         # range may not share original dB calibration. Keep the current
         # observed Qt maximum as a research origin, explicitly flagged.
@@ -569,6 +592,9 @@ class MainWindow(QMainWindow):
         self._spec_vscroll_source_candidate={
             **native,'source_v_menu_tag':choice['source_menu_tag'],
             'source_menu_values_verified':True,
+            'source_graph_default_vscale_formula_candidate':source_scale,
+            'source_y_scroll_using_manual_frange_candidate':native_with_source_frange_candidate,
+            'local_manual_frange_is_original_verified':False,
             'qt_original_graph_default_vscale_estimated':True,
             'qt_y_baseline_from_local_spectrum':True,
             'original_delphi_y_canvas_parity_verified':False}
@@ -581,6 +607,15 @@ class MainWindow(QMainWindow):
         bar.setVisible(choice['delphi_visible'])
         bar.blockSignals(False)
         self.spec_plot.getViewBox().setYRange(lower,upper,padding=0)
+
+    def _update_original_vscale_candidate_label(self,candidate:dict):
+        """Do not pass off manual FRange/64-bit log as original x87 result."""
+        self.spec_graph_default_label.setText(
+            "GraphDefaultVScale · реконструкция _Unit128: "
+            f"FRange={candidate['candidate_f_range_single']:.7g} ×"
+            f"{candidate['source_mode_multiplier']} → "
+            f"{candidate['candidate_graph_default_vscale_single']:.7g}; "
+            "FRange архива и x87 НЕ ПОДТВЕРЖДЕНЫ")
 
     def _spec_history_gate(self,n_fft:int,total_samples:int,fs:float)->dict:
         """Validate source FIR or plain FFT history before any recomputation."""
@@ -1108,6 +1143,10 @@ class MainWindow(QMainWindow):
                   f"источник={d.get('input_domain','calibrated_bin')} · "
                   "фактическая калибровка НЕ доказана · "
                   "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
+            self._spec_graph_default_vscale_candidate=spectrum_graph_default_vscale(
+                self.spec_f_range.value(),self.spec_mode.currentIndex())
+            self._update_original_vscale_candidate_label(
+                self._spec_graph_default_vscale_candidate)
             self._spec_last_valid_fft_n=n_fft
             label=('ОРИГИНАЛЬНЫЙ пункт bSpecLines' if n_fft in FFT_WINDOW_SAMPLES
                    else 'ИССЛЕДОВАТЕЛЬСКИЙ NFFT — в меню Delphi отсутствует')

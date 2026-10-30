@@ -836,3 +836,47 @@ def test_stage111t_first_original_fft_8192_with_real_synthetic_history(tmp_path,
     assert win._spec_display_contract['grapher_series_bins']==3200
     win.close()
     qt_app.processEvents()
+
+def test_stage111u_graph_default_vscale_original_algorithm_visible_but_not_certified(tmp_path,qt_app):
+    """Original FRange/mode/1-2-5 branch in Qt diagnostic, not actual GDI parity."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    from mvk_compatible.core.spectrum_graph_default_vscale_idr_candidate import SOURCE
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.spec_graph_default_label.objectName()=='lbSpecGraphDefaultVScaleCandidate'
+    info=win._spec_graph_default_vscale_candidate
+    assert info['source']==SOURCE
+    assert info['source_mode_multiplier']==1
+    assert info['candidate_graph_default_vscale_single']==1.
+    assert not info['local_f_range_is_original_channel_frange_verified']
+    assert not info['original_delphi_graph_default_vscale_numeric_parity_verified']
+    assert 'x87 НЕ ПОДТВЕРЖДЕНЫ' in win.spec_graph_default_label.text()
+
+    win.spec_mode.setCurrentIndex(2)  # source velocity multiplier 10
+    qt_app.processEvents()
+    assert win._spec_graph_default_vscale_candidate['source_mode_multiplier']==10
+    assert win._spec_graph_default_vscale_candidate['candidate_graph_default_vscale_single']==10.
+    assert win._spec_original_vscale_tag==3
+    scroll=win._spec_vscroll_source_candidate
+    assert scroll['source_graph_default_vscale_formula_candidate']['source']==SOURCE
+    assert scroll['source_y_scroll_using_manual_frange_candidate']['scr_height_single']==pytest.approx(.01)
+    assert not scroll['local_manual_frange_is_original_verified']
+    assert not scroll['original_delphi_y_canvas_parity_verified']
+    assert scroll['qt_original_graph_default_vscale_estimated']
+
+    win.spec_f_range.setValue(.31)
+    win.refresh_spec()
+    qt_app.processEvents()
+    info=win._spec_graph_default_vscale_candidate
+    assert info['candidate_graph_default_vscale_single']==pytest.approx(5.)
+    scroll=win._spec_vscroll_source_candidate
+    assert scroll['source_y_scroll_using_manual_frange_candidate']['scr_height_single']==pytest.approx(.005)
+    assert scroll['qt_y_baseline_from_local_spectrum']
+    assert scroll['source_graph_default_vscale_formula_candidate']['original_math_helpers_x87_rounding_verified'] is False
+    assert not scroll['original_delphi_y_canvas_parity_verified']
+    win.close()
+    qt_app.processEvents()
