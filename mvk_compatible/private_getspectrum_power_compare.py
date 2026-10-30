@@ -24,7 +24,9 @@ import struct
 
 import numpy as np
 
-from .core.fft_idr_candidate import idr_power_spectrum
+from .core.fft_idr_candidate import (
+    idr_power_spectrum, idr_hann_rms, fft_idr_float32_real,
+)
 
 SOURCE = "OPERATOR_SUPPLIED_ORIGINAL_GETSPECTRUM_FFT_POWER_PAIR_COMPARISON"
 SCHEMA = "MVKVIEW_ORIGINAL_FFT_POWER_PAIR_V1"
@@ -35,6 +37,7 @@ _FIELDS = frozenset({
     "spectrum_mode", "envelope_code", "channel_index",
     "sample_rate_hz", "f_range_bits", "before_fft_file", "after_power_file",
 })
+_OPTIONAL_FIELDS = frozenset({"complex_fft_file"})
 _SAFE_BIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,120}\.bin\Z")
 _HEX32 = re.compile(r"0x[0-9A-Fa-f]{8}\Z")
 
@@ -59,21 +62,36 @@ def _local_dump(folder: Path, filename: object, expected_bytes: int) -> np.ndarr
     return data
 
 
-def _comparison(reference: np.ndarray, predicted: np.ndarray) -> dict:
-    # Positive/nonnegative IEEE-754 float bits are monotonic unsigned ints:
-    # their integer distance is exactly the positive Float32 ULP distance.
+def _ordered_signed_float32_bits(bits: np.ndarray) -> np.ndarray:
+    """Order negative and positive finite Float32 bit patterns monotonically."""
+    raw = bits.astype(np.uint32, copy=False)
+    negative = (raw & np.uint32(0x80000000)) != 0
+    ordered = np.where(negative, np.bitwise_not(raw),
+                       np.bitwise_or(raw, np.uint32(0x80000000)))
+    return ordered.astype(np.int64)
+
+
+def _comparison(reference: np.ndarray, predicted: np.ndarray,
+                *, signed: bool = False) -> dict:
+    """Float32 bitwise distance, supporting signed FFT Re/Im when requested."""
     p = np.asarray(predicted, dtype="<f4")
     if (p.shape != reference.shape or not bool(np.isfinite(p).all()) or
-            bool((p < 0).any())):
-        raise ValueError("Reconstructed FFT power is not finite/nonnegative")
-    original_bits = reference.view("<u4").astype(np.int64)
-    predicted_bits = p.view("<u4").astype(np.int64)
-    distance = np.abs(original_bits - predicted_bits)
-    exact = int(np.count_nonzero(distance == 0))
+            (not signed and bool((p < 0).any()))):
+        raise ValueError("Reconstructed FFT values are invalid")
+    original_bits = reference.view("<u4")
+    predicted_bits = p.view("<u4")
+    if signed:
+        left_i = _ordered_signed_float32_bits(original_bits)
+        right_i = _ordered_signed_float32_bits(predicted_bits)
+    else:
+        left_i = original_bits.astype(np.int64)
+        right_i = predicted_bits.astype(np.int64)
+    distance = np.abs(left_i - right_i)
+    exact = int(np.count_nonzero(original_bits == predicted_bits))
     left = reference.astype(np.float64)
     right = p.astype(np.float64)
     rel = np.abs(left - right) / np.maximum(
-        np.maximum(left, right), np.finfo(np.float32).tiny
+        np.maximum(np.abs(left), np.abs(right)), np.finfo(np.float32).tiny
     )
     return {
         "bins": int(reference.size),
@@ -94,7 +112,9 @@ def compare_original_fft_power_pair(manifest_file: str | Path) -> dict:
             not 2 <= path.stat().st_size <= 8192):
         raise ValueError("Invalid private capture manifest")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or set(payload) != _FIELDS or payload["schema"] != SCHEMA:
+    if (not isinstance(payload, dict) or
+            set(payload) not in (_FIELDS, _FIELDS | _OPTIONAL_FIELDS) or
+            payload["schema"] != SCHEMA):
         raise ValueError("Unexpected private FFT capture manifest schema")
     if payload["before_stop_va"] != _BEFORE_VA or payload["after_stop_va"] != _AFTER_VA:
         raise ValueError("Original source breakpoint pair mismatch")
@@ -126,6 +146,32 @@ def compare_original_fft_power_pair(manifest_file: str | Path) -> dict:
         if removed != 0.0:
             raise ValueError("Unexpected secondary DC subtraction")
         evaluations[name] = _comparison(after, candidate)
+    if "complex_fft_file" in payload:
+        if payload["complex_fft_file"] in (
+            payload["before_fft_file"], payload["after_power_file"]
+        ):
+            raise ValueError("Complex FFT dump must be a distinct file")
+        # Optional inner checkpoint: GetSpectrum's call to FFT has returned,
+        # but the Re/Im -> power loop has not yet executed (007D2088).
+        original_complex = _local_dump(
+            path.parent, payload["complex_fft_file"], n * 8
+        )
+        windowed = np.asarray(
+            before.astype(np.float64) * idr_hann_rms(n).astype(np.float64),
+            dtype=np.float32,
+        )
+        predicted_real, predicted_imag = fft_idr_float32_real(windowed)
+        native = np.fft.fft(windowed.astype(np.float64)).conjugate()
+        evaluations["optional_original_complex_fft"] = {
+            "source_derived_real": _comparison(
+                original_complex[0::2], predicted_real, signed=True),
+            "source_derived_imag": _comparison(
+                original_complex[1::2], predicted_imag, signed=True),
+            "numpy_real_cast_to_single": _comparison(
+                original_complex[0::2], native.real, signed=True),
+            "numpy_imag_cast_to_single": _comparison(
+                original_complex[1::2], native.imag, signed=True),
+        }
     return {
         "source": SOURCE,
         "schema": SCHEMA,
@@ -135,6 +181,7 @@ def compare_original_fft_power_pair(manifest_file: str | Path) -> dict:
         "original_delphi_fft_bitwise_parity_accepted": False,
         "pre_fft_original_buffer_recentered_or_mutated": False,
         "source_original_fft_power_is_before_mode_integration": True,
+        "optional_complex_fft_reference_compared": "complex_fft_file" in payload,
         "private_original_values_or_paths_in_report": False,
         "comparisons": evaluations,
     }
