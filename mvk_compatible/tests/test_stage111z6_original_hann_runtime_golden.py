@@ -9,6 +9,7 @@ Native x87 replayer is source-derived and separate from original Delphi.
 """
 from __future__ import annotations
 
+import math
 import numpy as np
 import pytest
 
@@ -78,6 +79,6 @@ def test_original_four_odd_edge_indices_do_not_change_smaller_fft(n):
     indices = np.arange(n, dtype=np.float64) * stride
     baseline = np.asarray(
         (1. - np.cos((2. * np.pi / MAX_FFT_N) * indices)) /
-        np.sqrt(1.5), dtype=np.float32)
+        math.sqrt(1.5), dtype=np.float32)
     actual = idr_hann_rms(n)
     np.testing.assert_array_equal(actual.view(np.uint32), baseline.view(np.uint32))
