@@ -1,3 +1,13 @@
+# MVKView Compatible — Stage111Z.2: native x87 CW1372 повтор четырёх runtime измерений (30.10.2026)
+
+**Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. **Завершённый исследовательский шаг:** original x32dbg Tag0..3 ↔ нативный GCC x87; четыре выходных IEEE754 Single HEX совпали побитово с пользовательскими оригинальными наблюдениями при CW `1372`. Исходный x87 CW подтверждён у оригинала на Tag0, на остальных режимах CW ещё не снимался. **Это не аттестация всех x87 случаев или графики.**
+
+**Новые файлы:** `mvk_compatible/native_probe/x87_graph_vscale_probe.c` (режим `--replay-hex`), `mvk_compatible/tests/test_stage111z2_native_cw1372_replay.py`, `docs/research/STAGE111Z2_NATIVE_X87_CW1372_REPLAY_RU.md`, предыдущие тесты Stage111Z/Z.1. **CI:** Linux Core #112 SUCCESS на программном SHA `e799842825cf7e7317a04d709b77be02f8ae0451`; последующие документационные коммиты и Windows/EXE проверять отдельно. **Граничный риск:** native CW1372 при exact FRange=1000 → 2000, Python →1000; original Delphi на этой точке НЕ измерен. Не заменять кандидата и не утверждать Delphi-паритет. [Полный отчёт](STAGE111Z2_NATIVE_X87_CW1372_REPLAY_RU.md).
+
+**Далее Stage111Z.3:** независимый original boundary reference, source trace x87/FormatFloat/FFT/CursorString, Qt TPaintBox. Stable `main`, Web v0.3.40, промышленную сеть и приватные файлы не менять.
+
+---
+
 # MVKView Compatible — Stage111Y: оригинальный EXE совпал с IDP (30.10.2026)
 
 **Ветка:** `research/stage111-mvkview-desktop-20261029`. Цель — автономная Windows Qt/PySide6 программа `mvk_compatible/`, **не** старый Web v0.3.40. Стабильная `main` заморожена.
