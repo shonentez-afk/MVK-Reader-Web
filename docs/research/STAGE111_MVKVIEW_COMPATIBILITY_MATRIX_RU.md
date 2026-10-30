@@ -301,3 +301,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111V последний кодовый CI | Linux/Windows Core PASS; EXE проверяется отдельно | Программный SHA f87ea7a38d3d62e1d91479a661b713a69d6bd8bf: [Linux #91](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/91) SUCCESS, [Windows Qt #90](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/90) SUCCESS. Оригинальная Delphi x87 runtime и скачанный EXE SHA256 не приняты |
 
 Исходные PAS/DFM/IDP остаются приватными. Декодирование source-структуры и локальный тест на другом CPU/CW не дают фактического Original Delphi parity. [Отчёт Stage111V](STAGE111V_X87_MATH_HELPER_RU.md).
+
+## Stage111W — исходное FPU CW 0x1332: проверено по самому IDP
+
+| Составляющая | Статус | Источник / ограничение |
+|---|---|---|
+| `.data` VA008C2028 = `0x1332` | **SOURCE STATIC BYTES VERIFIED** | Приватный `mvkview.idp`, IDR v3: 11 сегментов, `.data` VA008C2000, RAW offset 004C1128; WORD расположен на 004C1150. Сам IDP не коммитился |
+| `@FpuInit`, `Set8087CW`, `Get8087CW` | **SOURCE OPCODE VERIFIED** | В тех же приватных исходных секциях инструкции 00409570, 00407664, 00407674 прямо ссылаются на 008C2028 |
+| Режим x87 при **исходной** инициализации | **SOURCE VERIFIED, RUNTIME TODO** | 0x1332: PC64, RC-nearest, exception mask 0x32. `Get8087CW` во время работы может отличаться после вызова `Set8087CW` |
+| `TMvkChannelStorage.FRange` | **CONSTRUCTOR SOURCE VERIFIED, SELECTED CHANNEL TODO** | Конструктор 007D0A61 присваивает Single 1.0. Фактическое FRange выбранного канала/реального архивного измерения не установлено |
+| Native hardware `FLDCW(0x1332)` | **IMPLEMENTED SYNTHETIC, ORIGINAL RUNTIME TODO** | Тестовый CPU вернул 0x1372 после FNSTCW, reserved bit6; PC/RC остаются исходными; 28 synthetic combinations с восстановлением caller CW |
+| x87 log10(1000) vs Python float64 | **INDEPENDENT LOCAL COUNTEREXAMPLE** | Synthetic mode3/FRange10: x87 2000, Python candidate 1000. Нельзя подменять результат без original Delphi golden; GUI подсвечивает опасные целые декады |
+| Stage111W regressions | **LOCAL 79 PASS; LINUX/WINDOWS QT PASS; EXE PENDING** | Программный SHA `080dcddbb65a8d199ea444ac9ae8d3676ac5e57f`, [Linux #93](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/93) SUCCESS, [Windows Qt #94](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/94) SUCCESS, [Windows EXE #95](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/95) ещё проверяется |
+
+[Технический отчёт Stage111W](STAGE111W_ORIGINAL_STATIC_FPU_CW_RU.md). **Границы:** исходный статический WORD и opcode не доказывают реальный runtime control word; локальный x87 тест не доказывает Delphi GetSpectrum/FFT/Canvas/FormatFloat parity; скачанный EXE не проверен независимо.
