@@ -11,7 +11,9 @@ import json
 import numpy as np
 import pytest
 
-from mvk_compatible.core.fft_idr_candidate import idr_power_spectrum
+from mvk_compatible.core.fft_idr_candidate import (
+    idr_power_spectrum, idr_hann_rms, fft_idr_float32_real,
+)
 from mvk_compatible.private_getspectrum_power_compare import (
     SCHEMA, SOURCE, compare_original_fft_power_pair,
 )
@@ -167,3 +169,80 @@ def test_two_synthetic_modes_have_identical_raw_power_comparison(tmp_path):
         path.write_text(json.dumps(manifest), encoding="utf-8")
         stat = compare_original_fft_power_pair(path)["comparisons"]["source_derived_float32_fft"]
         assert stat["float32_bitwise_equal_count"] == len(power)
+
+
+
+def _append_synthetic_complex_checkpoint(path, manifest, samples):
+    n = samples.size
+    windowed = np.asarray(
+        samples.astype(np.float64) * idr_hann_rms(n).astype(np.float64),
+        dtype=np.float32,
+    )
+    real, imag = fft_idr_float32_real(windowed)
+    interleaved = np.empty(n*2, dtype="<f4")
+    interleaved[0::2] = real
+    interleaved[1::2] = imag
+    interleaved.tofile(path.parent / "after_fft_complex.bin")
+    manifest["complex_fft_file"] = "after_fft_complex.bin"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return interleaved
+
+
+def test_optional_original_fft_complex_matches_source_derived_bitwise(tmp_path):
+    path, manifest, samples, power = _synthetic_capture(tmp_path)
+    expected = _append_synthetic_complex_checkpoint(path, manifest, samples)
+    report = compare_original_fft_power_pair(path)
+    assert report["optional_complex_fft_reference_compared"] is True
+    optional = report["comparisons"]["optional_original_complex_fft"]
+    for part in ("source_derived_real", "source_derived_imag"):
+        assert optional[part]["bins"] == len(samples)
+        assert optional[part]["float32_bitwise_equal_count"] == len(samples)
+        assert optional[part]["float32_bitwise_unequal_count"] == 0
+    assert report["comparisons"]["source_derived_float32_fft"][
+        "float32_bitwise_equal_count"] == len(power)
+    assert "after_fft_complex.bin" not in json.dumps(report)
+
+
+def test_optional_complex_identifies_one_ulp_imaginary_error(tmp_path):
+    path, manifest, samples, power = _synthetic_capture(tmp_path)
+    interleaved = _append_synthetic_complex_checkpoint(path, manifest, samples)
+    idx = 17
+    assert interleaved[2*idx+1] > 0
+    words = interleaved.view("<u4")
+    words[2*idx+1] = np.uint32(int(words[2*idx+1]) + 1)
+    interleaved.tofile(tmp_path / "after_fft_complex.bin")
+    report = compare_original_fft_power_pair(path)
+    imag = report["comparisons"]["optional_original_complex_fft"]["source_derived_imag"]
+    assert imag["float32_bitwise_unequal_count"] == 1
+    assert imag["max_float32_ulp_distance"] == 1
+    assert imag["within_one_float32_ulp_count"] == len(samples)
+
+
+def test_optional_complex_rejects_unsafe_file_and_wrong_length(tmp_path):
+    path, manifest, samples, power = _synthetic_capture(tmp_path)
+    original = _append_synthetic_complex_checkpoint(path, manifest, samples)
+    payload = dict(manifest)
+    payload["complex_fft_file"] = "../escape.bin"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError):
+        compare_original_fft_power_pair(path)
+    payload["complex_fft_file"] = "before_fft.bin"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError):
+        compare_original_fft_power_pair(path)
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    (tmp_path / "after_fft_complex.bin").write_bytes(original.tobytes()[:-4])
+    with pytest.raises(ValueError):
+        compare_original_fft_power_pair(path)
+
+
+def test_optional_complex_signed_float32_negative_numbers_are_allowed(tmp_path):
+    path, manifest, samples, power = _synthetic_capture(tmp_path)
+    original = _append_synthetic_complex_checkpoint(path, manifest, samples)
+    # Positive-angle FFT has signed real/imag; this must not be rejected.
+    assert np.any(original < 0) and np.any(original > 0)
+    report = compare_original_fft_power_pair(path)
+    real = report["comparisons"]["optional_original_complex_fft"]["source_derived_real"]
+    imag = report["comparisons"]["optional_original_complex_fft"]["source_derived_imag"]
+    assert real["float32_bitwise_equal_count"] == len(samples)
+    assert imag["float32_bitwise_equal_count"] == len(samples)
