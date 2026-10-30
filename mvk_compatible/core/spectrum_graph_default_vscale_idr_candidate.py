@@ -6,10 +6,12 @@ by 10, Tag 3 by 100; the others use FRange. Next the original calls
 log10/trunc and base-10 power helpers, branches around log10(2)/log10(5),
 and stores several intermediates/results as Single (32-bit float).
 
-The underlying *algorithm structure* is source-verified. The helper's exact
-x87 extended rounding, threshold equality, the true per-archive FRange and
-original runtime GraphDefaultVScale are NOT verified. Do not substitute
-this diagnostic for true Delphi reference measurements or DSP AUX4700.
+The underlying *algorithm structure* is source-verified. Stage111Z
+captured ONE operator-reported original Windows channel FRange and four
+GraphDefaultVScale outputs; all four matched this candidate bitwise away from
+thresholds. Arbitrary archive FRange, exact Delphi x87 boundary rounding, and
+universal runtime parity remain UNVERIFIED. Do not substitute this diagnostic
+for other original Delphi measurements or DSP AUX4700.
 """
 from __future__ import annotations
 import math
