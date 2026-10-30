@@ -12,7 +12,7 @@
 - `bSpecLines` теперь все шесть настоящих размеров FFT 262144,131072,65536,32768,16384,8192. Исследовательские 1024/4096 отдельно, не выдаются за оригинал.
 - Недостаточная реальная история BIN или FIR/огибающей блокирует FFT до вычисления (без нулевого дополнения) и не затирает уже показанный спектр при недоступном выборе.
 - Новая pure-core регрессия и Windows offscreen smoke tests на V Tag, Position/Max и синтетических BIN длиной 4096 и 8192, без оригинальных измерений.
-- Stage111T CI: [Linux Core #79](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/79) SUCCESS; Windows Core/Qt и EXE на этом SHA **проверить отдельно**.
+- Stage111T CI: [Linux Core #79](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/79) SUCCESS; [Windows Core+Qt #78](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/78) **SUCCESS**; [Preview EXE #80](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/80) **PENDING**.
 - Реальный прибор не подключался, AUX4700/VALUES не подменялись локальным FFT. Оригинальные PAS/DFM/IDP/производственные BIN/PCAPNG и закрытые коэффициенты не опубликованы.
 
 ## Не приняты / дальнейшие действия Stage111U

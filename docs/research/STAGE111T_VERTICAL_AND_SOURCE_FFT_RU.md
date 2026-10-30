@@ -37,7 +37,7 @@ Stage111S программный SHA `af036bdd1be4dfdf2481a416f73cc9759db355d4`:
 - `tests/test_offline_core.py`: fixture_zip теперь принимает `sample_count` с прежним default 4096 — никаких оригинальных измерений и приватных ресурсов.
 
 **Точный программный SHA:** `35f13a6fd0d420bb2b8f70eb7f9fe7495093c390`.  
-[Linux Core #79](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/79) — **SUCCESS**. Windows Core+Qt и следующий Windows Preview verified-dist EXE проверять для **этого же SHA**. Отсутствие одного из статусов означает *непроверенно*, а не PASS. Упаковка EXE/CI не подтверждает оригинальный численный/пиксельный паритет Delphi.
+[Linux Core #79](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/79) — **SUCCESS**. [Windows Core+Qt #78](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/78) — **SUCCESS**; [Windows Preview EXE #80](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/80) — **PENDING** на момент обновления. Отсутствие одного из статусов означает *непроверенно*, а не PASS. Упаковка EXE/CI не подтверждает оригинальный численный/пиксельный паритет Delphi.
 
 ## 5. Продолжение Stage 111U
 
