@@ -246,3 +246,52 @@ def test_optional_complex_signed_float32_negative_numbers_are_allowed(tmp_path):
     imag = report["comparisons"]["optional_original_complex_fft"]["source_derived_imag"]
     assert real["float32_bitwise_equal_count"] == len(samples)
     assert imag["float32_bitwise_equal_count"] == len(samples)
+
+
+
+def test_stage111z8_original_shaped_zero_pair_is_not_claimed_as_perfect_fft(tmp_path):
+    """This case reproduces only the uploaded file SIZES and zero-valued shape.
+
+    No real uploaded original bytes are committed. Both inputs are synthetic
+    zeros, 1,048,576 and 524,288 bytes respectively.
+    """
+    path, manifest, _signal, _power = _synthetic_capture(tmp_path, 1024)
+    n = 262144
+    manifest["fft_n"] = n
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    np.zeros(n, dtype="<f4").tofile(tmp_path / "before_fft.bin")
+    np.zeros(n//2, dtype="<f4").tofile(tmp_path / "after_power.bin")
+    report = compare_original_fft_power_pair(path)
+    q = report["capture_quality"]
+    assert report["operator_supplied_fft_n"] == n
+    assert report["fft_numeric_comparison_performed"] is False
+    assert report["original_delphi_fft_bitwise_parity_accepted"] is False
+    assert report["optional_complex_fft_reference_compared"] is False
+    assert report["comparisons"] == {}
+    assert q["capture_status"] == "EMPTY_INPUT_AND_POWER"
+    assert q["input_nonzero_count"] == q["power_nonzero_count"] == 0
+    assert q["capture_informative_for_fft_numeric_parity"] is False
+    text = json.dumps(report)
+    assert str(tmp_path) not in text
+    assert "before_fft.bin" not in text
+    assert "after_power.bin" not in text
+
+
+def test_stage111z8_zero_input_and_nonzero_power_reports_inconsistent(tmp_path):
+    path, manifest, _signal, _power = _synthetic_capture(tmp_path, 1024)
+    np.zeros(1024, dtype="<f4").tofile(tmp_path / "before_fft.bin")
+    result = compare_original_fft_power_pair(path)
+    assert result["capture_quality"]["capture_status"] == (
+        "ZERO_INPUT_WITH_NONZERO_POWER_INCONSISTENT"
+    )
+    assert not result["fft_numeric_comparison_performed"]
+    assert result["comparisons"] == {}
+
+
+def test_stage111z8_nonzero_synthetic_reference_remains_comparable(tmp_path):
+    path, manifest, signal, power = _synthetic_capture(tmp_path, 1024)
+    report = compare_original_fft_power_pair(path)
+    assert report["capture_quality"]["capture_status"] == "NONZERO_INPUT_AND_POWER"
+    assert report["fft_numeric_comparison_performed"] is True
+    assert report["comparisons"]["source_derived_float32_fft"][
+        "float32_bitwise_equal_count"] == len(power)
