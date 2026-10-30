@@ -108,9 +108,48 @@ static int spectrum_graph_default_scale(float f_range, int mode,
 int main(int argc, char **argv) {
     /* Machine-readable *synthetic-only* selftest: no sensitive values. */
     if(argc!=2 || (strcmp(argv[1],"--selftest")!=0 &&
-                   strcmp(argv[1],"--precision-sweep")!=0)) {
-        fputs("usage: x87_graph_vscale_probe --selftest|--precision-sweep\n",stderr);
+                   strcmp(argv[1],"--precision-sweep")!=0 &&
+                   strcmp(argv[1],"--source-static-cw")!=0)) {
+        fputs("usage: x87_graph_vscale_probe --selftest|--precision-sweep|--source-static-cw\n",stderr);
         return 2;
+    }
+    if(strcmp(argv[1],"--source-static-cw")==0) {
+        /* 0x1332 is read from PRIVATE original IDR v3 .data at VA 008C2028.
+         * This is on-disk initialization, not verified runtime CW.
+         * Execute only fixed synthetic inputs in an isolated child process.
+         */
+        const unsigned short source_initial_cw=0x1332u;
+        unsigned short caller_cw=0, active_cw=0, restored_cw=0;
+        const float values[]={0.2f,0.31f,1.0f,2.0f,5.0f,10.0f,20.0f};
+        const int modes[]={0,1,2,3};
+        __asm__ volatile("fnstcw %0":"=m"(caller_cw));
+        __asm__ volatile("fldcw %0"::"m"(source_initial_cw));
+        __asm__ volatile("fnstcw %0":"=m"(active_cw));
+        float results[28]; int steps[28]; float fractions[28];
+        /* Modern CPUs force reserved x87 CW bit 6 to one on readback.
+         * It is NOT an IDR content mismatch, and not a precision change.
+         */
+        int ok=((active_cw & (unsigned short)~0x0040u)==source_initial_cw);
+        for(unsigned mode=0;mode<4 && ok;mode++) {
+            for(unsigned i=0;i<7 && ok;i++) {
+                unsigned idx=7*mode+i;
+                ok=spectrum_graph_default_scale(values[i],modes[mode],
+                         &results[idx],&steps[idx],&fractions[idx]);
+            }
+        }
+        __asm__ volatile("fnclex\n\tfldcw %0"::"m"(caller_cw));
+        __asm__ volatile("fnstcw %0":"=m"(restored_cw));
+        if(!ok || restored_cw!=caller_cw) return 3;
+        printf("# source=STAGE111W_SYNTHETIC_STATIC_IDR_CW initial=0x%04x active=0x%04x restored=0x%04x\n",
+               caller_cw,active_cw,restored_cw);
+        for(unsigned mode=0;mode<4;mode++) {
+            for(unsigned i=0;i<7;i++) {
+                unsigned idx=7*mode+i;
+                printf("%.9g,%d,%.9g,%d,%.9g\n",values[i],modes[mode],
+                       results[idx],steps[idx],fractions[idx]);
+            }
+        }
+        return 0;
     }
     if(strcmp(argv[1],"--precision-sweep")==0) {
         unsigned short original_cw;

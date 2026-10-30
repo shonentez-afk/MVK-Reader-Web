@@ -609,13 +609,19 @@ class MainWindow(QMainWindow):
         self.spec_plot.getViewBox().setYRange(lower,upper,padding=0)
 
     def _update_original_vscale_candidate_label(self,candidate:dict):
-        """Do not pass off manual FRange/64-bit log as original x87 result."""
+        """Separate original initial CW from actual runtime CW and Qt Y."""
+        warning=(
+            ' · На границе x87 результат Python требует аппаратной сверки'
+            if candidate['original_x87_boundary_requires_runtime_reference']
+            else '')
         self.spec_graph_default_label.setText(
             "GraphDefaultVScale · реконструкция _Unit128: "
             f"FRange={candidate['candidate_f_range_single']:.7g} ×"
             f"{candidate['source_mode_multiplier']} → "
             f"{candidate['candidate_graph_default_vscale_single']:.7g}; "
-            "FRange архива и x87 НЕ ПОДТВЕРЖДЕНЫ")
+            "FRange архива и x87 НЕ ПОДТВЕРЖДЕНЫ; "
+            f"исходное CW={candidate['original_idr_static_initial_x87_cw_hex']} "
+            "(PC64, runtime не измерен)" + warning)
 
     def _spec_history_gate(self,n_fft:int,total_samples:int,fs:float)->dict:
         """Validate source FIR or plain FFT history before any recomputation."""

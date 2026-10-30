@@ -855,6 +855,11 @@ def test_stage111u_graph_default_vscale_original_algorithm_visible_but_not_certi
     assert not info['local_f_range_is_original_channel_frange_verified']
     assert not info['original_delphi_graph_default_vscale_numeric_parity_verified']
     assert 'x87 НЕ ПОДТВЕРЖДЕНЫ' in win.spec_graph_default_label.text()
+    assert 'исходное CW=0x1332' in win.spec_graph_default_label.text()
+    assert 'runtime не измерен' in win.spec_graph_default_label.text()
+    assert info['original_idr_static_initial_pc']=='64_bit'
+    assert info['original_idr_static_initial_cw_verified']
+    assert info['original_process_cw_at_spectrum_verified'] is False
 
     win.spec_mode.setCurrentIndex(2)  # source velocity multiplier 10
     qt_app.processEvents()
@@ -878,5 +883,18 @@ def test_stage111u_graph_default_vscale_original_algorithm_visible_but_not_certi
     assert scroll['qt_y_baseline_from_local_spectrum']
     assert scroll['source_graph_default_vscale_formula_candidate']['original_math_helpers_x87_rounding_verified'] is False
     assert not scroll['original_delphi_y_canvas_parity_verified']
+    # log10(1000) is an x87 extended-precision boundary under original
+    # on-disk CW 0x1332; Python's float64 candidate can give a different step.
+    win.spec_mode.setCurrentIndex(3)
+    win.spec_f_range.setValue(10.)
+    win.refresh_spec()
+    qt_app.processEvents()
+    assert win._spec_graph_default_vscale_candidate[
+        'original_x87_boundary_requires_runtime_reference'] is True
+    assert win._spec_graph_default_vscale_candidate[
+        'original_process_cw_at_spectrum_verified'] is False
+    assert 'На границе x87' in win.spec_graph_default_label.text()
+    assert win._spec_vscroll_source_candidate[
+        'original_delphi_y_canvas_parity_verified'] is False
     win.close()
     qt_app.processEvents()

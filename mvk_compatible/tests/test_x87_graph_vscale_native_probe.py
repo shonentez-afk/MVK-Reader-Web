@@ -134,3 +134,54 @@ def test_x87_control_word_pc24_pc53_pc64_precision_sweep(native_x87_precision_sw
     assert output[(0x0000,2.)][1] < output[(0x0200,2.)][1]
     assert output[(0x0200,2.)][1] == pytest.approx(5.)
     assert output[(0x0000,20.)][1] < output[(0x0300,20.)][1]
+
+@pytest.fixture(scope='module')
+def native_x87_original_static_cw_probe(native_x87_executable):
+    """Separate process: original static FPU control word, not runtime Delphi."""
+    result=subprocess.run([str(native_x87_executable),'--source-static-cw'],
+                          capture_output=True,text=True,timeout=15,check=False)
+    assert result.returncode == 0,result.stderr[-1600:]
+    assert result.stderr == ''
+    return result.stdout.splitlines()
+
+
+def test_original_idr_static_cw_1332_is_applied_and_restored(native_x87_original_static_cw_probe):
+    report=native_x87_original_static_cw_probe
+    assert len(report)==29
+    assert report[0].startswith('# source=STAGE111W_SYNTHETIC_STATIC_IDR_CW')
+    parameters=dict(pair.split('=',1) for pair in report[0].split()[2:])
+    # Parsing is intentionally strict, as 0x1332 is proven only by original
+    # PRIVATE IDR on disk. The probe must not claim live Delphi CW parity.
+    assert (int(parameters['active'],16)&~0x0040)==0x1332
+    assert int(parameters['active'],16) in (0x1332,0x1372)
+    assert parameters['initial']==parameters['restored']
+    assert (int(parameters['active'],16)&0x0300)==0x0300
+    assert (int(parameters['active'],16)&0x0C00)==0
+    assert len(report[1:])==28
+
+
+def test_source_static_cw_exposes_extended_log10_decade_disagreement(native_x87_original_static_cw_probe):
+    """Do not silently claim bitwise parity for Python math.log10(1000)."""
+    deviations=[]
+    for index,row in enumerate(native_x87_original_static_cw_probe[1:]):
+        raw,mode,result,step,fraction=row.split(',')
+        assert int(mode)==index//7
+        assert int(step) in (2,5,10)
+        assert math.isfinite(float(fraction))
+        predicted=spectrum_graph_default_vscale(float(raw),int(mode))
+        if abs(predicted['candidate_graph_default_vscale_single']-float(result))>max(
+                1e-9,abs(float(result))*2e-7):
+            deviations.append((float(raw),int(mode),float(result),
+                               predicted['candidate_graph_default_vscale_single']))
+        else:
+            assert predicted['selected_nice_step']==int(step)
+        assert not predicted['original_math_helpers_x87_rounding_verified']
+        assert not predicted['original_delphi_graph_default_vscale_numeric_parity_verified']
+    # The extended 80-bit FYL2X may give log10(1000)>3 by one 80-bit ULP
+    # while Python's float64 math.log10(1000) returns exactly 3. On some
+    # x87 implementations the value may round down. Both are candidates,
+    # and neither result is a captured original Delphi runtime oracle.
+    assert len(deviations)<=1
+    for raw,mode,native,python in deviations:
+        assert (raw,mode)==(10.0,3)
+        assert (native,python)==(2000.,1000.)
