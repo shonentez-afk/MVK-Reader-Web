@@ -17,7 +17,7 @@ from ..core import OfflineSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
-from ..core.tqgrapher_canvas_idr_candidate import source_canvas_geometry
+from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
@@ -930,9 +930,8 @@ class MainWindow(QMainWindow):
             view=self.spec_plot.viewport()
             fm=view.fontMetrics()
             xr,yr=self.spec_plot.getViewBox().viewRange()
-            d=source_canvas_geometry(
+            d=source_paintbox_registration(
                 pixel_width=int(view.width()),pixel_height=int(view.height()),
-                margin=10,
                 zero_text_width=int(fm.horizontalAdvance('0')),
                 six_decimals_text_width=int(fm.horizontalAdvance('0.000000')),
                 zero_text_height=int(fm.height()),
@@ -940,16 +939,29 @@ class MainWindow(QMainWindow):
                 scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
                 scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
                 series_x_start=0.,series_x_scale=float(self._full_spectrum['df_hz']))
+            # Qt paint-device metrics are diagnostic, never original Delphi Canvas.
+            d['qt_viewport_device_pixel_ratio']=float(view.devicePixelRatioF())
+            d['qt_viewport_logical_dpi_x']=int(view.logicalDpiX())
+            d['qt_viewport_logical_dpi_y']=int(view.logicalDpiY())
+            d['qt_font_family_candidate']=view.font().family()
             self._spec_canvas_geometry_preview=d
             QMessageBox.information(
                 self,'TQGrapher Canvas — только исследовательская геометрия',
                 f"Виртуальный Canvas (Qt): {d['canvas_width']} × {d['canvas_height']} px\n"
+                f"Margin по оригиналу: min(W/53,H/30)={d['margin_before_tqgrapher_minimum']}"
+                f" → после минимума 10: {d['effective_source_margin']} px\n"
                 f"Исходная PixelRect: L={d['pixel_left']}, R={d['pixel_right']}, "
                 f"T={d['pixel_top']}, B={d['pixel_bottom']}\n"
                 f"itosM={d['itos_m']:.9g}, itosC={d['itos_c']:.9g}\n"
                 f"stoiM={d['stoi_m']:.9g}, stoiC={d['stoi_c']:.9g}\n"
                 f"ytosM={d['ytos_m']:.9g}, ytosC={d['ytos_c']:.9g}\n"
-                "ВНИМАНИЕ: размеры текста получены из Qt. "
+                f"Scrollbars оригинал/TPaintBox: H.Left={d['spectrum_horizontal_scroll_left']},"
+                f" H.Width={d['spectrum_horizontal_scroll_width']};"
+                f" V.Top={d['spectrum_vertical_scroll_top']},"
+                f" V.Height={d['spectrum_vertical_scroll_height']}\n"
+                f"Qt Font={d['qt_font_family_candidate']}, DPR={d['qt_viewport_device_pixel_ratio']:.3g},"
+                f" logical DPI={d['qt_viewport_logical_dpi_x']}×{d['qt_viewport_logical_dpi_y']}\n"
+                "ВНИМАНИЕ: размеры текста получены из Qt, не оригинального TPaintBox.Canvas. "
                 "Это НЕ фактический прямоугольник оригинальной MVKView.\n"
                 "Для pixel-to-pixel приёмки требуются метрики Delphi TCanvas "
                 "и одинаковый размер окна.")

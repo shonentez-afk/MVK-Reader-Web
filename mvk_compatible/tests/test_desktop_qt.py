@@ -618,3 +618,45 @@ def test_qt_stage111o_no_unverified_envelope_mouse_cursor(tmp_path,qt_app):
     assert not win.wave_line.isVisible()
     win.close()
     qt_app.processEvents()
+
+def test_qt_stage111q_source_margin_and_scrollbar_registration(tmp_path,qt_app,monkeypatch):
+    """Real Delphi 0084C840 margin is size-dependent, Qt viewport is not TPaintBox."""
+    from PySide6.QtWidgets import QMessageBox
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.tqgrapher_paintbox_registration_idr_candidate import (
+        SOURCE,source_paintbox_margin)
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    notices=[]
+    monkeypatch.setattr(QMessageBox,'information',
+                        lambda *args:notices.append((args[1],args[2])))
+    win.spec_canvas_geometry_button.click()
+    qt_app.processEvents()
+    assert len(notices)==1
+    title,body=notices[0]
+    g=win._spec_canvas_geometry_preview
+    assert g['paintbox_registration_source']==SOURCE
+    measured=source_paintbox_margin(g['paintbox_pixel_width'],g['paintbox_pixel_height'])
+    assert measured==g['margin_before_tqgrapher_minimum']
+    assert g['effective_source_margin']==max(10,measured)
+    assert g['spectrum_horizontal_scroll_left']==g['pixel_left']
+    assert g['spectrum_horizontal_scroll_width']==g['pixel_right']-g['pixel_left']
+    assert g['spectrum_vertical_scroll_top']==g['pixel_top']
+    assert g['spectrum_vertical_scroll_height']==g['pixel_bottom']-g['pixel_top']
+    assert g['qt_viewport_device_pixel_ratio']>0
+    assert g['qt_viewport_logical_dpi_x']>0
+    assert g['qt_viewport_logical_dpi_y']>0
+    assert isinstance(g['qt_font_family_candidate'],str)
+    assert not g['qt_viewbox_and_paintbox_registration_verified']
+    assert not g['original_dpi_parity_verified']
+    assert not g['original_font_identity_verified']
+    assert 'Margin по оригиналу' in body
+    assert 'Scrollbars оригинал/TPaintBox' in body
+    assert 'DPR=' in body
+    assert 'Это НЕ фактический прямоугольник оригинальной MVKView' in body
+    win.close()
+    qt_app.processEvents()
