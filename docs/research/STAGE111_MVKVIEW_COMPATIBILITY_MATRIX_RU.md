@@ -315,3 +315,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111W regressions | **LOCAL 79 PASS; LINUX/WINDOWS QT PASS; EXE PENDING** | Программный SHA `080dcddbb65a8d199ea444ac9ae8d3676ac5e57f`, [Linux #93](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/93) SUCCESS, [Windows Qt #94](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/94) SUCCESS, [Windows EXE #95](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/95) ещё проверяется |
 
 [Технический отчёт Stage111W](STAGE111W_ORIGINAL_STATIC_FPU_CW_RU.md). **Границы:** исходный статический WORD и opcode не доказывают реальный runtime control word; локальный x87 тест не доказывает Delphi GetSpectrum/FFT/Canvas/FormatFloat parity; скачанный EXE не проверен независимо.
+
+## Stage111X — FPU control-flow и приватный битовый golden
+
+| Объект | Статус | Точное описание |
+|---|---|---|
+| Direct `Set8087CW` | **SOURCE STATIC VERIFIED** | 3 прямых code-aligned `CALL rel32`: `0041BD84`, `0041BDDA`, `00448296`. Первые два — сохранение/восстановление CW через внешний вызов; третий — только 6 младших битов exception mask |
+| Direct `Get8087CW` и `@FpuInit` | **SOURCE STATIC VERIFIED** | 4 прямых Get и 5 прямых FpuInit в исходных `.text/.itext`; не доказывают отсутствия непрямых вызовов |
+| Парсер чисел `0042EBC8` | **SOURCE STATIC VERIFIED** | Временное `FLDCW [008C45F0]` = `0x133F`, PC64/RC-nearest/mask 0x3F; `0042EBC1` сохраняет и `0042EC68` восстанавливает прежнее CW |
+| Runtime CW при спектре | **NOT VERIFIED** | В `.data:008C2028` источник `0x1332`, но текущее CW непосредственно до `0084B631` не измерено. Не приравнивать исходный файл к оригинальному runtime |
+| Private original audit | **OFFLINE IMPLEMENTED+TESTED** | `private_x87_callsite_audit.py`; проверка исходного приватного IDP локально, без копирования байтов/путей в отчёт и GitHub |
+| Runtime numeric golden contract | **OFFLINE IMPLEMENTED+TESTED, REAL GOLDEN TODO** | `private_x87_runtime_reference_compare.py`: Single FRange+Y в hex, runtime CW и mode; агрегаты по ULP/PC/RC; происхождение реального снимка не аутентифицируется автоматически |
+| Stage111X регрессия | **100 LOCAL PASS, LINUX+WINDOWS CORE PASS; EXE PENDING** | Code SHA `0d1c36f431e23b0cf5eb58df839d92abbb1467e1`, [Linux #97](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/97) SUCCESS, [Windows Qt #96](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/96) SUCCESS, [Windows Preview EXE #98](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/98) PENDING |
+
+**Значимое ограничение:** исходный x87-код и его статические прямые вызовы — не доказательство работы с реальными приборами, Delphi FPU CW в конкретной сессии, побитовой FFT/FormatFloat или координат Canvas. [Отчёт Stage111X](STAGE111X_ORIGINAL_X87_CALLSITES_AND_GOLDEN_RU.md).

@@ -1,27 +1,26 @@
-# MVKView Compatible — текущий статус Stage111W (30.10.2026)
+# MVKView Compatible — текущий статус Stage111X (30.10.2026)
 
-**Архитектура:** единое полностью автономное Windows-приложение Qt/PySide6 в `mvk_compatible/`. **Единственная рабочая ветка:** `research/stage111-mvkview-desktop-20261029`, stable `main` и Web v0.3.40 НЕ ТРОГАТЬ.
+**Единственная рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. **Автономная архитектура Windows Qt/PySide6** в `mvk_compatible/`; стабильный `main` и Web v0.3.40 не изменять.
 
-**Последний программный SHA:** `080dcddbb65a8d199ea444ac9ae8d3676ac5e57f`.
+**Последний программный SHA:** `0d1c36f431e23b0cf5eb58df839d92abbb1467e1`.
 
-## Подтверждено на этом этапе
+## Что подтверждено
 
-- Предыдущий Stage111V code SHA `f87ea7a38d3d62e1d91479a661b713a69d6bd8bf`: [Linux #91](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/91), [Windows Core/Qt #90](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/90), [Windows verified-dist EXE #92](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/92) — все SUCCESS. Скачанная пользователем копия EXE по SHA256SUMS отдельно не проверена.
-- Stage111W приватно проверил **сам `mvkview.idp`**, формат IDR proj v3, 11 исходных секций. Исходное глобальное WORD `.data:008C2028` = **`0x1332`**, исходные инструкции `@FpuInit`, `Set8087CW`, `Get8087CW` и инициализация `TMvkChannelStorage.FRange=1.0` сверены непосредственно по машинным байтам в оригинальной секции.
-- `0x1332` означает начальные x87 PC64, RC-nearest, маску исключений 0x32. На тестовом CPU FNSTCW после FLDCW вернул 0x1372 из-за reserved bit6. **Настоящий CW работающей original Delphi в момент спектра НЕ измерен**; фактический FRange выбранного канала тоже неизвестен.
-- Новый `private_original_cw_idr_audit.py`: локальный IDR-секционный аудитор, не печатает путь/данные приватного файла. В GitHub нет оригинального IDP; тесты используют только synthetic IDR, специально проверяют подделки.
-- Native x87 C-probe расширен `--source-static-cw`: 28 synthetic cases на четырёх режимах, восстановление caller CW. Выявлено существенное расхождение `FRange=10`, mode3: x87 → **2000**, Python кандидат → **1000** на границе логарифма 1000. Синтетика не приравнивается к original Delphi runtime golden.
-- В `spectrum_graph_default_vscale_idr_candidate.py` и Qt диагностике добавлены source CW, признаки рискованных границ и запрет ложной аттестации. **Фактическая Qt Y-ось и DSP AUX4700/VALUES не подменялись**.
-- Локальный исследовательский набор Stage111U/V/W: **79 PASS**. Последний SHA `080dcddbb65a8d199ea444ac9ae8d3676ac5e57f`: [Linux Core #93](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/93) SUCCESS, [Windows Core+Qt #94](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/94) SUCCESS, [Windows Preview EXE #95](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/95) PENDING на момент записи.
-- Прибор не подключался. PAS/DFM/IDP/BIN/PCAPNG остаются приватными; данные пользователя не попали в GitHub или CircleCI.
+- Stage111W программный SHA `080dcddbb65a8d199ea444ac9ae8d3676ac5e57f`: [Linux #93](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/93), [Windows Qt #94](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/94), [Windows verified-dist EXE #95](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/95) — все SUCCESS. Скачанная пользователем копия EXE отдельно по SHA256 не сверялась.
+- В Stage111X приватно исследована бинарная карта `mvkview.idp`: 3 прямых `Set8087CW`, 4 прямых `Get8087CW`, 5 прямых `@FpuInit`. По адресам `0041BD84` и `0041BDDA` восстанавливается CW перед внешними вызовами; `00448296` изменяет только биты масок, сохраняя PC/RC.
+- В оригинальном парсере чисел `0042EBC1` сохраняется прежнее CW, `0042EBC8` используется локальное **`0x133F`**, `0042EC68` восстанавливает CW. Прежнее исходное значение `0x1332` остаётся подтверждённым **статическим**, не измеренным live-runtime.
+- Добавлен `private_x87_callsite_audit.py` с синтетическими тестами, не публикующий оригинальные байты. Прямые callsites по адресам и opcode сверены непосредственно в частном оригинале. **Полная проверка косвенных вызовов / всех путей FLDCW НЕ выполнена.**
+- Добавлен `private_x87_runtime_reference_compare.py`: приватный протокол `MVKVIEW_RUNTIME_X87_GOLDEN_V1` для будущего FRange/GraphDefaultVScale/CW из одной реальной original Delphi сессии. Отчёт содержит только агрегатные ошибки в ULP и распределения FPU PC/RC, без самих оригинальных значений.
+- Тесты используют только искусственные IDR/числа, не исходный защищённый материал. Доступный локальный набор — **100 PASS**. [Linux Core #97](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/97) SUCCESS; [Windows Core+Qt #96](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/96) SUCCESS, [Windows Preview EXE #98](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/98) PENDING.
+- Реальный прибор не подключался; исходные PAS/DFM/IDP/BIN/PCAPNG/измерения в GitHub не загружались.
 
-## Открыто — Stage111X
+## Что открыто — Stage111Y
 
-1. Для последнего SHA проверить Windows verified-dist EXE #95, `BUILD_VERIFICATION.json`; скачать файл и независимо сверить SHA256SUMS.
-2. В приватной работающей **оригинальной MVKView без прибора** измерить живые `Get8087CW` перед `0084B631`, `TMvkChannelStorage.FRange` (+4) и `GraphDefaultVScale` (+0x62C), тот же канал и окно, режимы 0–3. Особенно проверить границы 2/5/10/1000 и ULP.
-3. После golden-оригинала уточнить `FYL2X`/Power Extended/Single/`@TRUNC`, `FormatFloat` и Qt Y. Не заменять продакшен-оси на Python-кандидата без независимой аттестации.
-4. Продолжить TPaintBox.Canvas.Font/DPI/PixelRect/CursorString и GetSpectrum/GetNarrowbandValue/FRange/FFT на одном исходном офлайн-окне. Не подключать реальный прибор без разрешения, не менять stable main/Web.
+1. Довести CI для SHA `0d1c36f431e23b0cf5eb58df839d92abbb1467e1` до Linux, Windows Qt и Windows verified-dist EXE, отдельно скачать EXE и сверить SHA256SUMS.
+2. Без прибора снять в **работающей оригинальной Delphi MVKView** значения `Get8087CW`, `TMvkChannelStorage.FRange` и `GraphDefaultVScale` для одного и того же канала/окна/режима. Сейчас доступен только статический `mvkview.idp`, а не измерение активного оригинального процесса; настоящие golden данные не выдумывать.
+3. Сопоставить оригинальные битовые наблюдения с x87 `FYL2X`/Power/`@TRUNC`, исследовать `FormatFloat` и `GetSpectrum/GetNarrowbandValue/FRange/FFT`; верную исходную вертикальную шкалу применять к Qt только после численного подтверждения.
+4. Продолжить TPaintBox.Canvas.Font/DPI/PixelRect/CursorString и финальную приёмку автономного Windows приложения; не возвращаться к Web и не менять `main`.
 
-[Отчёт Stage111W](STAGE111W_ORIGINAL_STATIC_FPU_CW_RU.md) · [матрица совместимости](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [START_NEW_CHAT](../../START_NEW_CHAT_RU.md).
+[Stage111X отчёт](STAGE111X_ORIGINAL_X87_CALLSITES_AND_GOLDEN_RU.md) · [матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [START_NEW_CHAT](../../START_NEW_CHAT_RU.md).
 
-**Примечание:** статическое source WORD = 0x1332 подтверждено, но runtime original x87 precision/rounding, фактический per-channel FRange и полный пиксельный/численный паритет всё ещё не приняты.
+**Не объявлять source-static аудитор доказательством runtime parity.**
