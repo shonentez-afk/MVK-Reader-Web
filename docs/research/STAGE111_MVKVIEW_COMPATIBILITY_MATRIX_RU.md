@@ -329,3 +329,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111X регрессия | **100 LOCAL PASS, LINUX+WINDOWS CORE PASS; EXE PENDING** | Code SHA `0d1c36f431e23b0cf5eb58df839d92abbb1467e1`, [Linux #97](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/97) SUCCESS, [Windows Qt #96](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/96) SUCCESS, [Windows Preview EXE #98](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/98) PENDING |
 
 **Значимое ограничение:** исходный x87-код и его статические прямые вызовы — не доказательство работы с реальными приборами, Delphi FPU CW в конкретной сессии, побитовой FFT/FormatFloat или координат Canvas. [Отчёт Stage111X](STAGE111X_ORIGINAL_X87_CALLSITES_AND_GOLDEN_RU.md).
+
+## Stage111Y — исходный Windows EXE и IDR3 доказанно относятся к одному коду
+
+| Проверка | Статус | Основание |
+|---|---|---|
+| Original EXE identity | **PRIVATE PE32 VERIFIED** | SHA256 `585bcd4aeafa14d77780d4c74134ee98c1653df1dc37a2d2d4db7904754435c5`, PE x86, базовый VA 00400000, 18.08.2021 12:51:58Z |
+| PE `.text` vs IDR `.text` | **BYTE IDENTICAL** | 4 969 156 байт сравнены, 0 расхождений |
+| PE `.itext` vs IDR `.itext` | **BYTE IDENTICAL** | 11 844 байта сравнены, 0 расхождений |
+| PE `.data` vs IDR `.data` | **BYTE IDENTICAL** | 76 596 байт сравнены, 0 расхождений |
+| Runtime breakpoint source | **SOURCE VERIFIED** | До rounding `0084B631`, после `0084B882` (RVA 0044B631/0044B882). FRange channel +0x04, output `[ESI+0x62C]` |
+| Original Windows x87 CW/FRange/Y | **NOT YET MEASURED** | Подготовлен x32dbg script и private golden capture kit, ожидаются 2 снимка оригинала на сохранённом офлайн-измерении |
+| Предыдущая CI | **3/3 SUCCESS** | Stage111X программный SHA `0d1c36f4...`: Linux #97, Windows Qt #96, EXE #98 SUCCESS |
+
+[Stage111Y технический отчёт](STAGE111Y_ORIGINAL_EXE_IDENTITY_AND_RUNTIME_CAPTURE_RU.md). **Отсутствие live runtime наблюдений нельзя заменять совпадением секций EXE/IDP**. EXE/IDP/архив и пользовательские оригинальные данные не публиковать.

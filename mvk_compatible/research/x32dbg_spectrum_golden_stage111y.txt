@@ -1,0 +1,7 @@
+// Stage111Y, original exe sha256: 585bcd4aeafa14d77780d4c74134ee98c1653df1dc37a2d2d4db7904754435c5
+// x32dbg ONLY. Assumes EXE loaded at ImageBase=00400000; if relocated, adapt.
+// No original bytes or real measurements; creates read-only diagnostic breakpoints.
+bp 0084B631, "MVK_Spectrum_before_rounding"
+bp 0084B882, "MVK_Spectrum_after_rounding"
+bplog 0084B631, "MVK_IN ESI={p:esi} EBP={p:ebp} CHANNEL={x:[ebp-4]} PRE_SCALE_BITS={x:[esi+62C]}"
+bplog 0084B882, "MVK_OUT ESI={p:esi} GRAPH_DEFAULT_VSCALE_BITS={x:[esi+62C]}"
