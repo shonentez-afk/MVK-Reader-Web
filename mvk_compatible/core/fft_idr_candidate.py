@@ -7,7 +7,9 @@ Evidence from ORIGINAL but PRIVATE Delphi disassembly (do not publish it):
   007CC198: positive-angle, radix-2 FFT with bit reversal/twiddle recurrence
   007CC3F8: unnormalised forward FFT
 Stage111Z.4: source verified intermediate Single store and two final stores in FFT twiddle recurrence.
-Exact x87 sin(), the window generator and complete Delphi numerical parity remain UNVERIFIED.
+Stage111Z.6: four user-reported ORIGINAL runtime Hann Single entries verified bitwise
+against native x87 and used as narrow table overrides at N=262144 only.
+Exact x87 sin(), remaining Hann entries and full Delphi FFT parity remain UNVERIFIED.
 """
 from __future__ import annotations
 import math
@@ -15,6 +17,18 @@ from functools import lru_cache
 import numpy as np
 
 MAX_FFT_N=262144
+
+# Stage111Z.6: operator-reported ORIGINAL x32dbg runtime Hann Single bits.
+# Address 0x0096DA48 + index*4 in original 32-bit MVKView. Four precisely
+# measured values match the separate native x87 replay, while the existing
+# NumPy/float64 cos() candidate differs by 1 ULP at these exact indices.
+# This does NOT attest the remaining 262140 entries or Delphi FFT parity.
+_ORIGINAL_HANN_STAGE111Z6_BITS = {
+    1: 0x2F80EF9C,
+    5: 0x31C97664,
+    262139: 0x31C97664,
+    262143: 0x2F80EF9C,
+}
 
 
 def check_n(n:int)->int:
@@ -37,8 +51,17 @@ def mean_center_float32(signal:np.ndarray)->tuple[np.ndarray,float]:
 
 @lru_cache(maxsize=1)
 def _hann_table()->np.ndarray:
+    """Source-derived Hann with four original-runtime-confirmed Single bits.
+
+    Unverified entries remain NumPy candidate values. The original takes
+    262144/N strides, so the four odd-index overrides affect only N=262144.
+    No original EXE/IDP/measurement file is loaded or modified.
+    """
     j=np.arange(MAX_FFT_N,dtype=np.float64)
     w=np.asarray((1.-np.cos((2.*np.pi/MAX_FFT_N)*j))/math.sqrt(1.5),dtype=np.float32)
+    bits=w.view(np.uint32)
+    for index, original_bits in _ORIGINAL_HANN_STAGE111Z6_BITS.items():
+        bits[index]=np.uint32(original_bits)
     w.setflags(write=False)
     return w
 
