@@ -208,3 +208,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111Q CI | Linux+Windows SUCCESS; EXE PENDING в момент отчёта | Программный SHA 1baf980e611f55d38618b4dc170e8662089eaf62; [Linux #49](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/49) SUCCESS, [Windows Core/Qt #48](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/48) SUCCESS; фактический Windows Preview EXE/SHA проверять в Artifacts |
 
 [Технический отчёт Stage111Q](STAGE111Q_PAINTBOX_FONT_DPI_RU.md). Реальный Delphi x87/FormatFloat, CursorString, FFT/FRange, GDI XOR пиксели и UX оригинальных трёх вкладок НЕ приняты. Instrument/AUX4700 и main/v0.3.40 не менять.
+
+
+## Stage111Q — подтверждён проектный DFM (дополнение)
+
+| Проверка | Статус | Подтверждение |
+|---|---|---|
+| Form design-time Font | SOURCE_VERIFIED DFM STRUCTURE | Приватный mvkform.dfm: Tahoma, Height=-13, Style=[], PixelsPerInch=96; оригинальный DFM не опубликован |
+| pbAdc/ pbSpectrum design-time bounds | SOURCE_VERIFIED DFM STRUCTURE + IMPLEMENTED_TESTED | pbAdc 791×740; pbSpectrum 767×716; оба Align=alClient. Margin по исходной формуле равен 14 у обоих при проектных размерах |
+| Существующие исходные scrollbars | SOURCE_VERIFIED DFM vs runtime | DFM H.Left=24,Width=553,Height=24; V.Top=0,Width=24,Height=400; исходный Draw позднее переназначает H Left/Width и V Top/Height |
+| Получение runtime Font/DPI | TODO | Форма/DFM дизайн не является измерением живого TPaintBox.Canvas; font substitution, Windows DPI и runtime resize ещё не проверены |
+| DFM-derived baseline + Win32 Tahoma probe | IMPLEMENTED_TESTED CANDIDATE | Новый tqgrapher_dfm_design_idr_candidate.py и Windows GDI probe на выбранном HFONT, без передачи оригинальных ресурсов |
+| Stage111Q latest program CI | Linux SUCCESS, Windows/EXE awaiting | Code SHA d8c44318a09d328ecfd14a3a92f1bb987209999b; [Linux #55](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/55) SUCCESS, [Windows #54](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/54) проверить, Preview EXE/SHA не принят |
+
+[Технический отчёт Stage111Q](STAGE111Q_PAINTBOX_FONT_DPI_RU.md); дальнейшая оригинальная Canvas/RTL/FFT-паритет остаётся неподтверждённым.

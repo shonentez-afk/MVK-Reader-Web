@@ -4,7 +4,7 @@
 
 **Ветка:** research/stage111-mvkview-desktop-20261029
 
-**Проверенный программный SHA:** 1baf980e611f55d38618b4dc170e8662089eaf62
+**Актуальный программный SHA после анализа DFM:** d8c44318a09d328ecfd14a3a92f1bb987209999b. Предыдущий проверенный код: 1baf980e611f55d38618b4dc170e8662089eaf62.
 
 **Архитектура:** только автономная Windows Qt MVKView Compatible (mvk_compatible/). Не возвращаться к старой Web-архитектуре.
 
@@ -44,9 +44,9 @@
 
 ## Тесты и текущий CI
 
-**Локально:** 26 синтетических проверок pure-core PaintBox и font-spec validation прошли (Linux; фактический Win32 API проверяется в CI Windows).
+**Локально:** 38 синтетических проверок pure-core PaintBox, DFM design-profile и font-spec validation прошли (Linux; фактический Win32 API проверяется в CI Windows).
 
-**Программный SHA:** 1baf980e611f55d38618b4dc170e8662089eaf62
+**Базовый протестированный SHA:** 1baf980e611f55d38618b4dc170e8662089eaf62. После восстановления проектных DFM-параметров актуальный code SHA — d8c44318a09d328ecfd14a3a92f1bb987209999b; [Linux #55](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/55) SUCCESS, [Windows #54](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/54) проверяется, EXE ещё не подтверждён.
 
 - Linux Core: https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/49 — SUCCESS.
 - Windows Core + Qt: https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/48 — SUCCESS.
@@ -58,13 +58,34 @@
 
 На Windows пример *независимой* GDI-пробы оператора:
 
-python -m mvk_compatible.win32_canvas_font_probe --font-family Tahoma --font-height-px -14 --report-json C:\Private\gdi-font-candidate.json
+python -m mvk_compatible.win32_canvas_font_probe --font-family Tahoma --font-height-px -13 --report-json C:\Private\gdi-font-candidate.json
 
-Здесь «Tahoma» и «-14» — примеры, не установленные параметры оригинальной MVKView. Для честной сверки нужны фактические TPaintBox.Canvas.Font.Name, Height, Style, оригинальные TextWidth/TextHeight и DPI того же окна. В приватный canvas_sweep_reference_compare передавать Margin=max(10,min(W//53,H//30)), не старое фиксированное 10.
+Здесь «Tahoma» и «-13» — подтверждённые свойства шрифта исходной ФОРМЫ на этапе проектирования DFM; фактическая гарнитура Canvas при запуске ещё не измерена. Для честной сверки нужны фактические TPaintBox.Canvas.Font.Name, Height, Style, оригинальные TextWidth/TextHeight и DPI того же окна. В приватный canvas_sweep_reference_compare передавать Margin=max(10,min(W//53,H//30)), не старое фиксированное 10.
+
+
+## Дополнение Stage111Q — найден приватный оригинальный DFM
+
+В том же архиве Projects.7z обнаружен и локально прочитан оригинальный mvkform.dfm. Исходник DFM **не публиковался**. Непосредственно подтверждены следующие *свойства дизайна*, а не измерения работающей MVKView:
+
+| Объект/свойство | Подтверждённое проектное значение |
+|---|---|
+| Форма mvkform Font.Name | Tahoma |
+| Форма Font.Height / Style | −13 / normal (пустой Style) |
+| Форма PixelsPerInch | 96 |
+| pbAdc (TPaintBox) Width × Height | 791 × 740 |
+| pbSpectrum (TPaintBox) Width × Height | 767 × 716 |
+| Original DFM sbSpecHScroll | Left 24, Width 553, Height 24 |
+| Original DFM sbSpecVScroll | Top 0, Width 24, Height 400 |
+
+Оба PaintBox используют Align=alClient. После запуска размеры могут измениться; шрифт формы не доказывает фактический шрифт дочернего PaintBox при всех состояниях, Windows DPI и подменах GDI. После Draw исходная Delphi-программа **переназначает** Left/Width горизонтального и Top/Height вертикального скроллбаров по PixelRect, так что начальные DFM Left/Width/Top/Height не являются финальными runtime координатами.
+
+При исходных *проектных* размерах первый Margin равен 14 как для ADC, так и для Spectrum. При условных, сугубо синтетических TextWidth('0')=8, TextWidth('0.000000')=64, TextHeight('0')=14 получаются: ADC PixelRect=(86,14)-(777,682), Spectrum=(86,14)-(753,658). Без оригинальных runtime TextWidth/TextHeight/Font/DPI эти числа нельзя считать реальными пикселями MVKView.
+
+Добавлен независимый модуль mvk_compatible/core/tqgrapher_dfm_design_idr_candidate.py — компактный **производный проектный профиль** и расчёт Canvas с отдельно задаваемыми метриками; ни DFM, ни свойства закрытых коэффициентов туда не копируются. В Qt-диалоге показаны отдельно проектные Tahoma/−13/PPI96/767×716 и текущие Qt-метрики, с явными флагами «runtime font not verified». Новые тесты проверяют различия ADC/Spectrum, source Margin=14 и отсутствие ложной приёмки; Windows CI отдельно замеряет GDI Tahoma−13 только на синтетическом HDC.
 
 ## Что не доказано
 
-Реальные размеры и Font/DPI исходной MVKView, координатное соответствие Qt viewport/scene ↔ Delphi TPaintBox Canvas, оригинальный GDI XOR в Qt, CursorString/FormatFloat/x87, Original FFT/GetSpectrum/GetNarrowbandValue/FRange, UX трёх вкладок и численная/пиксельная идентичность оригинала. Реальный прибор не подключался, AUX4700/VALUES не подменялись локальным FFT. Скачанный EXE/SHA пока не сверены.
+Фактические размеры и Font/DPI оригинальной MVKView при запуске, координатное соответствие Qt viewport/scene ↔ Delphi TPaintBox Canvas, оригинальный GDI XOR в Qt, CursorString/FormatFloat/x87, Original FFT/GetSpectrum/GetNarrowbandValue/FRange, UX трёх вкладок и численная/пиксельная идентичность оригинала. Реальный прибор не подключался, AUX4700/VALUES не подменялись локальным FFT. Скачанный EXE/SHA пока не сверены.
 
 ## Следующая точка — Stage 111R
 

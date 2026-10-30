@@ -1,22 +1,26 @@
-# MVKView Compatible — текущий статус Stage 111Q (30.10.2026)
+# MVKView Compatible — актуальный статус Stage111Q (30.10.2026)
 
-**Ветка:** research/stage111-mvkview-desktop-20261029  
-**Программный SHA:** 1baf980e611f55d38618b4dc170e8662089eaf62  
-**Продукт:** полноценный автономный Windows Qt/PySide6 аналог оригинальной MVKView. main и Web v0.3.40 не изменять.
+**Рабочая ветка:** research/stage111-mvkview-desktop-20261029
 
-## Подтверждено источником / реализовано
+**Последний программный SHA:** d8c44318a09d328ecfd14a3a92f1bb987209999b
 
-- Stage111P: independent GDI XOR model с 1px native LineTo endpoint exclusive, один/два ряда; Windows synthetic CI и EXE #41 SUCCESS.
-- Stage111Q: исходная формула min(Width div 53, Height div 30), минимум Margin=10 и виртуальный Canvas 3×Margin подтверждены оригинальным приватным Delphi для обоих PaintBox. Исправлена Qt-диагностика, добавлены source scrollbar anchors и Windows memory GDI font probe по независимому явно выбранному HFONT.
-- Синтетические локальные 26 pure-core tests PASS. [Linux #49](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/49) SUCCESS; [Windows Core+Qt #48](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/48) SUCCESS. **Windows Preview EXE и его скачанный SHA256 на момент составления ещё не подтверждены**.
-- Приборные штатные DSP показатели только из AUX4700/VALUES, локальный FFT не заменяет их. Без сетевого подключения к МВК.
+**Продукт:** только автономная Windows MVKView Compatible, Qt/PySide6; stable main и Web v0.3.40 не изменять.
 
-## Непроверенное / блокеры
+## Выполнено
 
-Нужен приватный оригинальный TPaintBox Canvas размер+Font.Name/Height/Style+TextWidth/Height+DPI на идентичном окне; пока Qt QFontMetrics не следует принимать за исходный Delphi. Нет оригинальных эталонных CursorDrawnX/Y, 2-series CursorString, реальных x87/FormatFloat и численного GetSpectrum/GetNarrowbandValue/FRange паритета. GDI XOR на живой Qt PlotWidget не интегрирован без проверки устройства и DPI; оригинальная пиксельная идентичность НЕ доказана. Скачанный Preview EXE и SHA256SUMS ещё не сравнивались.
+- Stage111P: исходная логика GDI XOR 1/2-series и попиксельное synthetic Win32 сравнение; Linux/Windows/EXE CircleCI SUCCESS.
+- Stage111Q: из оригинального Delphi подтверждён динамический Margin обоих PaintBox = min(W div 53,H div 30), минимум 10, исходный PixelRect и относительное расположение полос прокрутки. Исправлена Qt Canvas-диагностика.
+- Доступный приватно mvkform.dfm подтвердил **дизайн формы**: Tahoma, Font.Height=-13, PixelsPerInch=96, pbAdc 791×740, pbSpectrum 767×716. Это НЕ гарантирует такой же реальный TCanvas при запуске, DPI/scaling и resize.
+- Новый производный DFM профиль, синтетический PaintBox layout и GDI font probe через Win32 GetTextExtentPoint32W; Qt-диалог показывает DFM проектный Font отдельно от Qt текущего.
+- Локально 38 синтетических тестов новых core-модулей PASS. Предыдущий код 1baf980e611f55d38618b4dc170e8662089eaf62: CircleCI Linux #49 SUCCESS, Windows Core/Qt #48 SUCCESS, Preview EXE #50 ещё не принят. Текущий код d8c44318a09d328ecfd14a3a92f1bb987209999b: [Linux #55](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/55) SUCCESS; [Windows Core/Qt #54](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/54) PENDING на момент записи; EXE/скачанный SHA ещё не подтверждены.
+- AUX4700/VALUES остаются единственным штатным приборным DSP источником; реальный прибор не подключался.
+
+## Что НЕ доказано
+
+Фактический оригинальный TPaintBox.Font.Name/Height/Style на нескольких DPI, живые Canvas.TextWidth/TextHeight и PixelRect, Qt↔Delphi регистрация пикселей, оригинальная GDI XOR-картинка, CursorString/FormatFloat/x87, FFT/FRange/GetSpectrum/Narrowband численная точность и полное поведение трёх вкладок. Успех synthetic CI не равен выпуску версии 1.0. EXE и SHA256SUMS скачать и проверить отдельно.
 
 ## Продолжение
 
-[Отчёт Stage111Q](STAGE111Q_PAINTBOX_FONT_DPI_RU.md), [Матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md), [Handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md), [Инструкция нового чата](../../START_NEW_CHAT_RU.md).
+[Отчёт Stage111Q](STAGE111Q_PAINTBOX_FONT_DPI_RU.md) · [Матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [Handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [START_NEW_CHAT](../../START_NEW_CHAT_RU.md).
 
-**Stage111R:** проверить весь CircleCI и файл EXE/SHA, затем приватная регистрация оригинальных Font/DPI/PixelRect и сопоставление с Qt+GDI, RTL/x87/FFT. Никаких PAS/DFM/IDP/BIN/PCAPNG в GitHub или CircleCI. Не менять main/v0.3.40 и не подключать реальный прибор без разрешения.
+Следующий Stage111R: подтверждение полного CircleCI на точном исходном SHA и EXE/SHA, приватная оригинальная Canvas.Font/DPI/X/Y/TextWidth/Height сверка, затем RTL/x87/FFT/двухрядный курсор. Не передавать оригинальные PAS/DFM/IDP/BIN/PCAPNG в GitHub или CircleCI, main/v0.3.40 оставить без изменений.
