@@ -1,24 +1,25 @@
-> **STAGE111R FINAL SOURCE — безопасные артефакты CircleCI (30.10.2026).** Финальный программный SHA: `8c9f0d29895a8a2ae68ad09c42e678cfffe01bee`; исходные модули и 22 новых локальных synthetic PASS добавлены коммитом `aa8e3b87671034636a4a63dc6486d0432c3b72c3`. Из-за того, что CircleCI `store_artifacts` выполняется даже при неуспешном тесте, Windows Preview проверяет PE/SHA/BUILD_INFO **дважды**, а публикуемая `verified-dist` создаётся атомарным rename только после успешной сверки скопированных байтов (новый `BUILD_VERIFICATION.json`). [Linux #64](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/64) SUCCESS; [Windows Core+Qt #63](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/63) результат проверить; Preview EXE начинается после обоих успешных jobs, скачанный EXE/SHA дополнительно проверить локально. [Полный Stage111R](STAGE111R_QT_GDI_REGISTRATION_AND_EXE_INTEGRITY_RU.md). По Qt↔Delphi TPaintBox создан только диагностический affine-кандидат, runtime оригинальный Canvas/DPI/FFT/x87 НЕ аттестованы. **Следующий Stage111S.** `main`/v0.3.40 не менять, прибор без разрешения не использовать, исходные закрытые PAS/DFM/IDP/BIN/PCAPNG в GitHub не передавать.
+# MVKView Compatible — текущий статус Stage111S (30.10.2026)
 
-# MVKView Compatible — актуальный статус Stage111R (30.10.2026)
+**Целевая архитектура:** автономная Windows Qt/PySide6 MVKView Compatible, папка mvk_compatible/. Исследовательская ветка research/stage111-mvkview-desktop-20261029. main и прежняя Web v0.3.40 заморожены.
 
-**Единственная целевая архитектура:** автономный Windows Qt/PySide6 MVKView Compatible (без сервера и Web). Ветка: `research/stage111-mvkview-desktop-20261029`.  
-**Точный SHA исходников Stage111R:** `aa8e3b87671034636a4a63dc6486d0432c3b72c3`.
+**Последний программный SHA:** af036bdd1be4dfdf2481a416f73cc9759db355d4.
 
-## Уже подтверждено
+## Реализовано и проверяется
 
-- Последний Stage111Q HEAD `6b29e9169d31004c52784cc78b6590ba161a19ea`: Linux Core [#58](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/58) SUCCESS, Windows Core/Qt [#57](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/57) SUCCESS, Windows EXE [#59](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/59) SUCCESS.
-- Stage111R: новый fail-closed контроль реального PE EXE/SHA256SUMS/BUILD_INFO и commit/branch перед публикацией CircleCI Artifacts. Публикуется `BUILD_VERIFICATION.json`. 9 локальных synthetic integrity PASS.
-- Stage111R: исследовательская аффинная регистрация Qt scene ↔ Source-derived Delphi TPaintBox PixelRect; независимые landmark errors, DPR отделён от оригинального Canvas; 13 локальных synthetic bridge PASS. Новый диагностический GUI тест.
-- Stage111R code CI: [Linux #61](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/61) SUCCESS, [Windows Core+Qt #60](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/60) SUCCESS. [Windows EXE #62](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/62) на момент подготовки требовал подтверждения нового integrity шага.
-- Штатные приборные DSP-показатели только AUX4700/VALUES, без подмены локальным FFT; не было доступа к прибору.
+- Stage111R: подтверждён защищённый Windows EXE через verified-dist PE/SHA256/BUILD_INFO. На предыдущем handoff HEAD 569567d54d1177439d3aedef90fcf2702ce70423 CircleCI Linux #67, Windows Core/Qt #66, Windows EXE #68: SUCCESS. Скачанная пользователем копия/хеш отдельно НЕ проверены.
+- Stage111S: приватно исследованы оригинальные _Unit128.pas, mvkform.dfm и mvkview.idp. Восстановлены полные таблицы source H(10) 25600…50 Гц, FFT(6) 262144…8192 отсчётов, dB Y(6) 150…10, физические делители Y(6) 1…100000. Местоположение и порядок Tag сверены с оригинальными адресами gvar_008D3428/3450/3468/3480.
+- Core: исходные VCL H/V Position/PageSize/Max, H clamp, V shift, правильный x87 FSUBRP знак, модель ScrLeft/ScrBottom по режимам. График Qt H больше не использует фиктивный 0..1000 slider.
+- Native Qt: у bSpecHScale выпадающее меню всех десяти настоящих source частот, main click выбирает следующий меньший пресет. Источник SHA таблиц/данных доказан, Qt↔оригинальный TCanvas/Font/DPI численная и пиксельная идентичность НЕ доказана.
+- Source FFT (8192…262144) и V меню пока в core: нужны достаточная история BIN, runtime графическая регистрация и проверка единиц. Research FFT 1024/4096 не выдавать за оригинальные presets.
+- CircleCI нового программного SHA: [Linux #75](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/75) SUCCESS, [Windows Core+Qt #76](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/76) SUCCESS; [Windows verified-dist EXE #77](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/77) ещё выполняется. Не выдавать PENDING за SUCCESS.
+- AUX4700/VALUES единственный штатный приборный DSP источник; нет подключения к реальному прибору.
 
-## Не доказано / блокеры
+## Открыто
 
-Фактический runtime Font/DPI и PixelRect оригинальной работающей Delphi MVKView, истинная регистрация original↔Qt, 1/2 series CursorString/Delphi RTL/x87, GetSpectrum/GetNarrowbandValue/FRange, оригинальный FFT и UX всех трёх вкладок. Synthetic/CI SUCCESS не равен оригинальному численному/пиксельному паритету. **Скачанный** Preview EXE/SHA256SUMS отдельно по байтам не сверялся; build receipt проверяет только сам процесс сборки. Приватные PAS/DFM/IDP/BIN/PCAPNG/коэффициенты в GitHub не помещены.
+Оригинальные runtime Canvas.Font/TextWidth/TextHeight/DPI/PixelRect, аутентичные CursorString/Delphi RTL/FormatFloat/x87, оригинальный FFT/GetSpectrum/GetNarrowbandValue/FRange на том же BIN/окне, полный UX трёх вкладок. Скачанный EXE и его SHA256SUMS ещё не сверены независимо, даже если CI job SUCCESS.
 
-## Точка продолжения Stage111S
+## Продолжение Stage111T
 
-[Stage111R отчёт](STAGE111R_QT_GDI_REGISTRATION_AND_EXE_INTEGRITY_RU.md) · [матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md) · [handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md) · [новый чат](../../START_NEW_CHAT_RU.md).
+[Stage111S технический отчёт](STAGE111S_SOURCE_SPECTRUM_SCROLLBARS_RU.md), [матрица](STAGE111_MVKVIEW_COMPATIBILITY_MATRIX_RU.md), [handoff](STAGE111_IMPLEMENTATION_AND_HANDOFF_RU.md), [START_NEW_CHAT](../../START_NEW_CHAT_RU.md).
 
-Начать с окончательной проверки EXE CircleCI #62, `BUILD_VERIFICATION.json` и скачанного SHA256; приватно измерить оригинальные Canvas.Font/TextExtent/PixelRect и одинаковые точки по нескольким DPI. Только после независимых измерений изменять реальный Qt курсор. Продолжить x87/FormatFloat/FFT, не трогая `main`, Web v0.3.40 и прибор без отдельного разрешения.
+Довести CI Linux/Windows Qt/EXE для указанного программного SHA; выполнить вертикальное шести-пунктное меню и шесть source NFFT с проверкой реальной истории архива, затем приватная регистрация оригинального TCanvas, сравнение FFT/x87. Не изменять stable main и Web v0.3.40, не подключать МВК без разрешения; никакие оригинальные PAS/DFM/IDP/production BIN/PCAPNG в GitHub не передавать.
