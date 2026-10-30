@@ -382,3 +382,15 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Private IDP Hann audit | **IMPLEMENTED + SYNTHETIC CI TESTED** | пять code/const SHA и helper/call/stride/final Single, без original content в CI |
 
 [Отчёт Stage111Z.5](STAGE111Z5_HANN_SOURCE_AND_X87_PROBE_RU.md) · [Stage111Z.4 FFT](STAGE111Z4_ORIGINAL_FFT_TWIDDLE_SINGLE_STORE_RU.md).
+
+
+## Stage111Z.6 — оригинальные Hann runtime Float32 (30.10.2026)
+
+| index | Оригинал x32dbg | Source-derived native x87 | Existing NumPy | Статус |
+|---:|---|---|---|---|
+| 1 | `2F80EF9C` | `2F80EF9C` | `2F80EF9D` | **USER-REPORTED ORIGINAL RUNTIME VERIFIED FOR THIS POINT** |
+| 5 | `31C97664` | `31C97664` | `31C97663` | **USER-REPORTED ORIGINAL RUNTIME VERIFIED FOR THIS POINT** |
+| 262139 | Не снят | `31C97664` (гипотеза) | `31C97663` | **TODO original x32dbg** |
+| 262143 | Не снят | `2F80EF9C` (гипотеза) | `2F80EF9D` | **TODO original x32dbg** |
+
+Исходные наблюдения относятся к **отдельным коэффициентам**, а не к полной таблице или к FFT output. Нужно снять `dword:[A6DA34]` и `dword:[A6DA44]`; после подтверждения выполнить адресную коррекцию для N=262144, не затрагивая остальные размеры. [Отчёт Stage111Z.6](STAGE111Z6_ORIGINAL_HANN_RUNTIME_TWO_POINT_GOLDEN_RU.md).

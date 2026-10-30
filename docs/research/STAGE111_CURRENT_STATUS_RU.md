@@ -1,3 +1,13 @@
+# MVKView Compatible — Stage111Z.6: live original Hann 2-point golden (30.10.2026)
+
+**Ветка:** `research/stage111-mvkview-desktop-20261029`. Исходная таблица Hann BSS `0096DA48` длиной 262144 Float32. Пользователь x32dbg прочитал два оригинальных коэффициента: index1 `2F80EF9C`, index5 `31C97664`. Нативный source-derived GCC x87 при CW1372 воспроизводит **2/2**, текущий NumPy-кандидат расходится на **1 ULP** в каждом. Это доказывает только эти два оригинальных коэффициента, не полный Hann/FFT паритет и не исходный CW во время Hann-init. Для меньших степеней двойки FFT индексы 1 и 5 не используются. Два симметричных крайних original значения ещё неизвестны.
+
+Новый `mvk_compatible/tests/test_stage111z6_original_hann_runtime_golden.py` проверяет две наблюдаемые пары без необходимости настоящего приватного EXE в CI. Основной `fft_idr_candidate.py` **не изменён**, пока не завершён original runtime capture краёв `dword:[A6DA34]`, `dword:[A6DA44]`. [Полный отчёт](STAGE111Z6_ORIGINAL_HANN_RUNTIME_TWO_POINT_GOLDEN_RU.md).
+
+CI предыдущего Stage111Z.5 SHA `9772e8a4f7dc8e84e217bf79d1a76a0cd0c9008b`: Linux #177 SUCCESS, Windows Qt #178 SUCCESS, EXE #179 SUCCESS. CI нового Stage111Z.6 SHA — отдельно. Далее original Hann 2 mirrored values, затем минимальное исправление для N262144; потом реальный GetSpectrum/FFT/cursor. Приватные источники и прибор не менять.
+
+---
+
 # MVKView Compatible — Stage111Z.5 (30.10.2026): original Hann source + native x87 comparison
 
 **Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. Цель: полноценная автономная Windows Qt/PySide6 MVKView Compatible, не Web/сервер. [Полный отчёт Stage111Z.5](STAGE111Z5_HANN_SOURCE_AND_X87_PROBE_RU.md).
