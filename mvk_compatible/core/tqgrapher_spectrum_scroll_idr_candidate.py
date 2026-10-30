@@ -3,8 +3,9 @@
 Private original _Unit128:0084C3AC..0084C4BB horizontal range/page,
 0084C5AC..0084C748 vertical range/page, 0084C770..0084C840
 TQGrapher ScrLeft/Width/Bottom/Height. Original H full range starts at
-gvar_008D3428=0x6400 (25600); other scale-menu entries not recovered.
-Caller-supplied full/page must not be treated as verified original presets.
+gvar_008D3428=0x6400 (25600); complete H/V/FFT source DWORD tables
+were recovered privately at Stage111S. Only explicit source menu choices
+may be regarded as source-verified. Qt/runtime original parity is separate.
 Qt scrollbar maximum is effective max position, unlike Delphi FMax=full-1
 with PageSize reducing the scrollable end.
 No instrument or original code is redistributed.
@@ -128,7 +129,9 @@ def source_spectrum_v_scr(position:int,page:int,full:int,*,
     The Intel x87 FSUBRP ST(1),ST(0) subtracts the original ST(1)
     from the new ST(0), not the reverse. Vertical Position increases
     toward lower/negative Y in both original branches.
-    Real original vertical menu tables are not yet established.
+    Source vertical menu tables now recovered (Stage111S), but this
+    low-level function accepts caller-supplied full/page and does NOT
+    authenticate their provenance or the original GraphDefaultVScale.
     """
     if not isinstance(db_mode,bool):
         raise ValueError('dB mode must be explicit')

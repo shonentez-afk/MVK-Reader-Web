@@ -7,7 +7,7 @@ from mvk_compatible.core.offline_export import OfflineSession, reduce_minmax
 
 
 def fixture_zip(tmp, *, aux=True, bad_bin=False, tamper_values=False,
-                tamper_aux=False, sensor_alert=False):
+                tamper_aux=False, sensor_alert=False,sample_count=4096):
     serial='MVK00000123'
     stamp='2026-10-29--13-32-12'
     files={}
@@ -36,7 +36,7 @@ def fixture_zip(tmp, *, aux=True, bad_bin=False, tamper_values=False,
     files['TABLE_LAST_AUX_RECONSTRUCTED.csv']=b'sep=|\r\n'
     for ch in range(1,9):
         name=f'{serial}-ADC{ch}-{stamp}.bin'
-        b=(np.sin(2*np.pi*64*np.arange(4096)/65536)*ch).astype('<f4').tobytes()
+        b=(np.sin(2*np.pi*64*np.arange(sample_count)/65536)*ch).astype('<f4').tobytes()
         files[name]=b
         audit['channels'].append({'adc':ch,'bin_sha256':hashlib.sha256(b).hexdigest()})
         xml=f'<MainRoot><Channels><Channel><RealDataType>Single</RealDataType><DataLength>{len(b)}</DataLength><DataOffset>0</DataOffset><ChannelFrequency>65536</ChannelFrequency></Channel></Channels></MainRoot>'

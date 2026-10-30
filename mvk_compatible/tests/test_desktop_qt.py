@@ -737,3 +737,102 @@ def test_qt_stage111s_all_original_h_scale_menu_entries_and_position(tmp_path,qt
     assert actions[0].isChecked()
     win.close()
     qt_app.processEvents()
+
+def test_stage111t_original_vertical_six_menu_and_scroll_position(tmp_path,qt_app):
+    """Source VCL Max/Page/Tag and mode transition; Qt Y baseline is candidate."""
+    from PySide6.QtWidgets import QToolButton
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.mvk_original_scale_tables_idr_candidate import (
+        DB_Y_RANGES,PHYSICAL_Y_DIVISORS)
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert isinstance(win.spec_vscale_button,QToolButton)
+    actions=win.spec_vscale_menu.actions()
+    assert len(actions)==6
+    assert [a.text() for a in actions]==[f'{n} дБ' for n in DB_Y_RANGES]
+    actions[2].trigger()  # source dB tag2: page 75, full 150
+    qt_app.processEvents()
+    assert win._spec_original_vscale_tag==2
+    assert win.spec_vscroll.maximum()==75
+    assert win.spec_vscroll.pageStep()==75
+    assert win.spec_vscroll.isVisible()
+    assert win._spec_vscroll_source_candidate['db_mode'] is True
+    assert win._spec_vscroll_source_candidate['source_menu_values_verified'] is True
+    assert win._spec_vscroll_source_candidate['original_delphi_y_canvas_parity_verified'] is False
+    win.spec_vscroll.setValue(10)
+    qt_app.processEvents()
+    assert win._spec_vertical_model['delphi_position']==10
+    actions[3].trigger()  # source dB 50, oldpos10+oldpage75-newpage50
+    qt_app.processEvents()
+    assert win._spec_vertical_model['page']==50
+    assert win.spec_vscroll.value()==35
+    assert win.spec_vscroll.maximum()==100
+    win.spec_mode.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert win._spec_original_vscale_tag==3  # original mode reset
+    assert win._spec_vertical_model['full']==100000
+    assert win._spec_vertical_model['page']==100
+    assert win.spec_vscroll.maximum()==99900
+    assert [a.text() for a in win.spec_vscale_menu.actions()]==[
+        f'÷ {n}' for n in PHYSICAL_Y_DIVISORS]
+    assert win._spec_vscroll_source_candidate['qt_y_baseline_from_local_spectrum'] is True
+    assert not win._spec_vscroll_source_candidate['original_delphi_y_canvas_parity_verified']
+    win.spec_mode.setCurrentIndex(0)
+    qt_app.processEvents()
+    assert win._spec_original_vscale_tag==0
+    assert win._spec_vertical_model['page']==150
+    assert not win.spec_vscroll.isVisible()
+    win.close()
+    qt_app.processEvents()
+
+
+def test_stage111t_fft_source_presets_fail_closed_on_short_real_bin(tmp_path,qt_app):
+    """Never turn a 4096-sample BIN into a fake original >=8192-point FFT."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.mvk_original_scale_tables_idr_candidate import (
+        FFT_WINDOW_SAMPLES)
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert [int(win.spec_n.itemText(i)) for i in range(6)]==list(FFT_WINDOW_SAMPLES)
+    assert [int(win.spec_n.itemText(i)) for i in (6,7)]==[1024,4096]
+    assert win.spec_n.currentText()=='4096'
+    assert win._spec_last_valid_fft_n==4096
+    assert 'ИССЛЕДОВАТЕЛЬСКИЙ' in win.spec_n_provenance.text()
+    assert all(not win.spec_n.model().item(i).isEnabled() for i in range(6))
+    assert all(win.spec_n.model().item(i).isEnabled() for i in (6,7))
+    existing=win._full_spectrum
+    win.spec_n.setCurrentText('8192')  # even programmatic selection cannot pad
+    qt_app.processEvents()
+    assert win.spec_n.currentText()=='4096'
+    assert win._full_spectrum is existing
+    assert len(win._full_spectrum['amplitude'])==2048
+    win.close()
+    qt_app.processEvents()
+
+
+def test_stage111t_first_original_fft_8192_with_real_synthetic_history(tmp_path,qt_app):
+    """A real 8192-sample synthetic archive enables original menu N=8192."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path,sample_count=8192))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.spec_n.currentText()=='8192'
+    assert win._spec_last_valid_fft_n==8192
+    assert win.spec_n.model().item(5).isEnabled()
+    assert not win.spec_n.model().item(4).isEnabled()
+    assert 'ОРИГИНАЛЬНЫЙ пункт bSpecLines' in win.spec_n_provenance.text()
+    assert len(win._full_spectrum['amplitude'])==4096
+    assert win._spec_display_contract['grapher_series_bins']==3200
+    win.close()
+    qt_app.processEvents()

@@ -22,7 +22,12 @@ from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
-    HORIZONTAL_HZ,original_h_scale_options,validate_source_h_scale)
+    HORIZONTAL_HZ, FFT_WINDOW_SAMPLES, original_h_scale_options,
+    original_v_scale_options,original_fft_size_options,validate_source_h_scale)
+from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
+    RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
+    source_vertical_selection,fft_source_archive_gate)
+from ..core.tqgrapher_spectrum_scroll_idr_candidate import source_spectrum_v_scr
 from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
@@ -262,11 +267,28 @@ class MainWindow(QMainWindow):
 
         self.spec_n=QComboBox()
         self.spec_n.setObjectName('bSpecLines')
-        self.spec_n.addItems(['1024','4096','16384','65536','262144'])
+        # Six exact original source Tag values in original Delphi order;
+        # research 1024/4096 retain the short-archive testing workflow.
+        for entry in original_fft_size_options():
+            self.spec_n.addItem(str(entry['n_fft']),entry['n_fft'])
+            self.spec_n.setItemData(self.spec_n.count()-1,
+                'ИСХОДНЫЙ Delphi bSpecLines · оригинальный NFFT',Qt.ToolTipRole)
+        for n in RESEARCH_FFT_SIZES:
+            self.spec_n.addItem(str(n),n)
+            self.spec_n.setItemData(self.spec_n.count()-1,
+                'ТОЛЬКО ИССЛЕДОВАНИЕ · в оригинальном MVKView этого N нет',
+                Qt.ToolTipRole)
         self.spec_n.setCurrentText('65536')
         self.spec_n.setFixedHeight(41)
-        self.spec_n.setToolTip('Количество отсчётов FFT (оригинальные пресеты bSpecLines требуют дальнейшей сверки)')
+        self.spec_n.setToolTip(
+            '262144…8192 — шесть проверенных исходных NFFT. '
+            '1024/4096 — исследовательские для коротких архивов; '
+            'без полной реальной истории BIN спектр не вычисляется.')
         stack.addWidget(self.spec_n)
+        self.spec_n_provenance=QLabel('FFT: исходный пресет; нужна история BIN')
+        self.spec_n_provenance.setWordWrap(True)
+        self.spec_n_provenance.setObjectName('lbSpecFFTProvenance')
+        stack.addWidget(self.spec_n_provenance)
 
         # Original bSpecHScale is a VCL split button with ten numeric
         # source-defined menu presets. Preserve quick-click zoom while
@@ -295,11 +317,25 @@ class MainWindow(QMainWindow):
         self.spec_hscale_button.clicked.connect(self._cycle_original_hscale)
         stack.addWidget(self.spec_hscale_button)
 
-        self.spec_vscale_button=QPushButton('Вертикаль +')
+        self.spec_vscale_button=QToolButton()
         self.spec_vscale_button.setObjectName('bSpecVScale')
+        self.spec_vscale_button.setText('Вертикаль +')
         self.spec_vscale_button.setFixedHeight(41)
-        self.spec_vscale_button.setToolTip('Реальное вертикальное увеличение ×2')
-        self.spec_vscale_button.clicked.connect(lambda:self.spec_plot.getViewBox().scaleBy((1,.5)))
+        self.spec_vscale_button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
+        self.spec_vscale_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.spec_vscale_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.spec_vscale_button.setToolTip(
+            'Шесть исходных вертикальных масштабов dB/физических единиц. '
+            'Qt baseline из данных — исследовательский, реальный GraphDefaultVScale не измерен.')
+        self.spec_vscale_menu=QMenu(self.spec_vscale_button)
+        self._spec_vscale_actions=[]
+        self._spec_original_vscale_tag=None
+        self._spec_original_vscale_mode=None
+        self._spec_vertical_model=None
+        self._spec_vscroll_source_candidate=None
+        self._rebuild_original_vscale_menu()
+        self.spec_vscale_button.setMenu(self.spec_vscale_menu)
+        self.spec_vscale_button.clicked.connect(self._cycle_original_vscale)
         stack.addWidget(self.spec_vscale_button)
 
         self.spec_hint=QLabel('Спектр ещё не открыт')
@@ -463,7 +499,8 @@ class MainWindow(QMainWindow):
         self.spec_plot.getViewBox().sigRangeChanged.connect(self._sync_spec_scroll)
 
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
-        self.spec_n.currentIndexChanged.connect(self.refresh_spec)
+        self._spec_last_valid_fft_n=None
+        self.spec_n.currentIndexChanged.connect(self._spec_n_changed)
         self.spec_backend.currentIndexChanged.connect(self.refresh_spec)
         self.spec_last.toggled.connect(self.refresh_spec)
         self.spec_hz.editingFinished.connect(self.refresh_spec)
@@ -471,6 +508,139 @@ class MainWindow(QMainWindow):
         self.spec_input_domain.currentIndexChanged.connect(self.refresh_spec)
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
+
+    def _rebuild_original_vscale_menu(self):
+        """Source Tag order changes with original spectrum mode."""
+        self.spec_vscale_menu.clear()
+        self._spec_vscale_actions=[]
+        for entry in original_v_scale_options(self.spec_mode.currentIndex()):
+            action=self.spec_vscale_menu.addAction(entry['caption'])
+            action.setCheckable(True)
+            action.setData(entry['tag'])
+            action.triggered.connect(
+                lambda checked=False,tag=entry['tag']:self._select_original_vscale(tag))
+            self._spec_vscale_actions.append(action)
+
+    def _cycle_original_vscale(self):
+        if self._full_spectrum is None:return
+        old=self._spec_original_vscale_tag
+        next_tag=1 if old is None else min(5,old+1)
+        self._select_original_vscale(next_tag)
+
+    def _select_original_vscale(self,tag:int):
+        """Actual source menu page and scroll position, Qt Y origin candidate."""
+        if self._full_spectrum is None:return
+        mode=self.spec_mode.currentIndex()
+        old=self._spec_vertical_model if self._spec_original_vscale_mode==mode else None
+        choice=source_vertical_selection(mode,tag,
+            old_tag=old['source_menu_tag'] if old else None,
+            old_position=old['delphi_position'] if old else 0)
+        self._spec_original_vscale_mode=mode
+        self._spec_original_vscale_tag=tag
+        self._apply_original_vscale_candidate(choice)
+        name=original_v_scale_options(mode)[tag]['caption']
+        self.spec_vscale_button.setText('Вертикаль: '+name)
+        for action in self._spec_vscale_actions:
+            action.setChecked(int(action.data())==tag)
+        self.statusBar().showMessage(
+            'Исходный V PageSize='+str(choice['page'])+
+            '; текущий Qt GraphDefaultVScale — исследовательский, '
+            'Delphi Canvas/FFT численно не принят')
+
+    def _apply_original_vscale_candidate(self,choice:dict):
+        """Source VCL range/position; Y baseline from Qt data, NOT Delphi."""
+        mode=self.spec_mode.currentIndex()
+        db=mode==0
+        default_scale=max(1e-8,self._spec_data_ymax-self._spec_data_ymin)
+        divisor=1 if db else int(choice['physical_divisor'])
+        native=source_spectrum_v_scr(
+            choice['delphi_position'],choice['page'],choice['full'],
+            db_mode=db,graph_default_v_scale=default_scale,
+            scale_divisor=divisor)
+        # Original dB ScrBottom is relative to 0; real candidate amplitude
+        # range may not share original dB calibration. Keep the current
+        # observed Qt maximum as a research origin, explicitly flagged.
+        offset=(self._spec_data_ymax if db else self._spec_data_ymin)
+        lower=offset+native['scr_bottom_single']
+        upper=lower+native['scr_height_single']
+        if not math.isfinite(lower) or not math.isfinite(upper) or upper<=lower:
+            raise ValueError('Unrepresentable Qt Y view for source V scale')
+        self._spec_vertical_model=choice
+        self._spec_vscroll_source_candidate={
+            **native,'source_v_menu_tag':choice['source_menu_tag'],
+            'source_menu_values_verified':True,
+            'qt_original_graph_default_vscale_estimated':True,
+            'qt_y_baseline_from_local_spectrum':True,
+            'original_delphi_y_canvas_parity_verified':False}
+        bar=self.spec_vscroll
+        bar.blockSignals(True)
+        bar.setRange(0,choice['qt_maximum'])
+        bar.setPageStep(choice['qt_page_step'])
+        bar.setSingleStep(choice['qt_single_step'])
+        bar.setValue(choice['delphi_position'])
+        bar.setVisible(choice['delphi_visible'])
+        bar.blockSignals(False)
+        self.spec_plot.getViewBox().setYRange(lower,upper,padding=0)
+
+    def _spec_history_gate(self,n_fft:int,total_samples:int,fs:float)->dict:
+        """Validate source FIR or plain FFT history before any recomputation."""
+        if self.spec_envelope_button.isChecked():
+            code=int(self.spec_envelope_code.currentData() or 0)
+            if not code or self.envelope_profile is None:
+                raise ValueError('Для исходной FFT огибающей нужен локальный IDP и код')
+            if not float(fs).is_integer():
+                raise ValueError('Режим исходной огибающей требует целый sample rate')
+            required=required_original_history(n_fft,int(fs),code)['input_samples']
+            end=(total_samples if self.spec_last.isChecked() else
+                 round((self.wave_start.value()+self.wave_seconds.value())*fs))
+            return fft_source_archive_gate(
+                n_fft,total_samples,end_sample=end,
+                required_input_samples=required)
+        remaining=(total_samples if self.spec_last.isChecked() else
+                   max(0,total_samples-round(self.wave_start.value()*fs)))
+        return fft_source_archive_gate(n_fft,remaining)
+
+    def _sync_fft_menu_availability(self,*,samples_count=None,sample_rate=None):
+        """Disable original NFFT that needs more real BIN data; no zero padding."""
+        if self.session is None:return
+        if samples_count is None or sample_rate is None:
+            samples,fs,_,_=self.session.samples(self._ch())
+            samples_count=len(samples);sample_rate=fs
+        for index in range(self.spec_n.count()):
+            n=int(self.spec_n.itemData(index))
+            try:
+                gate=self._spec_history_gate(n,samples_count,sample_rate)
+                allowed=gate['can_compute_without_padding']
+            except (ValueError,TypeError):
+                allowed=False
+            item=self.spec_n.model().item(index)
+            item.setEnabled(bool(allowed))
+            label=('ОРИГИНАЛ MVKView' if n in FFT_WINDOW_SAMPLES
+                   else 'ИССЛЕДОВАТЕЛЬСКИЙ FFT, не оригинальный пресет')
+            item.setToolTip(
+                label+(' · достаточно реальных отсчётов BIN'
+                       if allowed else ' · недостаточно истории BIN; запрещён'))
+
+    def _spec_n_changed(self,*_):
+        """Reject unavailable N without discarding already rendered FFT."""
+        if self.session is None:return
+        requested=int(self.spec_n.currentData())
+        try:
+            samples,fs,_,_=self.session.samples(self._ch())
+            gate=self._spec_history_gate(requested,len(samples),fs)
+            if not gate['can_compute_without_padding']:
+                raise ValueError(
+                    f"FFT N={requested}: требуется {gate['required_real_history_samples']} "
+                    f"реальных отсчётов, доступно {gate['archive_end_sample']}; "
+                    "нулевое дополнение запрещено")
+        except (OSError,ValueError,TypeError,KeyError) as exc:
+            if self._spec_last_valid_fft_n is not None:
+                self.spec_n.blockSignals(True)
+                self.spec_n.setCurrentText(str(self._spec_last_valid_fft_n))
+                self.spec_n.blockSignals(False)
+            self.statusBar().showMessage('Исходный FFT отклонён: '+str(exc))
+            return
+        self.refresh_spec()
 
     def _cycle_original_hscale(self):
         """Main part of split button: next source-verified smaller scale."""
@@ -522,6 +692,14 @@ class MainWindow(QMainWindow):
 
     def _spec_scroll_changed(self,axis:int,value:int):
         if self._full_spectrum is None:return
+        if axis==1 and self._spec_original_vscale_tag is not None:
+            # Original VCL Position is an integer, no normalized Qt 0..1000.
+            mode=self.spec_mode.currentIndex()
+            tag=self._spec_original_vscale_tag
+            choice=source_vertical_selection(
+                mode,tag,old_tag=tag,old_position=int(value))
+            self._apply_original_vscale_candidate(choice)
+            return
         vb=self.spec_plot.getViewBox()
         bounds=vb.viewRange()[axis]
         visible=max(1e-12,bounds[1]-bounds[0])
@@ -552,6 +730,16 @@ class MainWindow(QMainWindow):
         if self._full_spectrum is None:return
         vb=self.spec_plot.getViewBox()
         for axis,bar in ((0,self.spec_hscroll),(1,self.spec_vscroll)):
+            if axis==1 and self._spec_vertical_model is not None:
+                state=self._spec_vertical_model
+                bar.blockSignals(True)
+                bar.setRange(state['qt_minimum'],state['qt_maximum'])
+                bar.setPageStep(state['qt_page_step'])
+                bar.setSingleStep(state['qt_single_step'])
+                bar.setValue(state['delphi_position'])
+                bar.setVisible(state['delphi_visible'])
+                bar.blockSignals(False)
+                continue
             lo,hi=vb.viewRange()[axis]
             span=hi-lo
             full=((0.,float(getattr(self,'_spec_visible_max_hz',self.spec_hz.value()))) if axis==0
@@ -583,7 +771,8 @@ class MainWindow(QMainWindow):
                         action.setChecked(False)
                 bar.setVisible(active and src['delphi_visible'])
             else:
-                # Vertical slider still awaits the 10 original menu values.
+                # Before selecting an original V preset, retain the old
+                # research-only normalized Qt vertical slider.
                 bar.setVisible(active)
                 if active:
                     bar.setValue(max(0,min(1000,round((lo-full[0])/remaining*1000))))
@@ -617,8 +806,11 @@ class MainWindow(QMainWindow):
                     except ValueError:continue
                 if not valid:raise ValueError('Для такого кода огибающей недостаточно исходной истории BIN')
                 if int(self.spec_n.currentText()) not in valid:
-                    # Do not alter source samples; pick the largest exact N
+                    # Avoid a premature FFT refresh while changing envelope mode.
+                    self.spec_n.blockSignals(True)
                     self.spec_n.setCurrentText(str(max(valid)))
+                    self.spec_n.blockSignals(False)
+                    self._spec_last_valid_fft_n=None
                     self.statusBar().showMessage('FFT N уменьшен до размера с полной исходной FIR-историей')
             except (ValueError,OSError,KeyError) as e:
                 self.spec_envelope_button.blockSignals(True)
@@ -628,10 +820,21 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(str(e))
                 return
         self.refresh_spec()
+        if self.session is not None:
+            self._sync_fft_menu_availability()
 
     def _change_spectrum_mode(self,*_):
         self.spec_avg.setCurrentIndex(0 if self.spec_mode.currentIndex()==0 else 1)
+        self._spec_original_vscale_tag=None
+        self._spec_original_vscale_mode=None
+        self._spec_vertical_model=None
+        self.spec_vscale_button.setText('Вертикаль +')
+        self._rebuild_original_vscale_menu()
         self.refresh_spec()
+        if self._full_spectrum is not None:
+            # Original mSpecType1Click source Tag reset: 0 for dB, 3 for other.
+            self._select_original_vscale(
+                source_default_vertical_tag(self.spec_mode.currentIndex()))
 
     @staticmethod
     def _zoom_bar(layout,inc,dec):
@@ -670,8 +873,20 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
         self.session=s
+        self._spec_last_valid_fft_n=None
+        self._spec_original_vscale_tag=None
+        self._spec_original_vscale_mode=None
+        self._spec_vertical_model=None
+        self._spec_vscroll_source_candidate=None
+        self.spec_vscale_button.setText('Вертикаль +')
+        for action in self._spec_vscale_actions:
+            action.setChecked(False)
+        self.spec_n.blockSignals(True)
         if int(self.spec_n.currentText())>len(samples):
             self.spec_n.setCurrentText(str(max(valid_sizes)))
+        self.spec_n.blockSignals(False)
+        self._sync_fft_menu_availability(samples_count=len(samples),
+                                         sample_rate=fs)
         self.title.setText(s.serial+f' · {s.updates} расчётных обновлений')
         self.tick.blockSignals(True)
         self.tick.setRange(1,s.updates)
@@ -800,6 +1015,14 @@ class MainWindow(QMainWindow):
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             n_fft=int(self.spec_n.currentText())
+            samples,fs,_,_=self.session.samples(self._ch())
+            gate=self._spec_history_gate(n_fft,len(samples),fs)
+            if not gate['can_compute_without_padding']:
+                raise ValueError(
+                    f"Отсутствует полная реальная история FFT N={n_fft}: "
+                    f"нужно {gate['required_real_history_samples']}, "
+                    f"доступно {gate['archive_end_sample']}; "
+                    "дополнение нулями запрещено")
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
             if self.spec_envelope_button.isChecked():
@@ -885,6 +1108,23 @@ class MainWindow(QMainWindow):
                   f"источник={d.get('input_domain','calibrated_bin')} · "
                   "фактическая калибровка НЕ доказана · "
                   "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
+            self._spec_last_valid_fft_n=n_fft
+            label=('ОРИГИНАЛЬНЫЙ пункт bSpecLines' if n_fft in FFT_WINDOW_SAMPLES
+                   else 'ИССЛЕДОВАТЕЛЬСКИЙ NFFT — в меню Delphi отсутствует')
+            self.spec_n_provenance.setText(
+                f"FFT {n_fft}: {label}; история BIN проверена. "
+                "Численный паритет Delphi не установлен.")
+            self._sync_fft_menu_availability(samples_count=len(samples),
+                                             sample_rate=fs)
+            if (self._spec_original_vscale_tag is not None and
+                    self._spec_original_vscale_mode==self.spec_mode.currentIndex()):
+                tag=self._spec_original_vscale_tag
+                previous=self._spec_vertical_model
+                restored=source_vertical_selection(
+                    self.spec_mode.currentIndex(),tag,
+                    old_tag=tag if previous else None,
+                    old_position=previous['delphi_position'] if previous else 0)
+                self._apply_original_vscale_candidate(restored)
         except (OSError,KeyError,ValueError) as e:
             self._full_spectrum=None
             self._spectrum_summary=None
