@@ -194,3 +194,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Stage111P CI | SYNTHETIC LINUX + WINDOWS CORE/Qt + EXE SUCCESS | Program SHA `38a895fd797e300fbc967f7e97700828c4330106`; [Linux #39](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/39) SUCCESS, [Windows Core+Qt #40](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/40) SUCCESS, [EXE #41](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/41) SUCCESS (hash of downloaded artifact not independently verified) |
 
 [Технический отчёт](STAGE111P_GDI_XOR_RASTER_RU.md). Все проверки synthetic/offline, никакого original Pascal/IDP/BIN или реального прибора в CI. Оригинальный x87/FormatFloat/FFT/FRange и пиксельный parity ещё TODO.
+
+
+## Stage111Q — исходная регистрация PaintBox, шрифтов и полос прокрутки
+
+| Возможность | Уровень / результат | Доказательство и что ещё не принято |
+|---|---|---|
+| Margin двух исходных TPaintBox | SOURCE_VERIFIED + IMPLEMENTED_TESTED | _Unit128:0084B40F–42D, 0084C840–864: min(Width div 53, Height div 30), потом минимум 10 (_Unit115:007CA4DB). Qt Canvas-preview исправлен |
+| PixelRect и scrollbar anchors | SOURCE_VERIFIED + IMPLEMENTED_TESTED | _Unit115:007CA4E8–007CA62F; _Unit128:0084C8A6–8F8: H Left/Width и V Top/Height, без выдуманных остальных координат |
+| TCanvas.TextWidth/TextHeight и TFont.Assign | SOURCE_VERIFIED STRUCTURE; ORIGINAL FONT TODO | _Unit115:007CA4E8–5FA и 007CACE4–CACFC. Новый Win32 GetTextExtentPoint32W инструмент подбирает независимый HFONT, НЕ доказывает исходную гарнитуру MVKView |
+| DPI и происхождение Qt | IMPLEMENTED_TESTED DIAGNOSTIC | Qt viewport devicePixelRatioF, logical DPI, QFont family показаны отдельно. Не считать Qt font исходным Delphi |
+| Исходные снимки Canvas на нескольких DPI | TODO | Приватные TPaintBox размеры, оригинальные Font/PixelRect/двухрядный CursorString/скриншоты одного окна ещё не предоставлены |
+| Stage111Q CI | Linux+Windows SUCCESS; EXE PENDING в момент отчёта | Программный SHA 1baf980e611f55d38618b4dc170e8662089eaf62; [Linux #49](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/49) SUCCESS, [Windows Core/Qt #48](https://circleci.com/gh/shonentez-afk/MVK-Reader-Web/48) SUCCESS; фактический Windows Preview EXE/SHA проверять в Artifacts |
+
+[Технический отчёт Stage111Q](STAGE111Q_PAINTBOX_FONT_DPI_RU.md). Реальный Delphi x87/FormatFloat, CursorString, FFT/FRange, GDI XOR пиксели и UX оригинальных трёх вкладок НЕ приняты. Instrument/AUX4700 и main/v0.3.40 не менять.
