@@ -419,3 +419,18 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Read-only original capture source audit | **IMPLEMENTED + SYNTHETIC CI TESTED** | `private_getspectrum_capture_source_audit.py` четыре original SHA-окна, проверка rel32 calls, Float32 store, mode/N/ptr |
 
 [Stage111Z.7 отчёт](STAGE111Z7_GETSPECTRUM_FFT_PREPOST_CAPTURE_RU.md) · [Операторская инструкция x32dbg](STAGE111Z7_X32DBG_FFT_POWER_CAPTURE_RU.md). Следом Stage111Z.8: **Оригинальная** runtime пара и сравнение нескольких режимов на одном архиве.
+
+
+## Stage111Z.8 — оригинальная пользовательская ненулевая FFT power пара (30.10.2026)
+
+| Элемент | Статус | Содержание |
+|---|---|---|
+| Original-claimed `before_fft(1).bin` | **OPERATOR-SUPPLIED NONZERO CAPTURE**, no independent process provenance | N262144 Float32, перед source Hann/FFT, повторное DC удаление выключено |
+| Original-claimed `after_power(1).bin` | **OPERATOR-SUPPLIED NONZERO CAPTURE**, same invocation not independently authenticated | 131072 Float32 мощности, без mode integration/логарифмирования |
+| Source-derived `idr_float32` | **BITWISE MATCHES THIS PAIR 131072/131072, MAX ULP=0** | Первый нетривиальный полный FFT power golden для одного user-reported оригинального capture, **не** universal Delphi parity |
+| NumPy `rfft` | **733/131072 exact** | Высокая спектральная корреляция, но побитовое отличие в 130339 power bins |
+| Старый twiddle без intermediate Single | **4068/131072 exact** | Демонстрирует роль исправления Stage111Z.4; не основной текущий алгоритм |
+| Четыре Hann edge patches | **SOURCE-REPORTED ORIGINAL BITS PATCHED**, на этой паре power не изменяются | Важны для точной таблицы, но этим capture их влияние на FFT power не доказано |
+| Raw pair comparator без manifest | **IMPLEMENTED + SYNTHETIC CI TESTED** | `private_getspectrum_raw_pair_compare.py`: проверка input quality, bitwise/ULP, нет угадывания метаданных и raw values в отчёте |
+
+[Отчёт Stage111Z.8](STAGE111Z8_FIRST_NONZERO_ORIGINAL_FFT_262144_BITWISE_GOLDEN_RU.md). NEXT — независимые capture с другим FFT N, затем оригинальный GetSpectrum OutputMean/Peak и TQGrapher.

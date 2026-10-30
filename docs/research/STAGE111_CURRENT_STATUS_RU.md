@@ -1,3 +1,19 @@
+# MVKView Compatible — Stage111Z.8: 131072 / 131072 точных FFT power из ненулевого capture (30.10.2026)
+
+**Единая ветка:** `research/stage111-mvkview-desktop-20261029`, автономная Windows Qt/PySide6, не Web. [Полный отчёт](STAGE111Z8_FIRST_NONZERO_ORIGINAL_FFT_262144_BITWISE_GOLDEN_RU.md).
+
+Пользователь прислал два новых .bin `before_fft(1).bin` (N=262144 Float32) и `after_power(1).bin` (N/2=131072 Float32). В отличие от первой полностью нулевой пары, все элементы новых массивов конечны и ненулевые. Без повторного удаления среднего, с исходным Hann и source-derived `idr_float32` воспроизведён **131072/131072 bitwise exact** Power Float32, **max ULP=0**. NumPy `rfft` дал **733/131072** exact и **2160 ≤1 ULP**. Контроль старого twiddle (без intermediate real Single-store) — только **4068** exact. Снятие четырёх оригинальных Hann-edge fixes на этом capture не меняло power, поэтому важен прежде всего Stage111Z.4 порядковый Single store.
+
+**Provenance:** пара передана пользователем как original x32dbg same-call GetSpectrum, но адреса/register/thread/mode/FRange/Fs отдельно в файлах не аутентифицированы; это STRONG USER-REPORTED GOLDEN FOR THIS ONE PAIR, а не универсальная Delphi FFT аттестация.
+
+**Новый инструмент:** `private_getspectrum_raw_pair_compare.py` принимает напрямую два приватных *.bin без `capture.json`, выводит только агрегированный битовый/ULP/relative отчёт, не угадывает Fs/Tag/FRange и не изменяет файлы. `tests/test_stage111z8_raw_pair_compare.py` покрывает synthetic N1024/8192/262144, нули, 1 ULP, ошибки. Прежний `private_getspectrum_capture_preflight.py`, `tests/test_stage111z8_fft_capture_preflight.py` и guard оригинального JSON-компаратора блокируют ложное совпадение на нулевом сигнале.
+
+**CI для SHA `e8273dd031938b9aa94d78352c4f19537a1a0143`:** Linux #247 SUCCESS и Windows Core+Qt #246 SUCCESS; Windows Preview EXE #248 и более поздние commits проверять отдельно. Закрытые исходные измерения, EXE/IDP/RAW/BIN/PCAPNG не передавались в GitHub/CI.
+
+**Следующий Stage111Z.9:** ещё один независимый original power capture для N4096/8192 или другого канала; GetSpectrum OutputMean/PeakX/PeakY, CursorString/TPaintBox; stable main/Web/прибор не трогать.
+
+---
+
 # MVKView Compatible — Stage111Z.7: original FFT checkpoints + safe offline compare (30.10.2026)
 
 **Рабочая ветка:** `research/stage111-mvkview-desktop-20261029`. **Главная цель:** единая автономная Windows-программа MVKView Compatible, не Web v0.3.40. [Stage111Z.7 полный отчёт](STAGE111Z7_GETSPECTRUM_FFT_PREPOST_CAPTURE_RU.md) и [оригинальный x32dbg capture guide](STAGE111Z7_X32DBG_FFT_POWER_CAPTURE_RU.md).
