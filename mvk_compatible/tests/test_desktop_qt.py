@@ -152,13 +152,27 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     mid=win.spec_plot.getViewBox().viewRange()[0]
     assert (mid[1]-mid[0]) < (start[1]-start[0])
     assert win.spec_hscroll.isVisible()
+    from mvk_compatible.core.tqgrapher_spectrum_scroll_idr_candidate import SOURCE
+    scroll=win._spec_hscroll_source_candidate
+    assert scroll['source']==SOURCE
+    assert scroll['delphi_page_size']==win.spec_hscroll.pageStep()
+    assert scroll['qt_maximum']==win.spec_hscroll.maximum()
+    assert scroll['qt_single_step']==win.spec_hscroll.singleStep()
+    assert scroll['qt_maximum']==scroll['source_full_size']-scroll['delphi_page_size']
+    assert scroll['delphi_max']==scroll['source_full_size']-1
+    assert scroll['page_size_from_qt_view_candidate'] is True
+    assert scroll['original_plot_coordinate_parity_verified'] is False
+    assert scroll['source_menu_preset_verified'] is False
+    # Original H scrollbar position is integer Hz (NOT normalized 0..1000).
+    assert win.spec_hscroll.maximum()>1000
     win.spec_hscroll.setValue(0)
     qt_app.processEvents()
     near=win.spec_plot.getViewBox().viewRange()[0]
-    win.spec_hscroll.setValue(1000)
+    win.spec_hscroll.setValue(win.spec_hscroll.maximum())
     qt_app.processEvents()
     far=win.spec_plot.getViewBox().viewRange()[0]
     assert far[0]>near[0]
+    assert abs(far[0]-win.spec_hscroll.value())<2.0
     win.spec_vscale_button.click()
     qt_app.processEvents()
     assert win.spec_vscroll.isVisible()

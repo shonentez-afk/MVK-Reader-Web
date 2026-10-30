@@ -19,6 +19,7 @@ from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
 from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
+from ..core.tqgrapher_spectrum_scroll_idr_candidate import source_spectrum_h_scr
 from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
@@ -406,8 +407,12 @@ class MainWindow(QMainWindow):
         self.spec_hscroll=QScrollBar(Qt.Horizontal)
         self.spec_hscroll.setObjectName('sbSpecHScroll')
         self.spec_hscroll.setFixedHeight(24)
-        self.spec_hscroll.setRange(0,1000)
-        self.spec_hscroll.setPageStep(50)
+        self.spec_hscroll.setRange(0,0)
+        self.spec_hscroll.setPageStep(1)
+        self.spec_hscroll.setToolTip(
+            'Исходная модель TScrollBar: целочисленные позиции Гц, '
+            'PageSize=размер видимого окна. Исходные десять масштабов '
+            'ещё не все восстановлены; это Qt-кандидат.')
         self.spec_hscroll.hide()
         grid.addWidget(self.spec_hscroll)
         chart=QHBoxLayout()
@@ -429,6 +434,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(graph,1)
         self._spec_data_ymin=0.
         self._spec_data_ymax=1.
+        self._spec_hscroll_source_candidate=None
         self.spec_hscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(0,v))
         self.spec_vscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(1,v))
         self.spec_plot.getViewBox().sigRangeChanged.connect(self._sync_spec_scroll)
@@ -452,9 +458,24 @@ class MainWindow(QMainWindow):
                 else (self._spec_data_ymin,self._spec_data_ymax))
         available=max(0.,limits[1]-limits[0]-visible)
         if available<=0:return
-        lower=limits[0]+(value/1000.)*available
-        if axis==0:vb.setXRange(lower,lower+visible,padding=0)
-        else:vb.setYRange(lower,lower+visible,padding=0)
+        if axis==0:
+            # Delphi H: Position is an integer frequency unit; 0084C825.
+            # Original menu has ten discrete scales; here PageSize is
+            # inferred from the Qt research view, NOT a verified menu preset.
+            full=max(1,int(round(limits[1]-limits[0])))
+            page=max(1,min(full,int(round(visible))))
+            native_pos=max(0,min(full-page,int(value)))
+            source=source_spectrum_h_scr(native_pos,page,full)
+            self._spec_hscroll_source_candidate={
+                **source,'page_size_from_qt_view_candidate':True,
+                'original_plot_coordinate_parity_verified':False}
+            lower=min(limits[1]-visible,
+                      max(limits[0],limits[0]+source['scr_left_single']))
+            vb.setXRange(lower,lower+visible,padding=0)
+        else:
+            # Vertical Qt 0..1000 slider remains an explicit research candidate.
+            lower=limits[0]+(value/1000.)*available
+            vb.setYRange(lower,lower+visible,padding=0)
 
     def _sync_spec_scroll(self,*_):
         if self._full_spectrum is None:return
@@ -467,10 +488,28 @@ class MainWindow(QMainWindow):
             remaining=(full[1]-full[0])-span
             active=bool(remaining>max(1e-8,(full[1]-full[0])*1e-5))
             bar.blockSignals(True)
-            bar.setVisible(active)
-            if active:
-                bar.setValue(max(0,min(1000,round((lo-full[0])/remaining*1000))))
-                bar.setPageStep(max(1,min(1000,round(span/(full[1]-full[0])*1000))))
+            if axis==0:
+                # Delphi FMax=Full-1, PageSize=selected Hz; Qt effective max
+                # is Full-Page instead of normalized 1000.
+                native_full=max(1,int(round(full[1]-full[0])))
+                native_page=max(1,min(native_full,int(round(span))))
+                native_pos=max(0,min(native_full-native_page,
+                                     int(round(lo-full[0]))))
+                src=source_spectrum_h_scr(native_pos,native_page,native_full)
+                bar.setRange(src['qt_minimum'],src['qt_maximum'])
+                bar.setPageStep(src['qt_page_step'])
+                bar.setSingleStep(src['qt_single_step'])
+                bar.setValue(src['delphi_position'])
+                self._spec_hscroll_source_candidate={
+                    **src,'page_size_from_qt_view_candidate':True,
+                    'original_plot_coordinate_parity_verified':False}
+                bar.setVisible(active and src['delphi_visible'])
+            else:
+                # Vertical slider still awaits the 10 original menu values.
+                bar.setVisible(active)
+                if active:
+                    bar.setValue(max(0,min(1000,round((lo-full[0])/remaining*1000))))
+                    bar.setPageStep(max(1,min(1000,round(span/(full[1]-full[0])*1000))))
             bar.blockSignals(False)
 
     def _spec_envelope_code_changed(self,*_):
