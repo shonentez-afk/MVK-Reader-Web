@@ -434,3 +434,18 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Raw pair comparator без manifest | **IMPLEMENTED + SYNTHETIC CI TESTED** | `private_getspectrum_raw_pair_compare.py`: проверка input quality, bitwise/ULP, нет угадывания метаданных и raw values в отчёте |
 
 [Отчёт Stage111Z.8](STAGE111Z8_FIRST_NONZERO_ORIGINAL_FFT_262144_BITWISE_GOLDEN_RU.md). NEXT — независимые capture с другим FFT N, затем оригинальный GetSpectrum OutputMean/Peak и TQGrapher.
+
+
+## Stage111Z.9 — original summary fields, source and runtime (31.10.2026)
+
+| Узел | Статус | Подтверждение и следующий блокер |
+|---|---|---|
+| Original GetSpectrum summary code | **SOURCE-VERIFIED** по 6 SHA окон приватного IDP | `007D17E7..007D1900`, band lower/upper, Double sum, strict max, weighted ±2, Single outputs |
+| Power sum & mean | **SOURCE-VERIFIED STRUCTURE; RUNTIME GOLDEN TODO** | `[EBX+30]` Single, FRange исходного канала, x87 sqrt; нет живого оригинального DWORD |
+| Weighted peak X | **SOURCE-VERIFIED STRUCTURE; RUNTIME GOLDEN TODO** | `[EBX+34]` Single в BIN; raw пользовательский peak ≈15200.1455 (hex `466D8095`) — лишь CANDIDATE до настоящего x32dbg |
+| Peak Y | **SOURCE-VERIFIED STRUCTURE; RUNTIME GOLDEN TODO** | `[EBX+38]` Single, сумма пяти бинов и FRange |
+| Post-mode summary power | **CAPTURE SITE VERIFIED, USER DATA TODO** | `007D17E7` N/2 Float32, режимы 2/3 меняют power после `007D154B` |
+| Private summary triplet compare | **IMPLEMENTED + SYNTHETIC TESTED** | `private_getspectrum_summary_triplet_compare.py`, strict JSON/filename/IEEE754, 3 ULP metrics; никогда не выдавать synthetic match за оригинальный runtime |
+| Original source structural auditor | **IMPLEMENTED + SYNTHETIC TESTED** | `private_getspectrum_summary_source_audit.py`, private IDP read-only, 6 SHA windows |
+
+[Полный Stage111Z.9](STAGE111Z9_GETSPECTRUM_ORIGINAL_SUMMARY_AUDIT_AND_COMPARE_RU.md) · [Инструкция оригинального x32dbg](STAGE111Z9_X32DBG_SPECTRUM_SUMMARY_CAPTURE_RU.md). Далее original 3 output DWORD + Fs/FRange/Tag/N в одной сессии; не менять Qt core без оригинальной численной сверки.

@@ -1,3 +1,17 @@
+# Stage111Z.9 — original GetSpectrum OutputMean, PeakX, PeakY source verified (31.10.2026)
+
+Единый проект — автономная Windows MVKView Compatible (Qt/PySide6) в `research/stage111-mvkview-desktop-20261029`. [Технический отчёт](STAGE111Z9_GETSPECTRUM_ORIGINAL_SUMMARY_AUDIT_AND_COMPARE_RU.md) · [Пошаговая x32dbg инструкция](STAGE111Z9_X32DBG_SPECTRUM_SUMMARY_CAPTURE_RU.md).
+
+**SOURCE-VERIFIED (6 приватных IDP SHA окон):** `007D17E7` исходный post-mode/pre-summary N/2 power buffer, `007D1900` итоговый output ready; `OutputMean [EBX+30]`, `OutputPeakX [EBX+34]` в бинах, `OutputPeakY [EBX+38]` все Single. Source band=`max(2,round(N/(2Fs)))..trunc(N/2.56)`; сумма последовательно Float64; weighted peak ±2 bins c intermediate Float32. Для прежнего original-claimed ненулевого `after_power(1)` (pre-mode) без дополнительных метаданных raw peak bin=15200, рассчитанный центр ≈15200.1455, hex Float32 `466D8095`, **не** настоящий original runtime PeakX! Реальные Fs/FRange/Tag и три Output* HEX пока не сняты в этом этапе; полный Delphi numeric parity НЕ установлен.
+
+**Новые файлы:** `private_getspectrum_summary_source_audit.py`, `tests/test_private_getspectrum_summary_source_audit.py`, `private_getspectrum_summary_triplet_compare.py`, `tests/test_stage111z9_private_getspectrum_summary_triplet_compare.py`. Сравнитель требует private post-mode `summary_power.bin` и JSON: три DWORD original OutputMean/PeakX/Y, Fs/FRange/Tag/N, возвращает агрегированные ULP/bitwise/relative отличия и отказ при unsafe/zero input. Нет оригинальных dumps или IDP в CI. Основной `core/spectrum_metrics_idr_candidate.py` **не изменён**.
+
+**CI:** первый кодовый коммит `88701ab0e4fd170f174832dadc638a3598a1f1f0` — Linux #258 и Windows Core+Qt #259 SUCCESS; сравнитель с синтетическими тестами `7f46428736572f202b9a32e21e382e51985cbd89` — Linux #264 SUCCESS, Windows/EXE/последние docs проверить по точному SHA. Stable main, Web v0.3.40, оригинальные данные и МВК не трогать.
+
+**NEXT Stage111Z.10:** оригинальная x32dbg пара 007D17E7/007D1900, локальный частный триплет, побитовая сверка. Затем Copy/FormatFloat/CursorString/Canvas.
+
+---
+
 # MVKView Compatible — Stage111Z.8: 131072 / 131072 точных FFT power из ненулевого capture (30.10.2026)
 
 **Единая ветка:** `research/stage111-mvkview-desktop-20261029`, автономная Windows Qt/PySide6, не Web. [Полный отчёт](STAGE111Z8_FIRST_NONZERO_ORIGINAL_FFT_262144_BITWISE_GOLDEN_RU.md).
