@@ -133,7 +133,12 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     win.tabs.setCurrentIndex(2)
     qt_app.processEvents()
     assert win.spec_tools.objectName()=='pnSpecTools'
-    assert win.spec_tools.width()==177
+    # Original DFM 177px was too narrow for current diagnostic Qt controls;
+    # user screenshot 2026-11-01 had horizontal scroll and clipped text.
+    assert win.spec_tools.width()==244
+    from PySide6.QtCore import Qt
+    assert win.spec_tools.horizontalScrollBarPolicy()==Qt.ScrollBarAlwaysOff
+    assert win.spec_copy_button.text()=='Копировать'
     assert win.spec_hscroll.objectName()=='sbSpecHScroll'
     assert win.spec_vscroll.objectName()=='sbSpecVScroll'
     assert win.spec_hscroll.height()==24
