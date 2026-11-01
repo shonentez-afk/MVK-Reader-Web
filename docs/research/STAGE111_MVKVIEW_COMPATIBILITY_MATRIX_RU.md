@@ -496,3 +496,19 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Same-click original Copy 3/3 | **REGRESSION PUBLISHED** | `tests/test_stage111z13_original_same_click_golden.py`, only 4 Single words and three visible columns; no original binary assets |
 
 [Полный Stage111Z.14](STAGE111Z14_ORIGINAL_SPECTRUM_SCREENSHOT_PIXEL_REFERENCE_RU.md). Следом Stage111Z.15 — одна сравнительная Qt screenshot или native CursorString/PixelRect original x32dbg от того же окна для точной GDI/Qt совместимости.
+
+
+## Stage111Z.15 — перенос на GitHub Actions (01.11.2026)
+
+| Блок | Статус | Основание |
+|---|---|---|
+| GitHub Actions availability | **CONFIRMED Linux manual** | `offline_static_checks` 12s SUCCESS, 01.11 |
+| Stage111 workflow on default main | **YAML INSTALLED, NO PRODUCT SOURCE CHANGES** | `.github/workflows/stage111-desktop-offline.yml`, manual UI discoverability; runs gated to research ref |
+| Stage111 Linux all core | **GitHub Actions run #161 SUCCESS** | SHA `685b4119...`, `linux-core`, full core pytest |
+| Stage111 Windows Core+Qt | **FIRST RUN IN PROGRESS at initial poll** | `desktop-windows`, offscreen Qt; verify final run #161 |
+| Stage111 verified Windows EXE artifact | **BUILD QUEUED behind both test jobs; not published yet** | PyInstaller + independent PE/SHA twice, `BUILD_INFO` source commit and branch; upload only verified |
+| CircleCI | **MANUAL BACKUP, AUTO DISABLED** | `run_circleci_backup=false` default, switch true via CircleCI API only when required |
+| Qt current UI screenshot | **USER OBSERVED CLIPPED LEFT PANEL, TODO** | Distinct dataset from original screenshot; not a valid Qt/Delphi pixel diff yet |
+| Original BIN/TSXML direct open | **TODO next Stage** | Current Desktop preview expects Native R6.1 export ZIP; user wants original no-conversion archives |
+
+[Отчёт GitHub Actions migration](STAGE111Z15_GITHUB_ACTIONS_CI_MIGRATION_RU.md) · [Первый workflow run #161](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41282496457). Next verify actual artifact availability, then resume UI/layout and original source parity work.

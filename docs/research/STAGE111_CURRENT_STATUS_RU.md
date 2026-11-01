@@ -1,3 +1,15 @@
+# Stage111Z.15 — GitHub Actions снова главный CI/EXE publisher (01.11.2026)
+
+**Repo:** `shonentez-afk/MVK-Reader-Web`, рабочая `research/stage111-mvkview-desktop-20261029` (не Web, не `main`). [Технический отчёт](STAGE111Z15_GITHUB_ACTIONS_CI_MIGRATION_RU.md).
+
+GitHub Actions лимит: пользователь 01.11.2026 запустил `offline_static_checks.yml` в `main` — **SUCCESS, 12s**. Действующая миграция: одинаковый `.github/workflows/stage111-desktop-offline.yml` добавлен в `main` для ручного workflow_dispatch (без исходников Stage111 в main), обновлён в research с `push` на эту ветку, `workflow_dispatch` и guards только на research. Работают jobs **linux-core** (все офлайн pytest), **desktop-windows** (все offline+Qt), **windows-exe-preview** (после обеих success, PyInstaller + PE/SHA256/BUILD_INFO проверки twice + GitHub Artifacts retention14d). Actions v6 Node24. CircleCI `.circleci/config.yml` через `run_circleci_backup=false` оставлен резервом без автозапуска на push.
+
+Первый реальный GH Actions workflow **run #161** https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41282496457 SHA `685b411926e4d54531222e3f7e5ce97d3804053a`: **Linux all core SUCCESS**, Windows Core+Qt пока IN PROGRESS в момент записи, EXE не готов/не проверен. Не объявлять выдачу EXE, пока `windows-exe-preview` SUCCESS и Artifact существует. Вручную Run workflow запускать из Actions, branch dropdown выбирать `research/stage111-mvkview-desktop-20261029`, не `main`.
+
+Скриншот Qt-программы, присланный оператором, выявил подрезанный левый боковой UI в текущем native preview; несходство диапазона осей пока нельзя считать численным дефектом без общего исходного архива/канала. Следующие после CI: UI layout clipping и полное прямое открытие оригинальных BIN/TSXML вместо обязательного Native R6.1, затем original cursor/XOR и пиксельный reference. Ранее достигнутые exact FFT/summary не менять вслепую. Приватные оригиналы не передавать в GitHub.
+
+---
+
 # MVKView Compatible — Stage111Z.14: original screenshot geometric cursor reference + Qt fixes (01.11.2026)
 
 **Working:** `research/stage111-mvkview-desktop-20261029` автономная Windows Qt/PySide6, не Web. [Stage111Z.14 screenshot evidence и изменения](STAGE111Z14_ORIGINAL_SPECTRUM_SCREENSHOT_PIXEL_REFERENCE_RU.md).
