@@ -2,6 +2,15 @@
 # Original PAS/DFM/IDP, production BIN and PCAPNG must never be committed.
 version: 2.1
 
+# Stage111Z.15: GitHub Actions is primary CI and Windows EXE publisher.
+# CircleCI remains a MANUAL fallback only; by default no costly runners
+# are scheduled on push. Trigger via CircleCI API with run_circleci_backup=true
+# if GitHub Actions is unavailable. Keep originals and field data private.
+parameters:
+  run_circleci_backup:
+    type: boolean
+    default: false
+
 orbs:
   win: circleci/windows@5.0.0
 
@@ -109,6 +118,7 @@ jobs:
 
 workflows:
   stage111n-desktop-offline:
+    when: << pipeline.parameters.run_circleci_backup >>
     jobs:
       - linux-core:
           filters:
