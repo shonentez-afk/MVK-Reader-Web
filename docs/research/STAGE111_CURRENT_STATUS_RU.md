@@ -1,3 +1,17 @@
+# MVKView Compatible — Stage111Z.10 принят, Stage111Z.11 Copy-текст подготовлен (01.11.2026)
+
+**Репозиторий/ветка:** `shonentez-afk/MVK-Reader-Web` · `research/stage111-mvkview-desktop-20261029`. Продукт — единая автономная Windows Qt/PySide6 MVKView Compatible, не Web. [Отчёт Stage111Z.10](STAGE111Z10_GETSPECTRUM_ORIGINAL_SUMMARY_3OF3_RU.md), [Stage111Z.11 Copy text](STAGE111Z11_ORIGINAL_COPY_TEXT_REGRESSION_GATE_RU.md).
+
+**Введён новый original-runtime пользовательский эталон 3 полей.** Пара x32dbg `007D17E7/007D1900`: N262144, Tag0 логарифмический, Fs65536, FRange Float32 `43FF4853`. Оригинал `OutputMean=40DC8F5E`, `OutputPeakX=466D8095`, `OutputPeakY=3F475279` (3 Single). Реальный `summary_power.bin` 524288 байт, 131070 ненулевых Single, no NaN/Inf/negatives; действующий `core/spectrum_metrics_idr_candidate.py` совпал **3/3 bitwise, max ULP0** без изменения формулы. Дополнительная битовая проверка прежнего `after_power(1).bin` vs `summary_power.bin`: **131070/131072 идентичных**, отличается только обнуление бинов0 и1, согласуется с low-band cutoff original Tag0. Рассчитанная частота пика ≈3800.036377 Гц — не оригинальный Clipboard reference. Приватные двоичные измерения не залиты в GitHub.
+
+**Новые тесты:** `test_stage111z10_original_summary_runtime_golden.py` хранит только семь маленьких операторских числовых слов/параметров и поддерживает full original private capture локально по двум env vars; в CI оригинальные массивы SKIP. Stage111Z.11 добавил локальный `private_spectrum_copy_runtime_compare.py` из этих же трёх Single и отдельного оригинального TXT с TAB строкой, `test_stage111z11_original_copy_runtime_compare.py` исключительно synthetic. Не утверждать FormatFloat parity до получения оригинальной строки. По current formatter candidate ожидается `6,89<TAB>3800<TAB>0,7786` при русской десятичной запятой; это прогноз, не measurement.
+
+**CI:** для SHA `ea1dc7d4a8e6f009ce591568383688a967395f9d` Linux Core #276 SUCCESS и Windows Core+Qt #277 SUCCESS. Stage111Z.11 SHA `723690d40a061db2d7ef0036af3fa23617e6af06` Linux #286 SUCCESS; Windows Core+Qt #285/EXE и финальные doc commits проверять отдельно.
+
+**NEXT:** открыть тот же оригинальный офлайн архив/канал/Tag0, нажать bSpecCopyValue «Копировать», вставить 3 TAB числа в `copy_original.txt` и проверить `python -m mvk_compatible.private_spectrum_copy_runtime_compare --summary-manifest ... --reference ... --decimal ","`. Далее CursorString/TQGrapher/Canvas и независимые Tag1..3 / другие N. Не менять stable main/Web/прибор и закрытые материалы.
+
+---
+
 # Stage111Z.9 — original GetSpectrum OutputMean, PeakX, PeakY source verified (31.10.2026)
 
 Единый проект — автономная Windows MVKView Compatible (Qt/PySide6) в `research/stage111-mvkview-desktop-20261029`. [Технический отчёт](STAGE111Z9_GETSPECTRUM_ORIGINAL_SUMMARY_AUDIT_AND_COMPARE_RU.md) · [Пошаговая x32dbg инструкция](STAGE111Z9_X32DBG_SPECTRUM_SUMMARY_CAPTURE_RU.md).

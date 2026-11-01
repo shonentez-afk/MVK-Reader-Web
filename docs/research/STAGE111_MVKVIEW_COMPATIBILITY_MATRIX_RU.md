@@ -449,3 +449,18 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Original source structural auditor | **IMPLEMENTED + SYNTHETIC TESTED** | `private_getspectrum_summary_source_audit.py`, private IDP read-only, 6 SHA windows |
 
 [Полный Stage111Z.9](STAGE111Z9_GETSPECTRUM_ORIGINAL_SUMMARY_AUDIT_AND_COMPARE_RU.md) · [Инструкция оригинального x32dbg](STAGE111Z9_X32DBG_SPECTRUM_SUMMARY_CAPTURE_RU.md). Далее original 3 output DWORD + Fs/FRange/Tag/N в одной сессии; не менять Qt core без оригинальной численной сверки.
+
+
+## Stage111Z.10–Z.11 — original GetSpectrum summary full triplet & Copy text (01.11.2026)
+
+| Узел | Статус | Основание / открытый блокер |
+|---|---|---|
+| Original Tag0 OutputMean | **OPERATOR ORIGINAL X32DBG + SOURCE CANDIDATE 0 ULP** | `[EBX+30]`=`40DC8F5E`, N262144 Fs65536 FRange`43FF4853` |
+| Original Tag0 OutputPeakX | **OPERATOR ORIGINAL X32DBG + SOURCE CANDIDATE 0 ULP** | `[EBX+34]`=`466D8095`; FFT бин 15200.1455078125, не Гц |
+| Original Tag0 OutputPeakY | **OPERATOR ORIGINAL X32DBG + SOURCE CANDIDATE 0 ULP** | `[EBX+38]`=`3F475279`, Single |
+| Original post-mode summary power | **OPERATOR CAPTURE CROSSCHECK 131070/131072** | `summary_power.bin` vs прежний `after_power(1).bin`: бины 0,1 → 0, остальные 131070 одинаковы |
+| Summary source code | **UNCHANGED SOURCE-DERIVED FORMULA** | три побитовых совпадения на одном реальном operator-claimed случае; не обобщать на другие режимы, x87 border, архивы |
+| Private Stage111Z.10 regression | **PUBLIC METADATA TESTS + OPT-IN ORIGINAL PRIVATE DUMP TESTS** | `test_stage111z10_original_summary_runtime_golden.py`; нет original raw files в CI |
+| Delphi bSpecCopyValue TAB и 007B2090 | **SOURCE STRUCTURE VERIFIED, ORIGINAL CLIPBOARD RUNTIME TODO** | `private_spectrum_copy_runtime_compare.py` сравнит оригинальную строку с `spectrum_triplet_text` без повторного FFT; текущее `6,89<TAB>3800<TAB>0,7786` только ПРОГНОЗ |
+
+[Stage111Z.10 полный отчёт](STAGE111Z10_GETSPECTRUM_ORIGINAL_SUMMARY_3OF3_RU.md) · [Stage111Z.11 Original Copy Text](STAGE111Z11_ORIGINAL_COPY_TEXT_REGRESSION_GATE_RU.md). Дальше настоящий original Clipboard, CursorString, точные графические подписи и GDI/Qt сравнение.
