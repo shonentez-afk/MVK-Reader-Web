@@ -79,3 +79,9 @@ when: << pipeline.parameters.run_circleci_backup >>
 3. Продолжить разработку Qt-интерфейса, прямого открытия оригинальных measurement BIN/TSXML без промежуточного Native R6.1 экспорта, и воспроизведение оригинального курсора/XOR. Не терять математическую аттестацию исходного FFT 131072/131072 и summary 3/3 для предыдущего пользовательского захвата.
 
 **Граница:** этот этап меняет только инфраструктуру сборки/документацию, не подтверждает новых исходных алгоритмов и не исправляет уже видимые Qt UI различия.
+
+
+## 7. Подтверждение успешной первой EXE сборки
+
+**ПОДТВЕРЖДЕНО ПОСЛЕ ПЕРВОГО ЗАПУСКА (GitHub Actions #161, 01.11.2026):** workflow `MVKView Compatible - Windows EXE` run `41282496457`, точный source SHA `685b411926e4d54531222e3f7e5ce97d3804053a`, итоговый статус **COMPLETED/SUCCESS**. Все три jobs **SUCCESS**: `Linux - all offline core tests`, `Windows - offline core and Qt smoke tests`, `Windows - verified autonomous EXE artifact`. Действительный Actions Artifact `MVKViewCompatible_Stage111_Windows_Preview`, artifact id `13074086884`, ZIP размером 66958955 байт, **не истёк**, внутри EXE + SHA256SUMS.txt + BUILD_INFO.txt + BUILD_VERIFICATION.json. [Сборка #161 и скачивание](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41282496457). GitHub Actions — теперь **подтверждённая основная CI/Windows EXE система**; CircleCI ручной резерв. Следом не смешивать сборку 2026-11-01 с будущими исходниками: код сборки зафиксирован по SHA. **Продуктовая следующая задача:** Qt sidebar clipping и прямое открытие оригинальных измерений BIN/TSXML, оригинальный FFT и previous numeric golden сохранять.
+
