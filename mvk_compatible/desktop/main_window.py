@@ -979,7 +979,7 @@ class MainWindow(QMainWindow):
         self._set_active(True)
         self.refresh_all()
         self.statusBar().showMessage(
-            ('Открыт локальный Single BIN+TSXML; калибровка и приборный DSP НЕ подтверждены · '
+            ('Открыт локальный BIN/TSXML Single; калибровка и приборный DSP НЕ подтверждены · '
              if direct else 'Открыт проверенный ZIP Native R6.1 · ')
             + Path(path).name
         )
@@ -1095,11 +1095,17 @@ class MainWindow(QMainWindow):
                                         display_order=order)
                 self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
                     else 'Позиция буфера GetSignal, с (НЕ время BIN)')
+                units=('условн. ед. BIN' if isinstance(self.session,DirectBinSession)
+                       else 'м/с²')
                 descr=(f"GetSignal/IDR · {mode} · {order} · {d['window_samples']} отсчётов"
-                    f" · локальное СКЗ: {d['rms_m_s2']:.7g} м/с²"
-                    f" · удалённое DC: {d['removed_mean_m_s2']:.7g} м/с²"
+                    f" · локальное СКЗ: {d['rms_m_s2']:.7g} {units}"
+                    f" · удалённое DC: {d['removed_mean_m_s2']:.7g} {units}"
                     " · паритет TQGrapher НЕ доказан")
             self.wave_plot.clear()
+            self.wave_plot.setLabel(
+                'left', 'Отсчёты BIN (калибровка не проверена)'
+                if isinstance(self.session,DirectBinSession)
+                else 'Ускорение, м/с²')
             self.wave_plot.plot(d['time_s'],d['amplitude'],pen=pg.mkPen('#176c92'))
             self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.wave_line.setVisible(False)  # Source cursor drawn only after mouse X changes
@@ -1200,8 +1206,10 @@ class MainWindow(QMainWindow):
             if valid_summary:
                 summ=self._spectrum_summary
                 self.spec_mean.setText(
-                    "GetSpectrum · IDR-кандидат\n"
-                    f"Среднее: {summ['output_mean']:.7g} (FRange пока не проверен)\n"
+                    ("GetSpectrum · BIN/TSXML Single (калибровка НЕ подтверждена)\n"
+                     if isinstance(self.session,DirectBinSession)
+                     else "GetSpectrum · IDR-кандидат\n")
+                    + f"Среднее: {summ['output_mean']:.7g} (FRange пока не проверен)\n"
                     f"Пик: {summ['output_peak_frequency_hz']:.7g} Гц\n"
                     f"Амплитуда пика: {summ['output_peak_y']:.7g}\n"
                     f"Ширина FFT: {d['df_hz']:.7g} Гц, "
@@ -1214,7 +1222,8 @@ class MainWindow(QMainWindow):
                 f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
                 f"TQGRSeries={display_contract['grapher_series_bins']} · "
                 f"df={d['df_hz']:.7g} Гц · среднее DC "
-                f"{d.get('raw_mean_removed_m_s2',d.get('removed_mean_m_s2',0.)):.6g} м/с² · "
+                f"{d.get('raw_mean_removed_m_s2',d.get('removed_mean_m_s2',0.)):.6g} "
+                f"{'условн. ед. BIN' if isinstance(self.session,DirectBinSession) else 'м/с²'} · "
                 + ("после FIR повторного DC нет · "
                    if self.spec_envelope_button.isChecked() else "")
                 + f"FRange={d.get('f_range_used',1.):.7g}, "
