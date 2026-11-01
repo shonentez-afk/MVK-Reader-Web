@@ -273,13 +273,17 @@ def reduce_minmax(samples:np.ndarray, fs:float, offset:int, points:int):
 
 def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
                      mode: str='acdc', points:int=4000,
-                     display_order: str='chronological')->dict:
+                     display_order: str='chronological', *,
+                     sample_provider=None)->dict:
     """GetSignal no-envelope f32 candidate; separate original buffer from BIN time."""
     if mode not in ('ac','acdc'):
         raise ValueError('Режим должен быть ac или acdc')
     if display_order not in ('chronological','getsignal_buffer'):
         raise ValueError('Неизвестный порядок отображения')
-    samples, fs, audit, filename=read_samples(path,channel)
+    # Stage111Z.16: opt-in verified local BIN/TSXML reader. The R6.1 ZIP
+    # default and its audit/CSV requirements remain strictly unchanged.
+    samples, fs, audit, filename=(sample_provider(channel) if sample_provider
+                                 is not None else read_samples(path,channel))
     if not math.isfinite(start_s) or not math.isfinite(seconds) or not 0<=start_s<=len(samples)/fs or not 0<seconds<=30:
         raise ValueError('Неверные границы окна временного сигнала')
     a=round(start_s*fs)
@@ -311,12 +315,14 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
 def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
                      max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32',
                      *, f_range:float|None=None,
-                     input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
+                     input_domain:str=DOMAIN_CALIBRATED_BIN,
+                     sample_provider=None)->dict:
     applied_range,range_source=resolve_f_range(f_range)
     if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
         raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
     if mode not in range(4):raise ValueError('Допустимы четыре режима 0..3')
-    samples,fs,audit,filename=read_samples(path,channel)
+    samples,fs,audit,filename=(sample_provider(channel) if sample_provider
+                                is not None else read_samples(path,channel))
     start = max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
     if start<0 or start+n_fft>len(samples):
         raise ValueError('Не хватает данных для выбранного окна FFT')
