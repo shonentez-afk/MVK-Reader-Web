@@ -17,6 +17,10 @@ def test_original_TQGrapher_series_shorter_than_power_array(n,bins):
     assert data['x_scale_single_hz']==float(np.float32(65536/n))
     assert data['grapher_last_frequency_hz']==float(np.float32(
         (bins-1)*data['x_scale_single_hz']))
+    assert data['grapher_axis_end_frequency_hz']==float(np.float32(
+        bins*data['x_scale_single_hz']))
+    assert (data['grapher_axis_end_frequency_hz']
+            > data['grapher_last_frequency_hz'])
     assert data['display_truncation']=='TRUNC((NFFT/2)/EXTENDED_1_28)'
     assert data['original_pixel_rectangle_verified'] is False
 

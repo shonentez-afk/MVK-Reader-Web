@@ -43,6 +43,10 @@ def spectrum_display_contract(n_fft:int,output_sample_rate_hz:float)->dict:
         'grapher_series_bins':series_count,
         'grapher_last_index':series_count-1,
         'grapher_last_frequency_hz':float(np.float32((series_count-1)*x_scale)),
+        # The last stored bin is NOT the right-hand axis boundary. Original
+        # 2026-11-01 spectrum screenshot: for N262144/Fs65536 DataSize
+        # 102400, last valid center 25599.75 Hz, axis ends at 25600 Hz.
+        'grapher_axis_end_frequency_hz':float(np.float32(series_count*x_scale)),
         'x_scale_single_hz':x_scale,
         'display_truncation':'TRUNC((NFFT/2)/EXTENDED_1_28)',
         'original_numeric_parity_verified':False,

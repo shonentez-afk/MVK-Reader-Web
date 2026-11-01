@@ -72,3 +72,18 @@ def test_original_screenshot_peak_summary_differs_in_units_from_db_cursor():
     # Original left panel uses physical summary units while cursor uses dB.
     assert ORIGINAL_CURSOR_DISPLAY[1] != float(
         ORIGINAL_NUMERIC_LABELS[2].replace(",","."))
+
+
+def test_original_xor_green_cursor_colors_match_white_and_black_screenshot_pixels():
+    """Original VCL pmXor clGreen -> magenta on white, green on black."""
+    import numpy as np
+    from mvk_compatible.core.tqgrapher_gdi_xor_idr_candidate import (
+        CL_GREEN_RGB, GdiLineTo, xor_gdi_line,
+    )
+    assert CL_GREEN_RGB == (0, 128, 0)
+    raster=np.full((8,8,3),255,dtype=np.uint8)
+    raster[5,3]=0
+    xor_gdi_line(raster,GdiLineTo('vertical',None,(3,1),(3,7)))
+    assert raster[2,3].tolist()==[255,127,255]
+    assert raster[5,3].tolist()==[0,128,0]
+    assert raster[7,3].tolist()==[255,255,255]

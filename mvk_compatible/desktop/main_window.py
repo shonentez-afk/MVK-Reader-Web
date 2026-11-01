@@ -1090,8 +1090,11 @@ class MainWindow(QMainWindow):
             display_contract=spectrum_display_contract(n_fft,d['df_hz']*n_fft)
             d['grapher_series_bins']=display_contract['grapher_series_bins']
             self._spec_display_contract=display_contract
+            # Original TQGrapher screenshot: x-axis ends at DataSize * df;
+            # last stored series bin is one df earlier (25599.75 vs 25600
+            # Hz at N262144/Fs65536). Never invent a final data sample.
             self._spec_visible_max_hz=min(self.spec_hz.value(),
-                                           display_contract['grapher_last_frequency_hz'])
+                                           display_contract['grapher_axis_end_frequency_hz'])
             self._full_spectrum=d
             self._spectrum_summary=d.get('spectrum_summary')
             valid_summary=(isinstance(self._spectrum_summary,dict) and
@@ -1106,7 +1109,10 @@ class MainWindow(QMainWindow):
             visible=(xx<=self._spec_visible_max_hz)&(
                 np.arange(len(xx))<display_contract['grapher_series_bins'])
             self.spec_plot.clear()
-            self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#176c92'))
+            # Original MVKView spectrum is a black hairline over white.
+            # Original XOR-green cursor is separately studied (do not
+            # approximate it by a static colored spectrum line).
+            self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#000000'))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.spec_line.setVisible(False)
             self.spec_plot.addItem(self.spec_line)

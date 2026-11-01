@@ -408,7 +408,10 @@ def test_qt_stage111j_original_spectrum_visible_series_and_cursor_text(tmp_path,
     assert len(win._full_spectrum['amplitude'])==n//2
     assert len(win.spec_plot.listDataItems())==1
     assert len(win.spec_plot.listDataItems()[0].xData)==original_size
-    assert win._spec_visible_max_hz==pytest.approx((original_size-1)*65536/n)
+    # Original plotted axis ends at DataSize*XScale, not final data center.
+    assert win._spec_visible_max_hz==pytest.approx(original_size*65536/n)
+    assert win._spec_display_contract['grapher_axis_end_frequency_hz']==pytest.approx(
+        original_size*65536/n)
     assert 'TQGRSeries=' in win.spec_hint.text()
     base=np.asarray(win._full_spectrum['amplitude'])
     peak=int(np.argmax(base))
