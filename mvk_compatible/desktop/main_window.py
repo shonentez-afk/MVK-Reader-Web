@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
     QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy)
 from ..core import OfflineSession
+from ..core.direct_bin_session import DirectBinSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
@@ -91,7 +92,7 @@ class MainWindow(QMainWindow):
 
     def _build(self):
         file_menu=self.menuBar().addMenu('Файл')
-        action=QAction('Открыть локальный архив R6.1/Stage107 ZIP…',self)
+        action=QAction('Открыть измерение (ZIP / BIN / TSXML)…',self)
         action.setShortcut('Ctrl+O')
         action.triggered.connect(self.choose_archive)
         file_menu.addAction(action)
@@ -100,7 +101,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(wrapper)
         layout=QVBoxLayout(wrapper)
         bar=QHBoxLayout()
-        button=QPushButton('Открыть архив ZIP…')
+        button=QPushButton('Открыть измерение…')
         button.clicked.connect(self.choose_archive)
         bar.addWidget(button)
         bar.addWidget(QLabel('Канал'))
@@ -127,7 +128,7 @@ class MainWindow(QMainWindow):
         self.note=QLabel('OFFLINE READ-ONLY · TCP/10230 не подключается · команды прибору отсутствуют')
         self.note.setStyleSheet('color: #9e6500; padding: 5px')
         layout.addWidget(self.note)
-        self.statusBar().showMessage('Открывайте только локальный ZIP завершённого сеанса Native R6.1')
+        self.statusBar().showMessage('Открыть локальный ZIP R6.1 или парные BIN/TSXML Single — без подключения к прибору')
 
     def _calculated_tab(self):
         tab=QWidget()
@@ -236,13 +237,18 @@ class MainWindow(QMainWindow):
 
         self.spec_tools=QScrollArea()
         self.spec_tools.setObjectName('pnSpecTools')
-        self.spec_tools.setFixedWidth(177)
+        # The original DFM uses 177px, but our Qt research tools have
+        # longer labels. The previous 177px viewport forced horizontal
+        # scrolling and clipped the start of controls in 1920x1080 user QA.
+        # Reserve readable space instead of hiding half of each label.
+        self.spec_tools.setFixedWidth(244)
+        self.spec_tools.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.spec_tools.setWidgetResizable(True)
         self.spec_tools.setFrameShape(QFrame.NoFrame)
         tools=QWidget()
         tools.setObjectName('pnSpecToolsBody')
         stack=QVBoxLayout(tools)
-        stack.setContentsMargins(9,9,6,9)
+        stack.setContentsMargins(7,9,7,9)
         stack.setSpacing(6)
 
         self.spec_envelope_button=QPushButton('Огибающая — нет')
@@ -353,7 +359,7 @@ class MainWindow(QMainWindow):
         self.spec_mean.setWordWrap(True)
         stack.addWidget(self.spec_mean)
 
-        self.spec_copy_button=QPushButton('Копировать (IDR-кандидат)')
+        self.spec_copy_button=QPushButton('Копировать')
         self.spec_copy_button.setObjectName('bSpecCopyValue')
         self.spec_copy_button.setFixedHeight(41)
         self.spec_copy_button.setEnabled(False)
@@ -363,7 +369,7 @@ class MainWindow(QMainWindow):
         self.spec_copy_button.clicked.connect(self._copy_spec_summary)
         stack.addWidget(self.spec_copy_button)
 
-        self.spec_save_button=QPushButton('Сохранить CSV (IDR-кандидат)')
+        self.spec_save_button=QPushButton('Сохранить CSV')
         self.spec_save_button.setObjectName('bSpecSaveValue')
         self.spec_save_button.setFixedHeight(41)
         self.spec_save_button.setEnabled(False)
@@ -372,7 +378,7 @@ class MainWindow(QMainWindow):
             'исходные BIN/IDP не записываются')
         self.spec_save_button.clicked.connect(self._save_spec_summary)
         stack.addWidget(self.spec_save_button)
-        self.spec_original_copy_compare=QPushButton('Сверить 3 поля с MVKView…')
+        self.spec_original_copy_compare=QPushButton('Сверить с MVKView…')
         self.spec_original_copy_compare.setToolTip(
             'Только локальный TXT из оригинальной MVKView (TAB, десятичная запятая). '
             'Не подключается к прибору, не сохраняет исходные данные, '
@@ -380,7 +386,7 @@ class MainWindow(QMainWindow):
         self.spec_original_copy_compare.setEnabled(False)
         self.spec_original_copy_compare.clicked.connect(self._compare_original_copy)
         stack.addWidget(self.spec_original_copy_compare)
-        self.spec_canvas_geometry_button=QPushButton('Геометрия Canvas (Qt-кандидат)')
+        self.spec_canvas_geometry_button=QPushButton('Геометрия Canvas')
         self.spec_canvas_geometry_button.setToolTip(
             'Независимые исходные TQGrapher itosM/itosC и stoiM/с по 007CA4C8. '
             'Использует только текущие размеры шрифта Qt, НЕ оригинальный Delphi Canvas.')
@@ -470,6 +476,18 @@ class MainWindow(QMainWindow):
         self.narrow_result.setTextInteractionFlags(Qt.TextSelectableByMouse)
         stack.addWidget(self.narrow_result)
         stack.addStretch()
+        # QScrollArea expands child minSizeHint from long Russian strings.
+        # Explicitly permit wrapping/shrinking to the actual sidebar width,
+        # so only VERTICAL scrolling is needed for research diagnostics.
+        for child in tools.findChildren(QWidget):
+            if isinstance(child,QLabel):
+                child.setWordWrap(True)
+                child.setMinimumWidth(0)
+                child.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
+            elif isinstance(child,(QPushButton,QComboBox,QToolButton,QDoubleSpinBox,QCheckBox)):
+                child.setMinimumWidth(0)
+                child.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
+        tools.setMinimumWidth(0)
         self.spec_tools.setWidget(tools)
         lay.addWidget(self.spec_tools,0)
 
@@ -899,14 +917,25 @@ class MainWindow(QMainWindow):
         self.tick.setEnabled(ready)
 
     def choose_archive(self):
-        path,_=QFileDialog.getOpenFileName(self,'Локальный экспорт Native R6.1','','ZIP files (*.zip)')
+        path,_=QFileDialog.getOpenFileName(
+            self,'Локальные измерения MVK (без подключения к прибору)','',
+            'MVK измерения (*.zip *.bin *.tsxml);;'
+            'Экспорт Native R6.1 (*.zip);;'
+            'BIN с парным TSXML (*.bin *.tsxml)')
         if path:self.open_archive(path)
 
     def open_archive(self,path):
         try:
-            s=OfflineSession.open(Path(path))
-            s.calculations()
-            samples,fs,_,_=s.samples(1)
+            source=Path(path)
+            direct=source.suffix.lower() in ('.bin','.tsxml')
+            if direct:
+                s=DirectBinSession.open(source)
+                channels=s.available_channels
+            else:
+                s=OfflineSession.open(source)
+                s.calculations()
+                channels=tuple(range(1,9))
+            samples,fs,_,_=s.samples(channels[0])
             valid_sizes=[int(self.spec_n.itemText(i)) for i in range(self.spec_n.count())
                          if int(self.spec_n.itemText(i))<=len(samples)]
             if not valid_sizes:
@@ -915,6 +944,15 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
         self.session=s
+        # A direct BIN may supply only ADC4: do not silently read ADC1
+        # or mix unrelated files to fill absent channels.
+        self.adc.blockSignals(True)
+        try:
+            for number in range(1,9):
+                self.adc.model().item(number-1).setEnabled(number in channels)
+            self.adc.setCurrentIndex(channels[0]-1)
+        finally:
+            self.adc.blockSignals(False)
         self._spec_last_valid_fft_n=None
         self._spec_original_vscale_tag=None
         self._spec_original_vscale_mode=None
@@ -929,14 +967,22 @@ class MainWindow(QMainWindow):
         self.spec_n.blockSignals(False)
         self._sync_fft_menu_availability(samples_count=len(samples),
                                          sample_rate=fs)
-        self.title.setText(s.serial+f' · {s.updates} расчётных обновлений')
+        self.title.setText(
+            (f'{s.serial} · {len(channels)} АЦП · BIN/TSXML (DSP недоступен)'
+             if direct else
+             s.serial+f' · {s.updates} расчётных обновлений')
+        )
         self.tick.blockSignals(True)
         self.tick.setRange(1,s.updates)
         self.tick.setValue(s.updates)
         self.tick.blockSignals(False)
         self._set_active(True)
         self.refresh_all()
-        self.statusBar().showMessage('Открыт локальный архив · '+Path(path).name)
+        self.statusBar().showMessage(
+            ('Открыт локальный Single BIN+TSXML; калибровка и приборный DSP НЕ подтверждены · '
+             if direct else 'Открыт проверенный ZIP Native R6.1 · ')
+            + Path(path).name
+        )
 
     def _ch(self):
         return self.adc.currentIndex()+1
@@ -949,6 +995,25 @@ class MainWindow(QMainWindow):
 
     def refresh_calc(self,*_):
         if not self.session:return
+        if isinstance(self.session,DirectBinSession):
+            # BIN/TSXML contains no authenticated AUX/VALUES DSP. Do not
+            # show stale values from the previously opened Native ZIP.
+            self.calc_source.setText('BIN/TSXML: приборные DSP/VALUES/AUX отсутствуют')
+            self.calc_status.setText('Только сигнал и исследовательский спектр')
+            self.calc_status.setStyleSheet('color:#9e6500')
+            for row in range(self.metrics.rowCount()):
+                for col in range(self.metrics.columnCount()):
+                    self._cell(self.metrics,row,col,'—')
+            for row in range(self.oct_table.rowCount()):
+                for col in range(self.oct_table.columnCount()):
+                    self._cell(self.oct_table,row,col,'—')
+            self.oct_plot.clear()
+            for label,widget in self.status_fields.values():
+                widget.setText(label+': нет оригинального AUX/VALUES')
+            self.note.setText(
+                'LOCAL BIN/TSXML Single: физическая калибровка не подтверждена; '
+                'приборные показатели DSP/третьоктавы НЕ вычисляются')
+            return
         try:
             d=self.session.calculations(self.tick.value()-1)
             channel=d['channels'][self._ch()-1]
