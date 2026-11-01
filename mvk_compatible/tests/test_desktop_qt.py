@@ -24,7 +24,7 @@ def test_desktop_three_tabs_without_server(qt_app):
     window=MainWindow()
     assert window.tabs.count()==3
     assert [window.tabs.tabText(i) for i in range(3)]==[
-        'Расчётные данные','Временной сигнал','Спектр']
+        'Задачи','Временной сигнал','Спектр']
     assert window.session is None
     assert not window.tabs.isEnabled()
     assert window.adc.count()==8

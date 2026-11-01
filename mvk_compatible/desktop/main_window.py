@@ -131,7 +131,8 @@ class MainWindow(QMainWindow):
 
     def _calculated_tab(self):
         tab=QWidget()
-        self.tabs.addTab(tab,'Расчётные данные')
+        # Original MVKView 1.0.47 visible top tab: 'Задачи' (2026-11-01 reference).
+        self.tabs.addTab(tab,'Задачи')
         lay=QVBoxLayout(tab)
         self.calc_source=QLabel('Штатные данные МВК (AUX4700 / VALUES)')
         self.calc_status=QLabel('Статус: —')
