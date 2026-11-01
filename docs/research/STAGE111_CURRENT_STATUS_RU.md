@@ -1,3 +1,17 @@
+# MVKView Compatible — Stage111Z.16: прямой BIN/TSXML + исправление панели (01.11.2026)
+
+**Рабочая ветка:** research/stage111-mvkview-desktop-20261029. Единая автономная Windows Qt/PySide6. [Технический отчёт](STAGE111Z16_DIRECT_BIN_TSXML_QT_SIDEBAR_RU.md).
+
+**Функции:** кнопка Открыть измерение принимает ZIP/BIN/TSXML, новый DirectBinSession подгружает только явно объявленные TSXML Single(Float32) из локального BIN, с проверкой размера/смещения/частоты, finite Float32, SHA256, symlink и однозначности sidecar. Для стандартных MVK...-ADC имен может объединять несколько каналов одной метки. Это не универсальный декодер любого исходного BIN — неизвестные форматы не угадываются. Без AUX/VALUES отключены приборные DSP показатели, нет ложных физических единиц; старые таблицы очищаются. Старый Native R6.1 ZIP аудитор и ранее проверенный FFT math остаются прежними.
+
+**UI:** Spectrum Qt sidebar 244px вместо 177px; horizontal scrollbar OFF, длинные QLabel wrap, более короткие названия кнопок. Это сознательная Qt-адаптация читаемости, а не Delphi pixel parity.
+
+**Код и CI:** source SHA 8a36077da1f0bf5df5c4ea4337d26895f202c8a2, [GitHub Actions run 41283560470](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470) — Linux Core SUCCESS, Windows Core+Qt SUCCESS; Windows EXE job ожидает/собирается. Публиковать EXE только после фактического SUCCESS и Artifacts. Synthetic core тест: test_stage111z16_direct_bin_tsxml.py; UI проверки перенесены в существующий test_desktop_qt.py. В GitHub нет оригинальных пользовательских BIN/TSXML.
+
+**NEXT:** подтвердить готовый Windows EXE artifact; открыть конкретный оригинальный BIN/TSXML оператора без Native R6.1, проверить измерения/калибровку и отрисовку; при ином RealDataType разбирать исходный формат отдельно. Вернуться к original vs Qt графическим тестам/XOR. Stable main и прибор не трогать.
+
+---
+
 **ПОДТВЕРЖДЕНО ПОСЛЕ ПЕРВОГО ЗАПУСКА (GitHub Actions #161, 01.11.2026):** workflow `MVKView Compatible - Windows EXE` run `41282496457`, точный source SHA `685b411926e4d54531222e3f7e5ce97d3804053a`, итоговый статус **COMPLETED/SUCCESS**. Все три jobs **SUCCESS**: `Linux - all offline core tests`, `Windows - offline core and Qt smoke tests`, `Windows - verified autonomous EXE artifact`. Действительный Actions Artifact `MVKViewCompatible_Stage111_Windows_Preview`, artifact id `13074086884`, ZIP размером 66958955 байт, **не истёк**, внутри EXE + SHA256SUMS.txt + BUILD_INFO.txt + BUILD_VERIFICATION.json. [Сборка #161 и скачивание](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41282496457). GitHub Actions — теперь **подтверждённая основная CI/Windows EXE система**; CircleCI ручной резерв. Следом не смешивать сборку 2026-11-01 с будущими исходниками: код сборки зафиксирован по SHA. **Продуктовая следующая задача:** Qt sidebar clipping и прямое открытие оригинальных измерений BIN/TSXML, оригинальный FFT и previous numeric golden сохранять.
 
 # Stage111Z.15 — GitHub Actions снова главный CI/EXE publisher (01.11.2026)

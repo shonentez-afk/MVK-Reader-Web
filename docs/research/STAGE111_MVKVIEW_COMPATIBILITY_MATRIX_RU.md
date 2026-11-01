@@ -512,3 +512,19 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Original BIN/TSXML direct open | **TODO next Stage** | Current Desktop preview expects Native R6.1 export ZIP; user wants original no-conversion archives |
 
 [Отчёт GitHub Actions migration](STAGE111Z15_GITHUB_ACTIONS_CI_MIGRATION_RU.md) · [Первый workflow run #161](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41282496457). Next verify actual artifact availability, then resume UI/layout and original source parity work.
+
+
+## Stage111Z.16 — самостоятельный BIN/TSXML и GUI (01.11.2026)
+
+| Функция | Статус | Границы и источник |
+|---|---|---|
+| Direct local BIN + TSXML | IMPLEMENTED + SYNTHETIC LINUX/WIN PASS | Строгий Single Float32 little-endian, DataOffset/DataLength/Frequency, SHA256; нет универсального original-format decoding |
+| Multi ADC one recording | IMPLEMENTED + SYNTHETIC PASS | Только распознанные MVK...-ADC имена одинаковых serial/timestamp, прочие файлы не примешивать |
+| R6.1 Native ZIP | UNCHANGED, TESTED | EXPORT_AUDIT + VALUES/AUX SHA required как раньше |
+| Original DSP on direct BIN | UNAVAILABLE BY DESIGN | Нельзя синтезировать DSP/третьоктавы, табличные приборные значения явно отсутствуют |
+| Physical calibration for direct BIN | NOT VERIFIED | Source Single заявлен как uncalibrated/unknown, число на графике не объявлять м/с² без FRange эталона |
+| Qt Spectrum left panel | IMPROVED, WINDOWS QT TESTED | 244px + wrap + no horizontal scroll; pixel-exact original DFM geometry не заявлена |
+| GitHub Actions new Preview | LINUX/WINDOWS QT SUCCESS, EXE BUILD PENDING | [Run 41283560470](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470), source SHA 8a36077d |
+| FFT source-derived original goldens | PRESERVED | Прежний Stage111Z.8 131072/131072 power и Z.10 OutputMean/Peak 3/3 одного оригинального захвата, алгоритм не менялся |
+
+[Stage111Z.16 полный отчёт](STAGE111Z16_DIRECT_BIN_TSXML_QT_SIDEBAR_RU.md). NEXT — пользовательский real BIN/TSXML и Qt-side-by-side screenshot.
