@@ -1,0 +1,154 @@
+# MVKView Compatible Stage111: standalone Windows desktop, NO web or device.
+# Original EXE/IDP/PAS/DFM, measurement BIN/RAW/PCAPNG and screenshots
+# must NEVER be committed to this repository or uploaded to CI.
+# Manual dispatch: choose research/stage111-mvkview-desktop-20261029,
+# NOT the default main branch. Push builds run on the research branch only.
+name: MVKView Compatible - Windows EXE
+
+on:
+  push:
+    branches:
+      - research/stage111-mvkview-desktop-20261029
+    paths:
+      - 'mvk_compatible/**'
+      - '.github/workflows/stage111-desktop-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage111-native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  linux-core:
+    name: Linux - all offline core tests
+    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout only the selected source revision
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install core-only requirements
+        run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
+      - name: Compile-check Python source files
+        run: python -m compileall -q mvk_compatible
+      - name: Test all offline core features (no hardware, web or Qt)
+        run: |
+          python -m pytest -q mvk_compatible/tests \
+            --ignore=mvk_compatible/tests/test_desktop_qt.py \
+            --junitxml=linux-core-junit.xml
+
+  desktop-windows:
+    name: Windows - offline core and Qt smoke tests
+    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      QT_QPA_PLATFORM: offscreen
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout selected research revision
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install Qt, numerical requirements and pytest
+        run: |
+          python -m pip install -r mvk_compatible/requirements-desktop.txt pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile-check Python source files
+        run: |
+          python -m compileall -q mvk_compatible
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test all offline core features on Windows
+        run: |
+          python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --junitxml=windows-core-junit.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test native Windows Qt GUI without connected devices
+        run: |
+          python -m pytest -q mvk_compatible/tests/test_desktop_qt.py --junitxml=windows-qt-junit.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  windows-exe-preview:
+    name: Windows - verified autonomous EXE artifact
+    needs:
+      - linux-core
+      - desktop-windows
+    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout EXACT tested research revision
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install native runtime and PyInstaller
+        run: |
+          python -m pip install -r mvk_compatible/requirements-desktop.txt pyinstaller
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build one-file standalone Windows EXE
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name MVKViewCompatible_Stage111_PREVIEW mvk_compatible/windows_launcher.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath dist/MVKViewCompatible_Stage111_PREVIEW.exe)) {
+            throw 'PyInstaller did not create the Windows EXE'
+          }
+      - name: Write exact commit and artifact SHA256
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'dist/MVKViewCompatible_Stage111_PREVIEW.exe'
+          $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  MVKViewCompatible_Stage111_PREVIEW.exe" | Set-Content -Encoding ascii -Path dist/SHA256SUMS.txt
+          @("commit=$env:GITHUB_SHA", "branch=$env:GITHUB_REF_NAME") | Set-Content -Encoding ascii -Path dist/BUILD_INFO.txt
+          python -m mvk_compatible.verify_windows_preview_artifact --dist dist --expected-commit $env:GITHUB_SHA --expected-branch $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish only a separately reverified copy
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path verified-dist -ErrorAction Stop | Out-Null
+          foreach ($name in @('MVKViewCompatible_Stage111_PREVIEW.exe', 'SHA256SUMS.txt', 'BUILD_INFO.txt')) {
+            Copy-Item -LiteralPath (Join-Path dist $name) -Destination (Join-Path verified-dist $name) -ErrorAction Stop
+          }
+          python -m mvk_compatible.verify_windows_preview_artifact --dist verified-dist --expected-commit $env:GITHUB_SHA --expected-branch $env:GITHUB_REF_NAME --receipt-json verified-dist/BUILD_VERIFICATION.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath verified-dist/BUILD_VERIFICATION.json)) {
+            throw 'Verified Windows artifact receipt is missing'
+          }
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '### MVKView Compatible - verified Windows EXE'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Source branch: $env:GITHUB_REF_NAME"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Source commit: $env:GITHUB_SHA"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- Artifact: MVKViewCompatible_Stage111_Windows_Preview'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- Contents: EXE, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- This preview is NOT certified as an exact clone of original MVKView.'
+      - name: Upload verified Windows EXE and checksums
+        uses: actions/upload-artifact@v6
+        with:
+          name: MVKViewCompatible_Stage111_Windows_Preview
+          path: verified-dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
