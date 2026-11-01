@@ -1,3 +1,10 @@
+# СЕЙЧАС: Stage111Z.16 Готовая Windows EXE — все GitHub Actions jobs SUCCESS
+
+**Stage111Z.16 — ОКОНЧАТЕЛЬНО ПОДТВЕРЖДЁННЫЙ GITHUB ACTIONS WINDOWS EXE (01.11.2026):** run 41283560470, source commit SHA **8a36077da1f0bf5df5c4ea4337d26895f202c8a2**, workflow COMPLETED/SUCCESS, все три job SUCCESS: Linux all offline core; Windows Core+Qt; Windows verified autonomous EXE. Артефакт GitHub Actions **MVKViewCompatible_Stage111_Windows_Preview**, ID **13074248511**, 66 970 774 байт, не истёк; PyInstaller EXE, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. **[Скачать новый EXE из Artifacts](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470)**. Исследовательская ветка source code и doc-only handoff commits различаются: именно source SHA 8a36077d... был собран и протестирован. CircleCI остаётся ручным резервом. Следом протестировать конкретные оригинальные BIN+TSXML, НЕ заявлять универсальную поддержку форматов или проверенную физическую калибровку.
+
+
+---
+
 # MVKView Compatible — Stage111Z.16: прямой BIN/TSXML + исправление панели (01.11.2026)
 
 **Рабочая ветка:** research/stage111-mvkview-desktop-20261029. Единая автономная Windows Qt/PySide6. [Технический отчёт](STAGE111Z16_DIRECT_BIN_TSXML_QT_SIDEBAR_RU.md).

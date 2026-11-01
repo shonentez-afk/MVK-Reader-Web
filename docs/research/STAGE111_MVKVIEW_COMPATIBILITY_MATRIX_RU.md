@@ -528,3 +528,9 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | FFT source-derived original goldens | PRESERVED | Прежний Stage111Z.8 131072/131072 power и Z.10 OutputMean/Peak 3/3 одного оригинального захвата, алгоритм не менялся |
 
 [Stage111Z.16 полный отчёт](STAGE111Z16_DIRECT_BIN_TSXML_QT_SIDEBAR_RU.md). NEXT — пользовательский real BIN/TSXML и Qt-side-by-side screenshot.
+
+
+## Stage111Z.16 — финальное подтверждение CI и артефакта
+
+**Stage111Z.16 — ОКОНЧАТЕЛЬНО ПОДТВЕРЖДЁННЫЙ GITHUB ACTIONS WINDOWS EXE (01.11.2026):** run 41283560470, source commit SHA **8a36077da1f0bf5df5c4ea4337d26895f202c8a2**, workflow COMPLETED/SUCCESS, все три job SUCCESS: Linux all offline core; Windows Core+Qt; Windows verified autonomous EXE. Артефакт GitHub Actions **MVKViewCompatible_Stage111_Windows_Preview**, ID **13074248511**, 66 970 774 байт, не истёк; PyInstaller EXE, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. **[Скачать новый EXE из Artifacts](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470)**. Исследовательская ветка source code и doc-only handoff commits различаются: именно source SHA 8a36077d... был собран и протестирован. CircleCI остаётся ручным резервом. Следом протестировать конкретные оригинальные BIN+TSXML, НЕ заявлять универсальную поддержку форматов или проверенную физическую калибровку.
+
