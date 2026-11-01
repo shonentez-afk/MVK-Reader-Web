@@ -464,3 +464,17 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Delphi bSpecCopyValue TAB и 007B2090 | **SOURCE STRUCTURE VERIFIED, ORIGINAL CLIPBOARD RUNTIME TODO** | `private_spectrum_copy_runtime_compare.py` сравнит оригинальную строку с `spectrum_triplet_text` без повторного FFT; текущее `6,89<TAB>3800<TAB>0,7786` только ПРОГНОЗ |
 
 [Stage111Z.10 полный отчёт](STAGE111Z10_GETSPECTRUM_ORIGINAL_SUMMARY_3OF3_RU.md) · [Stage111Z.11 Original Copy Text](STAGE111Z11_ORIGINAL_COPY_TEXT_REGRESSION_GATE_RU.md). Дальше настоящий original Clipboard, CursorString, точные графические подписи и GDI/Qt сравнение.
+
+
+## Stage111Z.12 — оригинальная Copy selection vs backend summary (01.11.2026)
+
+| Узел | Статус | Обоснование / следующий шаг |
+|---|---|---|
+| Две оригинальные Clipboard-строки | **OPERATOR-REPORTED ORIGINAL TEXT**, NOT SAME AS PREVIOUS BACKEND | Два соседних спектра: `6,15 / 19,93 / 6,096` и `5,57 / 19,94 / 5,522`; формат TAB 3/4/4 совместим с source |
+| Original Copy selection `0084EADC` | **SOURCE-VERIFIED** 3 SHA private IDP windows | Выбор record: single-pane index0, иначе текущий index control; именно выбранный record копируется |
+| Original Copy record `0084BC8C` | **SOURCE-VERIFIED, RUNTIME DWORD TODO** | ESI = Form EBX+0x908+index*72; `ESI+30` mean, `+34` peak bin, `+38` peak Y |
+| Original graph XScale Copy | **SOURCE-VERIFIED, RUNTIME DWORD TODO** | `dword:[dword:[dword:[ebx+FF4]+40]+14]`, не использовать слепо Fs/N другого GetSpectrum call |
+| Формат 007B2090 | **SOURCE VERIFIED 3/4/4; FULL RTL TEXT PARITY TODO** | У оригинальных соседних чисел нет согласованных Single input DWORD для побитовой RTL сверки |
+| Новый same-click comparator | **IMPLEMENTED + SYNTHETIC CI PASS** | `private_spectrum_copy_selected_record_compare.py`, source audit + tests; без FFT/BIN, только 4 original DWORD + TXT |
+
+[Stage111Z.12](STAGE111Z12_COPY_SELECTED_RECORD_SOURCE_AND_TWO_OPERATOR_TEXTS_RU.md) · [x32dbg инструкция](STAGE111Z12_X32DBG_COPY_SELECTED_RECORD_RU.md). Дальше снять одну Copy кнопку с 4 DWORD, подтвердить строку, курсоры и Canvas; сохранять ранее установленные численные FFT/summary доказательства без повторной подгонки.

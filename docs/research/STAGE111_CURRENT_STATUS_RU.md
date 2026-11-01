@@ -1,3 +1,15 @@
+# MVKView Compatible — Stage111Z.12: выбранная запись Copy != произвольный backend GetSpectrum (01.11.2026)
+
+**Ветка:** `research/stage111-mvkview-desktop-20261029`; автономная Windows Qt/PySide6, не Web. [Stage111Z.12 подробный отчёт](STAGE111Z12_COPY_SELECTED_RECORD_SOURCE_AND_TWO_OPERATOR_TEXTS_RU.md), [x32dbg same-click guide](STAGE111Z12_X32DBG_COPY_SELECTED_RECORD_RU.md).
+
+Оригинальная MVKView через «Копировать» выдала две пользовательские 3-TAB строки соседних спектров: `6,15/19,93/6,096` и `5,57/19,94/5,522`. Обе совместимы с точностью 3/4/4 и десятичной запятой. **Нельзя сравнивать эти строки напрямую** с исходным x32dbg GetSpectrum `OutputMean 40DC8F5E` / `OutputPeakX 466D8095` / `OutputPeakY 3F475279` и ранее вычисленной частотой 3800.0364 Гц: не подтверждено тождество выбранной отображаемой записи и backend-вызова.
+
+Local offline original IDP reverse-engineering выявил и SHA256-подтвердил code Copy selection. Original handler 0084BC28 через 0084EADC выбирает record, затем 0084BC8C доступна ESI=FormEBX+0x908+index*72. Поля `[esi+30/34/38]` идут в 007B2090 c 3/4/4, а XScale из графика: `dword:[dword:[dword:[ebx+FF4]+40]+14]`. **Новая точная процедура**: в x32dbg `bp 0084BC8C`, прочесть эти 4 DWORD, F9 и вставить Clipboard; это одна и та же выбранная запись. [Пошаговая инструкция](STAGE111Z12_X32DBG_COPY_SELECTED_RECORD_RU.md).
+
+Новые файлы: `private_spectrum_copy_selection_source_audit.py` + `tests/test_private_copy_selection_source_audit.py` (три SHA, source-selected state); `private_spectrum_copy_selected_record_compare.py` + `tests/test_stage111z12_same_click_copy_compare.py` (candidate-only 3 text fields; no archive, no Fs/N guess). Для code SHA `48ac0494db9ab10d0c489ee6928c0ab665da39a4` Linux #304 и Windows #303 SUCCESS. Original same-click четыре DWORD ещё **НЕ получены**. Старый original FFT/summary эталон Stage111Z.8/Z.10 остаётся как отдельный случай; FormatFloat/Copy полной аттестации пока нет. NEXT Stage111Z.13 — 4DWORD + TXT той же кнопки, затем CursorString/TQGrapher/Canvas.
+
+---
+
 # MVKView Compatible — Stage111Z.10 принят, Stage111Z.11 Copy-текст подготовлен (01.11.2026)
 
 **Репозиторий/ветка:** `shonentez-afk/MVK-Reader-Web` · `research/stage111-mvkview-desktop-20261029`. Продукт — единая автономная Windows Qt/PySide6 MVKView Compatible, не Web. [Отчёт Stage111Z.10](STAGE111Z10_GETSPECTRUM_ORIGINAL_SUMMARY_3OF3_RU.md), [Stage111Z.11 Copy text](STAGE111Z11_ORIGINAL_COPY_TEXT_REGRESSION_GATE_RU.md).
