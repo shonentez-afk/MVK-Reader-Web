@@ -1,3 +1,19 @@
+# MVKView Compatible — Stage111Z.14: original screenshot geometric cursor reference + Qt fixes (01.11.2026)
+
+**Working:** `research/stage111-mvkview-desktop-20261029` автономная Windows Qt/PySide6, не Web. [Stage111Z.14 screenshot evidence и изменения](STAGE111Z14_ORIGINAL_SPECTRUM_SCREENSHOT_PIXEL_REFERENCE_RU.md).
+
+Новый оригинальный screenshot **1920×1080** original MVKView 1.0.47 показывает Tag0 log, 0..25600 Hz, Y=0..−150dB, `3800 Гц/-55,32 дБ` cursor и summary `6,89; 3800Гц; 0,7786 м/с2`. Это та же пользовательская source-claimed запись, где Stage111Z.8 FFT power **131072/131072**, Stage111Z.10 summary **3/3**, Stage111Z.13 selected Copy visible **3/3** (4 exact Single words).
+
+Full-size pixel audit (без публикации оригинального PNG): plot border screen `605,193,1639,911`; magenta cursor observed `758,458`; axis-derived `758.484375,457.7984`; abs errors `0.484375` и `0.2016` px. White XOR pixel `(255,127,255)`, black XOR pixel `(0,128,0)` — подтверждение source VCL clGreen/pmXor для этих цветов, не полный графический Delphi/Qt parity. **НЕ путать** cursor -55.32dB vs peak 0.7786m/s2 (разные шкалы/величины).
+
+Исправления QT Desktop: `grapher_axis_end_frequency_hz=DataSize*XScale` (N262144: axis 25600Hz, last sample center 25599.75Hz), `main_window.py` использует конец оси и рисует чёрную spectral trace, top tab теперь `Задачи`. FFT DSP/core вычисления не менялись. Тест `test_stage111z14_original_screenshot_cursor_geometry.py` для derived original pixel map, XOR white/black, cursor text and axis range; обновлены Qt regressions. Ранее локально созданный Stage111Z.13 same-click Copy golden тест теперь публично закоммичен, **без** исходных private бинарников/скриншота.
+
+**CI подтверждено для code SHA `5bab4e26052977f6900acfd90cccdea230c736b1`:** Linux Core #319 SUCCESS, Windows Core+Qt #318 SUCCESS; EXE Preview #320 ещё проверять. Последний Qt таб-label SHA `5f8b03435e070a451f9c616d5575d72a7811ece0` и новые документы — CI отдельно.
+
+**NEXT Stage111Z.15:** с тем же архивом и 1920x1080 сделать screenshot нашей Qt EXE, сравнить реальную pixel geometry, курсор, Y/X, зум, фон/цвета, fonts, DPI и отступы. Только **пара original screenshot + Qt screenshot** даст право говорить о визуальной похожести/отклонении; текущий оригинальный screenshot валидирует лишь исходную сторону. main/Web/прибор/приватные материалы не изменять.
+
+---
+
 # MVKView Compatible — Stage111Z.12: выбранная запись Copy != произвольный backend GetSpectrum (01.11.2026)
 
 **Ветка:** `research/stage111-mvkview-desktop-20261029`; автономная Windows Qt/PySide6, не Web. [Stage111Z.12 подробный отчёт](STAGE111Z12_COPY_SELECTED_RECORD_SOURCE_AND_TWO_OPERATOR_TEXTS_RU.md), [x32dbg same-click guide](STAGE111Z12_X32DBG_COPY_SELECTED_RECORD_RU.md).

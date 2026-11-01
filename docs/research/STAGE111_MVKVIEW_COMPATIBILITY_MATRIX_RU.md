@@ -478,3 +478,21 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Новый same-click comparator | **IMPLEMENTED + SYNTHETIC CI PASS** | `private_spectrum_copy_selected_record_compare.py`, source audit + tests; без FFT/BIN, только 4 original DWORD + TXT |
 
 [Stage111Z.12](STAGE111Z12_COPY_SELECTED_RECORD_SOURCE_AND_TWO_OPERATOR_TEXTS_RU.md) · [x32dbg инструкция](STAGE111Z12_X32DBG_COPY_SELECTED_RECORD_RU.md). Дальше снять одну Copy кнопку с 4 DWORD, подтвердить строку, курсоры и Canvas; сохранять ранее установленные численные FFT/summary доказательства без повторной подгонки.
+
+
+## Stage111Z.14 — original screenshot visual reference (01.11.2026)
+
+| Проверяемый элемент | Статус | Оригинальный evidence / Qt action |
+|---|---|---|
+| Original Spectrum screenshot | **OPERATOR-REPORTED ORIGINAL RUNTIME PNG; DERIVED REFERENCE** | 1920×1080, полный PNG хранится приватно, не в GitHub/CI; вкладка «Спектр» |
+| Original plot cursor position | **SCREENSHOT-CONSISTENT <1 px** | Plot global `L605,T193,R1639,B911`; observed magenta `X758,Y458`; from 3800Hz/−55.32dB prediction `X758.484375,Y457.7984` |
+| Original graph X domain | **SCREENSHOT-CONFIRMED THIS CASE** | DataSize=102400, XScale=.25, last data bin25599.75Hz, **axis endpoint 25600Hz**, not 32768Hz Nyquist |
+| Original log Y axis and cursor hint | **SCREENSHOT-CONFIRMED TEXT, NOT RAW INTERNAL FLOAT32** | Y 0..−150dB; `3800 Гц`, `−55,32 дБ`; separate physical summary `6,89;3800;0,7786 м/с2` |
+| Source GDI XOR color model | **SCREENSHOT COLORS + PREVIOUS SOURCE STRUCTURE CONSISTENT** | `clGreen (0,128,0)` XOR white `(255,255,255)` → `(255,127,255)`; over black → `(0,128,0)` |
+| Standalone Qt Spectrum line | **FIXED COLOR TO BLACK**, CI code SHA `5bab4e26` Linux/Win Core PASS | Previously teal `#176c92`, now black `#000000`; no UI parity claimed |
+| Standalone Qt plotted X axis | **FIXED AXIS-END MODEL**, CI code SHA `5bab4e26` Linux/Win Core PASS | UI uses `grapher_axis_end_frequency_hz` 25600 while retaining original 102400 data bins |
+| Original top task tab caption | **QT TEXT FIXED** | Source screenshot shows `Задачи`, not prior Qt `Расчётные данные`; newest CI needs separate verification |
+| Original vs Qt screenshot pixel parity | **TODO** | Need same archive/session & same screen size Qt 1920×1080 image with cursor 3800Hz, compare plot rect / font/DPI / line and axes |
+| Same-click original Copy 3/3 | **REGRESSION PUBLISHED** | `tests/test_stage111z13_original_same_click_golden.py`, only 4 Single words and three visible columns; no original binary assets |
+
+[Полный Stage111Z.14](STAGE111Z14_ORIGINAL_SPECTRUM_SCREENSHOT_PIXEL_REFERENCE_RU.md). Следом Stage111Z.15 — одна сравнительная Qt screenshot или native CursorString/PixelRect original x32dbg от того же окна для точной GDI/Qt совместимости.
