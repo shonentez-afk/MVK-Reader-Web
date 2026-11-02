@@ -1022,3 +1022,104 @@ def test_invalid_or_unpaired_direct_bin_does_not_replace_loaded_zip(
     assert win.metrics.item(0,1).text()!="—"
     win.close()
     qt_app.processEvents()
+
+
+# Stage111Z.18 — original-style primary panel plus preserved diagnostics.
+def test_stage111z18_primary_spec_controls_and_research_dock(tmp_path, qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    layout=win.spec_tools.widget().layout()
+    children=[layout.itemAt(i).widget() for i in range(layout.count())
+              if layout.itemAt(i).widget() is not None]
+    expected=[
+        win.spec_envelope_button,win.spec_mode,win.spec_lines_button,
+        win.spec_hscale_button,win.spec_vscale_button,
+        win.spec_cursor_primary,win.spec_mean_primary,
+        win.spec_copy_button,win.spec_save_button,win.spec_advanced_button,
+    ]
+    assert children == expected
+    assert win.spec_mode.itemText(0)=="Логарифмич."
+    assert [win.spec_mode.itemText(i) for i in range(1,4)] == [
+        "Линейный ВУ","Линейный ВС","Линейный ВП"
+    ]
+    fs=win.session.samples(win._ch())[1]
+    n=int(win.spec_n.currentText())
+    assert win.spec_lines_button.text().endswith(" Гц/лин")
+    if fs/n==.25:
+        assert win.spec_lines_button.text()=="1/4 Гц/лин"
+    assert len(win.spec_lines_menu.actions())==win.spec_n.count()
+    assert sum(a.isChecked() for a in win.spec_lines_menu.actions())==1
+    assert "СКЗ спектра" in win.spec_mean_primary.text()
+    assert "Пик спектра" in win.spec_mean_primary.text()
+    assert not win.spec_inspector.isVisible()
+    assert win.spec_n not in children
+    win.spec_advanced_button.click()
+    qt_app.processEvents()
+    assert win.spec_inspector.isVisible()
+    assert win.spec_n.isVisible()
+    assert win.spec_original_copy_compare.isVisible()
+    assert win.narrow_run.isVisible()
+    win.spec_advanced_button.click()
+    qt_app.processEvents()
+    assert not win.spec_inspector.isVisible()
+    assert win.spec_copy_button.isVisible()
+    win.close()
+
+
+def test_stage111z18_small_window_keeps_all_spectrum_actions(tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.resize(1024,704)
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.spec_tools.horizontalScrollBar().maximum()==0
+    assert win.spec_tools.verticalScrollBar().maximum()==0
+    assert win.spec_copy_button.isVisible()
+    assert win.spec_save_button.isVisible()
+    win.close()
+
+
+def test_stage111z18_direct_bin_copy_csv_keep_uncalibrated_warning(
+    tmp_path,qt_app,monkeypatch,
+):
+    from PySide6.QtWidgets import QMessageBox,QFileDialog,QApplication
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z16_direct_bin_tsxml import _make_pair
+    p,sidecar,_=_make_pair(tmp_path,adc=4)
+    win=MainWindow()
+    win.open_archive(p)
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert "Калибровка НЕ подтверждена" in win.spec_mean_primary.text()
+    assert "усл. ед." in win.spec_mean_primary.text()
+    assert "м/с²" not in win.spec_mean_primary.text()
+    clipboard=QApplication.clipboard()
+    clipboard.setText("previous clipboard")
+    questions=[]
+    monkeypatch.setattr(QMessageBox,"question",
+        lambda *args,**kwargs:(questions.append(args[2]) or QMessageBox.No))
+    win.spec_copy_button.click()
+    assert clipboard.text()=="previous clipboard"
+    assert questions and "калибровка" in questions[0]
+    monkeypatch.setattr(QMessageBox,"question",lambda *a,**kw:QMessageBox.Yes)
+    win.spec_copy_button.click()
+    assert clipboard.text().startswith("НЕ КАЛИБРОВАНО · условные единицы")
+    assert len(clipboard.text().splitlines()[-1].split("\t"))==3
+    target=tmp_path/"uncalibrated.csv"
+    monkeypatch.setattr(QFileDialog,"getSaveFileName",
+                        lambda *a,**kw:(str(target),"CSV (*.csv)"))
+    win.spec_save_button.click()
+    lines=target.read_text(encoding="utf-8").splitlines()
+    assert lines[0]=="sep=|"
+    assert "НЕ КАЛИБРОВАНО" in lines[1]
+    assert len(lines[-1].split("|"))==3
+    win.close()
