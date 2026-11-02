@@ -71,3 +71,27 @@ func TestPreviewNeverCreatesUnrequestedFiles(t *testing.T) {
         t.Fatal("invalid channel must never enter preview")
     }
 }
+
+func TestTransientLocalPreviewFailureDoesNotAffectNativeCapture(t *testing.T) {
+    dir:=filepath.Join(t.TempDir(),"TEST_preview")
+    m,err:=NewMonitor(dir,"OFFLINE_REPLAY","")
+    if err!=nil {t.Fatal(err)}
+    defer m.CloseFiles()
+    m.liveProgressEnabled=true
+    p:=newLivePreviewBuffer()
+    h:=SampleHeader{Channel:0,Rate:65536,Index:4096,Samples:256}
+    if err:=p.appendCalibratedADC(h,make([]byte,1024));err!=nil {t.Fatal(err)}
+    m.liveBin=&LiveBinSpool{begun:true,preview:p}
+    blocking:=filepath.Join(dir,livePreviewFile)
+    if err:=os.Mkdir(blocking,0700);err!=nil {t.Fatal(err)}
+    m.publishLiveStatus("RECORDING",true,"")
+    if !m.liveProgressEnabled || m.livePreviewFailures!=1 || m.liveBin.preview==nil {
+        t.Fatal("brief preview file lock must not stop accepted native capture")
+    }
+    if err:=os.Remove(blocking);err!=nil {t.Fatal(err)}
+    m.publishLiveStatus("RECORDING",true,"")
+    if m.livePreviewFailures!=0 || m.liveBin.preview==nil {
+        t.Fatal("next local update must recover preview without a second TCP")
+    }
+    if _,err:=os.Stat(blocking);err!=nil {t.Fatal("preview did not recover",err)}
+}
