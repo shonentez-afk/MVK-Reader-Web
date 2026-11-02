@@ -198,6 +198,7 @@ func mainInner() int {
 	limitMB := flag.Int("max-mb", 256, "maximum raw capture size in MiB (1..2048)")
 	localIP := flag.String("local-ip", "", "REQUIRED for command-line live: local IPv4 of the wired Ethernet adapter")
 	listIF := flag.Bool("list-interfaces", false, "show local IPv4 adapters and exit without connecting")
+	stopFile := flag.String("stop-file", "", "optional absolute GUI stop-request file (.mvk_stop_requested); stops safely without killing process")
 	autoExport := flag.Bool("export", true, "after capture, validate and atomically produce 8 BIN/TSXML + VALUES/TABLE in same run folder")
 	offsetText := flag.String("offset", "auto", "capture-PC UTC offset auto or +/-HH:MM; for replay specify original capture PC timezone")
 	flag.Parse()
@@ -258,6 +259,12 @@ func mainInner() int {
 	fmt.Printf("CSV timestamp offset: %s; automatic reconstructed BIN/VALUES/TABLE: %v\n", formatOffset(offsetMinutes), *autoExport)
 	if *replay != "" && *offsetText == "auto" && *autoExport {
 		fmt.Println("ВНИМАНИЕ: при офлайн-повторе UTC offset берётся с ЭТОГО ПК; для исходной записи другой временной зоны используйте -offset +HH:MM.")
+	}
+	if *stopFile != "" {
+		if e := validateStopRequestPath(*stopFile); e != nil {
+			fmt.Println("Invalid stop file:", e)
+			return 2
+		}
 	}
 	if *limitMB < 1 || *limitMB > 2048 {
 		fmt.Println("Неверный лимит MB (1..2048)")
@@ -320,8 +327,15 @@ func mainInner() int {
 		fmt.Printf("ОФЛАЙН: анализ файла %s (сеть не используется)\n", *replay)
 		reason, runError = replayRaw(m, *replay, uint64(*limitMB)*1024*1024)
 	} else {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		baseCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
+		ctx := baseCtx
+		if *stopFile != "" {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(baseCtx)
+			defer cancel()
+			go watchStopRequest(ctx, *stopFile, cancel)
+		}
 		reason, runError = liveCapture(ctx, m, *ip, *seconds, uint64(*limitMB)*1024*1024, selectedNIC)
 	}
 	if runError != nil {
