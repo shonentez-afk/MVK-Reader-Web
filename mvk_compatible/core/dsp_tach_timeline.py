@@ -17,6 +17,7 @@ import math
 import re
 import struct
 import zipfile
+from .control_status_source import validated_control_status
 
 TIMELINE_FILE = "TIMELINE.json"
 SCHEMA = "MVK_NATIVE_R6_DSP_TACH_TICK_V1"
@@ -78,6 +79,7 @@ def read_verified_dsp_tach_tick(z: zipfile.ZipFile, audit: dict,
         "tach_frequency_hz_verified": False,
         "rpm_verified": False,
         "tick_received_utc": None,
+        "control_status": validated_control_status({},tick_frame=0,previous_tick_frame=0),
     }
     if TIMELINE_FILE not in z.namelist():
         return no_data
@@ -102,6 +104,7 @@ def read_verified_dsp_tach_tick(z: zipfile.ZipFile, audit: dict,
         raise ValueError("TIMELINE: Native audit AUX count differs")
     prev_frame = 0
     prev_clock = None
+    selected_control = None
     for n,row in enumerate(ticks):
         if not isinstance(row, dict) or _unsigned(row.get("update"), "update") != n+1:
             raise ValueError("TIMELINE: non-sequential tick updates")
@@ -112,6 +115,10 @@ def read_verified_dsp_tach_tick(z: zipfile.ZipFile, audit: dict,
         clock = _clock(row.get("tick_received_utc"))
         if prev_clock is not None and clock < prev_clock:
             raise ValueError("TIMELINE: host timestamp travelled backwards")
+        control=validated_control_status(
+            row,tick_frame=frame,previous_tick_frame=prev_frame)
+        if n == tick_index:
+            selected_control = control
         prev_frame, prev_clock = frame, clock
     row = ticks[tick_index]
     if "dsp_tach_schema" not in row:
@@ -169,6 +176,7 @@ def read_verified_dsp_tach_tick(z: zipfile.ZipFile, audit: dict,
         "host_clock_only": True,
         "aux_frame": row["aux_frame"],
         "tick_frame": row["tick_frame"],
+        "control_status": selected_control,
     }
 
 
