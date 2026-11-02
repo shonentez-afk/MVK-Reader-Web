@@ -73,7 +73,16 @@ def synthetic_completed_run(tmp_path):
     audit_path = export / "EXPORT_AUDIT.json"
     audit = json.loads(audit_path.read_text())
     audit["source_raw_sha256"] = sha
-    timeline = b"[]\n"
+    # Stage111Z28 now validates timeline tick identities before using DSP.
+    # This old synthetic bridge fixture had an empty placeholder despite two
+    # VALUES rows; give it a *historical* valid 2-tick pointer-only timeline.
+    # It must remain DSP/TACH-unknown, not fabricate raw original registers.
+    timeline = json.dumps([
+        {"update": 1, "aux_frame": 10, "tick_frame": 11,
+         "tick_received_utc": "2026-10-29T06:32:12Z"},
+        {"update": 2, "aux_frame": 20, "tick_frame": 21,
+         "tick_received_utc": "2026-10-29T06:32:13Z"},
+    ]).encode("utf-8") + b"\n"
     (export / "TIMELINE.json").write_bytes(timeline)
     audit["output_file_sha256"]["TIMELINE.json"] = hashlib.sha256(timeline).hexdigest()
     audit_path.write_text(json.dumps(audit), encoding="utf-8")
