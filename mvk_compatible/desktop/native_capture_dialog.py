@@ -8,14 +8,16 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from PySide6.QtCore import QProcess, QThread, Signal
+from PySide6.QtCore import QProcess, QThread, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QMessageBox, QPlainTextEdit, QPushButton,
-                               QSpinBox, QVBoxLayout)
+                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+                               QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem,
+                               QHeaderView, QVBoxLayout)
 
 from ..core.native_r6_bridge import (CaptureSpec, native_executable,
                                      pack_completed_export, request_graceful_stop)
+from ..core.native_r6_live_status import load_capture_live_status
 
 
 class ExportPackWorker(QThread):
@@ -49,6 +51,12 @@ class NativeCaptureDialog(QDialog):
         self._zip = None
         self._worker = None
         self._stdout = ""
+        self._active_device_ipv4 = None
+        self._active_local_ipv4 = None
+        self._live_last_error = None
+        self._timer = QTimer(self)
+        self._timer.setInterval(900)
+        self._timer.timeout.connect(self._poll_live_status)
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_process)
@@ -144,12 +152,94 @@ class NativeCaptureDialog(QDialog):
         self.status_label.setWordWrap(True)
         self.status_label.setObjectName("r6CaptureStatus")
         root.addWidget(self.status_label)
+        self.progress = QProgressBar()
+        self.progress.setObjectName("r6LiveProgress")
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        root.addWidget(self.progress)
+        self.live_quality = QLabel("Каналы: ожидаются данные Native R6.1; DSP ещё не получен.")
+        self.live_quality.setObjectName("r6LiveQuality")
+        self.live_quality.setWordWrap(True)
+        root.addWidget(self.live_quality)
+        self.live_tabs = QTabWidget()
+        self.live_channels = QTableWidget(10, 6)
+        self.live_channels.setObjectName("r6LiveChannelQuality")
+        self.live_channels.setHorizontalHeaderLabels(
+            ["Канал", "Отсчётов", "Fs, Гц", "Разрывы", "Статус DSP", "Качество"])
+        self.live_channels.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.live_channels.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.live_channels.verticalHeader().setVisible(False)
+        self._reset_live_channels()
+        self.live_tabs.addTab(self.live_channels, "Каналы · live")
         self.log = QPlainTextEdit()
         self.log.setObjectName("r6CaptureLog")
         self.log.setReadOnly(True)
         self.log.document().setMaximumBlockCount(200)
-        root.addWidget(self.log, 1)
+        self.live_tabs.addTab(self.log, "Журнал")
+        root.addWidget(self.live_tabs, 1)
         self._sync_buttons()
+
+    def _reset_live_channels(self):
+        for i in range(10):
+            name = f"АЦП {i+1}" if i < 8 else f"TACH {i-7}"
+            for col, value in enumerate((name, "—", "—", "—", "—", "Нет данных")):
+                self.live_channels.setItem(i, col, QTableWidgetItem(str(value)))
+
+    def _poll_live_status(self):
+        if self._capture_root is None:
+            return
+        try:
+            snapshot = load_capture_live_status(
+                self._capture_root, instrument_ipv4=self._active_device_ipv4,
+                local_ipv4=self._active_local_ipv4)
+        except (ValueError, OSError) as exc:
+            message = str(exc)
+            if message != self._live_last_error:
+                self.log.appendPlainText("Live статус не подтверждён: " + message)
+                self._live_last_error = message
+            self.live_quality.setText("Live-индикатор недостоверен. RAW продолжает писаться Native R6.1.")
+            return
+        if snapshot is None:
+            self.live_quality.setText("Ожидание локального состояния Native R6.1; нет второй сети.")
+            return
+        self._live_last_error = None
+        target = max(1, snapshot["target_seconds"])
+        elapsed = snapshot["elapsed_seconds"]
+        self.progress.setValue(min(100, max(0, round(100 * elapsed / target))))
+        frames = snapshot["frames_decoded"]
+        raw_mb = snapshot["raw_bytes"] / (1024 * 1024)
+        phase = snapshot["phase"]
+        phase_names = {
+            "CONNECTING": "Подключение (после разрешения оператора)",
+            "RECORDING": "Запись RAW",
+            "VERIFYING": "Проверка экспорта",
+            "COMPLETED": "Проверенный экспорт Native готов",
+            "REFUSED": "Native отказал в проверенном экспорте",
+        }
+        freshness = (" · УСТАРЕВШИЙ статус" if snapshot["snapshot_stale"] else "")
+        self.status_label.setText(
+            f'{phase_names.get(phase, phase)}: {elapsed:.1f} / {target} с, '
+            f'RAW {raw_mb:.1f} МиБ, кадров {frames}, AUX {snapshot["aux4700_updates"]}'
+            f'{freshness}')
+        invalid = snapshot["invalid_frames"]
+        warning = snapshot["warning_count"]
+        alerts = sum(c["quality"] in ("ОШИБКА ПОТОКА", "DSP: ПРЕДУПРЕЖДЕНИЕ")
+                     for c in snapshot["channels"])
+        if snapshot["quality_alert"]:
+            label = f"ВНИМАНИЕ: {alerts} каналов с замечаниями, ошибок кадров {invalid}, предупреждений {warning}"
+        else:
+            label = "Нет обнаруженных ошибок потока; это НЕ подтверждение точности датчиков/FFT."
+        if snapshot["aux4700_updates"] == 0:
+            label += " · Статусы DSP пока НЕ получены."
+        self.live_quality.setText(label)
+        for i, ch in enumerate(snapshot["channels"]):
+            fs = ", ".join(str(x) for x in ch["sample_rates_hz"]) or "—"
+            status = ch["dsp_sensor_status_hex"] or "Не получен"
+            values = [f"АЦП {i+1}" if i < 8 else f"TACH {i-7}",
+                      str(ch["samples"]), fs,
+                      str(ch["sequence_discontinuities"]), status, ch["quality"]]
+            for col, value in enumerate(values):
+                self.live_channels.item(i, col).setText(value)
 
     def is_busy(self):
         return self._mode is not None or self._worker is not None
@@ -195,12 +285,16 @@ class NativeCaptureDialog(QDialog):
             f"Ошибка локального запуска Native R6.1: {self._process.errorString()}. "
             "Подключение и экспорт не подтверждены.")
         if error == QProcess.FailedToStart:
+            self._timer.stop()
             self._mode = None
             self._sync_buttons()
 
     def _process_finished(self, exit_code, exit_status):
         mode = self._mode
         self._read_process()
+        if mode == "capture":
+            self._poll_live_status()
+            self._timer.stop()
         self._mode = None
         if mode == "interfaces":
             self.adapters.clear()
@@ -287,12 +381,19 @@ class NativeCaptureDialog(QDialog):
             return
         self._zip = None
         self._stdout = ""
+        self._active_device_ipv4 = spec.device_ipv4
+        self._active_local_ipv4 = spec.local_ipv4
+        self._live_last_error = None
+        self._reset_live_channels()
+        self.progress.setValue(0)
+        self.live_quality.setText("Подключение ожидается. Состояние датчиков ещё неизвестно.")
         self.log.clear()
         self.confirm.setChecked(False)  # every separate live session needs fresh consent
         self._mode = "capture"
         self.status_label.setText(
             "Запись запускается через Native R6.1. RAW сохраняется без изменений.")
         self._process.start(str(self._executable), args)
+        self._timer.start()
         self._sync_buttons()
 
     def stop_capture(self):
@@ -322,4 +423,5 @@ class NativeCaptureDialog(QDialog):
                 "Приёмник нельзя прерывать закрытием окна.")
             event.ignore()
         else:
+            self._timer.stop()
             super().closeEvent(event)
