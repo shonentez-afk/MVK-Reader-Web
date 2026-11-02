@@ -72,7 +72,7 @@ func (p *LivePreviewBuffer) appendCalibratedADC(h SampleHeader, written []byte) 
     // slice. These bits are the actual, already-calibrated native BIN bytes.
     copy(p.bytes[ch][start:start+len(written)], written)
     p.samples[ch] += uint64(h.Samples)
-    p.next[ch] = h.Index + h.Samples
+    p.next[ch] = h.Index + 256
     p.rate[ch] = h.Rate
     return nil
 }
