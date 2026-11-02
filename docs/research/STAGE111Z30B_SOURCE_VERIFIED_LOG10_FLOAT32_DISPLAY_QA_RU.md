@@ -1,3 +1,5 @@
+> **INDEPENDENT PRIVATE IDP CHECK (02.11.2026):** uploaded mvkview.idp SHA256 77e59f98febdd7df94e71cb538a2df69ea4de4624f15b088a81c86e61bb5a438; executable opcode pattern `55 8B EC D9 EC D9 45 08 D9 F1 9B 5D C2 04 00` for helper 00447DB8 appears **exactly once** in local IDP (offset 0x46EE0). This independently corroborates the log10 instruction sequence from private Winapi.Messages.pas; no original bytes/source published. Stage30A verified onefile EXE SHA256 0dd09bf1404845990361160a7b0ae0932fa59f95d60e92eab2c5bd1c0d082f1e (different from uploaded artifact ZIP digest).
+
 # Stage111Z30B — original GetSpectrum log10 and full Float32 display Y
 
 Дата: 02.11.2026. Ветка: research/stage111-mvkview-desktop-20261029.
