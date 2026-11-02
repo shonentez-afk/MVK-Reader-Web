@@ -509,7 +509,7 @@ class OfflineSession:
         then compute the un-decimated spectrum without a second DC removal.
         end_s is a local input-window selection, NOT proven MVKView position.
         """
-        samples,fs,_,filename=self.samples(channel)
+        samples,fs,audit,filename=self.samples(channel)
         if not float(fs).is_integer():
             raise ValueError('Original envelope FFT requires integer ADC sample rate')
         plan=required_original_history(n_fft,int(fs),code)
@@ -520,12 +520,20 @@ class OfflineSession:
         if start<0 or end>len(samples):
             raise ValueError('Insufficient actual BIN history for envelope FFT; no padding')
         if end<=start:raise ValueError('Empty original FFT input')
+        source_window=archive_input_window_evidence(
+            samples,first=start,end=end,sample_rate_hz=fs,
+            native_audit=bool(isinstance(audit,dict) and
+                audit.get('instrument_serial') and audit.get('output_file_sha256')),
+            channel=channel,
+            source_raw_sha256=audit.get('source_raw_sha256') if isinstance(audit,dict) else None)
         applied,range_source=resolve_f_range(f_range)
         result=envelope_spectrum_idr_candidate(
             samples[start:end],int(fs),code,profile,
             n_fft=n_fft,mode=mode,backend=backend,f_range=applied)
         return dict(result,channel=channel,file=filename,
                     f_range_source=range_source,
+                    input_source_window=source_window,
+                    pre_fir_original_ring_start_index_unverified=True,
                     archive_input_start_s=start/fs,archive_input_end_s=end/fs,
                     full_fft_bins=True,
                     original_archive_position_parity_verified=False)
@@ -543,7 +551,7 @@ class OfflineSession:
             raise ValueError('Invalid envelope display order')
         if not all(math.isfinite(v) for v in (start_s,seconds)) or start_s<0 or seconds<=0 or seconds>30:
             raise ValueError('Invalid envelope window')
-        samples,fs,_,filename=self.samples(channel)
+        samples,fs,audit,filename=self.samples(channel)
         if not float(fs).is_integer():
             raise ValueError('Original envelope requires integer ADC sample rate')
         rate=int(fs)
@@ -555,6 +563,12 @@ class OfflineSession:
         begin=end-plan['adjusted_input_length']
         if begin<0 or end>len(samples):
             raise ValueError('Original envelope requires more real BIN history: no zero-padding allowed')
+        source_window=archive_input_window_evidence(
+            samples,first=begin,end=end,sample_rate_hz=fs,
+            native_audit=bool(isinstance(audit,dict) and
+                audit.get('instrument_serial') and audit.get('output_file_sha256')),
+            channel=channel,
+            source_raw_sha256=audit.get('source_raw_sha256') if isinstance(audit,dict) else None)
         processed=process_original_envelope_candidate(
             samples[begin:end],rate,code,profile,f_range=f_range)
         raw=(processed['chronological'] if display_order=='chronological'
@@ -565,6 +579,11 @@ class OfflineSession:
         return {'version':VERSION,'channel':channel,'code':code,
                 'source':processed['source'],'file':filename,
                 'profile_source':processed['profile_source'],
+                'input_source_window':source_window,
+                'post_fir_getsignal_return_float32_sha256':hashlib.sha256(
+                    np.asarray(processed['getsignal_buffer'],dtype='<f4').tobytes()).hexdigest(),
+                'post_fir_getsignal_output_samples':processed['output_samples'],
+                'original_getsignal_envelope_output_runtime_verified':False,
                 'time_s':xx,'amplitude':yy,'unit':'м/с²',
                 'output_samples':processed['output_samples'],
                 'output_sample_rate_hz':output_rate,
