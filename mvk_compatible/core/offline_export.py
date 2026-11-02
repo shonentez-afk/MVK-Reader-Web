@@ -582,6 +582,9 @@ class OfflineSession:
                 'input_source_window':source_window,
                 'post_fir_getsignal_return_float32_sha256':hashlib.sha256(
                     np.asarray(processed['getsignal_buffer'],dtype='<f4').tobytes()).hexdigest(),
+                'post_fir_unreversed_float32_sha256':hashlib.sha256(
+                    np.asarray(processed['chronological'],dtype='<f4').tobytes()).hexdigest(),
+                'original_getsignal_vs_getspectrum_envelope_numeric_parity_verified':False,
                 'post_fir_getsignal_output_samples':processed['output_samples'],
                 'original_getsignal_envelope_output_runtime_verified':False,
                 'time_s':xx,'amplitude':yy,'unit':'м/с²',
