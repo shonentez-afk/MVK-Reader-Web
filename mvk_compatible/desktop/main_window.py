@@ -145,7 +145,59 @@ class MainWindow(QMainWindow):
         row.addWidget(self.calc_status)
         lay.addLayout(row)
         inner=QTabWidget()
+        inner.setObjectName('taskSubpages')
+        self.task_subpages=inner
         lay.addWidget(inner,1)
+
+        # Original PageStart is a TASK LAUNCHER, not a DSP results table.
+        # Keep source-backed DSP/third-octave/status subpages as adjacent
+        # views, but give the operator a useful offline-first home screen.
+        home=QWidget()
+        home.setObjectName('pageStartOffline')
+        hl=QVBoxLayout(home)
+        hl.setContentsMargins(24,24,24,24)
+        hl.setSpacing(12)
+        header=QLabel('MVKView Compatible · просмотр измерений')
+        header.setObjectName('taskHomeHeading')
+        header.setStyleSheet('font-size: 19px; font-weight: 600;')
+        hl.addWidget(header)
+        self.task_session_summary=QLabel(
+            'Измерение не открыто. Выберите локальный ZIP, BIN или TSXML.')
+        self.task_session_summary.setObjectName('taskSessionSummary')
+        self.task_session_summary.setWordWrap(True)
+        hl.addWidget(self.task_session_summary)
+        self.task_open_button=QPushButton('Открыть измерение…')
+        self.task_open_button.setObjectName('taskOpenMeasurement')
+        self.task_open_button.setMinimumHeight(44)
+        self.task_open_button.clicked.connect(self.choose_archive)
+        hl.addWidget(self.task_open_button)
+        self.task_signal_button=QPushButton('Временной сигнал')
+        self.task_signal_button.setObjectName('taskOpenTimeSignal')
+        self.task_signal_button.setMinimumHeight(44)
+        self.task_signal_button.clicked.connect(
+            lambda:self.tabs.setCurrentIndex(1))
+        hl.addWidget(self.task_signal_button)
+        self.task_spectrum_button=QPushButton('Спектр')
+        self.task_spectrum_button.setObjectName('taskOpenSpectrum')
+        self.task_spectrum_button.setMinimumHeight(44)
+        self.task_spectrum_button.clicked.connect(
+            lambda:self.tabs.setCurrentIndex(2))
+        hl.addWidget(self.task_spectrum_button)
+        self.task_metrics_button=QPushButton('Показатели и диагностика')
+        self.task_metrics_button.setObjectName('taskOpenMeasurements')
+        self.task_metrics_button.setMinimumHeight(44)
+        self.task_metrics_button.clicked.connect(
+            lambda:self.task_subpages.setCurrentIndex(1))
+        hl.addWidget(self.task_metrics_button)
+        device_note=QLabel(
+            'Подключение прибора, изменение IP и калибровка недоступны '
+            'в автономной версии. Оригинальные команды МВК не отправляются.')
+        device_note.setObjectName('taskDeviceOfflineNotice')
+        device_note.setWordWrap(True)
+        device_note.setStyleSheet('color:#776235; padding-top:10px;')
+        hl.addWidget(device_note)
+        hl.addStretch()
+        inner.addTab(home,'Обзор')
 
         values=QWidget()
         vl=QVBoxLayout(values)
@@ -1078,9 +1130,16 @@ class MainWindow(QMainWindow):
         plot.getViewBox().scaleBy((factor,1))
 
     def _set_active(self,ready):
-        self.tabs.setEnabled(ready)
+        # Original start/tasks must remain usable before an archive exists.
+        self.tabs.setEnabled(True)
+        self.tabs.setTabEnabled(0,True)
+        self.tabs.setTabEnabled(1,ready)
+        self.tabs.setTabEnabled(2,ready)
         self.adc.setEnabled(ready)
-        self.tick.setEnabled(ready)
+        self.tick.setEnabled(ready and not isinstance(self.session,DirectBinSession))
+        self.task_signal_button.setEnabled(ready)
+        self.task_spectrum_button.setEnabled(ready)
+        self.task_metrics_button.setEnabled(ready)
 
     def choose_archive(self):
         path,_=QFileDialog.getOpenFileName(
@@ -1143,6 +1202,12 @@ class MainWindow(QMainWindow):
         self.tick.setValue(s.updates)
         self.tick.blockSignals(False)
         self._set_active(True)
+        self.task_session_summary.setText(
+            f'Открыт файл: {Path(path).name}\n'
+            f'Прибор: {s.serial}; доступных АЦП: {len(channels)}.\n'
+            + ('Источник BIN/TSXML Single. Калибровка/приборные DSP '
+               'не подтверждены.' if direct else
+               'Экспорт Native R6.1. Приборные VALUES/AUX отдельно проверены.'))
         self.refresh_all()
         self.statusBar().showMessage(
             ('Открыт локальный BIN/TSXML Single; калибровка и приборный DSP НЕ подтверждены · '
