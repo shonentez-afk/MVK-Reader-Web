@@ -50,6 +50,7 @@ jobs:
           python -m pytest -q mvk_compatible/tests \
             --ignore=mvk_compatible/tests/test_desktop_qt.py \
             --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py \
+            --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py \
             --junitxml=linux-core-junit.xml
 
   desktop-windows:
@@ -81,11 +82,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test all offline core features on Windows
         run: |
-          python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --junitxml=windows-core-junit.xml
+          python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py --junitxml=windows-core-junit.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test native Windows Qt GUI without connected devices
         run: |
-          python -m pytest -q mvk_compatible/tests/test_desktop_qt.py mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --junitxml=windows-qt-junit.xml
+          python -m pytest -q mvk_compatible/tests/test_desktop_qt.py mvk_compatible/tests/test_stage111z25_native_recorder_qt.py mvk_compatible/tests/test_stage111z26b_live_qt.py --junitxml=windows-qt-junit.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   windows-exe-preview:
