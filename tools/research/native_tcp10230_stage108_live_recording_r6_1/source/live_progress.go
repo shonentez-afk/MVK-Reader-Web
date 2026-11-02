@@ -124,8 +124,18 @@ func (m *Monitor) publishLiveStatus(phase string, force bool, exportStatus strin
     if phase == "RECORDING" && !m.captureOnly && m.liveBin != nil &&
         m.liveBin.preview != nil && m.liveBin.begun {
         if err := writePreviewAtomic(m.dir, m.liveBin.preview, m.Snapshot(), now); err != nil {
-            m.warn("Optional live preview disabled; RAW/BIN unchanged: " + err.Error())
-            m.liveBin.preview = nil
+            m.livePreviewFailures++
+            // Windows can briefly lock a reader-open ZIP during replacement.
+            // Retry on the NEXT capture tick without blocking the TCP reader.
+            if m.livePreviewFailures == 1 {
+                m.warn("Live preview snapshot delayed; RAW/BIN unaffected: " + err.Error())
+            }
+            if m.livePreviewFailures >= 5 {
+                m.warn("Optional live preview disabled after repeated local errors")
+                m.liveBin.preview = nil
+            }
+        } else {
+            m.livePreviewFailures = 0
         }
     }
 }
