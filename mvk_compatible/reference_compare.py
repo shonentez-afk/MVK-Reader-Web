@@ -155,13 +155,14 @@ def main(argv=None)->int:
         from .core.envelope_idr_candidate import EnvelopeProfile
         session=OfflineSession.open(args.archive)
         if args.code:
-            if not args.idp or args.start_s is not None or args.input_domain!='calibrated_bin':
-                raise ValueError('Envelope requires local IDP and native calibrated input domain')
+            if not args.idp or args.start_s is not None:
+                raise ValueError('Envelope requires local IDP and optional --end-s only')
             prof=EnvelopeProfile.from_original_local_idp(args.idp)
             result=session.spectrum_envelope(
                 args.channel,args.code,args.n_fft,prof,end_s=args.end_s,
                 mode=args.mode,backend=args.backend,
-                f_range=1. if args.f_range is None else args.f_range)
+                f_range=1. if args.f_range is None else args.f_range,
+                input_domain=args.input_domain)
         else:
             if args.idp or args.end_s is not None:
                 raise ValueError('Plain original FFT cannot use --idp or --end-s')

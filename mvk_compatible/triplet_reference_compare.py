@@ -132,7 +132,7 @@ def main(argv=None)->int:
     parser.add_argument('--f-range',type=float,default=None,
                         help='Operator-entered FRange; if omitted candidate uses unverified 1.0')
     parser.add_argument('--input-domain',choices=['calibrated_bin','original_float_storage'],
-                        default='calibrated_bin',help='Operator storage hypothesis for plain original FFT')
+                        default='calibrated_bin',help='Explicit research storage hypothesis for plain FFT and envelope FFT')
     parser.add_argument('--backend',choices=['idr_float32','numpy'],default='idr_float32')
     parser.add_argument('--separator',choices=['tab','pipe'],default='tab')
     parser.add_argument('--decimal',choices=[',','.'],default=',')
@@ -149,13 +149,14 @@ def main(argv=None)->int:
         from .core.envelope_idr_candidate import EnvelopeProfile
         session=OfflineSession.open(args.archive)
         if args.code:
-            if not args.idp or args.start_s is not None or args.input_domain!='calibrated_bin':
+            if not args.idp or args.start_s is not None:
                 raise ValueError('Envelope needs explicit local IDP and optional --end-s only')
             profile=EnvelopeProfile.from_original_local_idp(args.idp)
             spectrum=session.spectrum_envelope(
                 args.channel,args.code,args.n_fft,profile,
                 end_s=args.end_s,mode=args.mode,backend=args.backend,
-                f_range=1.0 if args.f_range is None else args.f_range)
+                f_range=1.0 if args.f_range is None else args.f_range,
+                input_domain=args.input_domain)
         else:
             if args.idp or args.end_s is not None:
                 raise ValueError('Plain BIN FFT accepts --start-s without IDP/end-s')
