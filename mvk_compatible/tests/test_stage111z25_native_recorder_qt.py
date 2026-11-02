@@ -76,3 +76,30 @@ def test_declined_operator_consent_never_starts_capture(tmp_path, qt_app, monkey
     assert not list(tmp_path.glob("mvk_r6_session_*"))
     dlg.close()
     qt_app.processEvents()
+
+
+def test_stage111z26_live_dashboard_uses_local_status_only(tmp_path, qt_app, monkeypatch):
+    import mvk_compatible.desktop.native_capture_dialog as module
+    from mvk_compatible.core.native_r6_live_status import validate_live_status
+    from .test_stage111z26_native_live_status import fixture_state, now
+
+    def fake_reader(*args, **kwargs):
+        data = fixture_state()
+        return validate_live_status(data, expected_run=data["session_id"],
+                                    now=now())
+    monkeypatch.setattr(module, "native_executable", lambda: Path("synthetic-only.exe"))
+    monkeypatch.setattr(module, "load_capture_live_status", fake_reader)
+    dlg = module.NativeCaptureDialog()
+    dlg._capture_root = tmp_path
+    dlg._active_device_ipv4 = "10.13.42.84"
+    dlg._active_local_ipv4 = "10.13.42.22"
+    dlg._poll_live_status()
+    assert dlg.progress.value() == 12
+    assert dlg.live_channels.rowCount() == 10
+    assert dlg.live_channels.item(6, 4).text() == "0x00000400"
+    assert "ПРЕДУПРЕЖДЕНИЕ" in dlg.live_channels.item(7, 5).text()
+    assert "ВНИМАНИЕ" in dlg.live_quality.text()
+    assert not dlg.is_busy()
+    assert not dlg._timer.isActive()
+    dlg.close()
+    qt_app.processEvents()
