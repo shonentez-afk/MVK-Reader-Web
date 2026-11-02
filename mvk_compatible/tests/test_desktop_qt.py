@@ -1344,3 +1344,61 @@ def test_stage111z27_never_browse_original_during_active_native_capture(qt_app,m
     window._end_live_capture(False)
     window.close()
     qt_app.processEvents()
+
+
+def test_stage111z28_tasks_dsp_tach_raw_registers_per_verified_tick(
+    tmp_path,qt_app
+):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z28_dsp_tach_ticks import _fixture
+    win=MainWindow()
+    assert win.tabs.count()==3
+    assert win.task_subpages.tabText(4)=="TACH / системный DSP"
+    assert "не открыт" in win.dsp_tach_status.text() or "Нет проверенного" in win.dsp_tach_status.text()
+    win.open_archive(_fixture(tmp_path))
+    assert win.session is not None
+    assert win.tick.value()==2
+    assert "0x00000000" in win.dsp_tach_status.text()
+    assert "14.25" in win.tach_words.item(0,1).text()
+    assert win.tach_words.item(1,0).text().startswith("TACH 2")
+    win.tick.setValue(1)
+    qt_app.processEvents()
+    assert "0x00000104" in win.dsp_tach_status.text()
+    assert win.tach_words.item(0,1).text()=="13.25"
+    assert win.tach_words.item(0,3).text()=="0xDEADBEEF"
+    assert win.tach_words.item(1,5).text()=="0x0000004D"
+    assert "НЕ DSP-время" in win.dsp_tach_clock.text()
+    assert "НЕ вычисляется" in win.tach_warning.text()
+    win.adc.setCurrentIndex(6)
+    qt_app.processEvents()
+    assert "0x00000400" in win.sensor_bit_details.text()
+    assert "ALERT" in win.calc_status.text()
+    assert win.metrics.item(0,1).text()!="—"
+    assert win.oct_table.item(0,1).text()!="—"
+    win.close()
+    qt_app.processEvents()
+
+
+def test_stage111z28_legacy_zip_and_live_never_reuse_old_tach_values(tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z28_dsp_tach_ticks import _fixture
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    # Need two directories: the helper creates a unique archive file.
+    verified=tmp_path/"verified"
+    verified.mkdir()
+    win.open_archive(_fixture(verified))
+    assert "0x00000000" in win.dsp_tach_status.text()
+    old=tmp_path/"historical"
+    old.mkdir()
+    win.open_archive(fixture_zip(old))
+    assert "нет проверенных" in win.dsp_tach_status.text()
+    assert win.tach_words.item(0,1).text()=="—"
+    # Starting a new local recording must never show the prior archive's DSP.
+    win._begin_live_capture()
+    assert "LIVE PREVIEW" in win.dsp_tach_status.text()
+    assert win.tach_words.item(0,1).text()=="—"
+    win._end_live_capture(False)
+    assert "нет проверенных" in win.dsp_tach_status.text()
+    win.close()
+    qt_app.processEvents()
