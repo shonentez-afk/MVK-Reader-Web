@@ -127,6 +127,12 @@ class MainWindow(QMainWindow):
         self._calculated_tab()
         self._signal_tab()
         self._spectrum_tab()
+        self.tabs.currentChanged.connect(self._active_tab_changed)
+        view_menu=self.menuBar().addMenu('Вид')
+        details=QAction('Исследование / дополнительные настройки',self)
+        details.setShortcut('Ctrl+D')
+        details.triggered.connect(self._toggle_current_research)
+        view_menu.addAction(details)
         self.note=QLabel('OFFLINE READ-ONLY · TCP/10230 не подключается · команды прибору отсутствуют')
         self.note.setStyleSheet('color: #9e6500; padding: 5px')
         layout.addWidget(self.note)
@@ -232,6 +238,16 @@ class MainWindow(QMainWindow):
             self.status_fields[key]=(label,line)
         sl.addStretch()
         inner.addTab(statuses,'Диагностика')
+
+    def _active_tab_changed(self,index):
+        if index!=1:self.wave_inspector.hide()
+        if index!=2:self.spec_inspector.hide()
+
+    def _toggle_current_research(self):
+        if self.tabs.currentIndex()==1:
+            self.wave_inspector.setVisible(not self.wave_inspector.isVisible())
+        elif self.tabs.currentIndex()==2:
+            self.spec_inspector.setVisible(not self.spec_inspector.isVisible())
 
     def _signal_tab(self):
         """Original PageAdc primary controls, research options in a dock.
@@ -1460,6 +1476,7 @@ class MainWindow(QMainWindow):
         self.wave_hint.setText(
             'Огибающая доступна только по исходному IDR профилю; '
             'курсоры, исходное время и численный паритет оригинальной MVKView ещё не приняты')
+        self._sync_wave_primary_labels()
 
     def _signal_order(self):
         return 'chronological' if self.wave_order.currentIndex()==0 else 'getsignal_buffer'
@@ -1509,6 +1526,15 @@ class MainWindow(QMainWindow):
             self._wave_mouse_pixel=None
             self.wave_plot.enableAutoRange()
             self.wave_hint.setText(descr)
+            source_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
+                         else 'расч. ед.')
+            self.wave_mean_primary.setText(
+                f'СКЗ сигнала: {d["rms_m_s2"]:.5g} {source_unit}\n'
+                + ('Калибровка НЕ подтверждена'
+                   if isinstance(self.session,DirectBinSession)
+                   else 'Локальный расчёт · оригинал не аттестован'))
+            self.wave_cursor_primary.setText('Курсор: —')
+            self._sync_wave_primary_labels()
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
     def _fft_backend(self):
@@ -1686,11 +1712,13 @@ class MainWindow(QMainWindow):
                 self.wave_line.setVisible(False)
                 self.wave_hint.setText(
                     'CursorString: — (курсор вне временного графика; Qt-кандидат)')
+                self.wave_cursor_primary.setText('Курсор: —')
                 return
             if self.wave_envelope_code.currentData():
                 self.wave_line.setVisible(False)
                 self.statusBar().showMessage(
                     'Исходный курсор огибающей TQGrapher ещё не принят')
+                self.wave_cursor_primary.setText('Курсор огибающей: —')
                 return
             if self._wave_hover_window is None:
                 # Do not re-read the complete ZIP and recompute GetSignal at
@@ -1704,6 +1732,11 @@ class MainWindow(QMainWindow):
             p=self._wave_hover_window.pick(x)
             self.wave_line.setPos(p['time_s'])
             self.wave_line.setVisible(True)
+            self.wave_cursor_primary.setText(
+                f"{p['original_sample_time_s']:.5g} с\n"
+                f"{p['value_m_s2']:.5g} "
+                + ('усл. ед.' if isinstance(self.session,DirectBinSession)
+                   else 'расч. ед.'))
             self.wave_hint.setText(
                 f"GetSignal[{p['display_index']}] → BIN[{p['index']}]"
                 f" · физическое время BIN {p['original_sample_time_s']:.8f} c"
