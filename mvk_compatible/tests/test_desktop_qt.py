@@ -138,9 +138,9 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     win.tabs.setCurrentIndex(2)
     qt_app.processEvents()
     assert win.spec_tools.objectName()=='pnSpecTools'
-    # Original DFM 177px was too narrow for current diagnostic Qt controls;
-    # user screenshot 2026-11-01 had horizontal scroll and clipped text.
-    assert win.spec_tools.width()==244
+    # Research labels are in their own dock, so the original 177px width
+    # is again available for primary Spectrum controls.
+    assert win.spec_tools.width()==177
     from PySide6.QtCore import Qt
     assert win.spec_tools.horizontalScrollBarPolicy()==Qt.ScrollBarAlwaysOff
     assert win.spec_copy_button.text()=='Копировать'
@@ -953,14 +953,14 @@ def test_qt_imports_direct_bin_tsxml_and_displays_no_fabricated_dsp(
     assert len(win.wave_plot.listDataItems())==1
     assert "BIN/TSXML" in win.statusBar().currentMessage()
 
-    assert win.spec_tools.width()==244
+    assert win.spec_tools.width()==177
     from PySide6.QtCore import Qt
     assert win.spec_tools.horizontalScrollBarPolicy()==Qt.ScrollBarAlwaysOff
     assert win.spec_copy_button.text()=="Копировать"
     assert win.spec_save_button.text()=="Сохранить CSV"
     # Source button captions must fit within the sidebar available width.
     available=win.spec_tools.viewport().width()
-    assert available >= 200
+    assert available >= 155
     # Nine original primary controls; research tools live in QDockWidget.
     for widget in (
         win.spec_envelope_button,win.spec_mode,win.spec_lines_button,

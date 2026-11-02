@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
         root.setSpacing(4)
         panel=QWidget()
         panel.setObjectName('pnAdcTools')
-        panel.setFixedWidth(220)
+        panel.setFixedWidth(177)
         left=QVBoxLayout(panel)
         left.setContentsMargins(6,7,6,7)
         left.setSpacing(5)
@@ -471,11 +471,10 @@ class MainWindow(QMainWindow):
 
         self.spec_tools=QScrollArea()
         self.spec_tools.setObjectName('pnSpecTools')
-        # The original DFM uses 177px, but our Qt research tools have
-        # longer labels. The previous 177px viewport forced horizontal
-        # scrolling and clipped the start of controls in 1920x1080 user QA.
-        # Reserve readable space instead of hiding half of each label.
-        self.spec_tools.setFixedWidth(244)
+        # Restore the original 177 px pane. Long research captions now live
+        # in an independent dock; nine short primary controls fit here
+        # without horizontal scrolling or clipped diagnostics.
+        self.spec_tools.setFixedWidth(177)
         self.spec_tools.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.spec_tools.setWidgetResizable(True)
         self.spec_tools.setFrameShape(QFrame.NoFrame)
