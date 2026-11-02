@@ -18,6 +18,8 @@ from .envelope_idr_candidate import (EnvelopeProfile, envelope_plan,
     process_original_envelope_candidate, FIR_TAPS, FIR_DECIM)
 from .fft_idr_candidate import check_n, idr_power_spectrum
 from .calibration_candidate import resolve_f_range
+from .storage_f_range_idr_candidate import (
+    prepare_original_fft_input, DOMAIN_CALIBRATED_BIN, DOMAIN_ORIGINAL_STORAGE)
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 
 SOURCE='APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE'
@@ -72,7 +74,8 @@ def _delphi_integration_power(power:np.ndarray, n:int, fs_out:int,
 def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
                                     profile:EnvelopeProfile,*,n_fft:int=4096,
                                     mode:int=1,backend:str='idr_float32',
-                                    f_range:float=1.0)->dict:
+                                    f_range:float=1.0,
+                                    input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
     """No silent data changes: require exact FIR history for exact FFT N.
 
     Supports original modes 0..3 with source-based 007D2164 conversion.
@@ -89,8 +92,19 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
     a=np.asarray(samples,dtype=np.float32)
     if a.ndim!=1 or len(a)!=plan['input_samples'] or not np.isfinite(a).all():
         raise ValueError('Exact recorded FIR input length is required; no padding/truncation')
-    # GetSpectrum's pre-FIR f32 mean is done in this function once.
-    env=process_original_envelope_candidate(a,sample_rate,code,profile,f_range=1.)
+    # Stage111J original _Unit115:007D14A5 -> 007D2228(flag=1):
+    # Float32 ring storage (ONLY if that original storage domain is proven)
+    # is read as Single(Single(buffer_value)/FRange) BEFORE RemoveMean/FIR.
+    # Reuse the EXACT normal-GetSpectrum domain helper already tested;
+    # never infer source storage type from a Native R6 calibrated BIN.
+    prepared=prepare_original_fft_input(
+        a,f_range=f_range,input_domain=input_domain)
+    pre_fir_read=prepared['samples_before_dc_removal']
+    pre_fir_read_float32_sha256=hashlib.sha256(
+        np.asarray(pre_fir_read,dtype='<f4').tobytes()).hexdigest()
+    # Original GetSpectrum's pre-FIR f32 mean is removed exactly once.
+    env=process_original_envelope_candidate(
+        pre_fir_read,sample_rate,code,profile,f_range=1.)
     transformed=np.asarray(env['chronological'],dtype=np.float32)
     if len(transformed)!=n_fft:
         raise ValueError('FIR output length does not match FFT N; operation refused')
@@ -121,7 +135,18 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
     else:
         amplitude=np.asarray(np.sqrt(p.astype(np.float64)/2.0)*
                              (f_range/(n_fft/2.0)),dtype=np.float32).astype(np.float64)
-    return {'source':SOURCE,'fft_backend':backend,'channel_source':'MVK_ADC_CALIBRATED_BIN',
+    return {'source':SOURCE,'fft_backend':backend,
+            'channel_source':(
+                'RESEARCH_ASSUMED_ORIGINAL_FLOAT_STORAGE' if
+                input_domain==DOMAIN_ORIGINAL_STORAGE else 'MVK_ADC_CALIBRATED_BIN'),
+            'input_domain':input_domain,
+            'original_storage_read_divided_by_range':
+                prepared['original_storage_read_divided_by_range'],
+            'original_source_buffer_provenance_verified':False,
+            'calibrated_native_bin_is_original_storage_verified':False,
+            'pre_fir_read_float32_sha256':pre_fir_read_float32_sha256,
+            'pre_fir_read_sample_count':len(pre_fir_read),
+            'pre_fir_read_is_original_runtime_verified':False,
             'n_fft':n_fft,'mode':mode,'unit':_MODE_UNITS[mode],
             'frequency_hz':frequency.tolist(),'amplitude':amplitude.tolist(),
             'df_hz':fs_out/n_fft,'output_sample_rate_hz':fs_out,
@@ -139,4 +164,10 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
             'power_integration_passes':max(0,mode-1),
             'original_delphi_numerical_parity_verified':False,
             'original_window_selection_verified':False,
-            'warning':'Research reconstruction only; FFT/window/FRange/x87 and original export require same-record verification'}
+            'warning':(
+                'Source-verified original float-ring /FRange applied BEFORE FIR, '
+                'but choosing Native BIN as original storage is unverified; '
+                'real same-run original Win32 pre-FIR and pre-FFT buffers missing'
+                if input_domain==DOMAIN_ORIGINAL_STORAGE else
+                'Native calibrated BIN left unchanged before FIR; '
+                'original Delphi Float32 ring identity/FRange and runtime parity unverified')}

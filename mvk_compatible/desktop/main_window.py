@@ -776,9 +776,11 @@ class MainWindow(QMainWindow):
         self.spec_input_domain.addItem('Native BIN · калиброванные данные', 'calibrated_bin')
         self.spec_input_domain.addItem('Оригинальное кольцо / FRange · гипотеза', 'original_float_storage')
         self.spec_input_domain.setToolTip(
-            'Original GetSpectrum для float-кольца сначала делит на FRange, '
-            'после FFT возвращает масштаб. Нельзя считать Native BIN тем же буфером '
-            'без отдельного оригинального эталона.')
+            'Original GetSpectrum для float-кольца сначала делит на FRange '
+            'ДО удаления DC и до FIR огибающей (Stage111J), потом '
+            'возвращает масштаб на линейном выходе. '
+            'Это ГИПОТЕЗА о происхождении Native BIN, а не автоматическая '
+            'калибровка; не выбирать без независимого оригинального эталона.')
         stack.addWidget(self.spec_input_domain)
         self.spec_last=QCheckBox('Последнее полное окно')
         self.spec_last.setChecked(True)
@@ -2041,8 +2043,6 @@ class MainWindow(QMainWindow):
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
             if self.spec_envelope_button.isChecked():
-                if self.spec_input_domain.currentData()!='calibrated_bin':
-                    raise ValueError('Для исходной огибающей режим кольца FRange ещё не исследован')
                 if self.envelope_profile is None:
                     raise ValueError('Для спектра огибающей требуется локальный mvkview.idp')
                 code=int(self.spec_envelope_code.currentData() or 0)
@@ -2052,7 +2052,8 @@ class MainWindow(QMainWindow):
                 d=self.session.spectrum_envelope(self._ch(),code,n_fft,
                        self.envelope_profile,end_s=end_s,
                        mode=self.spec_mode.currentIndex(),
-                       backend=self._fft_backend(),f_range=self.spec_f_range.value())
+                       backend=self._fft_backend(),f_range=self.spec_f_range.value(),
+                       input_domain=self.spec_input_domain.currentData())
             else:
                 d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
                                         start,max_hz=1e9,max_points=n_fft//2,
@@ -2150,6 +2151,10 @@ class MainWindow(QMainWindow):
                 f"{'условн. ед. BIN' if isinstance(self.session,DirectBinSession) else 'м/с²'} · "
                 + ("после FIR повторного DC нет · "
                    if self.spec_envelope_button.isChecked() else "")
+                + ("FIR на Single(BIN/FRange) до удаления DC: ГИПОТЕЗА "
+                   "об исходном Float32-кольце · "
+                   if (self.spec_envelope_button.isChecked() and
+                       d.get('original_storage_read_divided_by_range')) else "")
                 + f"FRange={d.get('f_range_used',1.):.7g}, "
                   f"источник={d.get('input_domain','calibrated_bin')} · "
                   "фактическая калибровка НЕ доказана · "

@@ -502,7 +502,8 @@ class OfflineSession:
     def spectrum_envelope(self,channel:int,code:int,n_fft:int,
                           profile:EnvelopeProfile, *,
                           end_s:float|None=None,mode:int=1,
-                          backend:str='idr_float32',f_range:float|None=None)->dict:
+                          backend:str='idr_float32',f_range:float|None=None,
+                          input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
         """Archival candidate of Delphi GetSpectrum envelope path, read-only.
 
         Process exactly the real FIR history needed to yield n_fft samples,
@@ -529,7 +530,8 @@ class OfflineSession:
         applied,range_source=resolve_f_range(f_range)
         result=envelope_spectrum_idr_candidate(
             samples[start:end],int(fs),code,profile,
-            n_fft=n_fft,mode=mode,backend=backend,f_range=applied)
+            n_fft=n_fft,mode=mode,backend=backend,f_range=applied,
+            input_domain=input_domain)
         return dict(result,channel=channel,file=filename,
                     f_range_source=range_source,
                     input_source_window=source_window,
