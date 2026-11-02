@@ -90,6 +90,14 @@ type Monitor struct {
 	captureOnly bool
 	closed      bool
 	liveBin     *LiveBinSpool
+	// Opt-in Stage111Z26 UI-only telemetry, never part of original RAW/BIN.
+	liveProgressEnabled bool
+	liveTargetSeconds int
+	liveProgressAt time.Time
+	liveLastPacket time.Time
+	liveLastAUXUTC string
+	liveDSPStatus [8]uint32
+	liveDSPSeen [8]bool
 }
 
 func NewMonitor(dir, mode, ip string) (*Monitor, error) {
@@ -191,6 +199,7 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
 	}
 	_, _ = m.sum.Write(chunk)
 	m.summary.RawBytes += uint64(n)
+	if m.liveProgressEnabled { m.liveLastPacket = at }
 	m.summary.Chunks++
 	if err := m.csvChunks.Write([]string{at.UTC().Format(time.RFC3339Nano), fmt.Sprint(prev), fmt.Sprint(n)}); err != nil {
 		return err
@@ -319,6 +328,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				if e != nil {
 					return fmt.Errorf("AUX4700 ADC%d: %w", channel+1, e)
 				}
+				if m.liveProgressEnabled {
+					m.liveDSPStatus[channel] = v.Status
+					m.liveDSPSeen[channel] = true
+				}
 				data, e := json.Marshal(v)
 				if e != nil {
 					return e
@@ -327,6 +340,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 					return e
 				}
 			}
+			if m.liveProgressEnabled { m.liveLastAUXUTC = at.UTC().Format(time.RFC3339Nano) }
 		}
 	}
 	return nil
