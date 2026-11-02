@@ -595,3 +595,19 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | GitHub Actions after core code | **LINUX+WINDOWS+QT PASS; EXE NEEDS FINAL VERIFICATION** | [Run 41378515208](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41378515208), source SHA 808aa9, core 935 Linux/936 Windows, Qt35 |
 
 [Source report](STAGE111Z21_ORIGINAL_TSXML_GAIN_FRANGE_SOURCE_RU.md) · [Independent original FFT report](STAGE111Z22_ORIGINAL_FFT_MEMORY_PAIR_INDEPENDENT_REFERENCE_RU.md). **Next Stage111Z.23**: actual original BIN+TSXML same-run storage and GetSignal/GetSpectrum, trace TmpStream aliasing; never reintroduce Web.
+
+
+## Stage111Z.23 — original native live BIN memory alias (02.11.2026)
+
+| Source element | Verified scope | Consequence |
+|---|---|---|
+| Storage.AllocBufferChunk (007D1B08) | ORIGINAL STATIC IDR | Возвращает ptr внутреннего Float32 ring buffer |
+| TRecordMemoryStream.FMemory = ptr (008020A8) | ORIGINAL STATIC IDR | Нет второй копии; SetSize также не аллоцирует другую память |
+| TIdIOHandler.ReadStream → stream.Write | ORIGINAL STATIC IDR | Пишет frame по тому же ptr |
+| Storage.ProcessBufferChunk(true), Float32 | ORIGINAL STATIC IDR | In-place single multiply на Storage.FRange |
+| ChannelFile.Write(TmpStream.FMemory) | ORIGINAL STATIC IDR | Сохраняет изменённый массив после scaling при активной записи |
+| Точный original runtime Storage.FRange | **NOT VERIFIED** | Требуется same-run x32dbg и channel source provenance |
+| Original BIN vs TCP one-session bytes | **NOT VERIFIED** | Не утверждать полный runtime byte-parity |
+| Windows stage Z21/Z22 | **3 JOBS SUCCESS** | [Actions 41378916106](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41378916106), artifact 13112990057, 66992754 bytes |
+
+[Stage111Z.23 full analysis](STAGE111Z23_ORIGINAL_LIVE_BIN_POINTER_ALIAS_FRANGE_RU.md). Stage111Z.24 focuses on all runtime writes to FRange and same-session capture, without changing earlier FFT/UI correctness.
