@@ -134,7 +134,9 @@ def read_getsignal_ring_source(ring: np.ndarray, *, rx_position: int,
         raise ValueError("GetSignal original ring: sequential data not yet available")
     result=np.zeros(output_length,dtype=np.float32)
     if plan.real_samples:
-        positions=np.arange(
-            plan.first_real_index,plan.last_exclusive_index,dtype=np.int64)
-        result[plan.zero_prefix_samples:]=data[positions & (len(data)-1)]
+        # Compute ring indices modulo capacity before converting to NumPy
+        # int64; original FRxPos is UInt64 and may exceed signed 2^63.
+        indices=((plan.first_real_index & (len(data)-1)) +
+                 np.arange(plan.real_samples,dtype=np.int64)) & (len(data)-1)
+        result[plan.zero_prefix_samples:]=data[indices]
     return result,plan
