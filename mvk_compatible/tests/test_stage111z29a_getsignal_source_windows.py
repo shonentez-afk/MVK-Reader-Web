@@ -145,7 +145,7 @@ def test_archive_no_zero_padding_even_if_original_live_ring_allows_it(tmp_path):
     with pytest.raises(ValueError,match="real BIN history"):
         archive_input_window_evidence(
             np.ones(3,dtype="<f4"),first=0,end=4,
-            sample_rate_hz=65536,native_audit=False)
+            sample_rate_hz=65536,native_audit=False,channel=1)
     with pytest.raises(ValueError,match="incompatible"):
         compare_local_input_windows(
             {"schema":SCHEMA},{"schema":SCHEMA})
@@ -161,4 +161,19 @@ def test_archive_input_provenance_rejects_bools_nans_and_bad_bounds():
     ]:
         with pytest.raises(ValueError):
             archive_input_window_evidence(
-                data,first=x,end=y,sample_rate_hz=fs,native_audit=audit)
+                data,first=x,end=y,sample_rate_hz=fs,native_audit=audit,
+                channel=1,source_raw_sha256='0'*64)
+
+
+def test_identical_float32_array_on_other_adc_or_capture_is_not_same_window():
+    samples=np.arange(64,dtype="<f4")
+    base=dict(first=0,end=32,sample_rate_hz=65536,native_audit=True)
+    a=archive_input_window_evidence(
+        samples,channel=1,source_raw_sha256="a"*64,**base)
+    other_adc=archive_input_window_evidence(
+        samples,channel=2,source_raw_sha256="a"*64,**base)
+    other_run=archive_input_window_evidence(
+        samples,channel=1,source_raw_sha256="b"*64,**base)
+    assert a["source_float32_le_sha256"]==other_adc["source_float32_le_sha256"]
+    assert not compare_local_input_windows(a,other_adc)["same_input_bytes_and_bounds"]
+    assert not compare_local_input_windows(a,other_run)["same_input_bytes_and_bounds"]
