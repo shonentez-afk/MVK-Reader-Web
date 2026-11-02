@@ -118,6 +118,16 @@ func (m *Monitor) publishLiveStatus(phase string, force bool, exportStatus strin
         return
     }
     m.liveProgressAt = now
+    // Publish a SINGLE atomic local, provisional ZIP only from calibrated
+    // Float32 bytes already accepted by the existing LiveBinSpool. It is
+    // never fed back into the original capture or published as accepted BIN.
+    if phase == "RECORDING" && !m.captureOnly && m.liveBin != nil &&
+        m.liveBin.preview != nil && m.liveBin.begun {
+        if err := writePreviewAtomic(m.dir, m.liveBin.preview, m.Snapshot(), now); err != nil {
+            m.warn("Optional live preview disabled; RAW/BIN unchanged: " + err.Error())
+            m.liveBin.preview = nil
+        }
+    }
 }
 
 func writeLiveStatusAtomic(dir string, report LiveStatus) error {
