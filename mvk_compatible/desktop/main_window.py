@@ -261,8 +261,40 @@ class MainWindow(QMainWindow):
             line.setTextInteractionFlags(Qt.TextSelectableByMouse)
             sl.addWidget(line)
             self.status_fields[key]=(label,line)
+        self.sensor_bit_details=QLabel('АЦП: разбор исходных статусных битов недоступен')
+        self.sensor_bit_details.setObjectName('stage111z28SensorBits')
+        self.sensor_bit_details.setWordWrap(True)
+        sl.addWidget(self.sensor_bit_details)
         sl.addStretch()
         inner.addTab(statuses,'Диагностика')
+
+        # Source-backed Stage111Z28A: no fabricated RPM or speed units.
+        tach_page=QWidget()
+        tach_layout=QVBoxLayout(tach_page)
+        self.dsp_tach_status=QLabel('DSP/TACH: не открыт подтверждённый измерительный сеанс')
+        self.dsp_tach_status.setObjectName('stage111z28DspTachSource')
+        self.dsp_tach_status.setWordWrap(True)
+        tach_layout.addWidget(self.dsp_tach_status)
+        self.dsp_tach_clock=QLabel('Время: неизвестно')
+        self.dsp_tach_clock.setObjectName('stage111z28TickClock')
+        tach_layout.addWidget(self.dsp_tach_clock)
+        self.tach_words=QTableWidget(2,6)
+        self.tach_words.setObjectName('stage111z28TachRawRegisters')
+        self.tach_words.setHorizontalHeaderLabels(
+            ['Тахоканал','Float32 +0','Float32 +2','UInt32 +4','UInt32 +6','UInt32 +8'])
+        self.tach_words.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tach_words.verticalHeader().setVisible(False)
+        self.tach_words.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        tach_layout.addWidget(self.tach_words)
+        self.tach_warning=QLabel(
+            'Сырые регистры TACH 0x3000/0x3100 из кадра VALUES 76B. '
+            'Значение частоты и оборотов НЕ восстановлено и здесь НЕ вычисляется. '
+            'Время — часы приёмного ПК, не синхронизация с DSP.')
+        self.tach_warning.setObjectName('stage111z28TachNoRpmNote')
+        self.tach_warning.setWordWrap(True)
+        tach_layout.addWidget(self.tach_warning)
+        inner.addTab(tach_page,'TACH / системный DSP')
+        self._reset_dsp_tach_panel('Нет проверенного источника TACH/DSP')
 
     def _active_tab_changed(self,index):
         if index!=1:self.wave_inspector.hide()
@@ -1387,6 +1419,8 @@ class MainWindow(QMainWindow):
         self.oct_plot.clear()
         for label,widget in self.status_fields.values():
             widget.setText(label+': нет проверенного AUX нового сеанса')
+        self.sensor_bit_details.setText('LIVE: исходные биты статуса видны в Native; финальная аттестация после ZIP')
+        self._reset_dsp_tach_panel('LIVE PREVIEW: архивный DSP/TACH данного сеанса ещё не принят')
         self.title.setText('LIVE · Native R6.1 · предварительные данные')
         self.task_session_summary.setText(
             'Native R6.1 ведёт запись с разрешения оператора. '
@@ -1726,6 +1760,36 @@ class MainWindow(QMainWindow):
         self.refresh_wave()
         self.refresh_spec()
 
+    def _reset_dsp_tach_panel(self,reason):
+        self.dsp_tach_status.setText('DSP/TACH: '+reason)
+        self.dsp_tach_clock.setText('Время: недоступно')
+        for row in range(2):
+            for col,value in enumerate((f'TACH {row+1}','—','—','—','—','—')):
+                self._cell(self.tach_words,row,col,value)
+
+    def _update_dsp_tach_panel(self,record):
+        if not record or not record.get('available'):
+            self._reset_dsp_tach_panel(
+                'нет проверенных исходных регистров для этого архива/тика')
+            return
+        raw=record['global_dsp_status_hex']
+        meaning=('все биты нулевые (не доказательство исправности)'
+                 if record['global_dsp_all_bits_zero']
+                 else 'ненулевой исходный статус, значение битов требует оригинальной карты')
+        self.dsp_tach_status.setText(
+            f'Системный DSP {raw}: {meaning} · '+record['source'])
+        self.dsp_tach_clock.setText(
+            f'VALUES tick frame={record["tick_frame"]}; AUX frame={record["aux_frame"]}; '
+            f'ПК UTC={record["tick_received_utc"]} (НЕ DSP-время)')
+        for i,entry in enumerate(record['tachometers']):
+            floats=entry['raw_float32_words_0_2']
+            integers=entry['raw_uint32_words_4_6_8']
+            cols=[f'TACH {i+1} ({entry["register_base_word"]})',
+                  self._value(floats[0]),self._value(floats[1]),
+                  *(f'0x{x:08X}' for x in integers)]
+            for col,value in enumerate(cols):
+                self._cell(self.tach_words,i,col,value)
+
     def refresh_calc(self,*_):
         if self._live_active:
             self.calc_source.setText('LIVE PREVIEW · расчётные DSP показатели пока не аттестованы')
@@ -1748,6 +1812,8 @@ class MainWindow(QMainWindow):
             self.oct_plot.clear()
             for label,widget in self.status_fields.values():
                 widget.setText(label+': нет оригинального AUX/VALUES')
+            self.sensor_bit_details.setText('BIN/TSXML: нет подтверждённых исходных битов AUX')
+            self._reset_dsp_tach_panel('BIN/TSXML: нет проверенных DSP/TACH регистрационных тиков')
             self.note.setText(
                 'LOCAL BIN/TSXML Single: физическая калибровка не подтверждена; '
                 'приборные показатели DSP/третьоктавы НЕ вычисляются')
@@ -1773,6 +1839,20 @@ class MainWindow(QMainWindow):
                 height=np.asarray([a['rms_m_s2'] or 0 for a in bands]),width=.75,brush='#147b91'))
             for key,(label,widget) in self.status_fields.items():
                 widget.setText(label+': '+self._value(channel[key]))
+            self._update_dsp_tach_panel(d.get('dsp_tach',{}))
+            bits=channel.get('sensor_status_details',{})
+            if bits.get('raw_u32') is not None:
+                flags=bits.get('not_ready') or {}
+                active=[str(key) for key,value in flags.items() if value]
+                self.sensor_bit_details.setText(
+                    f'Приборный статус {bits["raw_hex"]} · mask 0xC00='
+                    f'{bits["warning_bits_0xC00"]} · не готовы '
+                    + (', '.join(active) if active else 'нет флагов fs16/fs64/fs512')
+                    + ' · причина других битов не установлена')
+            else:
+                self.sensor_bit_details.setText(
+                    'Исходные AUX status_raw/not_ready не предоставлены: '
+                    'показан только текст из VALUES')
             self.note.setText('ALERT: состояние датчика '+channel['sensor_status'] if channel['health']!='OK'
                 else 'MVK_DSP: штатные значения; локальный FFT обозначен отдельно')
         except (OSError,KeyError,ValueError) as e:self._error(e)
