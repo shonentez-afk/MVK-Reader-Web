@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
+from .dsp_tach_timeline import read_verified_dsp_tach_tick, source_sensor_status
 from .signal_idr_candidate import unfiltered_getsignal
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
@@ -156,6 +157,13 @@ def validate_aux_values_row(aux:dict, row:list[str]):
     for ch in range(1,9):
         values=row[1+73*(ch-1):1+73*ch]
         obj=aux[ch]
+        # Source arrays come from actual register words. Do not allow NaN/Inf,
+        # strings, booleans or unrounded PIK/P-P values to bypass provenance.
+        for source_key in ('third_octave_acceleration_rms','band_rms',
+                           'band_peak_equiv','band_span_equiv'):
+            for x in obj[source_key]:
+                if type(x) not in (int,float) or not math.isfinite(x):
+                    raise ValueError('AUX4700: invalid nonfinite/non-numeric original DSP value')
         for arr,offset in ((obj['third_octave_acceleration_rms'],0), (obj['band_rms'],49)):
             for k,value in enumerate(arr):
                 if not math.isfinite(float(value)):
@@ -180,6 +188,9 @@ def calculated_for_zip(path: Path, tick: int = -1) -> dict:
         aux_tick = read_validated_aux_tick(z, audit, tick_index)
         if aux_tick is not None:
             validate_aux_values_row(aux_tick,row)
+        # Existing audited TIMELINE is extended in place with original raw
+        # DSP/TACH register words. Old exports remain readable but UNKNOWN.
+        tick_registers = read_verified_dsp_tach_tick(z,audit,tick_index,len(rows))
         channels = []
         for channel in range(1,9):
             off = 1+73*(channel-1)
@@ -213,6 +224,9 @@ def calculated_for_zip(path: Path, tick: int = -1) -> dict:
                 'overload_status': status_at(vals, 43),
                 'buffer_status': status_at(vals, 44),
                 'sensor_status': status_at(vals, 45),
+                'sensor_status_details': source_sensor_status(
+                    aux_channel if (aux_channel and 'status_raw' in aux_channel) else None,
+                    status_at(vals,45)),
                 'data_source': ('MVK_DSP_AUX4700_FULL_PRECISION' if aux_channel else 'MVK_DSP_FROM_AUX4700_VIA_VALUES'),
                 'health': 'ALERT' if vals[45].strip().lower() not in ('ок','ok','0x00000000','0') else 'OK',
             })
@@ -223,6 +237,7 @@ def calculated_for_zip(path: Path, tick: int = -1) -> dict:
             'channels':channels,'source':'MVK_DSP',
             'precision':('unrounded AUX4700' if aux_tick else 'rounded VALUES CSV'),
             'peak_metrics_available': bool(aux_tick),
+            'dsp_tach': tick_registers,
             'warning':'Временные метки VALUES — часы ПК; расчёты не пересчитаны приложением. ПИК/ПИК-ПИК доступны только при проверенном AUX4700 того же RAW.',
         }
 
