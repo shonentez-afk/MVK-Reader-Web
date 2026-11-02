@@ -123,7 +123,6 @@ class NativeCaptureDialog(QDialog):
             "Разрешение на подключение получено, выбран именно Ethernet; "
             "подтверждаю запуск только чтения")
         self.confirm.setObjectName("r6OperatorApproval")
-        self.confirm.setWordWrap(True)
         self.confirm.toggled.connect(self._sync_buttons)
         root.addWidget(self.confirm)
 
@@ -195,6 +194,9 @@ class NativeCaptureDialog(QDialog):
         self.status_label.setText(
             f"Ошибка локального запуска Native R6.1: {self._process.errorString()}. "
             "Подключение и экспорт не подтверждены.")
+        if error == QProcess.FailedToStart:
+            self._mode = None
+            self._sync_buttons()
 
     def _process_finished(self, exit_code, exit_status):
         mode = self._mode
