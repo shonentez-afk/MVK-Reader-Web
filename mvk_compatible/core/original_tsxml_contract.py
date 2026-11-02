@@ -101,7 +101,7 @@ def inspect_original_tsxml(
         raise ValueError("TSXML: ожидается MainRoot оригинального МВК")
     channels=root.findall("./Channels/Channel")
     if len(channels)!=1:
-        raise ValueError("TSXML: ожидается ровно один Channels/Channel")
+        raise ValueError("TSXML: ожидается ровно один канал Channels/Channel")
     channel=channels[0]
     if channel.attrib.get("Index") not in (None,"0"):
         raise ValueError("TSXML: Channel Index должен быть 0")
