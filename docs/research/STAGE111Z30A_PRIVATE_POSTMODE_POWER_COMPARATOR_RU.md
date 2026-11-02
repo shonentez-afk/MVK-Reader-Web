@@ -1,3 +1,5 @@
+> **EXACT Stage30A verified EXE SHA256 (Actions #41422369872 logs):** 0dd09bf1404845990361160a7b0ae0932fa59f95d60e92eab2c5bd1c0d082f1e. Artifact ZIP SHA256 60c945ee8de4c87d7ac3cb799585bbdb5d2e29b1bfc035c8781ea7f075bf56bd. Original-Delphi compatibility is NOT certified.
+
 > **FOLLOW-UP VERIFICATION 02.11.2026:** Stage30A commit 7186a5da, [CI #41422369872](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41422369872) **3/3 SUCCESS**: Linux1179, WindowsCore1182, Qt49, Go+Windows onefile EXE PASS, artifact 13130771299 (ZIP digest 60c945ee8de4c87d7ac3cb799585bbdb5d2e29b1bfc035c8781ea7f075bf56bd). Private source confirms power buffer [EBP-2C] at both 007D154B and 007D17E7; after-mode Y at [EBP-30] is a distinct buffer now handled by [Stage30B](STAGE111Z30B_SOURCE_VERIFIED_LOG10_FLOAT32_DISPLAY_QA_RU.md). Original Tag1–3 runtime full arrays still OPEN.
 
 # Stage111Z30A — локальная проверка original GetSpectrum post-mode power
