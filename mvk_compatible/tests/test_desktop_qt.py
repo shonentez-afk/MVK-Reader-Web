@@ -1159,3 +1159,64 @@ def test_stage111z19_tasks_start_page_and_offline_routes(tmp_path,qt_app):
     assert win.task_subpages.currentIndex()==1
     assert win.metrics.item(0,1).text()!="—"
     win.close()
+
+
+def test_stage111z19_waveform_primary_and_advanced_are_not_mixed(
+    tmp_path,qt_app,
+):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert win.wave_filter_button.objectName()=="bAdcEnvelopeType"
+    assert win.wave_type_button.objectName()=="bAdcType"
+    assert win.wave_hscale_button.objectName()=="bAdcHScale"
+    assert win.wave_vscale_button.objectName()=="bAdcVScale"
+    assert win.wave_filter_button.text()=="Без фильтра"
+    assert win.wave_type_button.text()=="AC · без DC"
+    assert win.wave_hscale_button.text()=="1 с"
+    assert not win.wave_inspector.isVisible()
+    assert "СКЗ сигнала" in win.wave_mean_primary.text()
+    assert "GetSignal/IDR" in win.wave_hint.text()
+    assert win.wave_cursor_primary.text()=="Курсор: —"
+    assert win.wave_plot.listDataItems()
+    win.wave_type_menu.actions()[1].trigger()
+    qt_app.processEvents()
+    assert win.wave_mode.currentIndex()==1
+    assert win.wave_type_button.text()=="AC+DC"
+    win.wave_hscale_menu.actions()[3].trigger()
+    qt_app.processEvents()
+    assert win.wave_seconds.value()==.1
+    assert win.wave_hscale_button.text()=="0.1 с"
+    win.wave_advanced_button.click()
+    qt_app.processEvents()
+    assert win.wave_inspector.isVisible()
+    assert win.wave_start.isVisible()
+    assert win.wave_envelope_load.isVisible()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert not win.wave_inspector.isVisible()
+    assert win.spec_advanced_button.text()=="Исследование ▸"
+    win.close()
+
+
+def test_stage111z19_waveform_direct_bin_primary_never_claims_physical_units(
+    tmp_path,qt_app,
+):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z16_direct_bin_tsxml import _make_pair
+    p,_,_=_make_pair(tmp_path,adc=4)
+    win=MainWindow()
+    win.open_archive(p)
+    win.show()
+    win.tabs.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert "усл. ед." in win.wave_mean_primary.text()
+    assert "Калибровка НЕ подтверждена" in win.wave_mean_primary.text()
+    assert "м/с²" not in win.wave_mean_primary.text()
+    assert "АЦП 4"==win.adc.currentText()
+    assert win.task_session_summary.text().find("Калибровка")>=0
+    win.close()
