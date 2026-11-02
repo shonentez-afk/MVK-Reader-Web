@@ -721,16 +721,17 @@ def test_qt_stage111s_all_original_h_scale_menu_entries_and_position(tmp_path,qt
     assert [a.data() for a in actions]==list(HORIZONTAL_HZ)
     assert [a.text() for a in actions]==[r['caption'] for r in original_h_scale_options()]
     assert win._spec_original_hscale_selected is None
-    # Initial research 10 kHz view: main-button click picks the next
-    # actual smaller original preset, rather than fabricating 5000 Hz.
+    # Stage111Z.18: default now matches original 25600 Hz screen,
+    # so the first click selects the next original preset, 12800 Hz.
+    assert win.spec_hscale_button.text()=="25600 Гц"
     win.spec_hscale_button.click()
     qt_app.processEvents()
-    assert win._spec_original_hscale_selected==6400
+    assert win._spec_original_hscale_selected==12800
     assert sum(a.isChecked() for a in actions)==1
-    assert actions[2].isChecked()
-    assert win.spec_hscroll.maximum()==25600-6400
-    assert win.spec_hscroll.pageStep()==6400
-    assert win.spec_hscroll.singleStep()==640
+    assert actions[1].isChecked()
+    assert win.spec_hscroll.maximum()==25600-12800
+    assert win.spec_hscroll.pageStep()==12800
+    assert win.spec_hscroll.singleStep()==1280
     win.spec_hscroll.setValue(1200)
     qt_app.processEvents()
     left=win.spec_plot.getViewBox().viewRange()[0][0]
