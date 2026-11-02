@@ -1,3 +1,17 @@
+# АКТУАЛЬНО: Stage111Z.18–Z.20 UI fixes, Core/Windows Qt CI PASS (02.11.2026)
+
+Основной продукт — автономная Windows Qt/PySide6 MVKView Compatible в research/stage111-mvkview-desktop-20261029, без Web/server. [Отчёт интерфейса](STAGE111Z20_UI_UX_FIXES_AND_MAIN_TRACK_RETURN_RU.md) · [18 UX задач](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json).
+
+**В коде сделано:** Spectrum original-inspired девять controls в 177px с фактическими Hz/line, 25600Hz и log 150dB, отдельный док для всех research settings и прежних testable debug labels; Waveform original-inspired четыре селектора в 177px с сохранением GetSignal settings; Tasks offline landing page и переходы к сигналу/спектру/сохранённым DSP tables; прямой BIN/TSXML имеет «условные ед.», подтверждение Copy и отдельный CSV header НЕ КАЛИБРОВАНО; original XOR cursor clGreen pmXor реализован Qt RasterOp, НЕ pixel-attested на реальной одной паре screenshots. Подтверждённый FFT source & operator summary goldens НЕ менялись.
+
+**GitHub Actions run [41376521808](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808), source code SHA b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50:** Linux 899 passed/3 skipped; Windows Core 900 passed/2 skipped; Qt 34 passed. EXE PyInstaller ещё выполнялся при первичной проверке; до Artifacts/SUCCESS не объявлять готовым. Документные HEAD коммиты более новые, чем этот проверенный кодовый SHA.
+
+**UI backlog:** 9 code-implemented awaiting same-data visual parity, 5 частично реализованы, 4 открыты. Главные P0 UX-001 и UX-002 реализованы в коде и прошли synthetic Qt. Остаётся проверка XOR/GDI на одинаковом архиве, 100/125/150% DPI, исходные tcAdc/tcSpectrum tabs, original pnView timeline, worker/cache для больших BIN, icons/grid/source fonts.
+
+**NEXT MAIN TRACK:** источник реального original BIN/TSXML (не универсальное угадывание Float32), восстановить physical FRange/калибровку, полную историю GetSignal/GetSpectrum и аттестацию по одному выбранному оригинальному потоку. Никаких фиктивных DSP и операций с прибором. GitHub Actions primary, CircleCI manual backup.
+
+---
+
 # ТЕКУЩИЙ СТАТУС — STAGE111Z.17, UI/UX-аудит оригинальной MVKView (02.11.2026)
 
 [Полный UI/UX-аудит 18 задач](STAGE111Z17_UI_UX_AUDIT_ORIGINAL_VS_QT_RU.md) · [Реестр с приоритетами](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json) · [Следующее ТЗ Stage111Z.18](STAGE111Z18_SPECTRUM_COMPATIBILITY_UI_IMPLEMENTATION_PLAN_RU.md).

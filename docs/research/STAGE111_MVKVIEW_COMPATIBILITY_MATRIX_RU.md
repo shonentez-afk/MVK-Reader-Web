@@ -554,3 +554,21 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 
 [Stage111Z.17 аудит](STAGE111Z17_UI_UX_AUDIT_ORIGINAL_VS_QT_RU.md) · [18 пунктов JSON](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json) · [ТЗ Z18](STAGE111Z18_SPECTRUM_COMPATIBILITY_UI_IMPLEMENTATION_PLAN_RU.md). Сохранять source-derived FFT 131072/131072 и 3/3 original Copy/summary goldens, не возвращать Web и не изменять main.
 
+
+
+## Stage111Z.18–Z.20 — integrated UI/UX fixes and main development return (02.11.2026)
+
+| Block | Status | Evidence / Remaining |
+|---|---|---|
+| P0 Spectrum primary panel | **CODE IMPLEMENTED + WINDOWS QT PASS** | 9 source-ordered controls, original 177px sidebar, research QDock keeps all prior controls, no primary scrolling at 1024x704 |
+| P0 direct BIN calibration | **CODE IMPLEMENTED + CORE/WIN PASS** | Explicit condition/consent before Copy, extra source warning, CSV uncalibrated header and append incompatibility guard |
+| Tasks PageStart offline | **CODE IMPLEMENTED + QT PASS** | Offline start with Open/Signal/Spectrum/metrics, original DSP tables retained; no spoofed connect/IP/calibration |
+| Waveform panel | **CODE IMPLEMENTED + QT PASS** | 4 original-inspired primary controls at 177px, wave research dock, source GetSignal models unchanged |
+| Spectrum Hz/line and ranges | **CODE IMPLEMENTED + QT PASS, VISUAL ORIGINAL PARITY TODO** | Fs/N caption, source Tag0 25600Hz X / 0..−150dB Y display default; other modes/source windows to compare |
+| GDI XOR spectrum cursor | **SOURCE-BASED QPAINTER RASTEROP + QT TEST PASS; ORIGINAL PIXEL PARITY TODO** | clGreen XOR white→magenta, black→green, uses raw FFT Y/selected bin without new FFT calculation |
+| Original source-derived FFT + summary | **UNCHANGED** | Earlier single-user capture FFT 131072/131072 and summary 3/3 preserved; UI changes do not alter core FFT |
+| CI Linux / Win core / Qt | **SUCCESS** | [GitHub Actions run 41376521808](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808): Linux 899 passed/3 skipped, Windows 900 passed/2 skipped, Qt 34 passed |
+| New Windows EXE | **VERIFY FINAL ARTIFACT** | Source SHA b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50, PyInstaller job was in-progress at first review |
+| Remaining UI UX items | **TRACKED OPEN/PARTIAL** | 9 code-implemented, 5 partial, 4 open; same-data/dpi screenshot, full time scroll, source fonts/grid, worker/cache |
+
+[Полный отчёт](STAGE111Z20_UI_UX_FIXES_AND_MAIN_TRACK_RETURN_RU.md) · [Актуальный backlog](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json). Следующая ОСНОВНАЯ задача — аттестация настоящих BIN/TSXML и восстановление FRange/Source measurement chain без Web или реального прибора.
