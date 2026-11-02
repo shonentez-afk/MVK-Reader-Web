@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.session=None
+        self._native_dialog=None  # Stage111Z.25: integrated verified Go recorder controller
         self.wave_line=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
@@ -99,6 +100,10 @@ class MainWindow(QMainWindow):
         action.setShortcut('Ctrl+O')
         action.triggered.connect(self.choose_archive)
         file_menu.addAction(action)
+        capture_action=QAction('Запись с прибора · Native R6.1…',self)
+        capture_action.triggered.connect(self.open_native_capture)
+        file_menu.addAction(capture_action)
+        file_menu.addSeparator()
         file_menu.addAction('Выход',self.close)
         wrapper=QWidget()
         self.setCentralWidget(wrapper)
@@ -134,10 +139,10 @@ class MainWindow(QMainWindow):
         details.setShortcut('Ctrl+D')
         details.triggered.connect(self._toggle_current_research)
         view_menu.addAction(details)
-        self.note=QLabel('OFFLINE READ-ONLY · TCP/10230 не подключается · команды прибору отсутствуют')
+        self.note=QLabel('OFFLINE просмотр · LIVE только через Native R6.1 с подтверждением · команды прибору отсутствуют')
         self.note.setStyleSheet('color: #9e6500; padding: 5px')
         layout.addWidget(self.note)
-        self.statusBar().showMessage('Открыть локальный ZIP R6.1 или парные BIN/TSXML Single — без подключения к прибору')
+        self.statusBar().showMessage('Открыть локальное измерение или выбрать «Запись с прибора · Native R6.1»')
 
     def _calculated_tab(self):
         tab=QWidget()
@@ -178,6 +183,12 @@ class MainWindow(QMainWindow):
         self.task_open_button.setMinimumHeight(44)
         self.task_open_button.clicked.connect(self.choose_archive)
         hl.addWidget(self.task_open_button)
+        self.task_capture_button=QPushButton('Запись с прибора · Native R6.1…')
+        self.task_capture_button.setObjectName('taskCaptureNativeR6')
+        self.task_capture_button.setMinimumHeight(44)
+        self.task_capture_button.setToolTip('Открывает безопасное управление уже проверенным Windows приёмником; без сетевого подключения до явного подтверждения')
+        self.task_capture_button.clicked.connect(self.open_native_capture)
+        hl.addWidget(self.task_capture_button)
         self.task_signal_button=QPushButton('Временной сигнал')
         self.task_signal_button.setObjectName('taskOpenTimeSignal')
         self.task_signal_button.setMinimumHeight(44)
@@ -197,8 +208,9 @@ class MainWindow(QMainWindow):
             lambda:self.task_subpages.setCurrentIndex(1))
         hl.addWidget(self.task_metrics_button)
         device_note=QLabel(
-            'Подключение прибора, изменение IP и калибровка недоступны '
-            'в автономной версии. Оригинальные команды МВК не отправляются.')
+            'Команды настройки прибора и калибровка недоступны. '
+            'Запись с прибора — через проверенный Native R6.1 с отдельным допуском; '
+            'без подтверждения никаких подключений. Оригинальные команды МВК не отправляются.')
         device_note.setObjectName('taskDeviceOfflineNotice')
         device_note.setWordWrap(True)
         device_note.setStyleSheet('color:#776235; padding-top:10px;')
@@ -1333,6 +1345,18 @@ class MainWindow(QMainWindow):
         self.task_spectrum_button.setEnabled(ready)
         self.task_metrics_button.setEnabled(ready)
 
+    def open_native_capture(self):
+        """Use the already hardware-tested recorder; never send MVK commands."""
+        from .native_capture_dialog import NativeCaptureDialog
+        if self._native_dialog is not None and self._native_dialog.isVisible():
+            self._native_dialog.raise_()
+            self._native_dialog.activateWindow()
+            return
+        dlg=NativeCaptureDialog(self)
+        dlg.archiveReady.connect(self.open_archive)
+        self._native_dialog=dlg
+        dlg.show()
+
     def choose_archive(self):
         path,_=QFileDialog.getOpenFileName(
             self,'Локальные измерения MVK (без подключения к прибору)','',
@@ -2091,6 +2115,16 @@ class MainWindow(QMainWindow):
     def _error(self,exc):
         self.statusBar().showMessage('Ошибка: '+str(exc))
         QMessageBox.warning(self,'Ошибка чтения архива',str(exc))
+
+
+    def closeEvent(self,event):
+        if self._native_dialog is not None and self._native_dialog.is_busy():
+            QMessageBox.warning(self,'Запись ещё выполняется',
+                'Сначала завершите Native R6.1 и дождитесь проверенного экспорта. '
+                'Принудительное завершение через закрытие программы не допускается.')
+            event.ignore()
+            return
+        super().closeEvent(event)
 
 
 def run():
