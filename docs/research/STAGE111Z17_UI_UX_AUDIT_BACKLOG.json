@@ -1,0 +1,231 @@
+{
+  "schema": "MVKVIEW_COMPATIBLE_UI_UX_AUDIT_V1",
+  "date": "2026-11-02",
+  "repo": "shonentez-afk/MVK-Reader-Web",
+  "branch": "research/stage111-mvkview-desktop-20261029",
+  "report_path": "docs/research/STAGE111Z17_UI_UX_AUDIT_ORIGINAL_VS_QT_RU.md",
+  "source_qt_code_head_at_audit": "639a6b649b5706185424e882dfb13286e0bbcd86",
+  "last_confirmed_z16_windows_exe_source_commit": "8a36077da1f0bf5df5c4ea4337d26895f202c8a2",
+  "original_dfm_sha256": "192c0ebaf1bf722292a9b64497493a1de6af52a4bf8ffbe2ea28d0fe0b68c2d4",
+  "original_dfm_component_counts": {
+    "page_sheets_total": 7,
+    "visible_main_tabs_operator_screenshot": 3,
+    "spectrum_primary_controls": 9
+  },
+  "current_qt_component_counts": {
+    "spectrum_stack_addWidget_calls": 35
+  },
+  "provenance": {
+    "original_dfm_read_offline": true,
+    "original_spectrum_screenshot_operator_reported": true,
+    "qt_previous_screenshot_before_stage111z16": true,
+    "latest_qt_z16_screenshot_received": false,
+    "original_and_qt_screenshots_same_measurement_verified": false,
+    "no_private_original_asset_published": true
+  },
+  "severity_counts": {
+    "P0": 2,
+    "P1": 10,
+    "P2": 6
+  },
+  "issues": [
+    {
+      "id": "UX-001",
+      "priority": "P0",
+      "area": "Спектр: основная панель",
+      "problem": "35 Qt элементов находятся там, где в оригинале 9 основных controls",
+      "target": "Пять исходных кнопок, курсор, итог, Copy/Save постоянно видимы; 26+ инженерных элементов в раскрываемом инспекторе",
+      "acceptance_gate": "при 1024x704 все 9 главных элементов видны без горизонтальной прокрутки; ни одна исследовательская функция не удалена",
+      "next_stage": "Stage111Z.18",
+      "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-002",
+      "priority": "P0",
+      "area": "Происхождение данных",
+      "problem": "При direct BIN калибровка и DSP не подтверждены, но Copy и Save доступны с числами",
+      "target": "Явный режим условных единиц возле итогов и в CSV/Copy-provenance",
+      "acceptance_gate": "ни одно некалиброванное число не представлено приборным DSP или м/с²; при смене источника нет старых DSP",
+      "next_stage": "Stage111Z.18",
+      "evidence": "CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-003",
+      "priority": "P1",
+      "area": "Задачи",
+      "problem": "Оригинальная PageStart содержит задачи подключения, просмотра, настроек; Qt показывает только таблицы DSP",
+      "target": "Стартовая офлайн-страница с открытием локальных измерений; таблицы доступны из вложенного раздела",
+      "acceptance_gate": "без fake device actions, все текущие DSP таблицы сохранены и доступны",
+      "next_stage": "Stage111Z.19",
+      "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-004",
+      "priority": "P1",
+      "area": "Спектр: основные селекторы",
+      "problem": "Qt отображает Код не выбран, 0·дБ, N=65536, Горизонталь+, Вертикаль+",
+      "target": "Состояния в оригинальном виде: Без фильтра, Логарифмич., 1/4 Гц/лин, реальный Hz, реальный dB",
+      "acceptance_gate": "на кнопках отражены текущие режим, разрешение и шкалы, не фиксированные эталонные числа",
+      "next_stage": "Stage111Z.18",
+      "evidence": "ORIGINAL_SCREENSHOT+ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-005",
+      "priority": "P1",
+      "area": "Спектр: ось Y",
+      "problem": "Qt autoRange и длинная подпись вместо source-derived вертикальной шкалы и коротких единиц",
+      "target": "Для подтверждённого Tag использовать соответствующие пределы; Y label дБ/физические единицы",
+      "acceptance_gate": "эталонный log screenshot 0…−150 dB и краткая осевая подпись только при тех же параметрах",
+      "next_stage": "Stage111Z.20",
+      "evidence": "ORIGINAL_SCREENSHOT+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-006",
+      "priority": "P1",
+      "area": "Спектр: перекрестие",
+      "problem": "Qt рисует orange InfiniteLine, оригинал GDI XOR",
+      "target": "Overlay с erase и clGreen XOR при пересечении белого/чёрного",
+      "acceptance_gate": "на фоне white RGB255,127,255, black RGB0,128,0 и правильный redraw",
+      "next_stage": "Stage111Z.20",
+      "evidence": "ORIGINAL_SCREENSHOT+SOURCE_IDR+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-007",
+      "priority": "P1",
+      "area": "Временной сигнал",
+      "problem": "Вместо оригинальных 4 основных кнопок сверху длинный ряд параметров и дополнительный IDP-ряд",
+      "target": "4 primary selectors слева, окно и исследовательские опции под Details",
+      "acceptance_gate": "пользователь видит signal mode и фильтр без перегрузки, всё доступно keyboard",
+      "next_stage": "Stage111Z.19",
+      "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-008",
+      "priority": "P1",
+      "area": "Контекст канала",
+      "problem": "Оригинал tcAdc/tcSpectrum tabs, Qt один глобальный Combo",
+      "target": "Выбранный АЦП и наличие каналов явны для обеих страниц",
+      "acceptance_gate": "невозможно просмотреть отсутствующий АЦП, весь контекст файла/канала виден",
+      "next_stage": "Stage111Z.19",
+      "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-009",
+      "priority": "P1",
+      "area": "Итог и курсор",
+      "problem": "Левая панель показывает отладочные строки вместо кратких 2+3 значений",
+      "target": "Две короткие строки курсора и компактный блок СКЗ/пика, diagnostics отдельно",
+      "acceptance_gate": "copy/save всегда рядом с summary, физические единицы проверены",
+      "next_stage": "Stage111Z.18",
+      "evidence": "ORIGINAL_SCREENSHOT+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-010",
+      "priority": "P1",
+      "area": "Импорт: ошибки",
+      "problem": "Ошибки TSXML в основном технические",
+      "target": "Понятная причина отказа и локальное следующее действие без обхода проверок",
+      "acceptance_gate": "пользователь понимает почему неизвестный BIN не Single и как проверить пару",
+      "next_stage": "Stage111Z.19",
+      "evidence": "CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-011",
+      "priority": "P1",
+      "area": "Большие файлы",
+      "problem": "Синхронная загрузка и FFT могут блокировать GUI при 10 млн Single",
+      "target": "Worker+progress+cancel+cache без перемены DSP математик",
+      "acceptance_gate": "проведён стресс-тест, окно реагирует на input во время загрузки; без memory blowup",
+      "next_stage": "Stage111Z.21",
+      "evidence": "CURRENT_QT_SOURCE_ONLY_RISK_NOT_MEASURED",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-012",
+      "priority": "P1",
+      "area": "Временная навигация",
+      "problem": "Оригинальный pnView time/trackbar зависит от режима; Qt start/window spinboxes",
+      "target": "Офлайн timeline без ложных timestamp и с границами истории",
+      "acceptance_gate": "можно выбрать последнее и произвольное реальное окно без padding",
+      "next_stage": "Stage111Z.19",
+      "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-013",
+      "priority": "P2",
+      "area": "Визуальный стиль",
+      "problem": "Tahoma 13px исходной DFM, иконки и tab heights отличаются от Qt native",
+      "target": "Единые отступы, типографика, кнопки и исходные pictograms заново отрисованы",
+      "acceptance_gate": "читаемо 100/125/150% DPI, не копируются приватные ресурсы",
+      "next_stage": "Stage111Z.20",
+      "evidence": "ORIGINAL_DFM+ORIGINAL_SCREENSHOT",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-014",
+      "priority": "P2",
+      "area": "Сетка/оси",
+      "problem": "pyqtgraph minor grid и шрифты отличаются от оригинальной TQGrapher",
+      "target": "Восстановить source-derived steps grid/ticks/font metrics",
+      "acceptance_gate": "проверить на парных скриншотах SAME file/mode/window/dpi; метрики QA сохранены",
+      "next_stage": "Stage111Z.20",
+      "evidence": "ORIGINAL_SCREENSHOT+QT_PRIOR_SCREENSHOT_NOT_SAME_DATA",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-015",
+      "priority": "P2",
+      "area": "Сохранение",
+      "problem": "Кандидат CSV не равен оригинальному bSpecSaveValue формату",
+      "target": "Сохранить расчёт CSV с ясным provenance и отдельный future original format",
+      "acceptance_gate": "никакого ложного заявления об original file parity; явное место вывода",
+      "next_stage": "Stage111Z.18",
+      "evidence": "CURRENT_QT_SOURCE+ORIGINAL_DFM",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-016",
+      "priority": "P2",
+      "area": "Клавиатура и DPI",
+      "problem": "Qt minimum 960x580 vs Delphi 1024x704; фокус/popups не приёмлены",
+      "target": "Контроль tab order, shortcuts, 1024x704 и 1920x1080 при нескольких масштабах",
+      "acceptance_gate": "главные controls не обрезаны и работают с клавиатуры",
+      "next_stage": "Stage111Z.21",
+      "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-017",
+      "priority": "P2",
+      "area": "Сообщения и состояния",
+      "problem": "Общая ошибка чтения архива также показывается на FFT history & redraw errors",
+      "target": "Раздельные UX ошибки источника, отсутствующей истории и calculation candidate",
+      "acceptance_gate": "невосстановимая ошибка не оставляет устаревший UI; восстановимая не сбрасывает сеанс",
+      "next_stage": "Stage111Z.21",
+      "evidence": "CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    },
+    {
+      "id": "UX-018",
+      "priority": "P2",
+      "area": "Терминология",
+      "problem": "Tag/IDR/FRange/Source provenance вынесены в пользовательский интерфейс",
+      "target": "Простой русский язык по умолчанию, точные исследования в Details",
+      "acceptance_gate": "в 9 основых controls нет технических обозначений, доступ к details сохранён",
+      "next_stage": "Stage111Z.18",
+      "evidence": "CURRENT_QT_SOURCE",
+      "status": "OPEN"
+    }
+  ]
+}
