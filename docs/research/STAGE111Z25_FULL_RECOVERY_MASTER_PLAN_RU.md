@@ -1,3 +1,5 @@
+> **ATTESTED Z.25 BUILD (02.11.2026):** [GitHub Actions #41383158906](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41383158906) completed ALL 3 JOBS SUCCESS, tested source SHA `5e299ea9b77c568b9a6431462a5fdbe525da98ca`, artifact id `13113903664`, Windows EXE SHA256 `e1f27e5e2a78257942899c3b9d1c758cf05adcb1d112ae3fa0db46c4a8727e76`. Linux 948 passed, Windows Core 949 passed, Windows Qt 38 passed, Go Native test/vet/build PASS. **Z.25 offline CI/onefile gate CLOSED; физическая новая GUI/Go сессия и live plot/parity остаются OPEN.** Detailed [QA report](STAGE111Z25_NATIVE_R6_QT_ONEFILE_WINDOWS_QA_RU.md). Do NOT conflate new docs-only commits with tested code SHA.
+
 # MVKView Compatible — единый план ПОЛНОГО восстановления (Stage111Z.25)
 
 **Дата ревизии:** 02.11.2026. **Исследовательская ветка:** `research/stage111-mvkview-desktop-20261029`. **Главное решение:** только автономное Windows Qt/PySide6 приложение + существующий проверенный Go Native R6.1 (внутренний компонент), БЕЗ возврата к Web v0.3.40. Не начинать функции заново, в первую очередь использовать ранее восстановленное.
