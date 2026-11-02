@@ -4,7 +4,7 @@ import argparse
 import json
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog='mvk_compatible', description='MVKView Compatible (Stage111, архивный режим)')
+    parser = argparse.ArgumentParser(prog='mvk_compatible', description='MVKView Compatible (Stage111, архив + подтверждаемый Native R6.1 Live)')
     parser.add_argument('--verify', metavar='NATIVE_EXPORT.zip', help='Проверить локальный ZIP без запуска GUI')
     args = parser.parse_args(argv)
     if args.verify:
