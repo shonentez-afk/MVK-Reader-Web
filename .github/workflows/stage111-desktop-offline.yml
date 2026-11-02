@@ -11,6 +11,7 @@ on:
       - research/stage111-mvkview-desktop-20261029
     paths:
       - 'mvk_compatible/**'
+      - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/**'
       - '.github/workflows/stage111-desktop-offline.yml'
   workflow_dispatch:
 
@@ -48,6 +49,7 @@ jobs:
         run: |
           python -m pytest -q mvk_compatible/tests \
             --ignore=mvk_compatible/tests/test_desktop_qt.py \
+            --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py \
             --junitxml=linux-core-junit.xml
 
   desktop-windows:
@@ -79,11 +81,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test all offline core features on Windows
         run: |
-          python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --junitxml=windows-core-junit.xml
+          python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --junitxml=windows-core-junit.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test native Windows Qt GUI without connected devices
         run: |
-          python -m pytest -q mvk_compatible/tests/test_desktop_qt.py --junitxml=windows-qt-junit.xml
+          python -m pytest -q mvk_compatible/tests/test_desktop_qt.py mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --junitxml=windows-qt-junit.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   windows-exe-preview:
@@ -110,9 +112,32 @@ jobs:
         run: |
           python -m pip install -r mvk_compatible/requirements-desktop.txt pyinstaller
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build one-file standalone Windows EXE
+      - name: Install Go toolchain for embedded Native R6.1
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.2'
+      - name: Test and compile the existing Native R6.1 receiver from source
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name MVKViewCompatible_Stage111_PREVIEW mvk_compatible/windows_launcher.py
+          $ErrorActionPreference = 'Stop'
+          Push-Location tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+          try {
+            go test ./...
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            go vet ./...
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $payload = Join-Path $env:GITHUB_WORKSPACE 'mvk_compatible/native_payload'
+            New-Item -ItemType Directory -Force -Path $payload | Out-Null
+            $nativeExe = Join-Path $payload 'MVK_Native_R6_1_Stage108_Windows_x64.exe'
+            go build -trimpath -ldflags '-s -w' -o $nativeExe .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $hash = (Get-FileHash -LiteralPath $nativeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+            $hash | Set-Content -Encoding ascii -Path (Join-Path $payload 'NATIVE_SHA256SUMS.txt')
+          } finally {
+            Pop-Location
+          }
+      - name: Build one-file standalone Windows EXE with embedded Go recorder
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --add-binary "mvk_compatible/native_payload/MVK_Native_R6_1_Stage108_Windows_x64.exe;mvk_native" --add-data "mvk_compatible/native_payload/NATIVE_SHA256SUMS.txt;mvk_native" --name MVKViewCompatible_Stage111_PREVIEW mvk_compatible/windows_launcher.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path -LiteralPath dist/MVKViewCompatible_Stage111_PREVIEW.exe)) {
             throw 'PyInstaller did not create the Windows EXE'
@@ -142,7 +167,7 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Source branch: $env:GITHUB_REF_NAME"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Source commit: $env:GITHUB_SHA"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- Artifact: MVKViewCompatible_Stage111_Windows_Preview'
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- Contents: EXE, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- Contents: one-file GUI EXE with embedded Go Native R6.1 (built and tested from repo), SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json'
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- This preview is NOT certified as an exact clone of original MVKView.'
       - name: Upload verified Windows EXE and checksums
         uses: actions/upload-artifact@v6
