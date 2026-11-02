@@ -765,6 +765,18 @@ class MainWindow(QMainWindow):
         research_stack=QVBoxLayout(research_body)
         research_stack.setContentsMargins(8,8,8,8)
         research_stack.setSpacing(6)
+        self.spec_source_gain_label=QLabel(
+            'TSXML / FRange: источник не открыт')
+        self.spec_source_gain_label.setObjectName('researchOriginalTsxmlGain')
+        self.spec_source_gain_label.setWordWrap(True)
+        self.spec_source_gain_label.setTextInteractionFlags(
+            Qt.TextSelectableByMouse)
+        self.spec_source_gain_label.setToolTip(
+            'В оригинальном TSXML InternalChannelGain берётся из '
+            'TMvkCellList.GetFloatByAddr(0x0E) и при чтении попадает в '
+            'TMvkChannelStorage.FRange. Это статический источник, НЕ '
+            'подтверждённый численный коэффициент текущих исходных отсчётов.')
+        research_stack.addWidget(self.spec_source_gain_label)
         legacy=[]
         while stack.count():
             item=stack.takeAt(0)
@@ -1398,8 +1410,39 @@ class MainWindow(QMainWindow):
     def _ch(self):
         return self.adc.currentIndex()+1
 
+    def _update_original_gain_inspector(self):
+        if not isinstance(self.session,DirectBinSession):
+            self.spec_source_gain_label.setText(
+                'Источник R6.1 ZIP: отдельный FRange текущего источника '
+                'не аттестован автоматически.')
+            return
+        info=next(
+            (c.source_metadata for c in self.session.channel_files
+             if c.adc==self._ch()),None)
+        if info is None:
+            self.spec_source_gain_label.setText(
+                'TSXML: канал не представлен в текущей группе')
+            return
+        if info.original_f_range_single_candidate is not None:
+            gain=f'{info.original_f_range_single_candidate:.9g}'
+            label=(
+                'TSXML InternalChannelGain='+gain+
+                ' · IDR source candidate FRange='+gain+
+                ' · исходное значение НЕ применено повторно к BIN.')
+        else:
+            label=(
+                'TSXML InternalChannelGain отсутствует или не положителен; '
+                'оригинал использует fallback DefaultConfig.txt, '
+                'эффективный FRange НЕ известен.')
+        label+=(
+            '\n'+'Полный формат оригинального TSXML: '+
+            ('да' if info.source_meta_complete else 'не все поля присутствуют')
+            +' · физических единиц/паритета по этому BIN НЕТ.')
+        self.spec_source_gain_label.setText(label)
+
     def refresh_all(self,*_):
         if self.session is None:return
+        self._update_original_gain_inspector()
         self.refresh_calc()
         self.refresh_wave()
         self.refresh_spec()
