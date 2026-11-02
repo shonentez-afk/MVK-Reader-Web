@@ -1696,9 +1696,23 @@ class MainWindow(QMainWindow):
         if self._spectrum_summary is None:return
         try:
             text=spectrum_triplet_text(self._spectrum_summary,decimal_separator=',')
+            if isinstance(self.session,DirectBinSession):
+                confirmed=QMessageBox.question(
+                    self,'Некалиброванные значения BIN/TSXML',
+                    'Физическая калибровка этого BIN не подтверждена. '
+                    'Копировать локальные исследовательские значения '
+                    'с предупреждением об условных единицах?',
+                    QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
+                if confirmed!=QMessageBox.Yes:
+                    return
+                # Do not silently copy a Delphi-looking three-number line
+                # as if it were certified physical measurements.
+                text='НЕ КАЛИБРОВАНО · условные единицы · локальный FFT\n'+text
             QApplication.clipboard().setText(text)
             self.statusBar().showMessage(
-                'Скопированы 3 исследовательских значения (IDR кандидат; не приборный DSP)')
+                'Скопирован исследовательский спектр · '
+                'прямой BIN без калибровки' if isinstance(self.session,DirectBinSession)
+                else 'Скопированы 3 расчётных значения (не приборный DSP)')
         except (KeyError,TypeError,ValueError) as exc:
             self.statusBar().showMessage('Ошибка Copy candidate: '+str(exc))
 
@@ -1710,7 +1724,17 @@ class MainWindow(QMainWindow):
             'MVK_COMPATIBLE_SPEC_CANDIDATE.csv','CSV (*.csv)')
         if not filename:return
         try:
-            report=append_research_summary_csv(filename,self._spectrum_summary)
+            direct=isinstance(self.session,DirectBinSession)
+            if direct:
+                confirmed=QMessageBox.question(
+                    self,'Сохранение некалиброванного спектра',
+                    'Будет сохранён отдельный исследовательский CSV с явным '
+                    'заголовком «НЕ КАЛИБРОВАНО». Это не приборный DSP. Продолжить?',
+                    QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
+                if confirmed!=QMessageBox.Yes:
+                    return
+            report=append_research_summary_csv(
+                filename,self._spectrum_summary,uncalibrated=direct)
             self.statusBar().showMessage(
                 f"Сохранены 3 локальных IDR-кандидата: {report['path']} (Delphi parity НЕ доказан)")
         except (OSError,UnicodeError,KeyError,TypeError,ValueError) as exc:

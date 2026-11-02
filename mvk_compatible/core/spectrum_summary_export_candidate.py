@@ -11,6 +11,10 @@ import math
 from .cursor_format_candidate import format_cursor_idr_candidate
 
 RESEARCH_HEADER='Интегральное значение (IDR-кандидат)|Частота пика, Гц (IDR-кандидат)|Амплитуда пика (IDR-кандидат)'
+RESEARCH_UNCALIBRATED_HEADER=(
+    'Интегральное значение (НЕ КАЛИБРОВАНО, условные единицы)|'
+    'Частота пика, Гц (локальный FFT)|'
+    'Амплитуда пика (НЕ КАЛИБРОВАНО, условные единицы)')
 MAX_EXPORT_BYTES=2_000_000
 
 
@@ -29,7 +33,8 @@ def spectrum_triplet_text(summary:dict,*,separator:str='\t',
 
 
 def append_research_summary_csv(path:str|Path,summary:dict,*,
-                                decimal_separator:str=',')->dict:
+                                decimal_separator:str=',',
+                                uncalibrated:bool=False)->dict:
     """Explicit local CSV file, research-only header: NEVER mix with original.
 
     An existing file is appendable only if it has *our exact candidate*
@@ -40,7 +45,10 @@ def append_research_summary_csv(path:str|Path,summary:dict,*,
         raise ValueError('Choose a regular local .csv path, not a symlink')
     line=spectrum_triplet_text(summary,separator='|',decimal_separator=decimal_separator)
     if '\n' in line or '\r' in line:raise ValueError('Invalid local summary')
-    start='sep=|\r\n'+RESEARCH_HEADER+'\r\n'
+    if type(uncalibrated) is not bool:
+        raise ValueError('uncalibrated must be an explicit boolean')
+    header=(RESEARCH_UNCALIBRATED_HEADER if uncalibrated else RESEARCH_HEADER)
+    start='sep=|\r\n'+header+'\r\n'
     if target.exists():
         if not target.is_file() or target.stat().st_size>MAX_EXPORT_BYTES:
             raise ValueError('Refuse non-file or oversized local CSV')
@@ -55,4 +63,6 @@ def append_research_summary_csv(path:str|Path,summary:dict,*,
         stream.write(line+'\r\n')
     return {'source':'APP_DERIVED_SPECTRUM_TRIPLET_EXPORT_CANDIDATE',
             'path':str(target),'row_values':3,
-            'original_delphi_export_format_verified':False}
+            'original_delphi_export_format_verified':False,
+            'physical_units_verified':False if uncalibrated else None,
+            'uncalibrated_source_declared':uncalibrated}
