@@ -578,3 +578,20 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 
 **FINAL VERIFIED CI BUILD (02.11.2026):** source SHA b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50, [GitHub Actions #41376521808](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808) COMPLETED/SUCCESS, все 3 jobs SUCCESS: Linux 899 passed, 3 skipped, 30 subtests passed; Windows Core 900 passed, 2 skipped, 30 subtests passed; Windows Qt GUI **34 passed**. Windows verified autonomous EXE artifact **MVKViewCompatible_Stage111_Windows_Preview** создан, **ID 13111233765**, ZIP **66 985 239 байт**, ещё не истёк. Содержит MVKViewCompatible_Stage111_PREVIEW.exe, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. PE/SHA проверены через Windows Actions; реальный исходный app original screenshot pixel parity требует отдельной пары изображений. **Все исправления Stage111Z.18–Z.20 собраны в этой версии.**
 
+
+
+## Stage111Z.21–Z.22 — original TSXML source calibration and independent original FFT memory proof
+
+| Компонент | Статус | Основание |
+|---|---|---|
+| Original TSXML writer | **SOURCE-VERIFIED STATIC** | _Unit125.pas 00806A8C; CP1251; DataLength BYTES, DataOffset0; Single ADC/Byte Count; per-channel gain from GetFloatByAddr(0x0E) |
+| Original BIN reader metadata | **SOURCE-VERIFIED STATIC + SYNTHETIC CI** | _Unit128.pas 0084622E..4655E; InternalChannelGain Single → FRange; fallback vs no ApplyRange, original runtime BIN physical domain still unknown |
+| DirectBinSession | **IMPLEMENTED + CI CORE/WIN PASS** | CP1251/full/minimal, exact DataFileName/channel matching, no wrong-ADC, strict NaN/Inf, Byte not accepted as acceleration |
+| Byte original channel | **METADATA INSPECTION ONLY** | Read-only CLI; no false time-acceleration/FFT for 8-bit counter bytes |
+| Direct BIN physical FRange | **STATIC CANDIDATE ONLY** | TSXML gain visible in inspector; no automatic multiplication; no same-run original BIN→FRange runtime verification |
+| Independent original FFT power | **REAL ORIGINAL INPUT/OUTPUT + NUMPY COMPARED** | N262144→131072, Hann RMS, original peak bin15200 50461.0078125 vs NumPy 50460.99609375; <=0.1% 120308/131072, <=1% 130241/131072; only 721 bitwise matches |
+| Original exact Float32 FFT parity | **SEPARATE PRIOR SOURCE-DERIVED EVIDENCE, NOT VERIFIED BY NUMPY** | Preserve prior Stage111Z8/10 goldens and special single store twiddles |
+| Privacy/source evidence | **VERIFIED PRIVATELY** | Projects.7z PAS and user FFT files remain local; public repo only aggregate/source locations+SHA and synthetic CI fixtures |
+| GitHub Actions after core code | **LINUX+WINDOWS+QT PASS; EXE NEEDS FINAL VERIFICATION** | [Run 41378515208](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41378515208), source SHA 808aa9, core 935 Linux/936 Windows, Qt35 |
+
+[Source report](STAGE111Z21_ORIGINAL_TSXML_GAIN_FRANGE_SOURCE_RU.md) · [Independent original FFT report](STAGE111Z22_ORIGINAL_FFT_MEMORY_PAIR_INDEPENDENT_REFERENCE_RU.md). **Next Stage111Z.23**: actual original BIN+TSXML same-run storage and GetSignal/GetSpectrum, trace TmpStream aliasing; never reintroduce Web.
