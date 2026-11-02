@@ -98,6 +98,7 @@ type Monitor struct {
 	liveLastAUXUTC string
 	liveDSPStatus [8]uint32
 	liveDSPSeen [8]bool
+	livePreviewFailures int // optional file sharing errors; never interrupt RAW
 }
 
 func NewMonitor(dir, mode, ip string) (*Monitor, error) {
