@@ -65,6 +65,7 @@ type snapshot struct {
 	DSPStatus   uint32         `json:"-"`
 	TachF       [2][2]float64  `json:"-"`
 	TachU       [2][3]uint32   `json:"-"`
+	Control     ControlTickAudit `json:"-"` // gated per-tick source, NEVER initial snapshot
 }
 type ChannelReport struct {
 	ADC          int            `json:"adc"`
@@ -391,6 +392,7 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 	var lastAux snapshot
 	var haveAux bool
 	var ticks []snapshot
+	var controlTracker controlUpdateTracker // optional original status frames, no TCP changes
 	var byType = make(map[string]uint64)
 	var saved []string
 	// close partially written files on all error paths
@@ -520,6 +522,9 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 			for _, b := range blocks {
 				image.Put(b)
 			}
+			// Only dedicated frames AFTER initial full register image are
+			// evidence of current control zones. The full snapshot is stale.
+			controlTracker.observe(blocks,count,calibrated)
 			if !calibrated {
 				full++
 				gains, sens, e = makeGain(image)
@@ -583,6 +588,7 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 				t := lastAux
 				t.TickFrame = count
 				t.TickTimeUTC = manifest[count-1].UTC
+				t.Control = controlTracker.atTick(image,count)
 				if e = addTachAndDSP(&t, image); e != nil {
 					return rep, e
 				}
