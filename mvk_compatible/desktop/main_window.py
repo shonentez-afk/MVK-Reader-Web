@@ -1,4 +1,6 @@
-"""Stage111 native Qt window. OFFLINE only; no device commands, HTTP or server.
+"""Stage111 native Qt window. Offline viewing plus opt-in bundled R6.1 capture.
+
+The Qt UI never opens a device socket or sends MVK commands, HTTP or server.
 
 Delphi MVKView parity is IN PROGRESS: FFT and AC remain labelled candidates.
 """
