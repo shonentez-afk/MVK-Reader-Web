@@ -50,7 +50,7 @@ def make_preview(tmp_path, *, modify=None, tamper_adc=False, extra=False,
     if modify is not None:
         modify(meta)
     if tamper_adc:
-        raw["ADC1.f32"]=bytes([0])+raw["ADC1.f32"][1:]
+        raw["ADC1.f32"]=bytes([raw["ADC1.f32"][0] ^ 0x01])+raw["ADC1.f32"][1:]
     with zipfile.ZipFile(run/NAME,"w",compression=zipfile.ZIP_DEFLATED) as z:
         for key,value in raw.items():
             z.writestr(key,value)
