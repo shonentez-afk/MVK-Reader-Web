@@ -1221,3 +1221,59 @@ def test_stage111z19_waveform_direct_bin_primary_never_claims_physical_units(
     assert "АЦП 4"==win.adc.currentText()
     assert win.task_session_summary.text().find("Калибровка")>=0
     win.close()
+
+
+def test_stage111z20_binary_raster_xor_matches_original_white_and_black(qt_app):
+    """The Qt painter MUST use bitwise RasterOp, not Porter-Duff Xor."""
+    from PySide6.QtGui import QColor,QImage,QPainter,QPen
+    from mvk_compatible.desktop.xor_cursor_overlay import gdi_xor_rgb
+    assert gdi_xor_rgb((255,255,255))==(255,127,255)
+    assert gdi_xor_rgb((0,0,0))==(0,128,0)
+    image=QImage(9,9,QImage.Format_RGB32)
+    image.fill(QColor(255,255,255))
+    image.setPixelColor(3,5,QColor(0,0,0))
+    painter=QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing,False)
+    painter.setCompositionMode(QPainter.RasterOp_SourceXorDestination)
+    pen=QPen(QColor(0,128,0))
+    pen.setWidth(1)
+    painter.setPen(pen)
+    painter.drawLine(3,1,3,7)
+    painter.end()
+    assert image.pixelColor(3,2).getRgb()[:3]==(255,127,255)
+    assert image.pixelColor(3,5).getRgb()[:3]==(0,128,0)
+    assert image.pixelColor(5,5).getRgb()[:3]==(255,255,255)
+
+
+def test_stage111z20_xor_overlay_tracks_spectrum_cursor_without_fft_change(
+    tmp_path,qt_app,
+):
+    from PySide6.QtCore import QPointF
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.desktop.xor_cursor_overlay import QtSpectrumXorCursor
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert isinstance(win.spec_xor_crosshair,QtSpectrumXorCursor)
+    assert win.spec_xor_crosshair.cursor is None
+    fft_before=win._full_spectrum
+    vb=win.spec_plot.getViewBox()
+    rect=vb.sceneBoundingRect()
+    assert rect.width()>10
+    scene_cursor=QPointF(rect.left()+rect.width()*.3,rect.center().y())
+    win._spec_at_scene_pos(scene_cursor,force=True)
+    qt_app.processEvents()
+    assert win._full_spectrum is fft_before
+    assert win.spec_xor_crosshair.cursor is not None
+    crosshair_x,crosshair_y=win.spec_xor_crosshair.cursor
+    assert crosshair_x==win._spec_last_cursor["frequency_hz"]
+    assert crosshair_y==float(
+        win._full_spectrum["amplitude"][win._spec_last_cursor["selected_bin"]])
+    win._spec_at_scene_pos(QPointF(rect.left(),rect.center().y()),force=True)
+    qt_app.processEvents()
+    assert win.spec_xor_crosshair.cursor is None
+    assert win._spec_last_cursor is None
+    win.close()
