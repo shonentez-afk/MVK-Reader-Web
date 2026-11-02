@@ -238,6 +238,7 @@ def calculated_for_zip(path: Path, tick: int = -1) -> dict:
             'precision':('unrounded AUX4700' if aux_tick else 'rounded VALUES CSV'),
             'peak_metrics_available': bool(aux_tick),
             'dsp_tach': tick_registers,
+            'control_status': tick_registers.get('control_status'),
             'warning':'Временные метки VALUES — часы ПК; расчёты не пересчитаны приложением. ПИК/ПИК-ПИК доступны только при проверенном AUX4700 того же RAW.',
         }
 
