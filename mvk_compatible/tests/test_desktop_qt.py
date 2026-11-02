@@ -26,7 +26,12 @@ def test_desktop_three_tabs_without_server(qt_app):
     assert [window.tabs.tabText(i) for i in range(3)]==[
         'Задачи','Временной сигнал','Спектр']
     assert window.session is None
-    assert not window.tabs.isEnabled()
+    assert window.tabs.isEnabled()
+    assert window.tabs.isTabEnabled(0)
+    assert not window.tabs.isTabEnabled(1)
+    assert not window.tabs.isTabEnabled(2)
+    assert window.task_subpages.tabText(0)=='Обзор'
+    assert window.task_open_button.isEnabled()
     assert window.adc.count()==8
     assert window.spec_mode.count()==4
     assert window.spec_backend.count()==2
@@ -1122,4 +1127,35 @@ def test_stage111z18_direct_bin_copy_csv_keep_uncalibrated_warning(
     assert lines[0]=="sep=|"
     assert "НЕ КАЛИБРОВАНО" in lines[1]
     assert len(lines[-1].split("|"))==3
+    win.close()
+
+
+def test_stage111z19_tasks_start_page_and_offline_routes(tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    assert win.tabs.currentIndex()==0
+    assert win.task_subpages.currentIndex()==0
+    assert win.task_open_button.isEnabled()
+    assert not win.task_spectrum_button.isEnabled()
+    assert not win.task_signal_button.isEnabled()
+    assert "не открыто" in win.task_session_summary.text()
+    assert "недоступны" in win.findChild(type(win.task_session_summary),
+                                          'taskDeviceOfflineNotice').text()
+    win.open_archive(fixture_zip(tmp_path))
+    assert win.task_spectrum_button.isEnabled()
+    assert win.task_signal_button.isEnabled()
+    assert win.task_metrics_button.isEnabled()
+    assert "Экспорт Native R6.1" in win.task_session_summary.text()
+    win.task_signal_button.click()
+    assert win.tabs.currentIndex()==1
+    win.tabs.setCurrentIndex(0)
+    win.task_spectrum_button.click()
+    assert win.tabs.currentIndex()==2
+    win.tabs.setCurrentIndex(0)
+    win.task_metrics_button.click()
+    assert win.task_subpages.currentIndex()==1
+    assert win.metrics.item(0,1).text()!="—"
     win.close()
