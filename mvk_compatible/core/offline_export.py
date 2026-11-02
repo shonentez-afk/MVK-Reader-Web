@@ -393,7 +393,7 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     y=source_derived_mode_display(display_power,n_fft=n_fft,
                                   mode=mode,f_range=applied_range).astype(np.float64)
     if mode==0:
-        unit='дБ (source-verified log10, Float32 staging)'
+        unit='дБ'
         note='Original 00447DB8 log10 SOURCE-VERIFIED; NumPy vs Delphi x87 и полный Y 1:1 не доказано'
     else:
         unit=('','м/с²','мм/с','мкм')[mode]
