@@ -657,7 +657,7 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 	gen["TABLE_LAST_AUX_RECONSTRUCTED.csv"] = hashBytes(tcsv)
 	timeline := make([]map[string]interface{}, 0, len(ticks))
 	for i, s := range ticks {
-		timeline = append(timeline, map[string]interface{}{"update": i + 1, "aux_frame": s.AuxFrame, "tick_frame": s.TickFrame, "tick_received_utc": s.TickTimeUTC})
+		timeline = append(timeline, originalTickTimeline(s, i))
 	}
 	jb, _ := json.MarshalIndent(timeline, "", "  ")
 	jb = append(jb, '\n')
