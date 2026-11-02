@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
     QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy,QDockWidget)
 from ..core import OfflineSession
+from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
@@ -50,6 +51,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.session=None
         self._native_dialog=None  # Stage111Z.25: integrated verified Go recorder controller
+        self._live_active=False
+        self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
+        self._live_prior_session=None
         self.wave_line=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
@@ -1347,6 +1351,162 @@ class MainWindow(QMainWindow):
         self.task_spectrum_button.setEnabled(ready)
         self.task_metrics_button.setEnabled(ready)
 
+    def _begin_live_capture(self):
+        """Preview is a separate, explicitly unverified mode, never a ZIP session."""
+        if self._live_active:
+            return
+        self._live_prior_session=self.session
+        self._live_active=True
+        self._live_preview=None
+        self.session=None
+        for i in range(8):
+            self.adc.model().item(i).setEnabled(True)
+        self._set_active(True)
+        self.tick.setEnabled(False)
+        self.task_metrics_button.setEnabled(False)
+        self.title.setText('LIVE · Native R6.1 · предварительные данные')
+        self.task_session_summary.setText(
+            'Native R6.1 ведёт запись с разрешения оператора. '
+            'Временной сигнал/спектр — только PREVIEW по калиброванным '
+            'отсчётам. Исходный RAW и проверенный архив сохраняются отдельно.')
+        self.note.setText(
+            'LIVE PREVIEW: нет аппаратного паритета с MVKView; '
+            'FRange уже применён Native к BIN, повторно НЕ умножать')
+        self.wave_plot.clear()
+        self.spec_plot.clear()
+        self.wave_line=None
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self.wave_hint.setText('LIVE: ожидаются реальные откалиброванные отсчёты R6.1')
+        self.spec_hint.setText('LIVE: FFT только после достаточного окна реальных отсчётов')
+        self.wave_mean_primary.setText('LIVE · СКЗ: ожидаются данные')
+        self.spec_mean.setText('LIVE · спектр: ожидаются данные')
+        self._sync_spectrum_summary_primary()
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
+        self.spec_original_copy_compare.setEnabled(False)
+        self.spec_canvas_geometry_button.setEnabled(False)
+        self.refresh_calc()
+        self.tabs.setCurrentIndex(1)
+        self.statusBar().showMessage('LIVE PREVIEW — единственный TCP-клиент Go R6.1, данные ещё не приняты')
+
+    def _receive_live_preview(self, preview):
+        if not self._live_active:
+            return
+        self._live_preview=preview
+        self._render_live_wave()
+        self._render_live_spectrum()
+
+    def _invalidate_live_preview(self, reason):
+        if not self._live_active:
+            return
+        if self._live_preview is None:
+            return
+        self._live_preview=None
+        self.wave_plot.clear()
+        self.spec_plot.clear()
+        self.wave_line=None
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self.wave_hint.setText('LIVE preview отклонён: '+str(reason))
+        self.spec_hint.setText('LIVE FFT скрыт: '+str(reason))
+        self.wave_mean_primary.setText('LIVE · недостоверное окно')
+        self.spec_mean.setText('LIVE · недостоверное окно')
+        self._sync_spectrum_summary_primary()
+        self.statusBar().showMessage('Предварительные графики скрыты, RAW Native не изменён')
+
+    def _render_live_wave(self):
+        if not self._live_active or self._live_preview is None:
+            return
+        try:
+            ch=self._ch()
+            d=provisional_waveform(
+                self._live_preview,ch,ac=self.wave_mode.currentIndex()==0)
+            self.wave_plot.clear()
+            self.wave_line=None  # Original cursor requires audited archived samples
+            self._wave_hover_window=None
+            self.wave_plot.setLabel('bottom','Индекс отсчёта/Fs, с · НЕ часы ПК')
+            self.wave_plot.setLabel('left','Native R6.1 · калибр. preview, м/с²')
+            self.wave_plot.plot(d['time_s'],d['amplitude'],
+                                pen=pg.mkPen('#176c92'))
+            self.wave_plot.enableAutoRange()
+            self.wave_mean_primary.setText(
+                f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} м/с²\n'
+                'Не сверено с оригинальной MVKView')
+            self.wave_hint.setText(
+                f'LIVE PREVIEW · {d["window_samples"]} реальных Float32 отсчётов · '
+                f'AC={"без DC" if self.wave_mode.currentIndex()==0 else "с DC"} · '
+                'GetSignal IDR-кандидат; исходный RAW не изменён')
+        except (ValueError,OSError,KeyError) as exc:
+            self.wave_plot.clear()
+            self.wave_hint.setText('Live signal недоступен: '+str(exc))
+
+    def _render_live_spectrum(self):
+        if not self._live_active or self._live_preview is None:
+            return
+        try:
+            ch=self._ch()
+            d=provisional_spectrum(
+                self._live_preview,ch,mode=self.spec_mode.currentIndex())
+            xs=np.asarray(d['frequency_hz'],dtype=float)
+            ys=np.asarray(d['amplitude'],dtype=float)
+            self.spec_plot.clear()
+            # Preserve four existing mode selectors, but keep this DATA
+            # separate from all original TQGrapher pointer/cursor acceptance.
+            self.spec_plot.setLabel('bottom','Частота, Гц · Live FFT кандидат')
+            self.spec_plot.setLabel('left',d['unit'])
+            self.spec_plot.plot(xs,ys,pen=pg.mkPen('#000000'))
+            self.spec_plot.getViewBox().setLimits(xMin=0,xMax=d['df_hz']*d['n_fft']/2)
+            self.spec_plot.enableAutoRange()
+            self._full_spectrum=None
+            self._spectrum_summary=None
+            self.spec_copy_button.setEnabled(False)
+            self.spec_save_button.setEnabled(False)
+            self.spec_original_copy_compare.setEnabled(False)
+            self.spec_canvas_geometry_button.setEnabled(False)
+            self.spec_mean.setText(
+                f'LIVE ADC{ch} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
+                'Спектр рассчитан локально · НЕ оригинальный DSP/Delphi parity')
+            self.spec_mean_primary.setText('LIVE PREVIEW · численный паритет не подтверждён')
+            self.spec_hint.setText(
+                f'{d["source"]} · FRange повторно НЕ применялся · '
+                'результат не предназначен для оригинального Copy/Save')
+            self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
+        except (ValueError,OSError,KeyError) as exc:
+            self.spec_plot.clear()
+            self.spec_hint.setText('Live FFT недоступен: '+str(exc))
+
+    def _end_live_capture(self, exported):
+        if not self._live_active:
+            return
+        self._live_active=False
+        self._live_preview=None
+        old=self._live_prior_session
+        self._live_prior_session=None
+        self.session=None
+        self.wave_plot.clear()
+        self.spec_plot.clear()
+        self.wave_line=None
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self._set_active(False)
+        self._sync_spectrum_summary_primary()
+        if exported:
+            # The dialog calls archiveReady AFTER this state transition.
+            # Until then NO provisional plotted bytes count as accepted.
+            self.title.setText('Native R6.1 · проверенный архив готовится к открытию')
+            self.statusBar().showMessage('LIVE завершён; только сейчас можно открыть SHA-verified ZIP')
+        elif old is not None:
+            # Restore the previously verified session, not a copied preview.
+            self.open_archive(old.path)
+        else:
+            self.title.setText('Сеанс не выбран')
+            self.task_session_summary.setText('LIVE завершён без принятого архива. RAW остаётся у оператора.')
+            self.note.setText('LIVE завершён; исходный RAW/диагностика не изменены')
+            self.wave_hint.setText('Откройте локальное проверенное измерение')
+            self.spec_hint.setText('Откройте локальное проверенное измерение')
+            self.statusBar().showMessage('LIVE не принят; архив не подменён предварительными данными')
+
     def open_native_capture(self):
         """Use the already hardware-tested recorder; never send MVK commands."""
         from .native_capture_dialog import NativeCaptureDialog
@@ -1356,10 +1516,17 @@ class MainWindow(QMainWindow):
             return
         dlg=NativeCaptureDialog(self)
         dlg.archiveReady.connect(self.open_archive)
+        dlg.captureStarted.connect(self._begin_live_capture)
+        dlg.captureEnded.connect(self._end_live_capture)
+        dlg.previewReady.connect(self._receive_live_preview)
+        dlg.previewInvalid.connect(self._invalidate_live_preview)
         self._native_dialog=dlg
         dlg.show()
 
     def choose_archive(self):
+        if self._live_active:
+            self.statusBar().showMessage('Пока Native записывает RAW, архив открывать нельзя. Сначала завершите сеанс.')
+            return
         path,_=QFileDialog.getOpenFileName(
             self,'Локальные измерения MVK (без подключения к прибору)','',
             'MVK измерения (*.zip *.bin *.tsxml);;'
@@ -1368,6 +1535,9 @@ class MainWindow(QMainWindow):
         if path:self.open_archive(path)
 
     def open_archive(self,path):
+        if self._live_active:
+            self.statusBar().showMessage('Архив не заменяется во время активной записи Native.')
+            return
         try:
             source=Path(path)
             direct=source.suffix.lower() in ('.bin','.tsxml')
@@ -1467,6 +1637,10 @@ class MainWindow(QMainWindow):
         self.spec_source_gain_label.setText(label)
 
     def refresh_all(self,*_):
+        if self._live_active:
+            self._render_live_wave()
+            self._render_live_spectrum()
+            return
         if self.session is None:return
         self._update_original_gain_inspector()
         self.refresh_calc()
@@ -1474,6 +1648,11 @@ class MainWindow(QMainWindow):
         self.refresh_spec()
 
     def refresh_calc(self,*_):
+        if self._live_active:
+            self.calc_source.setText('LIVE PREVIEW · расчётные DSP показатели пока не аттестованы')
+            self.calc_status.setText('Во время записи: состояние каналов в окне Native R6.1')
+            self.calc_status.setStyleSheet('color:#9e6500')
+            return
         if not self.session:return
         if isinstance(self.session,DirectBinSession):
             # BIN/TSXML contains no authenticated AUX/VALUES DSP. Do not
@@ -1551,6 +1730,9 @@ class MainWindow(QMainWindow):
         return 'chronological' if self.wave_order.currentIndex()==0 else 'getsignal_buffer'
 
     def refresh_wave(self,*_):
+        if self._live_active:
+            self._render_live_wave()
+            return
         if not self.session:return
         try:
             mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
@@ -1611,6 +1793,9 @@ class MainWindow(QMainWindow):
         return 'idr_float32' if self.spec_backend.currentIndex()==0 else 'numpy'
 
     def refresh_spec(self,*_):
+        if self._live_active:
+            self._render_live_spectrum()
+            return
         if not self.session:return
         self._spec_original_hscale_selected=None
         self.spec_hscale_button.setText('Диапазон X')
