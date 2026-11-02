@@ -62,7 +62,7 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         if i >= 8 { typ = "TACH" }
         item := LiveChannelStatus{
             Channel: c.Channel, Type: typ, Frames: c.Frames, Samples: c.Samples,
-            SampleRatesHz: c.Rates, SequenceDiscontinuities: c.SequenceDiscontinuities,
+            SampleRatesHz: append([]uint32{}, c.Rates...), SequenceDiscontinuities: c.SequenceDiscontinuities,
             NonFiniteSamples: c.NonFiniteSamples,
         }
         if i < 8 && m.liveDSPSeen[i] {
