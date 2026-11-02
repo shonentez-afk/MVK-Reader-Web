@@ -148,6 +148,8 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     assert win.spec_hscale_button.objectName()=='bSpecHScale'
     assert win.spec_vscale_button.objectName()=='bSpecVScale'
     assert win.spec_hint.objectName()=='lbSpecHint'
+    assert win.spec_cursor_primary.objectName()=='lbSpecHintPrimary'
+    assert win.spec_mean_primary.objectName()=='lbSpecMeanPrimary'
     assert not win.spec_envelope_button.isEnabled()  # not faked
     assert win.spec_copy_button.isEnabled()           # explicit research candidate
     assert win.spec_save_button.isEnabled()           # safe user-selected research CSV
@@ -953,13 +955,16 @@ def test_qt_imports_direct_bin_tsxml_and_displays_no_fabricated_dsp(
     # Source button captions must fit within the sidebar available width.
     available=win.spec_tools.viewport().width()
     assert available >= 200
+    # Nine original primary controls; research tools live in QDockWidget.
     for widget in (
-        win.spec_envelope_button,win.spec_mode,win.spec_n,
+        win.spec_envelope_button,win.spec_mode,win.spec_lines_button,
+        win.spec_cursor_primary,win.spec_mean_primary,
         win.spec_copy_button,win.spec_save_button,win.spec_hscale_button,
-        win.spec_vscale_button,win.spec_original_copy_compare,
+        win.spec_vscale_button,
     ):
         assert widget.minimumWidth()==0
         assert widget.width() <= available
+    assert not win.spec_inspector.isVisible()
     win.close()
     qt_app.processEvents()
 
