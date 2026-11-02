@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         self._live_active=False
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._live_prior_session=None
+        self._live_control_states=[]
         self.wave_line=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
@@ -1364,6 +1365,23 @@ class MainWindow(QMainWindow):
         self._set_active(True)
         self.tick.setEnabled(False)
         self.task_metrics_button.setEnabled(False)
+        self._live_control_states=[(widget,widget.isEnabled()) for widget in (
+            self.wave_start,self.wave_seconds,self.wave_order,self.wave_envelope_code,
+            self.wave_filter_button,self.wave_hscale_button,self.spec_n,
+            self.spec_f_range,self.spec_input_domain,self.spec_last)]
+        for widget,_ in self._live_control_states:
+            widget.setEnabled(False)  # archive selectors are NOT live FFT windows
+        # Never display previous archive's DSP/VALUES while recording new RAW.
+        self.task_subpages.setCurrentIndex(0)
+        for row in range(self.metrics.rowCount()):
+            for col in range(self.metrics.columnCount()):
+                self._cell(self.metrics,row,col,'— (ожидание проверенного AUX)')
+        for row in range(self.oct_table.rowCount()):
+            for col in range(self.oct_table.columnCount()):
+                self._cell(self.oct_table,row,col,'—')
+        self.oct_plot.clear()
+        for label,widget in self.status_fields.values():
+            widget.setText(label+': нет проверенного AUX нового сеанса')
         self.title.setText('LIVE · Native R6.1 · предварительные данные')
         self.task_session_summary.setText(
             'Native R6.1 ведёт запись с разрешения оператора. '
@@ -1483,6 +1501,9 @@ class MainWindow(QMainWindow):
         self._live_preview=None
         old=self._live_prior_session
         self._live_prior_session=None
+        for widget,was_enabled in self._live_control_states:
+            widget.setEnabled(was_enabled)
+        self._live_control_states=[]
         self.session=None
         self.wave_plot.clear()
         self.spec_plot.clear()
