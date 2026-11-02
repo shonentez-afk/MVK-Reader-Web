@@ -203,7 +203,7 @@ def pack_completed_export(root: str | Path) -> Path:
                              "aux4700_sha256": aux_sha},
                             separators=(",", ":"), ensure_ascii=True).encode("ascii")
     target = run / EXPORT_ZIP
-    partial = run / (EXPORT_ZIP + ".partial")
+    partial = run / (EXPORT_ZIP + ".partial.zip")
     if target.exists() or partial.exists():
         raise ValueError("Готовый ZIP уже существует: запрещена перезапись измерения")
     try:
