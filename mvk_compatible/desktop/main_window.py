@@ -660,7 +660,7 @@ class MainWindow(QMainWindow):
         stack.addWidget(self.spec_backend)
 
         stack.addWidget(QLabel('Частоты до, Гц'))
-        self.spec_hz=self._float(10,32768,10000,1)
+        self.spec_hz=self._float(10,32768,25600,1)
         stack.addWidget(self.spec_hz)
         stack.addWidget(QLabel('FRange · исследовательская калибровка'))
         self.spec_f_range=self._float(0.000001,1000000.0,1.,6)
@@ -1499,7 +1499,8 @@ class MainWindow(QMainWindow):
                 descr=(f"Огибающая IDR (эксперимент) код {code} · "
                     f"стадии {d['stages_used']} · отсчёты {d['output_samples']}"
                     f" · выходная частота {d['output_sample_rate_hz']} Гц"
-                    f" · локальное СКЗ: {d['rms_m_s2']:.7g} м/с²"
+                    f" · локальное СКЗ: {d['rms_m_s2']:.7g} "
+                    f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'}"
                     " · оригинальный формат/время/курсор НЕ приняты")
             else:
                 d=self.session.waveform(self._ch(),self.wave_start.value(),
@@ -1621,7 +1622,21 @@ class MainWindow(QMainWindow):
             if self._spec_data_ymax<=self._spec_data_ymin:
                 self._spec_data_ymax=self._spec_data_ymin+1.
             self.spec_plot.enableAutoRange()
+            if self.spec_mode.currentIndex()==0:
+                # Source default vertical log scale: 150 dB. The original
+                # screenshot confirms 0..-150 for the same Tag0 case.
+                # Display-only preset; NEVER adjust FFT powers.
+                self._spec_data_ymax=0.
+                self._spec_data_ymin=min(self._spec_data_ymin,-150.)
+                self.spec_plot.setYRange(-150.,0.,padding=0)
+                if self._spec_original_vscale_tag is None:
+                    self.spec_vscale_button.setText(
+                        original_v_scale_options(0)[0]['caption'])
+            elif self._spec_original_vscale_tag is None:
+                self.spec_vscale_button.setText('Шкала Y · авто')
             self.spec_plot.setXRange(0,self._spec_visible_max_hz,padding=0)
+            if self._spec_original_hscale_selected is None:
+                self.spec_hscale_button.setText(f'{self._spec_visible_max_hz:g} Гц')
             self.spec_plot.getViewBox().setLimits(
                 xMin=0,xMax=float(self._spec_visible_max_hz))
             self._sync_spec_scroll()
@@ -1740,7 +1755,8 @@ class MainWindow(QMainWindow):
             self.wave_hint.setText(
                 f"GetSignal[{p['display_index']}] → BIN[{p['index']}]"
                 f" · физическое время BIN {p['original_sample_time_s']:.8f} c"
-                f" · {p['value_m_s2']:.8g} м/с² · {p['mode']}"
+                f" · {p['value_m_s2']:.8g} "
+                f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'} · {p['mode']}"
                 ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены')
         except (OSError,KeyError,TypeError,ValueError,RuntimeError) as exc:
             self.statusBar().showMessage(str(exc))
@@ -1807,7 +1823,10 @@ class MainWindow(QMainWindow):
             self.spec_hline.setVisible(True)
             self._spec_last_cursor=found
             y_name=('дБ' if found['mode']==0 else
-                    ('','м/с²','мм/с','мкм')[found['mode']])
+                    ('усл. ед.' if isinstance(self.session,DirectBinSession)
+                     else ('','м/с²','мм/с','мкм')[found['mode']]))
+            cursor_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
+                         and found['mode']!=0 else found['unit'])
             cursor=cursor_string_candidate(
                 found['x_value'],found['display_y'],
                 x_name='Гц',y_name=y_name,decimal_separator=',')
@@ -1816,11 +1835,11 @@ class MainWindow(QMainWindow):
             self.spec_hint.setText(
                 f"IDR pixel {int(pixel)} · bins [{found['pixel_bin_first']}.."
                 f"{found['pixel_bin_last']}] → пик FFT[{found['selected_bin']}]"
-                f" · {found['frequency_hz']:.6g} Гц · {found['display_y']:.7g} {found['unit']}"
+                f" · {found['frequency_hz']:.6g} Гц · {found['display_y']:.7g} {cursor_unit}"
                 f" · avg={found['averaging']} (без /N)"
                 f" · {found['fft_backend']} · кандидат TQGrapher"
                 f" · snap={found['snapped_pixel_original_int_candidate']} px (Qt-геометрия)"
-                f"\nГоризонталь = raw FFT[{found['selected_bin']}]={raw_y:.8g} {found['unit']}"
+                f"\nГоризонталь = raw FFT[{found['selected_bin']}]={raw_y:.8g} {cursor_unit}"
                 ' · подпись может отличаться из-за усреднения; пиксели Delphi НЕ приняты'
                 f"\nCursorString IDR-кандидат (не Delphi RTL):\n{cursor['text']}")
         except (OSError,KeyError,TypeError,ValueError,OverflowError) as e:
