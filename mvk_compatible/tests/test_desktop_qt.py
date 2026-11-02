@@ -1402,3 +1402,85 @@ def test_stage111z28_legacy_zip_and_live_never_reuse_old_tach_values(tmp_path,qt
     assert "нет проверенных" in win.dsp_tach_status.text()
     win.close()
     qt_app.processEvents()
+
+
+def test_stage111z28b_source_pagestatus_fifteen_modes_and_gated_tach(
+    tmp_path,qt_app
+):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z28_dsp_tach_ticks import _fixture
+    w=MainWindow()
+    assert w.tabs.count()==3
+    assert w.task_subpages.tabText(5)=="PageStatus · оригинальный порядок"
+    assert w.original_status_mode.count()==15
+    assert w.original_status_table.rowCount()==1  # no authenticated archive
+    w.open_archive(_fixture(tmp_path))
+    w.original_status_mode.setCurrentIndex(0)
+    qt_app.processEvents()
+    assert w.original_status_table.item(0,1).text()=="0x00000000"
+    w.tick.setValue(1)
+    qt_app.processEvents()
+    assert w.original_status_table.item(0,1).text()=="0x00000104"
+    w.original_status_mode.setCurrentIndex(1)
+    qt_app.processEvents()
+    assert w.original_status_table.rowCount()==24
+    assert w.original_status_table.columnCount()==9
+    assert w.original_status_table.item(0,0).text().endswith("0x130)")
+    assert w.original_status_table.item(1,0).text().endswith("0x132)")
+    assert w.original_status_table.item(1,1).text()=="—"
+    assert "не содержит" in w.original_status_note.text().lower()
+    w.original_status_mode.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert w.original_status_table.rowCount()==24
+    assert w.original_status_table.columnCount()==9
+    assert w.original_status_table.item(0,1).text()!="—"
+    w.original_status_mode.setCurrentIndex(5)
+    qt_app.processEvents()
+    assert w.original_status_table.rowCount()==43
+    assert len(w.original_status_plot.listDataItems())>=0  # BarGraphItem is not a data item
+    assert w.original_status_plot.getPlotItem().listDataItems()==[]
+    assert len(w.original_status_plot.getPlotItem().items)>=1
+    w.original_status_mode.setCurrentIndex(13)
+    qt_app.processEvents()
+    assert w.original_status_table.rowCount()==6
+    assert w.original_status_table.columnCount()==5
+    assert w.original_status_table.item(0,0).text()=="ResultTacho"
+    assert w.original_status_table.item(0,2).text()=="13.25"
+    assert w.original_status_table.item(0,4).text()=="Гц"
+    assert w.original_status_table.item(5,2).text()=="—"
+    assert "об/мин НЕ вычисляются" in w.original_status_note.text()
+    w.original_status_mode.setCurrentIndex(14)
+    qt_app.processEvents()
+    assert w.original_status_table.item(0,2).text()=="9.75"
+    assert w.original_status_table.item(0,1).text()=="0x3100"
+    assert w.original_status_table.item(5,1).text()=="0x31FE"
+    w.close()
+    qt_app.processEvents()
+
+
+def test_stage111z28b_original_pagestatus_no_stale_archive_or_live_alarm(
+    tmp_path,qt_app
+):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z28_dsp_tach_ticks import _fixture
+    from .test_offline_core import fixture_zip
+    w=MainWindow()
+    newdir=tmp_path/"fresh"
+    newdir.mkdir()
+    olddir=tmp_path/"old"
+    olddir.mkdir()
+    w.open_archive(_fixture(newdir))
+    w.original_status_mode.setCurrentIndex(13)
+    assert w.original_status_table.item(0,2).text()=="14.25"
+    w.open_archive(fixture_zip(olddir))
+    assert w.original_status_table.item(0,2).text()=="—"
+    w._begin_live_capture()
+    assert w.original_status_table.item(0,2).text()=="—"
+    w.original_status_mode.setCurrentIndex(1)
+    assert w.original_status_table.rowCount()==24
+    assert w.original_status_table.item(0,1).text()=="—"
+    w._end_live_capture(False)
+    assert w.original_status_table.item(0,1).text()=="—"
+    assert w.session is not None
+    w.close()
+    qt_app.processEvents()
