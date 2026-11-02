@@ -1486,3 +1486,31 @@ def test_stage111z28b_original_pagestatus_no_stale_archive_or_live_alarm(
     assert w.session is not None
     w.close()
     qt_app.processEvents()
+
+
+def test_stage111z28b2_pagestatus_renders_only_dedicated_fresh_raw_alarm_no_severity(
+    tmp_path,qt_app
+):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z28b2_raw_control_status import _bundle
+    w=MainWindow()
+    w.open_archive(_bundle(tmp_path))
+    w.original_status_mode.setCurrentIndex(1)
+    w.tick.setValue(1)
+    qt_app.processEvents()
+    assert w.original_status_table.rowCount()==24
+    assert w.original_status_table.item(3,3).text()=="13.25"
+    assert w.original_status_table.item(4,3).text()=="0xA5A50004 (RAW)"
+    assert w.original_status_table.item(5,3).text()=="0xA5A50004 (RAW)"
+    assert "НЕ декодированы" in w.original_status_note.text()
+    assert "Норма" not in w.original_status_table.item(4,3).text()
+    w.tick.setValue(2)
+    qt_app.processEvents()
+    assert w.original_status_table.item(4,3).text()=="—"
+    w.tick.setValue(1)
+    w._begin_live_capture()
+    qt_app.processEvents()
+    assert w.original_status_table.item(4,3).text()=="—"
+    w._end_live_capture(False)
+    w.close()
+    qt_app.processEvents()
