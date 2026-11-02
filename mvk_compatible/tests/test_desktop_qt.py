@@ -1277,3 +1277,29 @@ def test_stage111z20_xor_overlay_tracks_spectrum_cursor_without_fft_change(
     assert win.spec_xor_crosshair.cursor is None
     assert win._spec_last_cursor is None
     win.close()
+
+
+def test_stage111z21_source_gain_shown_in_advanced_but_not_applied(tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z21_original_tsxml import _write_pair
+    p,tsxml,raw=_write_pair(tmp_path,gain="0.7786")
+    win=MainWindow()
+    win.open_archive(p)
+    win.show()
+    win.tabs.setCurrentIndex(2)
+    qt_app.processEvents()
+    assert win.session.samples(4)[0].tobytes()==raw
+    assert win.spec_f_range.value()==1.
+    assert win.spec_input_domain.currentData()=="calibrated_bin"
+    assert "калибровка" in win.title.text().lower() or (
+        "DSP недоступен" in win.title.text())
+    text=win.spec_source_gain_label.text()
+    assert "TSXML InternalChannelGain=" in text
+    assert "FRange=" in text
+    assert "НЕ применено повторно к BIN" in text
+    assert "физических единиц/паритета по этому BIN НЕТ" in text
+    assert not win.spec_inspector.isVisible()
+    win.spec_advanced_button.click()
+    qt_app.processEvents()
+    assert win.spec_source_gain_label.isVisible()
+    win.close()
