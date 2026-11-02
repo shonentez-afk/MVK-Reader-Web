@@ -17,6 +17,7 @@ import numpy as np
 from .envelope_idr_candidate import (EnvelopeProfile, envelope_plan,
     process_original_envelope_candidate, FIR_TAPS, FIR_DECIM)
 from .fft_idr_candidate import check_n, idr_power_spectrum
+from .spectrum_display_source import source_derived_mode_display
 from .calibration_candidate import resolve_f_range
 from .storage_f_range_idr_candidate import (
     prepare_original_fft_input, DOMAIN_CALIBRATED_BIN, DOMAIN_ORIGINAL_STORAGE)
@@ -128,13 +129,9 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
     spectrum_summary=original_spectrum_summary(p,n_fft=n_fft,fs_out=fs_out,
                                                 f_range=f_range,spectrum_mode=mode)
     frequency=np.arange(n_fft//2,dtype=np.float64)*(fs_out/n_fft)
-    if mode==0:
-        amplitude=np.full(len(p),-180.,dtype=np.float64)
-        pos=p>0
-        amplitude[pos]=10*(np.log10(p[pos].astype(np.float64))-2*np.log10(n_fft//2))
-    else:
-        amplitude=np.asarray(np.sqrt(p.astype(np.float64)/2.0)*
-                             (f_range/(n_fft/2.0)),dtype=np.float32).astype(np.float64)
+    # Original GetSpectrum writes Float32 Y for ALL modes, including log.
+    amplitude=source_derived_mode_display(p,n_fft=n_fft,mode=mode,
+                                         f_range=f_range).astype(np.float64)
     return {'source':SOURCE,'fft_backend':backend,
             'channel_source':(
                 'RESEARCH_ASSUMED_ORIGINAL_FLOAT_STORAGE' if
@@ -162,6 +159,9 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
             'original_pre_fft_envelope_runtime_parity_verified':False,
             'private_coefficient_source':profile.provenance,
             'power_integration_passes':max(0,mode-1),
+            'log10_helper_source_verified':True,
+            'display_float32_intermediate_source_model':True,
+            'original_display_y_runtime_parity_verified':False,
             'original_delphi_numerical_parity_verified':False,
             'original_window_selection_verified':False,
             'warning':(

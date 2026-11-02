@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
+from .spectrum_display_source import source_derived_mode_display
 from .dsp_tach_timeline import read_verified_dsp_tach_tick, source_sensor_status
 from .signal_idr_candidate import unfiltered_getsignal
 from .getsignal_input_evidence import archive_input_window_evidence
@@ -386,18 +387,17 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     summary=original_spectrum_summary(display_power,n_fft=n_fft,fs_out=fs,
                                       f_range=applied_range,spectrum_mode=mode)
     freq=np.fft.rfftfreq(n_fft,1/fs)[:n_fft//2]
-    amp=np.sqrt(np.asarray(display_power,dtype=np.float64)/2.)*(2.*applied_range/n_fft)
-    amp[0]=0
+    # Stage30B: SOURCE VERIFIED log10 helper 00447DB8 (FLDLG2/FYL2X)
+    # and explicit intermediate Float32 offset/scale plus full Float32 Y.
+    # Does NOT redo FFT/integration; x87 bitwise parity remains unverified.
+    y=source_derived_mode_display(display_power,n_fft=n_fft,
+                                  mode=mode,f_range=applied_range).astype(np.float64)
     if mode==0:
-        y=np.full_like(power,-180.0)
-        positive=power>0
-        y[positive]=10*(np.log10(power[positive])-2*np.log10(n_fft//2))
-        unit='дБ (предполагается log10; требует сверки с MVKView)'
-        note='IDR candidate 10*(fn(P)-2*fn(N/2)); fn=log10 ещё не доказано по 0x00447DB8'
+        unit='дБ (source-verified log10, Float32 staging)'
+        note='Original 00447DB8 log10 SOURCE-VERIFIED; NumPy vs Delphi x87 и полный Y 1:1 не доказано'
     else:
-        y=amp
         unit=('','м/с²','мм/с','мкм')[mode]
-        note='IDR modes 1/2/3: sqrt(P/2)*FRange/(N/2); 2/3 integrate POWER via 007D2164; численное совпадение с Delphi ещё не доказано'
+        note='Original Float32 display scale source-verified; x87 1:1 не доказано; power integration 007D2164 remains candidate'
     keep=np.flatnonzero(freq<=max_hz)
     if len(keep)>max_points:
         # Retain local maxima rather than throw away narrow resonances.
@@ -414,6 +414,9 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
             'spectrum_summary':summary,'original_f_range_verified':False,
             'f_range_used':applied_range,'f_range_source':range_source,
             'f_range_applied_to_display':mode!=0,
+            'log10_helper_source_verified':True,
+            'display_float32_intermediate_source_model':True,
+            'original_display_y_runtime_parity_verified':False,
             'input_domain':input_domain,
             'original_storage_read_divided_by_range':
                 prepared['original_storage_read_divided_by_range'],
