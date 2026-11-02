@@ -40,6 +40,7 @@ from ..triplet_reference_compare import read_operator_triplet_file,compare_opera
 from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
+from .xor_cursor_overlay import QtSpectrumXorCursor
 
 
 class MainWindow(QMainWindow):
@@ -1607,12 +1608,18 @@ class MainWindow(QMainWindow):
             # Original XOR-green cursor is separately studied (do not
             # approximate it by a static colored spectrum line).
             self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#000000'))
-            self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
+            # Preserve existing testable X/Y InfiniteLine state and callbacks,
+            # but make their pen invisible. Only the last-drawn overlay uses
+            # original bitwise pmXor green on top of a black spectral trace.
+            self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen(None))
             self.spec_line.setVisible(False)
             self.spec_plot.addItem(self.spec_line)
-            self.spec_hline=pg.InfiniteLine(angle=0,pen=pg.mkPen('#a56017'))
-            self.spec_hline.setVisible(False)  # Original source draws after the cursor is moved
+            self.spec_hline=pg.InfiniteLine(angle=0,pen=pg.mkPen(None))
+            self.spec_hline.setVisible(False)
             self.spec_plot.addItem(self.spec_hline)
+            self.spec_xor_crosshair=QtSpectrumXorCursor(
+                self.spec_plot.getViewBox())
+            self.spec_plot.addItem(self.spec_xor_crosshair,ignoreBounds=True)
             self._spec_last_cursor=None
             self._spec_mouse_pixel=None
             self.spec_plot.setLabel('left',d['unit'])
@@ -1784,6 +1791,8 @@ class MainWindow(QMainWindow):
                 # and clears CursorString when CursorPos is out of bounds.
                 if self.spec_line:self.spec_line.setVisible(False)
                 if self.spec_hline:self.spec_hline.setVisible(False)
+                if getattr(self,'spec_xor_crosshair',None):
+                    self.spec_xor_crosshair.clear_cursor()
                 self._spec_last_cursor=None
                 self.spec_hint.setText(
                     'CursorString: — (курсор вне области графика; original IDR candidate)')
@@ -1820,6 +1829,7 @@ class MainWindow(QMainWindow):
             # Plot uses Qt view coordinates; exact original Delphi pixel parity unknown.
             self.spec_hline.setPos(raw_y)
             self.spec_hline.setVisible(True)
+            self.spec_xor_crosshair.set_cursor(found['frequency_hz'],raw_y)
             self._spec_last_cursor=found
             y_name=('дБ' if found['mode']==0 else
                     ('усл. ед.' if isinstance(self.session,DirectBinSession)
