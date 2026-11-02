@@ -1437,9 +1437,8 @@ def test_stage111z28b_source_pagestatus_fifteen_modes_and_gated_tach(
     w.original_status_mode.setCurrentIndex(5)
     qt_app.processEvents()
     assert w.original_status_table.rowCount()==43
-    assert len(w.original_status_plot.listDataItems())>=0  # BarGraphItem is not a data item
-    assert w.original_status_plot.getPlotItem().listDataItems()==[]
-    assert len(w.original_status_plot.getPlotItem().items)>=1
+    # PyQtGraph counts the live BarGraphItem among its plotted data items.
+    assert len(w.original_status_plot.getPlotItem().listDataItems())==1
     w.original_status_mode.setCurrentIndex(13)
     qt_app.processEvents()
     assert w.original_status_table.rowCount()==6
@@ -1475,7 +1474,10 @@ def test_stage111z28b_original_pagestatus_no_stale_archive_or_live_alarm(
     w.open_archive(fixture_zip(olddir))
     assert w.original_status_table.item(0,2).text()=="—"
     w._begin_live_capture()
-    assert w.original_status_table.item(0,2).text()=="—"
+    # LIVE clears the old archived result to an explicit two-column
+    # no-source message; it must not preserve a fake TACH register cell.
+    assert w.original_status_table.columnCount()==2
+    assert w.original_status_table.item(0,1).text()=="—"
     w.original_status_mode.setCurrentIndex(1)
     assert w.original_status_table.rowCount()==24
     assert w.original_status_table.item(0,1).text()=="—"
