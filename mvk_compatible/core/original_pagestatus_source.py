@@ -89,7 +89,16 @@ def original_tach_fields(record: dict, tach: int) -> StatusTable:
     )
 
 
-def original_alarm_rows() -> StatusTable:
+def original_alarm_rows(control: dict | None = None) -> StatusTable:
+    """Show only original register words observed in fresh source frames.
+
+    Same source DWORD feeds both AlarmState and AlarmAlert; original text
+    converters have not been verified. Never render guessed severity.
+    """
+    observed={}
+    if control is not None and control.get("available"):
+        for item in control["raw_slots"]:
+            observed[(item["adc"],item["slot"])]=item
     rows = []
     for j in range(8):
         for key,offset,_kind in ALARM_FIELDS:
@@ -97,8 +106,17 @@ def original_alarm_rows() -> StatusTable:
             # source slot +0x130+8*j. +0x132 is same status WORD
             # rendered two ways (zone and event) by original advanced cells.
             relative = 0x130+8*j+offset
+            cells=[]
+            for adc in range(1,9):
+                source=observed.get((adc,j+1))
+                if source is None:
+                    cells.append(UNAVAILABLE)
+                elif key=="AlarmValue":
+                    cells.append(f'{source["raw_value_float32"]:.8g}')
+                else:
+                    cells.append(source["raw_status_hex"]+' (RAW)')
             rows.append((f"Контроль {j+1} · {key} (отн. 0x{relative:03X})",
-                         *(UNAVAILABLE for _ in range(8))))
+                         *cells))
     return StatusTable(
         1, MODE_NAMES[1], ("Оригинальная ячейка",*(f"АЦП{i}" for i in range(1,9))),
         tuple(rows),
@@ -107,8 +125,12 @@ def original_alarm_rows() -> StatusTable:
         "читают один DWORD +0x132 с разными интерпретаторами. "
         "ВАЖНО: AUX4700 заканчивается на +0x121 и НЕ содержит контрольные "
         "регистры +0x130; источник номера контролируемого параметра и "
-        "порогов находится отдельно в конфигурации. Все значения намеренно "
-        "оставлены неизвестными; ложных «Норма/Тревога» нет.",
+        "порогов находится отдельно в конфигурации. Значения выводятся "
+        "только для отдельно обновлённых после initial snapshot полных "
+        "8-словных записей в том же VALUES интервале. Показанный DWORD "
+        "для AlarmState/AlarmAlert — ОДИН И ТОТ ЖЕ RAW, исходный текст "
+        "зон/событий и физические пороги НЕ декодированы. Отсутствие "
+        "блока => неизвестно, не «Норма».",
     )
 
 
@@ -129,7 +151,7 @@ def source_pagestatus_table(index: int, calculated: dict | None) -> StatusTable:
     if type(index) is not int or not 0 <= index <= 14:
         raise ValueError("Original tcStatus dispatch index must be 0..14")
     if index==1:
-        return original_alarm_rows()
+        return original_alarm_rows(calculated.get('control_status') if calculated else None)
     if calculated is None:
         return StatusTable(
             index,MODE_NAMES[index],("Поле","Значение"),
