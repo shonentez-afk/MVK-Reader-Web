@@ -96,6 +96,9 @@ func (p *LivePreviewBuffer) channelBytes(ch int) ([]byte, int, uint32) {
 
 func writePreviewAtomic(dir string, p *LivePreviewBuffer, summary Summary, now time.Time) error {
     if p == nil { return nil }
+    hasSamples:=false
+    for _,samples:=range p.samples { if samples>0 { hasSamples=true; break } }
+    if !hasSamples { return nil } // Never publish an invented empty ADC window.
     tmp, err := os.CreateTemp(dir, ".mvk_live_preview_pending_")
     if err != nil { return err }
     tempName := tmp.Name()
