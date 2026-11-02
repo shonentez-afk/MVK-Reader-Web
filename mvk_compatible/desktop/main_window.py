@@ -12,7 +12,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
-    QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy)
+    QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy,QDockWidget)
 from ..core import OfflineSession
 from ..core.direct_bin_session import DirectBinSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
@@ -249,9 +249,9 @@ class MainWindow(QMainWindow):
         tools.setObjectName('pnSpecToolsBody')
         stack=QVBoxLayout(tools)
         stack.setContentsMargins(7,9,7,9)
-        stack.setSpacing(6)
+        stack.setSpacing(4)
 
-        self.spec_envelope_button=QPushButton('Огибающая — нет')
+        self.spec_envelope_button=QPushButton('Без фильтра')
         self.spec_envelope_button.setObjectName('bSpecEnvelopeType')
         self.spec_envelope_button.setFixedHeight(41)
         self.spec_envelope_button.setEnabled(False)
@@ -269,8 +269,8 @@ class MainWindow(QMainWindow):
 
         self.spec_mode=QComboBox()
         self.spec_mode.setObjectName('bSpecType')
-        self.spec_mode.addItems(['0 · дБ (исследователь.)','1 · ускорение',
-                                 '2 · скорость','3 · перемещение'])
+        self.spec_mode.addItems(['Логарифмич.','Линейный ВУ',
+                                 'Линейный ВС','Линейный ВП'])
         self.spec_mode.setFixedHeight(41)
         stack.addWidget(self.spec_mode)
 
@@ -298,6 +298,27 @@ class MainWindow(QMainWindow):
         self.spec_n_provenance.setWordWrap(True)
         self.spec_n_provenance.setObjectName('lbSpecFFTProvenance')
         stack.addWidget(self.spec_n_provenance)
+        # Presenter for the original bSpecLines. Keep self.spec_n as the one
+        # authoritative FFT N model: existing callbacks/QA still use it.
+        self.spec_lines_button=QToolButton()
+        self.spec_lines_button.setObjectName('bSpecLinesPresenter')
+        self.spec_lines_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.spec_lines_button.setPopupMode(QToolButton.InstantPopup)
+        self.spec_lines_button.setFixedHeight(37)
+        self.spec_lines_menu=QMenu(self.spec_lines_button)
+        self._spec_lines_actions=[]
+        for i in range(self.spec_n.count()):
+            n=int(self.spec_n.itemData(i))
+            a=self.spec_lines_menu.addAction(str(n))
+            a.setData(n)
+            a.setCheckable(True)
+            a.triggered.connect(
+                lambda checked=False,index=i:self.spec_n.setCurrentIndex(index))
+            self._spec_lines_actions.append(a)
+        self.spec_lines_button.setMenu(self.spec_lines_menu)
+        self.spec_lines_button.setToolTip(
+            'Частотное разрешение Δf=Fs/N. Оригинальный набор FFT и '
+            'исследовательские малые N доступны только при достаточной истории.')
 
         # Original bSpecHScale is a VCL split button with ten numeric
         # source-defined menu presets. Preserve quick-click zoom while
@@ -476,6 +497,78 @@ class MainWindow(QMainWindow):
         self.narrow_result.setTextInteractionFlags(Qt.TextSelectableByMouse)
         stack.addWidget(self.narrow_result)
         stack.addStretch()
+        # Separate the NINE primary original PageSpectrum widgets from
+        # numerous research-specific controls. Keep EVERY legacy widget
+        # and all signals/functions, but put diagnostics into a separate
+        # hideable native Qt dock, never between cursor/summary/Copy/Save.
+        self.spec_cursor_primary=QLabel('Курсор: —')
+        self.spec_cursor_primary.setObjectName('lbSpecHintPrimary')
+        self.spec_cursor_primary.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.spec_cursor_primary.setFixedHeight(48)
+        self.spec_cursor_primary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.spec_mean_primary=QLabel('Сначала откройте измерение')
+        self.spec_mean_primary.setObjectName('lbSpecMeanPrimary')
+        self.spec_mean_primary.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.spec_mean_primary.setWordWrap(True)
+        self.spec_mean_primary.setFixedHeight(106)
+        self.spec_mean_primary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.spec_advanced_button=QPushButton('Исследование ▸')
+        self.spec_advanced_button.setObjectName('openSpectrumResearch')
+        self.spec_advanced_button.setFixedHeight(29)
+        self.spec_advanced_button.setToolTip(
+            'Показать дополнительные FFT, FRange, IDR, Canvas и узкополосные '
+            'исследовательские параметры; обычный спектр остаётся на виду.')
+        self.spec_inspector=QDockWidget('Исследование · диагностика спектра',self)
+        self.spec_inspector.setObjectName('spectrumResearchDock')
+        self.spec_inspector.setAllowedAreas(
+            Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
+        research_scroll=QScrollArea()
+        research_scroll.setObjectName('spectrumResearchScroll')
+        research_scroll.setWidgetResizable(True)
+        research_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        research_body=QWidget()
+        research_body.setObjectName('spectrumResearchBody')
+        research_stack=QVBoxLayout(research_body)
+        research_stack.setContentsMargins(8,8,8,8)
+        research_stack.setSpacing(6)
+        legacy=[]
+        while stack.count():
+            item=stack.takeAt(0)
+            if item.widget() is not None:
+                legacy.append(item.widget())
+        primary=[
+            self.spec_envelope_button,self.spec_mode,self.spec_lines_button,
+            self.spec_hscale_button,self.spec_vscale_button,
+            self.spec_cursor_primary,self.spec_mean_primary,
+            self.spec_copy_button,self.spec_save_button,
+        ]
+        original_primary=set(primary)
+        for widget in legacy:
+            if widget not in original_primary:
+                research_stack.addWidget(widget)
+        research_stack.addStretch()
+        research_scroll.setWidget(research_body)
+        self.spec_inspector.setWidget(research_scroll)
+        self.addDockWidget(Qt.RightDockWidgetArea,self.spec_inspector)
+        self.spec_inspector.hide()
+        self.spec_advanced_button.clicked.connect(
+            lambda:self.spec_inspector.setVisible(not self.spec_inspector.isVisible()))
+        self.spec_inspector.visibilityChanged.connect(
+            lambda visible:self.spec_advanced_button.setText(
+                'Исследование ◂' if visible else 'Исследование ▸'))
+        self._spectrum_primary_order=tuple(w.objectName() for w in primary)
+        for widget in primary:
+            widget.setMinimumWidth(0)
+            widget.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
+            if widget in (
+                self.spec_envelope_button,self.spec_mode,
+                self.spec_hscale_button,self.spec_vscale_button,
+                self.spec_copy_button,self.spec_save_button):
+                widget.setFixedHeight(37)
+            stack.addWidget(widget)
+        stack.addWidget(self.spec_advanced_button)
+        stack.addStretch()
+        self._sync_spec_lines_presentation()
         # QScrollArea expands child minSizeHint from long Russian strings.
         # Explicitly permit wrapping/shrinking to the actual sidebar width,
         # so only VERTICAL scrolling is needed for research diagnostics.
@@ -488,6 +581,14 @@ class MainWindow(QMainWindow):
                 child.setMinimumWidth(0)
                 child.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
         tools.setMinimumWidth(0)
+        research_body.setMinimumWidth(0)
+        for child in research_body.findChildren(QWidget):
+            if isinstance(child,QLabel):
+                child.setWordWrap(True)
+                child.setMinimumWidth(0)
+                child.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
+            elif isinstance(child,(QPushButton,QComboBox,QToolButton,QDoubleSpinBox,QCheckBox)):
+                child.setMinimumWidth(0)
         self.spec_tools.setWidget(tools)
         lay.addWidget(self.spec_tools,0)
 
