@@ -15,10 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import math
 from pathlib import Path
 import re
-import xml.etree.ElementTree as ET
 
 import numpy as np
 
@@ -27,6 +25,9 @@ from .offline_export import (
     waveform_for_zip, spectrum_for_zip,
 )
 from .storage_f_range_idr_candidate import DOMAIN_CALIBRATED_BIN
+from .original_tsxml_contract import (
+    OriginalTsxmlContract,inspect_original_tsxml,ORIGINAL_TSXML_SOURCE,
+)
 
 MAX_TSXML_BYTES = 64_000
 _MAX_BIN_BYTES = MAX_BIN_SAMPLES * 4
@@ -46,6 +47,7 @@ class DirectBinChannel:
     data_length_bytes: int
     bin_sha256: str
     tsxml_sha256: str
+    source_metadata: OriginalTsxmlContract
 
 
 def _checked_file(path: Path, *, limit: int, what: str) -> bytes:
@@ -85,47 +87,55 @@ def _bin_from_selection(selected: Path) -> Path:
     raise ValueError("Выберите локальный BIN или соответствующий TSXML")
 
 
-def _inspect_channel(bin_file: Path, adc: int) -> DirectBinChannel:
-    # Original native format can contain headers/multiple types, so always
-    # read the sidecar FIRST and refuse anything other than declared Single.
+def _inspect_channel(bin_file: Path, adc: int | None) -> DirectBinChannel:
+    # Original IDR TSXML writer emits full CP1251 metadata, including
+    # DataFileName and ChannelNumber. Check these against the selected BIN
+    # so same-size files cannot be silently paired with wrong sidecars.
     sidecar = _sidecar_for_bin(bin_file)
     xml = _checked_file(sidecar, limit=MAX_TSXML_BYTES, what="TSXML")
-    if b"<!DOCTYPE" in xml.upper() or b"<!ENTITY" in xml.upper():
-        raise ValueError("TSXML с DTD или ENTITY не поддерживается")
-    try:
-        root = ET.fromstring(xml)
-        channels = root.findall("./Channels/Channel")
-        if len(channels) != 1:
-            raise ValueError("Ожидался ровно один канал TSXML")
-        entry = channels[0]
-        if (entry.findtext("RealDataType") or "").strip() != "Single":
-            raise ValueError("BIN не объявлен в TSXML как Single Float32")
-        length = int((entry.findtext("DataLength") or "").strip())
-        offset = int((entry.findtext("DataOffset") or "").strip())
-        freq = float((entry.findtext("ChannelFrequency") or "").strip())
-    except (ET.ParseError, TypeError, OverflowError) as exc:
-        raise ValueError("Некорректная структура Single TSXML") from exc
-    if (not 0 <= offset <= _MAX_BIN_BYTES or
-            not 4 <= length <= _MAX_BIN_BYTES or length % 4 or
-            not math.isfinite(freq) or not freq.is_integer() or
-            not 1 <= freq <= 1_000_000):
-        raise ValueError("Недопустимые DataLength/DataOffset/ChannelFrequency")
+    contract = inspect_original_tsxml(
+        xml, actual_bin_filename=bin_file.name,max_data_bytes=_MAX_BIN_BYTES)
+    if contract.data_type=="Byte":
+        # Source _Unit125 (00806F68) writes Byte for tachometer/count
+        # channels. Never reinterpret those counts as Float32 acceleration
+        # and never synthesize a 1-channel FFT on integer counter bytes.
+        raise ValueError(
+            "Оригинальный BIN имеет RealDataType=Byte (счётный канал). "
+            "Метаданные распознаны, но FFT ускорения для Byte недоступен.")
+    if contract.data_length_bytes<4:
+        raise ValueError("Single BIN требует минимум 4 байта")
+    declared=contract.channel_number
+    if declared is not None:
+        if not 1<=declared<=8:
+            raise ValueError(
+                "ChannelNumber указывает не на один из восьми АЦП ускорения")
+        if adc is not None and adc!=declared:
+            raise ValueError(
+                "ChannelNumber в TSXML не совпадает с АЦП в имени BIN")
+        adc=declared
+    elif adc is None:
+        # The old Stage111Z.16 minimal/synthetic sidecar has no number.
+        # Keep its single-file fallback, but never claim this is proven.
+        adc=1
     raw = _checked_file(
         bin_file, limit=_MAX_BIN_BYTES + 4_096, what="BIN"
     )
+    length=contract.data_length_bytes
+    offset=contract.data_offset_bytes
     if offset + length != len(raw):
         raise ValueError(
-            "BIN/TSXML: диапазон Single должен точно соответствовать файлу"
+            "BIN/TSXML: DataOffset+DataLength должны точно покрывать файл"
         )
-    samples = np.frombuffer(raw, dtype="<f4", count=length // 4, offset=offset)
+    samples = np.frombuffer(raw, dtype="<f4", count=length//4, offset=offset)
     if not bool(np.isfinite(samples).all()):
         raise ValueError("BIN содержит NaN/Inf: прямой импорт отклонён")
     return DirectBinChannel(
         adc=adc, bin_path=bin_file, tsxml_path=sidecar,
-        sample_rate_hz=int(freq), data_offset_bytes=offset,
-        data_length_bytes=length,
+        sample_rate_hz=contract.sample_rate_hz,
+        data_offset_bytes=offset,data_length_bytes=length,
         bin_sha256=hashlib.sha256(raw).hexdigest(),
         tsxml_sha256=hashlib.sha256(xml).hexdigest(),
+        source_metadata=contract,
     )
 
 
@@ -148,7 +158,7 @@ class DirectBinSession(OfflineSession):
         _sidecar_for_bin(primary)
 
         m = _CHANNEL_NAME.fullmatch(primary.name)
-        discovered: list[tuple[int, Path]] = []
+        discovered: list[tuple[int | None, Path]] = []
         if m and BIN_NAME_RE.fullmatch(primary.name):
             serial, _, timestamp = m.groups()
             for ch in range(1, 9):
@@ -158,10 +168,11 @@ class DirectBinSession(OfflineSession):
                 if sibling.exists() or sibling.is_symlink():
                     discovered.append((ch, sibling))
         else:
-            # For nonstandard native filenames do NOT guess the ADC number
-            # or mix other files in the directory into the displayed signal.
+            # Nonstandard names may still include an original ChannelNumber
+            # inside the paired TSXML. Preserve it instead of guessing ADC1.
+            # No neighboring files are grouped on ambiguous names.
             serial = "LOCAL_BIN_SINGLE_CHANNEL"
-            discovered.append((1, primary))
+            discovered.append((None, primary))
         if not discovered or primary not in [p for _, p in discovered]:
             raise ValueError("Нельзя определить исходную группу BIN")
         sources = tuple(
@@ -208,6 +219,21 @@ class DirectBinSession(OfflineSession):
             "physical_units_verified": False,
             "dsp_metrics_available": False,
             "original_byte_order": "little_endian_Single_from_TSXML",
+            "original_tsxml_contract_source": ORIGINAL_TSXML_SOURCE,
+            "original_tsxml_writer_fields_complete":
+                entry.source_metadata.source_meta_complete,
+            "declared_channel_number":
+                entry.source_metadata.channel_number,
+            "declared_units_text":
+                entry.source_metadata.channel_units_text,
+            "declared_internal_channel_gain_single":
+                entry.source_metadata.internal_gain_single,
+            "original_loader_gain_branch_from_idr":
+                entry.source_metadata.gain_loader_branch,
+            "original_loader_f_range_single_candidate":
+                entry.source_metadata.original_f_range_single_candidate,
+            "metadata_gain_was_applied_to_bin_samples": False,
+            "original_loader_runtime_f_range_verified": False,
         }, entry.bin_path.name
 
     def calculations(self, tick: int = -1) -> dict:
@@ -268,7 +294,20 @@ class DirectBinSession(OfflineSession):
             "updates": self.updates,
             "channels": [
                 {"adc": e.adc, "samples": e.data_length_bytes // 4,
-                 "fs_hz": e.sample_rate_hz, "calibration_verified": False}
+                 "fs_hz": e.sample_rate_hz, "calibration_verified": False,
+                 "original_tsxml_writer_fields_complete":
+                     e.source_metadata.source_meta_complete,
+                 "declared_channel_number":
+                     e.source_metadata.channel_number,
+                 "declared_units_text":
+                     e.source_metadata.channel_units_text,
+                 "internal_channel_gain_single":
+                     e.source_metadata.internal_gain_single,
+                 "original_loader_gain_branch":
+                     e.source_metadata.gain_loader_branch,
+                 "original_f_range_single_candidate":
+                     e.source_metadata.original_f_range_single_candidate,
+                 "bin_samples_gain_multiplied_by_reader": False}
                 for e in self.channel_files
             ],
             "dsp_source": "NOT_AVAILABLE_NO_AUX_VALUES",
