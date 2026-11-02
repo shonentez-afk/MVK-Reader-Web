@@ -20,6 +20,7 @@ import numpy as np
 from .fft_idr_candidate import idr_power_spectrum
 from .dsp_tach_timeline import read_verified_dsp_tach_tick, source_sensor_status
 from .signal_idr_candidate import unfiltered_getsignal
+from .getsignal_input_evidence import archive_input_window_evidence
 from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 from .narrowband_idr_candidate import narrowband_from_samples
@@ -305,6 +306,10 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
     a=round(start_s*fs)
     b=min(len(samples),a+round(seconds*fs))
     if b<=a:raise ValueError('Нет отсчётов в выбранном окне')
+    source_window=archive_input_window_evidence(
+        samples,first=a,end=b,sample_rate_hz=fs,
+        native_audit=bool(isinstance(audit,dict) and
+            audit.get('instrument_serial') and audit.get('output_file_sha256')))
     frame=unfiltered_getsignal(samples[a:b],fs,no_dc=mode=='ac')
     signal=(frame.chronological if display_order=='chronological' else frame.getsignal_buffer)
     xx,yy=reduce_minmax(signal,fs,a,points)
@@ -312,6 +317,9 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
             'total_samples':int(len(samples)), 'window_samples':int(len(signal)),
             'start_s':a/fs,'end_s':b/fs,
             'time_s':xx,'amplitude':yy,'unit':'м/с²',
+            'input_source_window':source_window,
+            'requested_window_truncated_by_archive_end':
+                (b < a+round(seconds*fs)),
             'mean_m_s2':frame.window_mean,
             'removed_mean_m_s2':frame.removed_mean,
             'rms_m_s2':frame.rms_value,
@@ -342,6 +350,12 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     start = max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
     if start<0 or start+n_fft>len(samples):
         raise ValueError('Не хватает данных для выбранного окна FFT')
+    # Same local pre-DC, pre-Hann Float32 BIN window can now be matched
+    # against GetSignal by SHA; this is NOT original Delphi same-run parity.
+    source_window=archive_input_window_evidence(
+        samples,first=start,end=start+n_fft,sample_rate_hz=fs,
+        native_audit=bool(isinstance(audit,dict) and
+            audit.get('instrument_serial') and audit.get('output_file_sha256')))
     # Original GetSpectrum (0x007D14B3) ALWAYS removes stored f32 mean.
     # Stage111B reconstructed IDR FFT is still candidate, NOT instrument DSP.
     prepared=prepare_original_fft_input(
@@ -386,7 +400,9 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
         chunk=math.ceil(len(keep)/max_points)
         keep=np.array([keep[i:i+chunk][np.argmax(y[keep[i:i+chunk]])] for i in range(0,len(keep),chunk)],dtype=np.int64)
     return {'version':VERSION,'channel':channel,'n_fft':n_fft,'df_hz':fs/n_fft,
-            'start_s':start/fs,'mode':mode,'mode_name':('Логарифмич.','Линейный ВУ','Линейный ВС','Линейный ВП')[mode],
+            'start_s':start/fs,'end_s':(start+n_fft)/fs,
+            'input_source_window':source_window,
+            'mode':mode,'mode_name':('Логарифмич.','Линейный ВУ','Линейный ВС','Линейный ВП')[mode],
             'frequency_hz':freq[keep].tolist(),'amplitude':y[keep].tolist(),
             'unit':unit,'source':'APP_DERIVED_FFT_MVKVIEW_CANDIDATE',
             'warning':note,'file':filename,
