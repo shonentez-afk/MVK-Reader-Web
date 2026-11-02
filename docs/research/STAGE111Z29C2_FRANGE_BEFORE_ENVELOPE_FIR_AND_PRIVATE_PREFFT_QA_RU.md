@@ -2,7 +2,7 @@
 
 Дата: 02.11.2026. Ветка: research/stage111-mvkview-desktop-20261029.
 Точный проверяемый SOURCE SHA: `5cbb0d69adf904160df33e41d55f58a56b3daceb`.
-**CODE + Linux Core + Windows Core/Qt CI VERIFIED; Go/PyInstaller Windows EXE артефакт проверяется отдельно. Реальный Win32 GetSignal/FIR/same-run numeric parity ещё НЕ достигнут.**
+**CODE + OFFLINE CI 3/3 SUCCESS + Windows EXE PE/source SHA VERIFIED. Реальный Win32 GetSignal/FIR/same-run numeric parity НЕ достигнут.**
 
 ## 1. Не повторять Stage111J, Stage52 и оригинальный FFT
 
@@ -23,7 +23,11 @@ Original float-ring FRange division before RemoveMean/FIR/FFT уже SOURCE-VERI
 
 Только SYNTHETIC public CI: 4/4 spectrum modes, нормализация до FIR, default no double FRange, same-window SHA/pre-FFT SHA, original-mode vs заранее нормализованная цепочка, изменения CLI CSV/Copy для Tag0–3, защита от неверного/недостаточного BIN/NaN/пустых исходных дампов, one-ULP mutation, Qt переключение и отсутствие IDP.
 
-[GitHub Actions #41420012495](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41420012495): Linux Core **1149 passed, 5 skipped, 30 subtests**, Windows Core **1152 passed, 2 skipped, 30 subtests**, Windows Qt **49 passed**. Сборка EXE/Go — проверить отдельно по этому же исходному SHA.
+[GitHub Actions #41420012495](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41420012495): Linux Core **1149 passed, 5 skipped, 30 subtests**, Windows Core **1152 passed, 2 skipped, 30 subtests**, Windows Qt **49 passed**. - Go Native R6.1 `go test ./...`, `go vet ./...`, Windows x64 Go build — PASS. PyInstaller onefile Windows GUI+Go PE header, source BUILD_INFO и SHA256 verification — PASS.
+- [Windows Artifact ID 13129387408](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41420012495/artifacts/13129387408), `MVKViewCompatible_Stage111_Windows_Preview` ZIP **68 539 626 байт**, expired=false 02.11.2026.
+- **Windows EXE SHA256:** `9d36482b491952c597dac20e5dee497a77cb2e041d155ae776a358b4137221c2`.
+- **GitHub uploaded artifact ZIP SHA256:** `3919b10fb4ae2e9d61f73009e16e8ed2267f7c56d66c71fb8e6734c79ec195cd`.
+- Верифицирован **именно** source SHA `5cbb0d69adf904160df33e41d55f58a56b3daceb`; позднейшие docs-only коммиты не меняют EXE.
 
 ## 4. Старый оригинальный дамп — используем только доказанные сведения
 
@@ -33,6 +37,6 @@ Original float-ring FRange division before RemoveMean/FIR/FFT уже SOURCE-VERI
 
 ## 5. Что дальше
 
-Stage29C2 **SOURCE/CODE/CORE-Qt CI CLOSED**, real original runtime Data Gate OPEN. Следующий Stage30 должен затронуть только НЕДОСТАЮЩИЕ оригинальные full after-mode массивы Tag1/2/3, x87 различия при неизвестном режиме и full same-run spectrum comparison. Stage29B original GetSignal RETURN, Stage26C long live 65536/262144, Stage31 pixel parity и Stage27B same-run original/native BIN также OPEN. Не повторять Stage111J, Z2, Z8, Z10, Z13/14 или уже проверенные реальные исходные FIR-банки.
+Stage29C2 **SOURCE/CODE/CI 3/3/WINDOWS EXE QA CLOSED**, real original runtime Data Gate OPEN. Следующий Stage30 должен затронуть только НЕДОСТАЮЩИЕ оригинальные full after-mode массивы Tag1/2/3, x87 различия при неизвестном режиме и full same-run spectrum comparison. Stage29B original GetSignal RETURN, Stage26C long live 65536/262144, Stage31 pixel parity и Stage27B same-run original/native BIN также OPEN. Не повторять Stage111J, Z2, Z8, Z10, Z13/14 или уже проверенные реальные исходные FIR-банки.
 
 Stable main/Web untouched; никаких оригинальных EXE/IDP/PAS/DFM/BIN/RAW/PCAPNG/PNG в GitHub или CI.
