@@ -11,6 +11,7 @@ Original FIR coefficient payload is NOT in this module/repository:
 provide explicitly verified local EnvelopeProfile from user's IDP.
 """
 from __future__ import annotations
+import hashlib
 import math
 import numpy as np
 from .envelope_idr_candidate import (EnvelopeProfile, envelope_plan,
@@ -93,6 +94,12 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
     transformed=np.asarray(env['chronological'],dtype=np.float32)
     if len(transformed)!=n_fft:
         raise ValueError('FIR output length does not match FFT N; operation refused')
+    # The array passed DIRECTLY into original-inspired Hann/FFT is NOT
+    # the input BIN, not the reversed GetSignal return, and not a second
+    # mean-centered array. Its SHA can be compared privately to an x32dbg
+    # snapshot at 007D1FE8 without disclosing any user signal samples.
+    fft_input_float32_sha256=hashlib.sha256(
+        np.asarray(transformed,dtype='<f4').tobytes()).hexdigest()
     # IMPORTANT: 007D14B3 is BEFORE filtering, no second call to 007D2344.
     power, second_removed=idr_power_spectrum(transformed,backend,remove_dc=False)
     assert second_removed==0.0
@@ -124,6 +131,10 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
             'envelope_stages':plan['stages'],'output_samples':len(transformed),
             'raw_mean_removed_m_s2':env['removed_mean_m_s2'],
             'mean_subtraction_count':1,'fft_second_mean_subtraction':False,
+            'pre_fft_envelope_float32_sha256':fft_input_float32_sha256,
+            'pre_fft_envelope_samples':len(transformed),
+            'pre_fft_envelope_is_unreversed_chronological':True,
+            'original_pre_fft_envelope_runtime_parity_verified':False,
             'private_coefficient_source':profile.provenance,
             'power_integration_passes':max(0,mode-1),
             'original_delphi_numerical_parity_verified':False,
