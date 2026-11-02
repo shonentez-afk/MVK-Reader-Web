@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import numpy as np
 
 SCHEMA="MVK_GETSIGNAL_GETSPECTRUM_LOCAL_INPUT_WINDOW_V1"
@@ -19,11 +20,17 @@ TIME_KIND="ADC_ABSOLUTE_SAMPLE_INDEX_RELATIVE_TO_ARCHIVE_NOT_HOST_UTC"
 
 
 def archive_input_window_evidence(samples, *, first: int, end: int,
-                                  sample_rate_hz: float, native_audit: bool
+                                  sample_rate_hz: float, native_audit: bool,
+                                  channel: int, source_raw_sha256: str | None = None
                                   ) -> dict:
     """Explicitly bounded, nonpadded Float32 archive segment fingerprint."""
     if (type(first) is not int or type(end) is not int or
-            type(native_audit) is not bool or
+            type(native_audit) is not bool or type(channel) is not int or
+            not 1<=channel<=8 or
+            (native_audit and (not isinstance(source_raw_sha256,str) or
+                not re.fullmatch(r'[a-f0-9]{64}',source_raw_sha256))) or
+            (source_raw_sha256 is not None and (not isinstance(source_raw_sha256,str) or
+                not re.fullmatch(r'[a-f0-9]{64}',source_raw_sha256))) or
             first<0 or end<=first or
             not isinstance(sample_rate_hz,(float,int)) or
             isinstance(sample_rate_hz,bool) or
@@ -37,6 +44,8 @@ def archive_input_window_evidence(samples, *, first: int, end: int,
         raise ValueError("GetSignal source input: nonfinite source window")
     return {
         "schema":SCHEMA,
+        "channel":channel,
+        "claimed_source_raw_sha256":source_raw_sha256,
         "time_kind":TIME_KIND,
         "first_archive_sample_index":first,
         "last_archive_sample_exclusive":end,
@@ -54,7 +63,8 @@ def archive_input_window_evidence(samples, *, first: int, end: int,
 
 def compare_local_input_windows(a:dict,b:dict)->dict:
     """Strict proof ONLY of SAME input samples within our local processing."""
-    keys=("schema","time_kind","first_archive_sample_index",
+    keys=("schema","channel","claimed_source_raw_sha256",
+          "time_kind","first_archive_sample_index",
           "last_archive_sample_exclusive","source_sample_count",
           "sample_rate_hz","source_float32_le_sha256",
           "no_zero_padding","source_is_native_r6_sha_audited_export")
