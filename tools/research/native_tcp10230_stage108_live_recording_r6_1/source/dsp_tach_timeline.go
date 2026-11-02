@@ -27,7 +27,7 @@ func originalTickTimeline(s snapshot, i int) map[string]interface{} {
             Float32Words:s.TachF[ch],Uint32Words:s.TachU[ch],
         }
     }
-    return map[string]interface{}{
+    out := map[string]interface{}{
         "update":i+1,
         "aux_frame":s.AuxFrame,
         "tick_frame":s.TickFrame,
@@ -41,4 +41,8 @@ func originalTickTimeline(s snapshot, i int) map[string]interface{} {
         "time_kind":"HOST_RECEIVE_CLOCK_NOT_DSP_SYNCHRONIZED",
         "tach_units_and_rpm_verified":false,
     }
+    if s.Control.Schema == controlTickSchema {
+        out["control_status"] = s.Control
+    }
+    return out
 }
