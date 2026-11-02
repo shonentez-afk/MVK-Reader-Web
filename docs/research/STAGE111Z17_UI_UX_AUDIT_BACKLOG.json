@@ -38,7 +38,8 @@
       "acceptance_gate": "при 1024x704 все 9 главных элементов видны без горизонтальной прокрутки; ни одна исследовательская функция не удалена",
       "next_stage": "Stage111Z.18",
       "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-002",
@@ -49,7 +50,8 @@
       "acceptance_gate": "ни одно некалиброванное число не представлено приборным DSP или м/с²; при смене источника нет старых DSP",
       "next_stage": "Stage111Z.18",
       "evidence": "CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-003",
@@ -60,7 +62,8 @@
       "acceptance_gate": "без fake device actions, все текущие DSP таблицы сохранены и доступны",
       "next_stage": "Stage111Z.19",
       "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-004",
@@ -71,7 +74,8 @@
       "acceptance_gate": "на кнопках отражены текущие режим, разрешение и шкалы, не фиксированные эталонные числа",
       "next_stage": "Stage111Z.18",
       "evidence": "ORIGINAL_SCREENSHOT+ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-005",
@@ -82,7 +86,8 @@
       "acceptance_gate": "эталонный log screenshot 0…−150 dB и краткая осевая подпись только при тех же параметрах",
       "next_stage": "Stage111Z.20",
       "evidence": "ORIGINAL_SCREENSHOT+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "PARTIALLY_IMPLEMENTED",
+      "implementation_stage": "Stage111Z.18-20"
     },
     {
       "id": "UX-006",
@@ -93,7 +98,8 @@
       "acceptance_gate": "на фоне white RGB255,127,255, black RGB0,128,0 и правильный redraw",
       "next_stage": "Stage111Z.20",
       "evidence": "ORIGINAL_SCREENSHOT+SOURCE_IDR+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.20"
     },
     {
       "id": "UX-007",
@@ -104,7 +110,8 @@
       "acceptance_gate": "пользователь видит signal mode и фильтр без перегрузки, всё доступно keyboard",
       "next_stage": "Stage111Z.19",
       "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-008",
@@ -115,7 +122,8 @@
       "acceptance_gate": "невозможно просмотреть отсутствующий АЦП, весь контекст файла/канала виден",
       "next_stage": "Stage111Z.19",
       "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "PARTIALLY_IMPLEMENTED",
+      "implementation_stage": "Stage111Z.18-20"
     },
     {
       "id": "UX-009",
@@ -126,7 +134,8 @@
       "acceptance_gate": "copy/save всегда рядом с summary, физические единицы проверены",
       "next_stage": "Stage111Z.18",
       "evidence": "ORIGINAL_SCREENSHOT+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-010",
@@ -159,7 +168,8 @@
       "acceptance_gate": "можно выбрать последнее и произвольное реальное окно без padding",
       "next_stage": "Stage111Z.19",
       "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "PARTIALLY_IMPLEMENTED",
+      "implementation_stage": "Stage111Z.18-20"
     },
     {
       "id": "UX-013",
@@ -192,7 +202,8 @@
       "acceptance_gate": "никакого ложного заявления об original file parity; явное место вывода",
       "next_stage": "Stage111Z.18",
       "evidence": "CURRENT_QT_SOURCE+ORIGINAL_DFM",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
     },
     {
       "id": "UX-016",
@@ -203,7 +214,8 @@
       "acceptance_gate": "главные controls не обрезаны и работают с клавиатуры",
       "next_stage": "Stage111Z.21",
       "evidence": "ORIGINAL_DFM+CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "PARTIALLY_IMPLEMENTED",
+      "implementation_stage": "Stage111Z.18-20"
     },
     {
       "id": "UX-017",
@@ -214,7 +226,8 @@
       "acceptance_gate": "невосстановимая ошибка не оставляет устаревший UI; восстановимая не сбрасывает сеанс",
       "next_stage": "Stage111Z.21",
       "evidence": "CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "PARTIALLY_IMPLEMENTED",
+      "implementation_stage": "Stage111Z.18-20"
     },
     {
       "id": "UX-018",
@@ -225,7 +238,28 @@
       "acceptance_gate": "в 9 основых controls нет технических обозначений, доступ к details сохранён",
       "next_stage": "Stage111Z.18",
       "evidence": "CURRENT_QT_SOURCE",
-      "status": "OPEN"
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING",
+      "implementation_stage": "Stage111Z.18-19"
+    }
+  ],
+  "last_updated": "2026-11-02",
+  "current_code_sha": "b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50",
+  "ui_fix_report": "docs/research/STAGE111Z20_UI_UX_FIXES_AND_MAIN_TRACK_RETURN_RU.md",
+  "current_ci_run": "https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808",
+  "ci_status_at_last_update": "Linux succeeded, Windows Qt and EXE not yet confirmed",
+  "status_counts": {
+    "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING": 9,
+    "PARTIALLY_IMPLEMENTED": 5,
+    "OPEN": 4
+  },
+  "p0_status": [
+    {
+      "id": "UX-001",
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING"
+    },
+    {
+      "id": "UX-002",
+      "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING"
     }
   ]
 }
