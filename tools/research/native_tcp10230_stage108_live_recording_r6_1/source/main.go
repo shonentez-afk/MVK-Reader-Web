@@ -98,6 +98,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 	}
 	m.summary.SocketLocalAddr = c.LocalAddr().String()
 	m.summary.SocketRemoteAddr = c.RemoteAddr().String()
+	m.publishLiveStatus("RECORDING", true, "")
 	m.note(fmt.Sprintf("Connected TCP local=%s remote=%s (no MVK commands sent)", c.LocalAddr(), c.RemoteAddr()))
 	fmt.Printf("TCP: %s -> %s\n", c.LocalAddr(), c.RemoteAddr())
 	start := time.Now()
@@ -132,6 +133,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			if err := m.ProcessChunk(buf[:n], time.Now()); err != nil {
 				return "LOCAL_WRITE_FAILED", err
 			}
+			m.publishLiveStatus("RECORDING", false, "")
 			if time.Since(lastPrinted) >= 2*time.Second {
 				fmt.Printf("Получено %.2f МБ | кадров %d | AUX4700 %d | ADC1 %d отсчётов\n",
 					float64(m.summary.RawBytes)/1048576, m.summary.TotalFrames, m.summary.Aux4700, m.summary.Channels[0].Samples)
@@ -146,6 +148,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 				return "REMOTE_DISCONNECTED", nil
 			}
 			if ne, ok := e.(net.Error); ok && ne.Timeout() {
+				m.publishLiveStatus("RECORDING", false, "")
 				continue
 			}
 			if ctx.Err() != nil {
@@ -199,6 +202,7 @@ func mainInner() int {
 	localIP := flag.String("local-ip", "", "REQUIRED for command-line live: local IPv4 of the wired Ethernet adapter")
 	listIF := flag.Bool("list-interfaces", false, "show local IPv4 adapters and exit without connecting")
 	stopFile := flag.String("stop-file", "", "optional absolute GUI stop-request file (.mvk_stop_requested); stops safely without killing process")
+	liveStatus := flag.Bool("live-status", false, "opt-in atomic local status JSON for GUI; never sends instrument data")
 	autoExport := flag.Bool("export", true, "after capture, validate and atomically produce 8 BIN/TSXML + VALUES/TABLE in same run folder")
 	offsetText := flag.String("offset", "auto", "capture-PC UTC offset auto or +/-HH:MM; for replay specify original capture PC timezone")
 	flag.Parse()
@@ -314,6 +318,11 @@ func mainInner() int {
 		fmt.Println("Ошибка создания файлов:", e)
 		return 2
 	}
+	if *liveStatus {
+		m.liveProgressEnabled = true
+		m.liveTargetSeconds = *seconds
+		m.publishLiveStatus("CONNECTING", true, "")
+	}
 	if *autoExport {
 		if e = m.EnableLiveBinSpool(); e != nil {
 			fmt.Println("Ошибка подготовки записи BIN:", e)
@@ -344,9 +353,11 @@ func mainInner() int {
 	}
 	report, zipPath, finalErr := m.Finalize(reason)
 	if finalErr != nil {
+		m.publishLiveStatus("REFUSED", true, "FINALIZE_FAILED")
 		fmt.Println("Ошибка завершения журнала:", finalErr)
 		return 1
 	}
+	m.publishLiveStatus("VERIFYING", true, "")
 	fmt.Println("\n=== РЕЗУЛЬТАТ ===")
 	fmt.Printf("Получено байт: %d; кадров: %d; AUX4700: %d; снимков регистров: %d\n",
 		report.RawBytes, report.TotalFrames, report.Aux4700, report.FullSnapshots)
@@ -357,6 +368,11 @@ func mainInner() int {
 	fmt.Println("Архив для анализа:", zipPath)
 	fmt.Println("Все файлы:", dir)
 	exportStatus, exportErr := completeStage108Export(dir, report, runError, *autoExport, offsetMinutes, m.liveBin)
+	if runError != nil || exportErr != nil || exportStatus.State != "EXPORTED" {
+		m.publishLiveStatus("REFUSED", true, exportStatus.State)
+	} else {
+		m.publishLiveStatus("COMPLETED", true, exportStatus.State)
+	}
 	switch exportStatus.State {
 	case "EXPORTED":
 		fmt.Printf("Stage108: 8 BIN/TSXML + VALUES/TABLE созданы в %s (AUX=%d, VALUES=%d, конечных неполных байт исключено=%d)\n",
