@@ -1,6 +1,6 @@
 # MVKView Compatible Stage111Z.26A — текущая запись: Live Progress + Quality, БЕЗ второго TCP
 
-**Дата:** 02.11.2026. **Ветка:** `research/stage111-mvkview-desktop-20261029`. Статус: **CODE IMPLEMENTED + OFFLINE CORE/Qt VERIFIED**. Финальная сборка единого EXE проверяется отдельным job. **НЕ** заявлять новой аппаратной приёмки.
+**Дата:** 02.11.2026. **Ветка:** `research/stage111-mvkview-desktop-20261029`. Статус: **CI-VERIFIED, Windows one-file EXE построен успешно** (полевая проверка новой Qt/Go версии ещё открыта). **НЕ** заявлять новой аппаратной приёмки.
 
 ## 1. Исходная база, которую нельзя потерять
 
@@ -42,7 +42,18 @@
 
 - `mvk_compatible/tests/test_stage111z26_native_live_status.py` — чистые синтетические status snapshots; повреждение, stale, mismatch, 0x400, неизвестный DSP, symlink, отсутствие сети.
 - `mvk_compatible/tests/test_stage111z25_native_recorder_qt.py` — новая Qt проверка реальных отображаемых счётчиков/10 строк при fake status; не подключается к прибору.
-- Linux Core: **964 passed, 3 skipped, 30 subtests**. Windows Core: **965 passed, 2 skipped, 30 subtests**. Windows Qt: **39 passed**. Эти результаты относятся к GitHub Actions [run #41384453175](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41384453175); полную приемку считать только после финального Windows EXE job.
+- Linux Core: **964 passed, 3 skipped, 30 subtests**. Windows Core: **965 passed, 2 skipped, 30 subtests**. Windows Qt: **39 passed**. Эти результаты относятся к GitHub Actions [run #41384453175](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41384453175); **Все три GitHub Actions jobs SUCCESS**, включая встроенный Go R6.1 и SHA-проверенный Windows EXE.
 - Следующий **Z26B**: verified-read-only live BIN ring + переключение настоящих 3 вкладок без второго TCP, архив/история сеансов, качество и отказоустойчивость. Перед загрузкой к прибору нужен офлайн real-RAW replay новой GUI-оболочки и отдельный field-acceptance. Затем Z27 (same-run original-vs-native BIN), Z28 (полный DSP/TACH), Z29 GetSignal, Z30 GetSpectrum, Z31 UI 1:1, Z32 long session согласно [Full Master Plan](STAGE111Z25_FULL_RECOVERY_MASTER_PLAN_RU.md).
 
 **Важно:** архивы `Projects.7z`, IDP, DFM/PAS/EXE/PCAPNG/RAW/BIN реальные в GitHub и CI не помещать.
+
+## 5. Окончательная приёмка Stage111Z.26A CI (02.11.2026)
+
+- **Точный протестированный код:** `f8ef5692a1f4b90a5a642b37427ded11b114b884`. Последующие коммиты с отчётами/инструкциями — **docs-only**, не новые версии программы.
+- **Workflow:** [GitHub Actions run 41384453175](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41384453175) **ALL THREE JOBS SUCCESS**.
+- **Linux Core:** 964 passed, 3 skipped, 30 subtests. **Windows Core:** 965 passed, 2 skipped, 30 subtests. **Windows Qt:** 39 passed.
+- **Go Native R6.1:** `go test ./...` PASS; `go vet ./...` PASS; Go Windows build PASS; PyInstaller `--onefile` с **внутренним Go EXE** PASS.
+- **Проверенный Windows EXE SHA256:** `853f8fcd530d2070724aeb26bcff8add206e487f87db36f2d9aceeab70cc8b03` (PE заголовок и BUILD_INFO сверены по реальному артефакту).
+- **GitHub Artifact:** [MVKViewCompatible_Stage111_Windows_Preview / id 13114542769](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41384453175/artifacts/13114542769), размер ZIP 68 477 949 байт, `expired=false` на момент проверки. SHA256 ZIP загрузки: `68a9fb0b934344a1b8116ed5295025edd9902839870502de1dc79a78018a0751`. Внутри EXE + `SHA256SUMS.txt`, `BUILD_INFO.txt`, `BUILD_VERIFICATION.json`.
+- **Аппаратная приёмка именно этого нового EXE:** **НЕ ВЫПОЛНЕНА**, не приписывать ей результат Stage109 старого Native R6.1.
+- **Следующий этап:** Z26B — верифицированные live окна сигнала и спектра через этот же Go receiver, согласованная временная база/ограничения, потом Z27–32 по мастер-плану. Отдельно сохранять `FRange` Stage52, GetSpectrum runtime goldens Stage111Z8/Z10 и приватные оригиналы вне GitHub.
