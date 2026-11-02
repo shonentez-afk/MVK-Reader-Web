@@ -1303,3 +1303,44 @@ def test_stage111z21_source_gain_shown_in_advanced_but_not_applied(tmp_path,qt_a
     qt_app.processEvents()
     assert win.spec_source_gain_label.isVisible()
     win.close()
+
+
+def test_stage111z27_local_original_native_compare_from_main_window(tmp_path,qt_app,monkeypatch):
+    from PySide6.QtWidgets import QFileDialog,QMessageBox
+    from mvk_compatible.desktop.main_window import MainWindow
+    from .test_stage111z27_original_native_parity import _original_from_fixture
+    original,native=_original_from_fixture(tmp_path)
+    window=MainWindow()
+    window.open_archive(native)
+    assert window.session is not None
+    calls=[]
+    monkeypatch.setattr(QFileDialog,"getOpenFileName",
+                        lambda *args,**kwargs:(str(original),"BIN"))
+    monkeypatch.setattr(QMessageBox,"information",
+                        lambda *args,**kwargs:calls.append(args[2]))
+    window.compare_original_native_local()
+    assert len(calls)==1
+    assert "АЦП8" in calls[0]
+    assert "СОВПАДАЮТ" in calls[0]
+    assert "НЕ доказаны" in calls[0]
+    assert window.session is not None
+    assert window.tabs.count()==3
+    assert window.findChild(type(window.menuBar().actions()[0]),"actionOriginalNativeParity") is not None
+    window.close()
+    qt_app.processEvents()
+
+
+def test_stage111z27_never_browse_original_during_active_native_capture(qt_app,monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    from mvk_compatible.desktop.main_window import MainWindow
+    window=MainWindow()
+    window._begin_live_capture()
+    monkeypatch.setattr(QFileDialog,"getOpenFileName",
+                        lambda *a,**k: (_ for _ in ()).throw(
+                            AssertionError("file selector must NOT open during live capture")))
+    window.compare_original_native_local()
+    assert "отклонена" in window.statusBar().currentMessage()
+    assert window._live_active
+    window._end_live_capture(False)
+    window.close()
+    qt_app.processEvents()
