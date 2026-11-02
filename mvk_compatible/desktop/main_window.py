@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
     QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy,QDockWidget)
 from ..core import OfflineSession
 from ..core.original_native_parity import compare_original_native
+from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow):
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._live_prior_session=None
         self._live_control_states=[]
+        self._pagestatus_snapshot=None
         self.wave_line=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
@@ -295,6 +297,38 @@ class MainWindow(QMainWindow):
         tach_layout.addWidget(self.tach_warning)
         inner.addTab(tach_page,'TACH / системный DSP')
         self._reset_dsp_tach_panel('Нет проверенного источника TACH/DSP')
+
+        # Original _Unit128:008475F5 source dispatch: 15 indices, one panel.
+        # This page is deliberately labelled a source-backed research view,
+        # not full original 1:1 pixel reconstruction or verified alarms/RPM.
+        source_page=QWidget()
+        source_layout=QVBoxLayout(source_page)
+        line=QHBoxLayout()
+        line.addWidget(QLabel('Режим tcStatus (исходный IDR):'))
+        self.original_status_mode=QComboBox()
+        self.original_status_mode.setObjectName('stage111z28bOriginalStatusMode')
+        self.original_status_mode.addItems(list(MODE_NAMES))
+        self.original_status_mode.currentIndexChanged.connect(
+            self._refresh_source_pagestatus)
+        line.addWidget(self.original_status_mode,1)
+        source_layout.addLayout(line)
+        self.original_status_note=QLabel()
+        self.original_status_note.setObjectName('stage111z28bSourceNote')
+        self.original_status_note.setWordWrap(True)
+        source_layout.addWidget(self.original_status_note)
+        self.original_status_table=QTableWidget(0,2)
+        self.original_status_table.setObjectName('stage111z28bOriginalTable')
+        self.original_status_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.original_status_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents)
+        source_layout.addWidget(self.original_status_table,2)
+        self.original_status_plot=self._plot(
+            'Полоса, индекс (43 исходные AUX)','СКЗ, м/с² · SOURCE, НЕ pixel parity')
+        self.original_status_plot.setObjectName('stage111z28b43SourceChart')
+        self.original_status_plot.setMaximumHeight(195)
+        source_layout.addWidget(self.original_status_plot,1)
+        inner.addTab(source_page,'PageStatus · оригинальный порядок')
+        self._refresh_source_pagestatus()
 
     def _active_tab_changed(self,index):
         if index!=1:self.wave_inspector.hide()
@@ -1538,6 +1572,8 @@ class MainWindow(QMainWindow):
             return
         self._live_active=False
         self._live_preview=None
+        self._pagestatus_snapshot=None
+        self._refresh_source_pagestatus()
         old=self._live_prior_session
         self._live_prior_session=None
         for widget,was_enabled in self._live_control_states:
@@ -1790,14 +1826,42 @@ class MainWindow(QMainWindow):
             for col,value in enumerate(cols):
                 self._cell(self.tach_words,i,col,value)
 
+    def _refresh_source_pagestatus(self,*_):
+        model=source_pagestatus_table(
+            self.original_status_mode.currentIndex(),
+            self._pagestatus_snapshot)
+        table=self.original_status_table
+        table.clearContents()
+        table.setColumnCount(len(model.headers))
+        table.setRowCount(len(model.rows))
+        table.setHorizontalHeaderLabels(list(model.headers))
+        for row,record in enumerate(model.rows):
+            for col,value in enumerate(record):
+                self._cell(table,row,col,value)
+        self.original_status_note.setText(
+            'Исследовательский показ оригинального PageStatus. '+model.note)
+        self.original_status_plot.clear()
+        if model.bands_for_plot is not None:
+            self.original_status_plot.addItem(pg.BarGraphItem(
+                x=np.arange(43),
+                height=np.asarray(model.bands_for_plot,dtype=float),
+                width=0.75,brush='#147b91'))
+            self.original_status_plot.setVisible(True)
+        else:
+            self.original_status_plot.setVisible(False)
+
     def refresh_calc(self,*_):
         if self._live_active:
+            self._pagestatus_snapshot=None
+            self._refresh_source_pagestatus()
             self.calc_source.setText('LIVE PREVIEW · расчётные DSP показатели пока не аттестованы')
             self.calc_status.setText('Во время записи: состояние каналов в окне Native R6.1')
             self.calc_status.setStyleSheet('color:#9e6500')
             return
         if not self.session:return
         if isinstance(self.session,DirectBinSession):
+            self._pagestatus_snapshot=None
+            self._refresh_source_pagestatus()
             # BIN/TSXML contains no authenticated AUX/VALUES DSP. Do not
             # show stale values from the previously opened Native ZIP.
             self.calc_source.setText('BIN/TSXML: приборные DSP/VALUES/AUX отсутствуют')
@@ -1820,6 +1884,8 @@ class MainWindow(QMainWindow):
             return
         try:
             d=self.session.calculations(self.tick.value()-1)
+            self._pagestatus_snapshot=d
+            self._refresh_source_pagestatus()
             channel=d['channels'][self._ch()-1]
             self.calc_source.setText('Приборный DSP: '+d['precision']+' · время '+d['timestamp'])
             self.calc_status.setText('Состояние датчика: '+channel['sensor_status']+' · '+channel['health'])
