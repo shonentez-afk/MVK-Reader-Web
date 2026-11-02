@@ -176,6 +176,21 @@ def load_live_preview(capture_root: str | Path, status: dict, *,
         raise ValueError("Native live preview: corrupted local ZIP") from exc
 
 
+def _mark_absolute_live_source_window(result: dict, channel: PreviewADC) -> None:
+    # The generic offline candidate operates on a local 0-based preview
+    # buffer. Do NOT mistake it for absolute device sample index zero.
+    evidence=dict(result["input_source_window"])
+    evidence["live_first_adc_sample_index"]=(
+        channel.first_index+evidence["first_archive_sample_index"])
+    evidence["live_last_adc_sample_exclusive"]=(
+        channel.first_index+evidence["last_archive_sample_exclusive"])
+    evidence["preview_source_calibrated_sha256"]=channel.sha256
+    evidence["original_live_rxpos_parity_verified"]=False
+    evidence["provisional_not_audited"]=True
+    evidence["time_kind"]="ADC_SAMPLE_INDEX_FROM_NATIVE_R6_PREVIEW_NOT_DSP_UTC"
+    result["input_source_window"]=evidence
+
+
 def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) -> dict:
     channel = preview.channels.get(adc)
     if channel is None:
@@ -187,6 +202,7 @@ def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) ->
         sample_provider=preview.samples_for_offline_candidate)
     offset = channel.first_index/channel.rate_hz
     out["time_s"] = [offset + float(x) for x in out["time_s"]]
+    _mark_absolute_live_source_window(out,channel)
     out["source"] = "LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED"
     out["provisional_not_audited"] = True
     out["warning"] = ("Предварительный GetSignal-кандидат по уже калиброванным "
@@ -205,6 +221,7 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1) -> dict:
         backend="idr_float32",
         f_range=1.0, input_domain="calibrated_bin",
         sample_provider=preview.samples_for_offline_candidate)
+    _mark_absolute_live_source_window(out,channel)
     out["source"] = "LIVE_NATIVE_R6_FFT_IDR_CANDIDATE_UNVERIFIED"
     out["provisional_not_audited"] = True
     out["warning"] = (
