@@ -1,3 +1,5 @@
+> **S01 LOCAL WINDOW EVIDENCE ADDED IN Stage111Z29A (02.11.2026):** GetSignal and GetSpectrum now carry same-archive pre-DC Float32 SHA256 + ADC/source RAW identity + sample indices/Fs; original latest/sequential ring source mapping tested, no zero padding for archival BIN, live absolute preview indices marked unverified. This proves correct LOCAL INPUT selection only, not that original Delphi used same ring/window. Stage29B real original GetSignal returned Float32 array+same-run pairing remains OPEN. [Stage29A QA](STAGE111Z29A_GETSIGNAL_WINDOW_SOURCE_AND_FFT_PROVENANCE_RU.md), tested 524cf7a0c1d4f242c339c7556fb41e957a02031b [CI #41408120811](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41408120811) ALL3 SUCCESS Linux1067 Windows1068 Qt49, [EXE artifact 13123989621](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41408120811/artifacts/13123989621); Stage30 modes 1/2/3 real goldens and original UI parity NOT closed.
+
 # Stage111Z30 — статус полного восстановления спектров оригинальной MVKView
 
 Ревизия 02.11.2026. Ветка research/stage111-mvkview-desktop-20261029.
