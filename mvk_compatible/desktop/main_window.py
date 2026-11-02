@@ -4,6 +4,7 @@ Delphi MVKView parity is IN PROGRESS: FFT and AC remain labelled candidates.
 """
 from __future__ import annotations
 from pathlib import Path
+from fractions import Fraction
 import math
 import numpy as np
 import pyqtgraph as pg
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
         self._full_spectrum=None
         self._spectrum_summary=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
+        self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
         self.resize(1360,850)
         self.setMinimumSize(960,580)
@@ -324,7 +326,7 @@ class MainWindow(QMainWindow):
         # source-defined menu presets. Preserve quick-click zoom while
         # exposing verified original menu values in the arrow popup.
         self.spec_hscale_button=QToolButton()
-        self.spec_hscale_button.setText('Горизонталь +')
+        self.spec_hscale_button.setText('Диапазон X')
         self.spec_hscale_button.setObjectName('bSpecHScale')
         self.spec_hscale_button.setFixedHeight(41)
         self.spec_hscale_button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
@@ -349,7 +351,7 @@ class MainWindow(QMainWindow):
 
         self.spec_vscale_button=QToolButton()
         self.spec_vscale_button.setObjectName('bSpecVScale')
-        self.spec_vscale_button.setText('Вертикаль +')
+        self.spec_vscale_button.setText('Шкала Y')
         self.spec_vscale_button.setFixedHeight(41)
         self.spec_vscale_button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
         self.spec_vscale_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -643,6 +645,67 @@ class MainWindow(QMainWindow):
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
 
+    def _sync_spec_lines_presentation(self, fs=None):
+        """Single FFT-size model, original Hz-per-line presentation."""
+        if fs is not None:
+            self._spec_loaded_sample_rate_hz=float(fs)
+        n=int(self.spec_n.currentData())
+        sample_rate=self._spec_loaded_sample_rate_hz
+        if sample_rate is None:
+            caption='FFT: '+str(n)
+        else:
+            step=sample_rate/n
+            ratio=Fraction(step).limit_denominator(10000)
+            if abs(float(ratio)-step)<1e-8 and ratio.denominator<=64:
+                value=(str(ratio.numerator) if ratio.denominator==1
+                       else f'{ratio.numerator}/{ratio.denominator}')
+            else:
+                value=f'{step:.6g}'
+            caption=value+' Гц/лин'
+        self.spec_lines_button.setText(caption)
+        self.spec_lines_button.setToolTip(
+            'FFT N='+str(n)+'; Δf='+(
+                f'{sample_rate/n:.10g} Гц' if sample_rate else 'неизвестно')
+            +'. Спектр не дополняется нулями.')
+        for index,action in enumerate(self._spec_lines_actions):
+            count=int(self.spec_n.itemData(index))
+            item=self.spec_n.model().item(index)
+            action.setEnabled(item.isEnabled() if item is not None else True)
+            action.setChecked(count==n)
+            if sample_rate:
+                action.setText(
+                    f'{sample_rate/count:.6g} Гц/лин · FFT {count}'
+                    + (' · исследование' if count in RESEARCH_FFT_SIZES else ''))
+            else:
+                action.setText('FFT '+str(count))
+
+    def _sync_spectrum_summary_primary(self):
+        """Compact original-looking text with explicit calibration status."""
+        summary=self._spectrum_summary
+        if not isinstance(summary,dict):
+            self.spec_mean_primary.setText('СКЗ спектра: —\nПик спектра: —')
+            return
+        try:
+            fields=spectrum_triplet_text(
+                summary,decimal_separator=',').split('\t')
+        except (ValueError,KeyError,TypeError,OverflowError):
+            self.spec_mean_primary.setText('Итоги не рассчитаны')
+            return
+        if isinstance(self.session,DirectBinSession):
+            unit='усл. ед.'
+            calibration='Калибровка НЕ подтверждена'
+        else:
+            unit='расч. ед.'
+            calibration='Расчётный спектр · оригинал не аттестован'
+        self.spec_mean_primary.setText(
+            f'СКЗ спектра: {fields[0]} {unit}\n'
+            f'Пик спектра: {fields[1]} Гц\n'
+            f'Амплитуда: {fields[2]} {unit}\n'
+            + calibration)
+        self.spec_mean_primary.setToolTip(
+            'Результаты получены локальным GetSpectrum-кандидатом; '
+            'не считать приборным DSP или оригинально калиброванными.')
+
     def _rebuild_original_vscale_menu(self):
         """Source Tag order changes with original spectrum mode."""
         self.spec_vscale_menu.clear()
@@ -673,7 +736,7 @@ class MainWindow(QMainWindow):
         self._spec_original_vscale_tag=tag
         self._apply_original_vscale_candidate(choice)
         name=original_v_scale_options(mode)[tag]['caption']
-        self.spec_vscale_button.setText('Вертикаль: '+name)
+        self.spec_vscale_button.setText(name)
         for action in self._spec_vscale_actions:
             action.setChecked(int(action.data())==tag)
         self.statusBar().showMessage(
@@ -781,6 +844,7 @@ class MainWindow(QMainWindow):
             item.setToolTip(
                 label+(' · достаточно реальных отсчётов BIN'
                        if allowed else ' · недостаточно истории BIN; запрещён'))
+        self._sync_spec_lines_presentation(sample_rate)
 
     def _spec_n_changed(self,*_):
         """Reject unavailable N without discarding already rendered FFT."""
@@ -801,6 +865,7 @@ class MainWindow(QMainWindow):
                 self.spec_n.blockSignals(False)
             self.statusBar().showMessage('Исходный FFT отклонён: '+str(exc))
             return
+        self._sync_spec_lines_presentation()
         self.refresh_spec()
 
     def _cycle_original_hscale(self):
@@ -843,7 +908,7 @@ class MainWindow(QMainWindow):
         vb.setLimits(xMin=0.,xMax=float(full))
         vb.setXRange(float(pos),float(pos+hz),padding=0.)
         self._spec_original_hscale_selected=hz
-        self.spec_hscale_button.setText(f'Горизонталь: {hz} Гц')
+        self.spec_hscale_button.setText(f'{hz} Гц')
         for action in self._spec_hscale_actions:
             action.setChecked(action.data()==hz)
         self._sync_spec_scroll()
@@ -927,7 +992,7 @@ class MainWindow(QMainWindow):
                 if (self._spec_original_hscale_selected is not None and
                         native_page!=self._spec_original_hscale_selected):
                     self._spec_original_hscale_selected=None
-                    self.spec_hscale_button.setText('Горизонталь +')
+                    self.spec_hscale_button.setText(f'{native_page} Гц')
                     for action in self._spec_hscale_actions:
                         action.setChecked(False)
                 bar.setVisible(active and src['delphi_visible'])
@@ -989,7 +1054,7 @@ class MainWindow(QMainWindow):
         self._spec_original_vscale_tag=None
         self._spec_original_vscale_mode=None
         self._spec_vertical_model=None
-        self.spec_vscale_button.setText('Вертикаль +')
+        self.spec_vscale_button.setText('Шкала Y')
         self._rebuild_original_vscale_menu()
         self.refresh_spec()
         if self._full_spectrum is not None:
@@ -1059,7 +1124,7 @@ class MainWindow(QMainWindow):
         self._spec_original_vscale_mode=None
         self._spec_vertical_model=None
         self._spec_vscroll_source_candidate=None
-        self.spec_vscale_button.setText('Вертикаль +')
+        self.spec_vscale_button.setText('Шкала Y')
         for action in self._spec_vscale_actions:
             action.setChecked(False)
         self.spec_n.blockSignals(True)
@@ -1158,7 +1223,7 @@ class MainWindow(QMainWindow):
         self.envelope_profile=profile
         self.wave_envelope_code.setEnabled(True)
         self.spec_envelope_button.setEnabled(True)
-        self.spec_envelope_button.setText('Огибающая IDR (эксперимент)')
+        self.spec_envelope_button.setText('Огибающая (исслед.)')
         self.spec_envelope_code.setEnabled(True)
         if self.spec_envelope_code.currentIndex()==0:
             self.spec_envelope_code.setCurrentIndex(20)
@@ -1223,13 +1288,14 @@ class MainWindow(QMainWindow):
     def refresh_spec(self,*_):
         if not self.session:return
         self._spec_original_hscale_selected=None
-        self.spec_hscale_button.setText('Горизонталь +')
+        self.spec_hscale_button.setText('Диапазон X')
         for action in self._spec_hscale_actions:
             action.setChecked(False)
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             n_fft=int(self.spec_n.currentText())
             samples,fs,_,_=self.session.samples(self._ch())
+            self._sync_spec_lines_presentation(fs)
             gate=self._spec_history_gate(n_fft,len(samples),fs)
             if not gate['can_compute_without_padding']:
                 raise ValueError(
@@ -1304,6 +1370,8 @@ class MainWindow(QMainWindow):
             self.spec_plot.getViewBox().setLimits(
                 xMin=0,xMax=float(self._spec_visible_max_hz))
             self._sync_spec_scroll()
+            self._sync_spectrum_summary_primary()
+            self.spec_cursor_primary.setText('Курсор: —')
             if valid_summary:
                 summ=self._spectrum_summary
                 self.spec_mean.setText(
@@ -1359,6 +1427,9 @@ class MainWindow(QMainWindow):
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)
             self.spec_canvas_geometry_button.setEnabled(False)
+            self._spectrum_summary=None
+            self._sync_spectrum_summary_primary()
+            self.spec_cursor_primary.setText('Курсор: —')
             self._error(e)
 
     def _wave_click(self,event):
@@ -1439,6 +1510,7 @@ class MainWindow(QMainWindow):
                 self._spec_last_cursor=None
                 self.spec_hint.setText(
                     'CursorString: — (курсор вне области графика; original IDR candidate)')
+                self.spec_cursor_primary.setText('Курсор: —')
                 return
             width=float(rect.width())
             pixel=float(pixel_native)
@@ -1477,6 +1549,8 @@ class MainWindow(QMainWindow):
             cursor=cursor_string_candidate(
                 found['x_value'],found['display_y'],
                 x_name='Гц',y_name=y_name,decimal_separator=',')
+            self.spec_cursor_primary.setText(
+                cursor['x_text']+'\n'+cursor['y_texts'][0])
             self.spec_hint.setText(
                 f"IDR pixel {int(pixel)} · bins [{found['pixel_bin_first']}.."
                 f"{found['pixel_bin_last']}] → пик FFT[{found['selected_bin']}]"
