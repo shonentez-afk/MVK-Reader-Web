@@ -28,6 +28,7 @@ type LiveBinSpool struct {
 	samples     [8]uint64
 	files       [8]*os.File
 	digest      [8]hash.Hash
+	preview     *LivePreviewBuffer // Stage111Z26B opt-in, receives exact accepted bytes
 }
 
 func newLiveBinSpool(runDir string) (*LiveBinSpool, error) {
@@ -109,6 +110,14 @@ func (s *LiveBinSpool) adcFrame(f Frame, h SampleHeader) error {
 	_, _ = s.digest[ch].Write(bytesOut[:])
 	s.samples[ch] += 256
 	s.next[ch] = h.Index + 256
+	// AFTER original spool write and digest: no preview may change a BIN byte.
+	if s.preview != nil {
+		if e := s.preview.appendCalibratedADC(h, bytesOut[:]); e != nil {
+			// Optional visualization cannot invalidate or interrupt original RAW/BIN.
+			// Disable preview while retaining the accepted capture.
+			s.preview = nil
+		}
+	}
 	return nil
 }
 
