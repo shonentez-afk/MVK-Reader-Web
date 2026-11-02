@@ -15,3 +15,8 @@ Interpretation: a positive gain supplied by the archive metadata usually means d
 **No full numerical FFT equivalence yet.** Next: trace `GetSpectrum` after `0x007D154B` through its four output modes and FFT backend, identify exact frequency scaling and windows, then compare the same source BIN/TSXML and reference MVKView exported spectrum. No devices, no writes to stable v0.3.40.
 
 Static offline check: `tools/research/stage80c_verify_normalization.py`.
+
+
+## ADDENDUM Stage111Z.23 (02.11.2026): in-place source writer и archive flag
+
+После [локального статического трассирования источника](STAGE111Z23_ORIGINAL_LIVE_BIN_POINTER_ALIAS_FRANGE_RU.md) найден реальный alias: `TMVKThread.TmpStream.FMemory == Storage.AllocBufferChunk.pointer` в live writer. `ProcessBufferChunk(...,ApplyRange=true)` вызывается **до** `ChannelFile.Write(TmpStream.FMemory)` и модифицирует оригинальные Float32 отсчёты in place. `TRecordMemoryStream.SetSize` только изменяет размер, без выделения памяти. Следовательно при активной записи live BIN использует изменённый Storage-buffer; это согласуется с archive reader `ViewedFileIsNormalized=false` для положительного InternalChannelGain. Условия и неподтверждённый per-channel runtime gain см. полный отчёт, предыдущие Stage80C численные ограничения остаются.

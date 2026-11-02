@@ -21,3 +21,10 @@
 **Проверка:** 6/6 структурных адресных опор по IDR локально; численную сверку синхронных TCP/BIN повторно не выполняли. Следующий этап: разбор `0x008020A8`, поиск всех записей `FRange`, проверка одной синхронной пары. Версия v0.3.40 не менялась.
 
 Локальный полный пакет: `MVKVIEW_STAGE50_FC03_FRANGE_BIN_20261028.zip`, файлы `REPORT_RU.md`, `verify_stage50.py`.
+
+
+## ADDENDUM Stage111Z.23 (02.11.2026): противоречие TmpStream/Storage разрешено
+
+**Актуализирует выводы Stage50, не стирая историю:** статический оригинальный IDR `_Unit125:008081F0..008082DE` показал, что `Storage.AllocBufferChunk` отдаёт pointer прямо в `TmpStream.FMemory` через `sub_008020A8`; `TRecordMemoryStream.SetSize` `008021EC..00802203` не выделяет/не копирует память. `ReadStream` пишет в тот же участок, после него `ProcessBufferChunk(ApplyRange=true)` масштабирует Float32 in place, а `ChannelFile.Write(TmpStream.FMemory)` читает именно **уже масштабированные данные**. Это структурно устраняет прежний блокер «почему Write берёт TmpStream». Оригинальный static source и все условия записи см. [Stage111Z.23](STAGE111Z23_ORIGINAL_LIVE_BIN_POINTER_ALIAS_FRANGE_RU.md).
+
+Добавлено source-evidence: `_Unit125:00806964` берёт TSXML InternalChannelGain через `GetFloatByAddr(0x0E)` канала; `_Unit128:0084655E` при открытии Sidecar кладёт gain в `Storage.FRange`, положительный gain выключает повторный ApplyRange. **Не утверждать**, что одно значение runtime FRange уже доказано для каждого живого канала или что оригинальный и реконструированный BIN одного сеанса совпали побайтово; для этого нужен same-run original capture. Текущий direct BIN не умножает повторно — корректная осторожная семантика.
