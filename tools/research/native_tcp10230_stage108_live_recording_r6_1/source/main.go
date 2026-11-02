@@ -329,6 +329,9 @@ func mainInner() int {
 			_ = m.CloseFiles()
 			return 2
 		}
+		if *liveStatus { // Explicit GUI opt-in; the accepted Native R6 BIN is unchanged.
+			m.liveBin.preview = newLivePreviewBuffer()
+		}
 	}
 	var reason string
 	var runError error
