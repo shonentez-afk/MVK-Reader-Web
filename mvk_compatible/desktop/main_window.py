@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
     QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy,QDockWidget)
 from ..core import OfflineSession
+from ..core.original_native_parity import compare_original_native
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
@@ -110,6 +111,10 @@ class MainWindow(QMainWindow):
         capture_action=QAction('Запись с прибора · Native R6.1…',self)
         capture_action.triggered.connect(self.open_native_capture)
         file_menu.addAction(capture_action)
+        parity_action=QAction('Сверить оригинальный BIN с Native R6.1…',self)
+        parity_action.setObjectName('actionOriginalNativeParity')
+        parity_action.triggered.connect(self.compare_original_native_local)
+        file_menu.addAction(parity_action)
         file_menu.addSeparator()
         file_menu.addAction('Выход',self.close)
         wrapper=QWidget()
@@ -1543,6 +1548,59 @@ class MainWindow(QMainWindow):
         dlg.previewInvalid.connect(self._invalidate_live_preview)
         self._native_dialog=dlg
         dlg.show()
+
+    def compare_original_native_local(self):
+        """Stage111Z27 local-only forensic comparison, no network or mutation.
+
+        The original BIN has no original TCP session identity; even equal
+        bytes are not independently same-run attestation.
+        """
+        if self._live_active:
+            self.statusBar().showMessage(
+                'Сверка отклонена: сначала завершите LIVE и дождитесь RAW/SHA экспорта.')
+            return
+        original,_=QFileDialog.getOpenFileName(
+            self,'Оригинальный MVKView ADC BIN (с парным .bin.tsxml)','',
+            'Оригинальный BIN (*.bin)')
+        if not original:
+            return
+        if (self.session is not None and
+                not isinstance(self.session,DirectBinSession) and
+                isinstance(self.session,OfflineSession)):
+            native_path=self.session.path
+        else:
+            native_path,_=QFileDialog.getOpenFileName(
+                self,'Проверенный завершённый ZIP Native R6.1 (НЕ live preview)','',
+                'Native R6.1 завершённый ZIP (*.zip)')
+            if not native_path:
+                return
+        try:
+            comparison=compare_original_native(original,native_path)
+            complete=comparison['all_eight_adc_present_in_original']
+            equal=comparison['bin_bytes_equal_on_matching_file_starts']
+            parts=[]
+            for item in comparison['channels']:
+                count=item['bitwise_mismatch_count_on_common_prefix']
+                match='точное BIN совпадение' if item['observed_bin_bitwise_equal'] else (
+                    f'{count} разных Float32 битовых слов; длины '
+                    + ('равны' if item['lengths_equal'] else 'разные'))
+                parts.append(f'АЦП{item["adc"]}: {match}')
+            summary=(
+                'Stage111Z.27 · локальная проверка BIN/TSXML\n'
+                f'Каналов: {len(parts)}/8; вся группа: {"да" if complete else "НЕТ"}\n'
+                f'BIN по началу файлов: {"СОВПАДАЮТ" if equal else "РАСХОДЯТСЯ"}\n'
+                f'TSXML побайтово: {"да" if comparison["tsxml_bytes_equal"] else "нет"}\n\n'
+                + '\n'.join(parts)
+                + '\n\nКРИТИЧЕСКОЕ ОГРАНИЧЕНИЕ: оригинальный BIN/TSXML '
+                  'не содержит SHA исходного TCP RAW и исходный индекс сэмплов. '
+                  'Принадлежность одной записи, калибровка оригинала '
+                  'и оригинальный численный паритет НЕ доказаны. '
+                  'FRange не применялся повторно. Исходные файлы не изменены.')
+            QMessageBox.information(self,'Оригинальный BIN ↔ Native · без аттестации сеанса',summary)
+            self.statusBar().showMessage(
+                'Stage111Z27: локальная численная сверка завершена, same-run provenance OPEN')
+        except (OSError,ValueError,TypeError,KeyError,RuntimeError) as exc:
+            QMessageBox.warning(self,'Сравнение оригинала отклонено',str(exc))
 
     def choose_archive(self):
         if self._live_active:
