@@ -534,3 +534,23 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 
 **Stage111Z.16 — ОКОНЧАТЕЛЬНО ПОДТВЕРЖДЁННЫЙ GITHUB ACTIONS WINDOWS EXE (01.11.2026):** run 41283560470, source commit SHA **8a36077da1f0bf5df5c4ea4337d26895f202c8a2**, workflow COMPLETED/SUCCESS, все три job SUCCESS: Linux all offline core; Windows Core+Qt; Windows verified autonomous EXE. Артефакт GitHub Actions **MVKViewCompatible_Stage111_Windows_Preview**, ID **13074248511**, 66 970 774 байт, не истёк; PyInstaller EXE, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. **[Скачать новый EXE из Artifacts](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470)**. Исследовательская ветка source code и doc-only handoff commits различаются: именно source SHA 8a36077d... был собран и протестирован. CircleCI остаётся ручным резервом. Следом протестировать конкретные оригинальные BIN+TSXML, НЕ заявлять универсальную поддержку форматов или проверенную физическую калибровку.
 
+
+
+## Stage111Z.17 — полный UI/UX-аудит оригинала vs Qt, без изменения программного кода
+
+Источник: оригинальный приватный mvkform.dfm (только прочитан локально; SHA256 192c0ebaf1bf722292a9b64497493a1de6af52a4bf8ffbe2ea28d0fe0b68c2d4), скриншот пользователя MVKView 1.0.47 и Qt исходники Stage111Z.16. Исходные DFM/PNG в GitHub НЕ публикуются. **18 задач: P0=2, P1=10, P2=6**. Это аудит, а не новая Qt сборка.
+
+| Функция/экран | Original MVKView | Текущий Qt | Гейт / следующий этап |
+|---|---|---|---|
+| PageStart «Задачи» | Большие кнопки действий (connect/view/settings), только 3 видимые вкладки на screenshot | Крупная DSP таблица под названием «Задачи» | P1, Stage111Z.19: offline start, DSP оставить внутри |
+| Spectrum controls | 5 кнопок меню + 2 label + Copy + Save, pnSpecTools177px | 35 stack.addWidget в левой колонке 244px (Z16) | **P0 Stage111Z.18:** только 9 первичных, исследования в expandable Inspector |
+| Spectrum labels | Без фильтра, Логарифмич., 1/4 Гц/лин, 25600 Гц, 150 дБ | Коды 0…3, NFFT, Горизонталь+/Вертикаль+ и provenance | P1 Z18: фактические active captions и 3/4/4 Copy candidate |
+| Cursor and info | 3800Hz/-55.32dB, отдельные СКЗ6.89/peak3800/0.7786 в одном оригинальном состоянии | verbose debug text, orange InfiniteLine | P1 Z18/Z20: короткий info и оригинальный XOR overlay, не менять FFT |
+| Calibration/direct BIN | Original physical metrics требуют источник и калибровку | Direct BIN Single может быть структурно valid без verified physical units | **P0 Z18:** без fake физического статуса в UI/Copy/CSV |
+| Time signal | Исходные 4 кнопки и две величины слева; PageAdc; условный pnView | Горизонтальные исследовательские controls, другой выбор времени | P1 Z19 |
+| Screenshot Qt-vs-original | Original screenshot 1920×1080, plot rect/crosshair известны | Последний user Qt screenshot был ДО Z16, другой архив/scale | **NOT VERIFIED** pixel parity; сравнить лишь при same data/DPI |
+| Режим офлайн | Device pages исходной DFM — отдельная функциональность | Нет аппаратных команд; direct BIN/R6.1 ZIP есть | Без fake hardware, никаких сетевых команд |
+| Последний verified EXE | — | Stage111Z.16 run41283560470 Linux/WindowsQt/EXE SUCCESS | Z17 docs-only, НЕ объявлять новый EXE |
+
+[Stage111Z.17 аудит](STAGE111Z17_UI_UX_AUDIT_ORIGINAL_VS_QT_RU.md) · [18 пунктов JSON](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json) · [ТЗ Z18](STAGE111Z18_SPECTRUM_COMPATIBILITY_UI_IMPLEMENTATION_PLAN_RU.md). Сохранять source-derived FFT 131072/131072 и 3/3 original Copy/summary goldens, не возвращать Web и не изменять main.
+

@@ -1,3 +1,15 @@
+# ТЕКУЩИЙ СТАТУС — STAGE111Z.17, UI/UX-аудит оригинальной MVKView (02.11.2026)
+
+[Полный UI/UX-аудит 18 задач](STAGE111Z17_UI_UX_AUDIT_ORIGINAL_VS_QT_RU.md) · [Реестр с приоритетами](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json) · [Следующее ТЗ Stage111Z.18](STAGE111Z18_SPECTRUM_COMPATIBILITY_UI_IMPLEMENTATION_PLAN_RU.md).
+
+Проект MVKView Compatible: автономная Windows Qt/PySide6 на ветке research/stage111-mvkview-desktop-20261029. Новая Z16 EXE работает у пользователя и ранее прошла GitHub Actions Linux+WindowsQt+verified EXE [run 41283560470](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470), source SHA 8a36077da1f0bf5df5c4ea4337d26895f202c8a2. **Аудит Z17 не изменяет код приложения и не создаёт нового EXE.**
+
+Original DFM source приватно извлечён из Projects.7z и прочитан только локально: 7 внутренних страниц, PageStart с 5 кнопками задач, pnAdcTools с 4 основными кнопками, pnSpecTools 177px с **9 основными элементами** (пять меню, два label, Copy и Save). Original screenshot показывает только 3 доступные вкладки. В Qt «Задачи» — не исходный PageStart, а DSP-таблицы. Слева Spectrum Qt **35 добавлений widgets**, хотя девять primary controls оригинала должны быть видны без прокрутки, остальные проверки и FRange/NumPy/IDR должны быть в Advanced Inspector. Текущие длинные подписи режимов/осей и orange cursor заметно расходятся с original UI. Stage111Z.16 ширина 244/no horizontal scroll прошла Qt-тесты, но post-Z16 screenshot для pixel diff пока нет.
+
+Реестр Stage111Z.17: **18 открытых задач: 2 P0, 10 P1, 6 P2**. P0: нормальная основная панель; отсутствие ложной физической калибровки при direct BIN/Copy/CSV. В первом Stage111Z.18 требуется **сохранить все 35 Qt widgets функционально, вынести исследовательские из primary-панели, показать оригинальные 5 active captions, короткий cursor и summary**, без потери tested callbacks, но без изменения FFT и source-defined goldens. Далее Z19 Задачи/Временной сигнал, Z20 crosshair XOR/GDI и actual matched screenshot, Z21 UI worker/cache and accessibility. Приватные оригинальные DFM/EXE/IDP/BIN/TSXML/изображения не размещать в GitHub.
+
+---
+
 # СЕЙЧАС: Stage111Z.16 Готовая Windows EXE — все GitHub Actions jobs SUCCESS
 
 **Stage111Z.16 — ОКОНЧАТЕЛЬНО ПОДТВЕРЖДЁННЫЙ GITHUB ACTIONS WINDOWS EXE (01.11.2026):** run 41283560470, source commit SHA **8a36077da1f0bf5df5c4ea4337d26895f202c8a2**, workflow COMPLETED/SUCCESS, все три job SUCCESS: Linux all offline core; Windows Core+Qt; Windows verified autonomous EXE. Артефакт GitHub Actions **MVKViewCompatible_Stage111_Windows_Preview**, ID **13074248511**, 66 970 774 байт, не истёк; PyInstaller EXE, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. **[Скачать новый EXE из Artifacts](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41283560470)**. Исследовательская ветка source code и doc-only handoff commits различаются: именно source SHA 8a36077d... был собран и протестирован. CircleCI остаётся ручным резервом. Следом протестировать конкретные оригинальные BIN+TSXML, НЕ заявлять универсальную поддержку форматов или проверенную физическую калибровку.
