@@ -246,7 +246,7 @@
   "current_code_sha": "b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50",
   "ui_fix_report": "docs/research/STAGE111Z20_UI_UX_FIXES_AND_MAIN_TRACK_RETURN_RU.md",
   "current_ci_run": "https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808",
-  "ci_status_at_last_update": "Linux succeeded, Windows Qt and EXE not yet confirmed",
+  "ci_status_at_last_update": "SUCCESS: Linux 899 passed/3 skipped; Windows Core 900 passed/2 skipped; Windows Qt 34 passed; Windows EXE verified and published",
   "status_counts": {
     "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING": 9,
     "PARTIALLY_IMPLEMENTED": 5,
@@ -261,5 +261,8 @@
       "id": "UX-002",
       "status": "CODE_IMPLEMENTED_ORIGINAL_UI_PARITY_PENDING"
     }
-  ]
+  ],
+  "current_ci_artifact_id": 13111233765,
+  "current_ci_artifact_name": "MVKViewCompatible_Stage111_Windows_Preview",
+  "build_source_sha": "b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50"
 }

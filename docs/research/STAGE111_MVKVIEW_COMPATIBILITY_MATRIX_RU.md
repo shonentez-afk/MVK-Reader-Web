@@ -572,3 +572,9 @@ Latest checked Stage111N Actions: https://github.com/shonentez-afk/MVK-Reader-We
 | Remaining UI UX items | **TRACKED OPEN/PARTIAL** | 9 code-implemented, 5 partial, 4 open; same-data/dpi screenshot, full time scroll, source fonts/grid, worker/cache |
 
 [Полный отчёт](STAGE111Z20_UI_UX_FIXES_AND_MAIN_TRACK_RETURN_RU.md) · [Актуальный backlog](STAGE111Z17_UI_UX_AUDIT_BACKLOG.json). Следующая ОСНОВНАЯ задача — аттестация настоящих BIN/TSXML и восстановление FRange/Source measurement chain без Web или реального прибора.
+
+
+## Stage111Z.20 — verified Windows EXE release gate
+
+**FINAL VERIFIED CI BUILD (02.11.2026):** source SHA b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50, [GitHub Actions #41376521808](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808) COMPLETED/SUCCESS, все 3 jobs SUCCESS: Linux 899 passed, 3 skipped, 30 subtests passed; Windows Core 900 passed, 2 skipped, 30 subtests passed; Windows Qt GUI **34 passed**. Windows verified autonomous EXE artifact **MVKViewCompatible_Stage111_Windows_Preview** создан, **ID 13111233765**, ZIP **66 985 239 байт**, ещё не истёк. Содержит MVKViewCompatible_Stage111_PREVIEW.exe, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. PE/SHA проверены через Windows Actions; реальный исходный app original screenshot pixel parity требует отдельной пары изображений. **Все исправления Stage111Z.18–Z.20 собраны в этой версии.**
+

@@ -1,3 +1,6 @@
+> **FINAL VERIFIED CI BUILD (02.11.2026):** source SHA b6a2f7018af36ca13b69dbd6437ddb9bcfe56c50, [GitHub Actions #41376521808](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41376521808) COMPLETED/SUCCESS, все 3 jobs SUCCESS: Linux 899 passed, 3 skipped, 30 subtests passed; Windows Core 900 passed, 2 skipped, 30 subtests passed; Windows Qt GUI **34 passed**. Windows verified autonomous EXE artifact **MVKViewCompatible_Stage111_Windows_Preview** создан, **ID 13111233765**, ZIP **66 985 239 байт**, ещё не истёк. Содержит MVKViewCompatible_Stage111_PREVIEW.exe, SHA256SUMS.txt, BUILD_INFO.txt, BUILD_VERIFICATION.json. PE/SHA проверены через Windows Actions; реальный исходный app original screenshot pixel parity требует отдельной пары изображений. **Все исправления Stage111Z.18–Z.20 собраны в этой версии.**
+
+
 # Stage111Z.18–Z.20 — исправления UI/UX и возврат к основной разработке
 
 Дата: 02.11.2026. Ветка: research/stage111-mvkview-desktop-20261029. Основное приложение — автономная Windows MVKView Compatible Qt/PySide6, не Web.
