@@ -234,29 +234,43 @@ class MainWindow(QMainWindow):
         inner.addTab(statuses,'Диагностика')
 
     def _signal_tab(self):
+        """Original PageAdc primary controls, research options in a dock.
+
+        The signal data, GetSignal order, and signal hover routines are
+        unchanged. This is an OFFLINE usability layout, not a claim of
+        byte-exact original DFM or device support.
+        """
         tab=QWidget()
         self.tabs.addTab(tab,'Временной сигнал')
-        lay=QVBoxLayout(tab)
-        bar=QHBoxLayout()
+        root=QHBoxLayout(tab)
+        root.setContentsMargins(4,6,4,4)
+        root.setSpacing(4)
+        panel=QWidget()
+        panel.setObjectName('pnAdcTools')
+        panel.setFixedWidth(220)
+        left=QVBoxLayout(panel)
+        left.setContentsMargins(6,7,6,7)
+        left.setSpacing(5)
+
+        # These existing models stay available to all former callbacks,
+        # tests and original code-derived GetSignal implementations.
         self.wave_start=self._float(0,300,0)
         self.wave_seconds=self._float(.001,30,1)
         self.wave_mode=QComboBox()
-        self.wave_mode.addItems(['AC · NoDC / GetSignal f32 (IDR)','AC+DC · без удаления DC'])
+        self.wave_mode.addItems([
+            'AC · NoDC / GetSignal f32 (IDR)',
+            'AC+DC · без удаления DC',
+        ])
         self.wave_order=QComboBox()
-        self.wave_order.addItems(['Архив: хронология BIN','Буфер GetSignal: обратный порядок'])
-        self.wave_order.setToolTip('Буфер GetSignal возвращается в обратном порядке; координаты оригинального TQGrapher пока не сверены')
-        for name,field in (('Начало, с',self.wave_start),('Окно, с',self.wave_seconds),('Режим',self.wave_mode),('Порядок',self.wave_order)):
-            bar.addWidget(QLabel(name));bar.addWidget(field)
-        b=QPushButton('Обновить сигнал')
-        b.clicked.connect(self.refresh_wave)
-        bar.addWidget(b)
-        self._zoom_bar(bar,lambda:self._zoom(self.wave_plot,.5),lambda:self._zoom(self.wave_plot,2))
-        bar.addStretch()
-        lay.addLayout(bar)
-        envbar=QHBoxLayout()
-        self.wave_envelope_load=QPushButton('Открыть локальный оригинальный IDP для огибающей…')
+        self.wave_order.addItems([
+            'Архив: хронология BIN','Буфер GetSignal: обратный порядок',
+        ])
+        self.wave_order.setToolTip(
+            'GetSignal buffer reversed; original TQGrapher pixel parity TODO')
+
+        self.wave_envelope_load=QPushButton(
+            'Открыть локальный оригинальный IDP для огибающей…')
         self.wave_envelope_load.clicked.connect(self.choose_private_envelope_idp)
-        envbar.addWidget(self.wave_envelope_load)
         self.wave_envelope_code=QComboBox()
         self.wave_envelope_code.addItem('Без огибающей',0)
         for code in range(1,32):
@@ -264,17 +278,167 @@ class MainWindow(QMainWindow):
                 f'Код огибающей {code} · таблица {ENVELOPE_RATES[code]} Гц',code)
         self.wave_envelope_code.setEnabled(False)
         self.wave_envelope_code.setToolTip(
-            'Режимы по оригинальной таблице IDR; не все доступны при конкретном FSampleRate')
-        self.wave_envelope_code.currentIndexChanged.connect(self.refresh_wave)
-        envbar.addWidget(self.wave_envelope_code)
-        lay.addLayout(envbar)
+            'Режимы по исходной таблице IDR; нужен локальный профиль.')
+
+        self.wave_filter_button=QPushButton('Без фильтра')
+        self.wave_filter_button.setObjectName('bAdcEnvelopeType')
+        self.wave_filter_button.setToolTip(
+            'Исходная огибающая требует профиль из локального оригинального IDP; '
+            'код выбирается в «Исследование».')
+        self.wave_filter_button.clicked.connect(self._wave_filter_primary_click)
+        left.addWidget(self.wave_filter_button)
+
+        self.wave_type_button=QToolButton()
+        self.wave_type_button.setObjectName('bAdcType')
+        self.wave_type_button.setPopupMode(QToolButton.InstantPopup)
+        self.wave_type_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.wave_type_menu=QMenu(self.wave_type_button)
+        for i,name in enumerate(('AC · без DC','AC+DC')):
+            act=self.wave_type_menu.addAction(name)
+            act.setCheckable(True)
+            act.setData(i)
+            act.triggered.connect(
+                lambda checked=False,index=i:self.wave_mode.setCurrentIndex(index))
+        self.wave_type_button.setMenu(self.wave_type_menu)
+        left.addWidget(self.wave_type_button)
+
+        self.wave_hscale_button=QToolButton()
+        self.wave_hscale_button.setObjectName('bAdcHScale')
+        self.wave_hscale_button.setPopupMode(QToolButton.InstantPopup)
+        self.wave_hscale_menu=QMenu(self.wave_hscale_button)
+        for duration in (.01,.025,.05,.1,.25,.5,1.,2.,5.,10.):
+            act=self.wave_hscale_menu.addAction(f'{duration:g} с')
+            act.setData(duration)
+            act.triggered.connect(
+                lambda checked=False,seconds=duration:self._select_wave_window(seconds))
+        self.wave_hscale_button.setMenu(self.wave_hscale_menu)
+        left.addWidget(self.wave_hscale_button)
+
+        self.wave_vscale_button=QToolButton()
+        self.wave_vscale_button.setObjectName('bAdcVScale')
+        self.wave_vscale_button.setPopupMode(QToolButton.InstantPopup)
+        vm=QMenu(self.wave_vscale_button)
+        vm.addAction('Авто',lambda:self.wave_plot.enableAutoRange())
+        vm.addAction('Приблизить Y',lambda:self._zoom_vertical_wave(.5))
+        vm.addAction('Отдалить Y',lambda:self._zoom_vertical_wave(2))
+        self.wave_vscale_button.setMenu(vm)
+        self.wave_vscale_button.setText('Шкала Y · авто')
+        left.addWidget(self.wave_vscale_button)
+
+        self.wave_cursor_primary=QLabel('Курсор: —')
+        self.wave_cursor_primary.setObjectName('lbAdcHintPrimary')
+        self.wave_cursor_primary.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.wave_cursor_primary.setFixedHeight(55)
+        self.wave_cursor_primary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        left.addWidget(self.wave_cursor_primary)
+        self.wave_mean_primary=QLabel('СКЗ сигнала: —')
+        self.wave_mean_primary.setObjectName('lbAdcMeanPrimary')
+        self.wave_mean_primary.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.wave_mean_primary.setFixedHeight(83)
+        self.wave_mean_primary.setWordWrap(True)
+        self.wave_mean_primary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        left.addWidget(self.wave_mean_primary)
+
+        self.wave_advanced_button=QPushButton('Исследование ▸')
+        self.wave_advanced_button.setObjectName('openWaveResearch')
+        self.wave_advanced_button.clicked.connect(
+            lambda:self.wave_inspector.setVisible(not self.wave_inspector.isVisible()))
+        left.addWidget(self.wave_advanced_button)
+        for widget in (
+            self.wave_filter_button,self.wave_type_button,
+            self.wave_hscale_button,self.wave_vscale_button,
+        ):
+            widget.setFixedHeight(37)
+            widget.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
+        left.addStretch()
+        root.addWidget(panel,0)
+
         self.wave_plot=self._plot('Время, с','Ускорение, м/с²')
         self.wave_plot.scene().sigMouseClicked.connect(self._wave_click)
         self.wave_plot.scene().sigMouseMoved.connect(self._wave_mouse_move)
-        lay.addWidget(self.wave_plot,1)
-        self.wave_hint=QLabel('AC/AC+DC по GetSignal; ведите мышью по графику для точного отсчёта (Qt-кандидат).')
+        root.addWidget(self.wave_plot,1)
+
+        # Existing diagnostic cursor text stays intact for advanced QA.
+        self.wave_hint=QLabel(
+            'GetSignal / IDR · ведите мышью по графику для исходного отсчёта')
         self.wave_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lay.addWidget(self.wave_hint)
+        self.wave_hint.setWordWrap(True)
+        self.wave_inspector=QDockWidget('Исследование · временной сигнал',self)
+        self.wave_inspector.setObjectName('waveResearchDock')
+        self.wave_inspector.setAllowedAreas(
+            Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
+        scroll=QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        body=QWidget()
+        form=QVBoxLayout(body)
+        form.setContentsMargins(8,8,8,8)
+        for name,field in (
+            ('Начало, с',self.wave_start),
+            ('Окно, с',self.wave_seconds),
+            ('Режим GetSignal',self.wave_mode),
+            ('Порядок исходных отсчётов',self.wave_order),
+        ):
+            label=QLabel(name)
+            label.setWordWrap(True)
+            form.addWidget(label)
+            form.addWidget(field)
+        refresh=QPushButton('Обновить сигнал')
+        refresh.clicked.connect(self.refresh_wave)
+        form.addWidget(refresh)
+        form.addWidget(self.wave_envelope_load)
+        form.addWidget(self.wave_envelope_code)
+        form.addWidget(QLabel('Подробности курсора · исследовательские данные'))
+        form.addWidget(self.wave_hint)
+        form.addStretch()
+        scroll.setWidget(body)
+        self.wave_inspector.setWidget(scroll)
+        self.addDockWidget(Qt.RightDockWidgetArea,self.wave_inspector)
+        self.wave_inspector.hide()
+        self.wave_inspector.visibilityChanged.connect(
+            lambda visible:self.wave_advanced_button.setText(
+                'Исследование ◂' if visible else 'Исследование ▸'))
+        self.wave_mode.currentIndexChanged.connect(self._wave_mode_selected)
+        self.wave_envelope_code.currentIndexChanged.connect(self._wave_filter_selected)
+        self._sync_wave_primary_labels()
+
+    def _wave_filter_primary_click(self):
+        if self.envelope_profile is None:
+            self.statusBar().showMessage(
+                'Без фильтра. Исследовательская огибающая требует локальный IDP.')
+            return
+        # Only cycle between no filter and the last explicitly selected code.
+        self.wave_envelope_code.setCurrentIndex(
+            0 if self.wave_envelope_code.currentIndex() else 20)
+
+    def _wave_filter_selected(self,*_):
+        self._sync_wave_primary_labels()
+        self.refresh_wave()
+
+    def _wave_mode_selected(self,*_):
+        self._sync_wave_primary_labels()
+        self.refresh_wave()
+
+    def _select_wave_window(self,seconds):
+        self.wave_seconds.setValue(float(seconds))
+        self._sync_wave_primary_labels()
+        self.refresh_wave()
+
+    def _zoom_vertical_wave(self,factor):
+        if self.wave_line is None:
+            return
+        self.wave_plot.getViewBox().scaleBy((1,float(factor)))
+        self.wave_vscale_button.setText('Шкала Y · изменена')
+
+    def _sync_wave_primary_labels(self):
+        code=int(self.wave_envelope_code.currentData() or 0)
+        self.wave_filter_button.setText(
+            'Без фильтра' if not code else f'Огибающая {code} (исслед.)')
+        self.wave_type_button.setText(
+            'AC · без DC' if self.wave_mode.currentIndex()==0 else 'AC+DC')
+        self.wave_hscale_button.setText(f'{self.wave_seconds.value():g} с')
+        for a in self.wave_type_menu.actions():
+            a.setChecked(a.data()==self.wave_mode.currentIndex())
 
     def _spectrum_tab(self):
         """DFM-informed panel proportions with FUNCTIONAL Qt scrollbars.
