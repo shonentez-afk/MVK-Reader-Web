@@ -1,3 +1,5 @@
+> **CORRECTION FROM PRIOR-RESULT REAUDIT (02.11.2026):** The claim that GetSpectrum FRange input-domain source still needed research was misleading. [Stage111J](STAGE111J_ORIGINAL_FRANGE_RING_TQGRAPHER_CURSOR_RU.md) has ALREADY source-proved original float-ring `/FRange` at `_Unit115:007D2228/22C8` before DC/FFT, and `core/storage_f_range_idr_candidate.py`/ordinary `spectrum_for_zip(input_domain='original_float_storage')` implement it. Still OPEN only **envelope path integration, same-run original FRange/storage eligibility, actual pre-/post-FIR and GetSignal return benchmark**; one original `before_fft(1).bin` is pre-Hann prepared array with unknown EnvelopeCode and cannot be retroactively asserted to be original GetSignal/FIR output. Previous original source/FFT/Copy/x87/UI proofs consolidated in [Stage29R](STAGE111Z29_PRIOR_ORIGINAL_COMPARISONS_REAUDIT_RU.md). This is documentation-only; the verified Stage29C1 EXE/CI remains intact.
+
 # Stage111Z.29C1 — независимая проверка оригинальных FIR и связь GetSignal → envelope FFT
 
 Дата: 02.11.2026. Ветка research/stage111-mvkview-desktop-20261029.
