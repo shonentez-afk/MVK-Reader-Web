@@ -130,7 +130,7 @@ def test_qt_reference_rejected_during_live_without_opening_external_data(
     win.open_archive(fixture_zip(tmp_path))
     manifest,config,p,y=create_reference_fixture(tmp_path/"operator")
     win._live_active=True
-    with pytest.raises(ValueError,match="офлайн-архиве"):
+    with pytest.raises(ValueError,match="во время записи Native"):
         win.show_original_spectrum_reference(manifest)
     win._live_active=False
     assert win._spectrum_reference is None
