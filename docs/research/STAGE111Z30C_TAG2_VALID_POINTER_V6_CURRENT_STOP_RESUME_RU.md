@@ -1,3 +1,5 @@
+> **POST-CAPTURE ACTUAL RESULT 03.11.2026:** User supplied all 9 Tag2 files from the exact V6 planned here. Source-derived one-pass integrated Power 131072/131072 exact, Full Y 131072/131072 exact (both 0 ULP), original physical 12-byte summary 3/3 exact. All 3 Params snapshots internally consistent, FRange HEX 43FF4853, pre-power SHA matches historical Z8. `capture.log` contains only redirection; original thread/EIP log not available. S05 NUMERIC PASS; **do not repeat Tag2**, continue with Tag3 on V6. [Numerical QA](STAGE111Z30C_TAG2_ORIGINAL_INTEGRATION_Y_SUMMARY_131072_BITWISE_RU.md).
+
 # Stage111Z30C — Tag2 buffer validated, V5 false reject, V6 RESUME prepared
 
 Date: 2026-11-03. Target: original offline MVKView x32dbg; autonomous Windows Qt MVKView Compatible project; do not edit original measurement/device or Web/main/Native Go R6.1.
