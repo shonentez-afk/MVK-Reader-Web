@@ -41,6 +41,8 @@ from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
+from ..core.original_spectrum_x32dbg_reference import (
+    load_original_spectrum_reference, SOURCE as ORIGINAL_X32DBG_REF_SOURCE)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
@@ -67,6 +69,8 @@ class MainWindow(QMainWindow):
         self._wave_hover_window=None  # Lazy, one offline BIN read per displayed window
         self._full_spectrum=None
         self._spectrum_summary=None
+        self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
+        self._spectrum_reference_saved=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -117,6 +121,13 @@ class MainWindow(QMainWindow):
         parity_action.setObjectName('actionOriginalNativeParity')
         parity_action.triggered.connect(self.compare_original_native_local)
         file_menu.addAction(parity_action)
+        original_y_action=QAction('Эталон графика MVKView · Power/Y x32dbg…',self)
+        original_y_action.setObjectName('actionOriginalX32dbgSpectrumReference')
+        original_y_action.setToolTip(
+            'Открыть только локальный JSON + два исходных Float32 BIN для сравнения '
+            'Qt-графика; не заменяет BIN-архив, FFT и приборный DSP.')
+        original_y_action.triggered.connect(self.choose_original_spectrum_reference)
+        file_menu.addAction(original_y_action)
         file_menu.addSeparator()
         file_menu.addAction('Выход',self.close)
         wrapper=QWidget()
@@ -869,6 +880,21 @@ class MainWindow(QMainWindow):
             'TMvkChannelStorage.FRange. Это статический источник, НЕ '
             'подтверждённый численный коэффициент текущих исходных отсчётов.')
         research_stack.addWidget(self.spec_source_gain_label)
+        self.spec_reference_open_button=QPushButton('Эталон x32dbg · открыть Power/Y…')
+        self.spec_reference_open_button.setObjectName('openOriginalX32dbgSpectrumReference')
+        self.spec_reference_open_button.setToolTip(
+            'Локальный проверенный манифест + Power/Y в той же папке. '
+            'Проверка всех Float32, рисование на основном Qt-графике, '
+            'без повторного FFT и без копирования приватных данных.')
+        self.spec_reference_open_button.clicked.connect(
+            self.choose_original_spectrum_reference)
+        research_stack.addWidget(self.spec_reference_open_button)
+        self.spec_reference_restore_button=QPushButton('Вернуться к архивному спектру')
+        self.spec_reference_restore_button.setObjectName('restoreArchivedSpectrumFromReference')
+        self.spec_reference_restore_button.setEnabled(False)
+        self.spec_reference_restore_button.clicked.connect(
+            self.restore_archive_spectrum_after_reference)
+        research_stack.addWidget(self.spec_reference_restore_button)
         legacy=[]
         while stack.count():
             item=stack.takeAt(0)
@@ -1707,6 +1733,9 @@ class MainWindow(QMainWindow):
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
+        # Do not let a previous visual-only x32dbg snapshot leak into a newly
+        # selected archive's data, cursor, Copy or Save.
+        self._leave_original_spectrum_reference()
         self.session=s
         # A direct BIN may supply only ADC4: do not silently read ADC1
         # or mix unrelated files to fill absent channels.
@@ -2016,10 +2045,193 @@ class MainWindow(QMainWindow):
             self._sync_wave_primary_labels()
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
+
+    def choose_original_spectrum_reference(self):
+        """User explicitly selects local reference JSON; never open a device."""
+        if self._live_active:
+            self.statusBar().showMessage(
+                'Во время записи Native эталоны x32dbg открывать нельзя')
+            return
+        if self.session is None:
+            QMessageBox.information(
+                self,'Сначала откройте локальное измерение',
+                'Эталон Y x32dbg отображается НА ТОМ ЖЕ графике, что архив. '
+                'Сначала откройте BIN/TSXML или завершённый ZIP, затем эталон.')
+            return
+        path,_=QFileDialog.getOpenFileName(
+            self,'Локальный эталон GetSpectrum (JSON + Power/Y BIN)','',
+            'x32dbg reference manifest (*.json)')
+        if not path:return
+        try:
+            self.show_original_spectrum_reference(path)
+        except (OSError,ValueError,KeyError,TypeError,UnicodeError,RuntimeError) as exc:
+            QMessageBox.warning(self,'Оригинальный Power/Y не принят',str(exc))
+
+    def _leave_original_spectrum_reference(self):
+        """Restore original archive controls, without touching source samples."""
+        if self._spectrum_reference is None:return
+        state=self._spectrum_reference_saved
+        self._spectrum_reference=None
+        self._spectrum_reference_saved=None
+        if state is None:return
+        for control,was_enabled in state['enabled']:
+            control.setEnabled(was_enabled)
+        for control,index in (
+            (self.spec_mode,state['mode_index']),
+            (self.spec_n,state['n_index']),
+            (self.spec_avg,state['avg_index']),
+        ):
+            was_blocked=control.blockSignals(True)
+            control.setCurrentIndex(index)
+            control.blockSignals(was_blocked)
+        self._spec_loaded_sample_rate_hz=state['sample_rate_hz']
+        self.spec_envelope_button.setText(state['envelope_button_text'])
+        self._spec_original_vscale_mode=None
+        self._spec_original_vscale_tag=None
+        self._spec_vertical_model=None
+        self._spec_vscroll_source_candidate=None
+        self._spec_original_hscale_selected=None
+        self._rebuild_original_vscale_menu()
+        self._sync_spec_lines_presentation()
+        self.spec_reference_restore_button.setEnabled(False)
+        self.spec_reference_open_button.setEnabled(True)
+
+    def restore_archive_spectrum_after_reference(self):
+        """Explicit return restores the calculated view, including Copy gates."""
+        if self._spectrum_reference is not None:
+            self.refresh_spec()
+
+    def show_original_spectrum_reference(self,manifest_path):
+        """Display ORIGINAL operator capture in the SAME spectrum PlotWidget.
+
+        This ONLY changes the visible research graph, never self.session,
+        archived sample bytes, FFT algorithms or actual device calibration.
+        The read-only loader checks every Float32 word before ANY UI change.
+        """
+        if self._live_active or self.session is None:
+            raise ValueError('Оригинальный эталон разрешён только при открытом офлайн-архиве')
+        ref=load_original_spectrum_reference(manifest_path)
+        n_index=self.spec_n.findData(ref.n_fft)
+        if n_index < 0:
+            raise ValueError('FFT N оригинала отсутствует среди поддерживаемых размеров')
+        if self._spectrum_reference is not None:
+            # A second reference replaces only the previous *visual* snapshot.
+            self._leave_original_spectrum_reference()
+        frozen=(
+            self.spec_mode,self.spec_n,self.spec_lines_button,
+            self.spec_envelope_button,self.spec_envelope_code,
+            self.spec_backend,self.spec_f_range,self.spec_input_domain,
+            self.spec_last,self.spec_hz,self.adc,self.spec_compare_button,
+        )
+        self._spectrum_reference_saved={
+            'mode_index':self.spec_mode.currentIndex(),
+            'n_index':self.spec_n.currentIndex(),
+            'avg_index':self.spec_avg.currentIndex(),
+            'sample_rate_hz':self._spec_loaded_sample_rate_hz,
+            'envelope_button_text':self.spec_envelope_button.text(),
+            'enabled':[(control,control.isEnabled()) for control in frozen],
+        }
+        self._spectrum_reference=ref
+        for control,index in (
+            (self.spec_mode,ref.mode),(self.spec_n,n_index),
+            (self.spec_avg,0 if ref.mode==0 else 1),
+        ):
+            was_blocked=control.blockSignals(True)
+            control.setCurrentIndex(index)
+            control.blockSignals(was_blocked)
+        self._spec_loaded_sample_rate_hz=float(ref.fs_hz)
+        self._rebuild_original_vscale_menu()
+        self._sync_spec_lines_presentation(ref.fs_hz)
+        self.spec_envelope_button.setText('ЭТАЛОН · исходные Power/Y')
+        for control in frozen:
+            control.setEnabled(False)
+        self.spec_reference_restore_button.setEnabled(True)
+        d=ref.to_spectrum_record(channel=self._ch())
+        contract=spectrum_display_contract(ref.n_fft,ref.fs_hz)
+        visible_bins=contract['grapher_series_bins']
+        right=contract['grapher_axis_end_frequency_hz']
+        xx=np.asarray(d['frequency_hz'],dtype=np.float64)
+        yy=np.asarray(d['amplitude'],dtype=np.float64)
+        self._full_spectrum=d
+        self._spectrum_summary=d['spectrum_summary']
+        self._spec_display_contract=contract
+        self._spec_visible_max_hz=float(right)
+        self._spec_original_vscale_mode=None
+        self._spec_original_vscale_tag=None
+        self._spec_vertical_model=None
+        self._spec_vscroll_source_candidate=None
+        self._spec_original_hscale_selected=None
+        for action in self._spec_vscale_actions:
+            action.setChecked(False)
+        for action in self._spec_hscale_actions:
+            action.setChecked(False)
+        self.spec_plot.clear()
+        self.spec_plot.setLabel('bottom','Гц')
+        self.spec_plot.setLabel('left',d['unit'])
+        self.spec_plot.plot(
+            xx[:visible_bins],yy[:visible_bins],pen=pg.mkPen('#000000'))
+        self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen(None))
+        self.spec_line.setVisible(False)
+        self.spec_plot.addItem(self.spec_line)
+        self.spec_hline=pg.InfiniteLine(angle=0,pen=pg.mkPen(None))
+        self.spec_hline.setVisible(False)
+        self.spec_plot.addItem(self.spec_hline)
+        self.spec_xor_crosshair=QtSpectrumXorCursor(self.spec_plot.getViewBox())
+        self.spec_plot.addItem(self.spec_xor_crosshair,ignoreBounds=True)
+        self._spec_last_cursor=None
+        self._spec_mouse_pixel=None
+        self._spec_data_ymin=float(np.min(yy[:visible_bins]))
+        self._spec_data_ymax=float(np.max(yy[:visible_bins]))
+        if self._spec_data_ymax<=self._spec_data_ymin:
+            self._spec_data_ymax=self._spec_data_ymin+1.
+        vb=self.spec_plot.getViewBox()
+        self.spec_plot.enableAutoRange()
+        if ref.mode==0:
+            self._spec_data_ymax=0.
+            self._spec_data_ymin=min(self._spec_data_ymin,-150.)
+            vb.setYRange(-150.,0.,padding=0.)
+            self.spec_vscale_button.setText(
+                original_v_scale_options(0)[0]['caption'])
+        else:
+            self.spec_vscale_button.setText('Y · эталонные значения')
+        vb.setXRange(0.,float(right),padding=0.)
+        vb.setLimits(xMin=0.,xMax=float(right))
+        self.spec_hscale_button.setText(f'{right:g} Гц')
+        self._sync_spec_scroll()
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
+        self.spec_original_copy_compare.setEnabled(False)
+        self.spec_canvas_geometry_button.setEnabled(True)
+        self.spec_cursor_primary.setText('Курсор эталона: —')
+        self.spec_mean_primary.setText(
+            'ОРИГИНАЛ x32dbg · только график\n'
+            f"N={ref.n_fft}, Fs={ref.fs_hz}, Tag{ref.mode}\n"
+            f"Y совпадает с Power: {ref.n_fft//2}/{ref.n_fft//2}\n"
+            'Калибровка/окно не аттестованы')
+        self.spec_mean.setText(
+            'ЭТАЛОН оригинального GetSpectrum, [EBP-2C]/[EBP-30]\n'
+            f"Численное совпадение всех {ref.n_fft//2} Float32 · 0 ULP\n"
+            f"Mean={ref.summary['output_mean']:.9g} · "
+            f"PeakX={ref.summary['output_peak_frequency_hz']:.9g} Гц · "
+            f"PeakY={ref.summary['output_peak_y']:.9g}\n"
+            'Это НЕ новый FFT и НЕ проверка пикселей Delphi')
+        self.spec_hint.setText(
+            'Локально импортированный ЭТАЛОН x32dbg 007D17E7. '
+            'Исходные массивы только прочитаны; real same-call provenance '
+            'и точное совпадение Qt/TQGrapher PIXEL по-прежнему не доказаны.')
+        self.tabs.setCurrentIndex(2)
+        self.statusBar().showMessage(
+            'Stage111Z31A: оригинальный Y показан без FFT, SHA256 и '
+            'побитовое сравнение Power/Y прошли; Copy/Save отключены')
+        return ref.report()
+
     def _fft_backend(self):
         return 'idr_float32' if self.spec_backend.currentIndex()==0 else 'numpy'
 
     def refresh_spec(self,*_):
+        # A normal refresh explicitly RETURNS from a visual-only original Y
+        # snapshot to the selected local archive and its calculated FFT.
+        self._leave_original_spectrum_reference()
         if self._live_active:
             self._render_live_spectrum()
             return
@@ -2084,6 +2296,8 @@ class MainWindow(QMainWindow):
             visible=(xx<=self._spec_visible_max_hz)&(
                 np.arange(len(xx))<display_contract['grapher_series_bins'])
             self.spec_plot.clear()
+            # Native TQGrapher labels the axis by its UNIT, not a long title.
+            self.spec_plot.setLabel('bottom','Гц')
             # Original MVKView spectrum is a black hairline over white.
             # Original XOR-green cursor is separately studied (do not
             # approximate it by a static colored spectrum line).
