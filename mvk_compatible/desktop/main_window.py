@@ -1112,12 +1112,20 @@ class MainWindow(QMainWindow):
         db=mode==0
         default_scale=max(1e-8,self._spec_data_ymax-self._spec_data_ymin)
         divisor=1 if db else int(choice['physical_divisor'])
-        native=source_spectrum_v_scr(
+        # Archive candidate keeps its local-data baseline because its
+        # effective original FRange has NOT been independently established.
+        # A separately imported operator x32dbg Power/Y reference *does*
+        # carry an explicit FRange Single word, so it can use the original
+        # source-derived absolute Y scroll model WITHOUT an invented offset.
+        reference=self._spectrum_reference
+        exact_operator_frange=reference is not None
+        f_range=(reference.f_range if exact_operator_frange
+                 else self.spec_f_range.value())
+        local_native=source_spectrum_v_scr(
             choice['delphi_position'],choice['page'],choice['full'],
             db_mode=db,graph_default_v_scale=default_scale,
             scale_divisor=divisor)
-        source_scale=spectrum_graph_default_vscale(
-            self.spec_f_range.value(),mode)
+        source_scale=spectrum_graph_default_vscale(f_range,mode)
         native_with_source_frange_candidate=source_spectrum_v_scr(
             choice['delphi_position'],choice['page'],choice['full'],
             db_mode=db,
@@ -1125,10 +1133,14 @@ class MainWindow(QMainWindow):
             scale_divisor=divisor)
         self._spec_graph_default_vscale_candidate=source_scale
         self._update_original_vscale_candidate_label(source_scale)
-        # Original dB ScrBottom is relative to 0; real candidate amplitude
-        # range may not share original dB calibration. Keep the current
-        # observed Qt maximum as a research origin, explicitly flagged.
-        offset=(self._spec_data_ymax if db else self._spec_data_ymin)
+        if exact_operator_frange:
+            native=native_with_source_frange_candidate
+            offset=0.
+        else:
+            native=local_native
+            # Original dB ScrBottom is relative to zero; for uncalibrated
+            # archives Qt retains an explicit data-derived research offset.
+            offset=(self._spec_data_ymax if db else self._spec_data_ymin)
         lower=offset+native['scr_bottom_single']
         upper=lower+native['scr_height_single']
         if not math.isfinite(lower) or not math.isfinite(upper) or upper<=lower:
@@ -1140,8 +1152,9 @@ class MainWindow(QMainWindow):
             'source_graph_default_vscale_formula_candidate':source_scale,
             'source_y_scroll_using_manual_frange_candidate':native_with_source_frange_candidate,
             'local_manual_frange_is_original_verified':False,
-            'qt_original_graph_default_vscale_estimated':True,
-            'qt_y_baseline_from_local_spectrum':True,
+            'qt_original_graph_default_vscale_estimated':not exact_operator_frange,
+            'qt_y_baseline_from_local_spectrum':not exact_operator_frange,
+            'operator_reference_f_range_word_used':exact_operator_frange,
             'original_delphi_y_canvas_parity_verified':False}
         bar=self.spec_vscroll
         bar.blockSignals(True)
@@ -2194,10 +2207,15 @@ class MainWindow(QMainWindow):
                 original_v_scale_options(0)[0]['caption'])
         else:
             self.spec_vscale_button.setText('Y · эталонные значения')
-        vb.setXRange(0.,float(right),padding=0.)
         vb.setLimits(xMin=0.,xMax=float(right))
+        vb.setXRange(0.,float(right),padding=0.)
         self.spec_hscale_button.setText(f'{right:g} Гц')
         self._sync_spec_scroll()
+        # Original mSpecType1Click resets default V menu Tag: 0 (dB) or 3
+        # (linear). Under a reference, apply source absolute scroll with
+        # the explicit user-supplied original FRange word, not a Qt data
+        # min/max baseline. This does NOT establish original Canvas pixels.
+        self._select_original_vscale(source_default_vertical_tag(ref.mode))
         self.spec_copy_button.setEnabled(False)
         self.spec_save_button.setEnabled(False)
         self.spec_original_copy_compare.setEnabled(False)
