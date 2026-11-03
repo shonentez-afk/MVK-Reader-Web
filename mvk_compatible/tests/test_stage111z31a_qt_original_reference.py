@@ -136,3 +136,59 @@ def test_qt_reference_rejected_during_live_without_opening_external_data(
     assert win._spectrum_reference is None
     win.close()
     qt_app.processEvents()
+
+
+def test_qt_x32dbg_reference_standalone_without_any_archive(tmp_path,qt_app):
+    """No dummy archive, no fictitious window/ADC provenance, no FFT needed."""
+    from PySide6.QtCore import QPointF,Qt
+    from mvk_compatible.desktop.main_window import MainWindow
+    win=MainWindow()
+    assert win.session is None
+    assert not win.tabs.isTabEnabled(2)
+    assert win.tabs.currentIndex()==0
+    initial_title=win.title.text()
+    manifest,_,_,y=create_reference_fixture(tmp_path/"standalone",mode=0,
+                                            n=1024,fs=65536)
+    report=win.show_original_spectrum_reference(manifest)
+    qt_app.processEvents()
+    assert report["float32_bins"]==512
+    assert win.session is None
+    assert win.tabs.isTabEnabled(2)
+    assert win.tabs.currentIndex()==2
+    assert win._spectrum_reference is not None
+    assert "нет открытого архива" in win.title.text()
+    assert not win.spec_copy_button.isEnabled()
+    assert win.spec_plot.getPlotItem().getAxis("bottom").labelText=="Гц"
+    assert win._full_spectrum["source"]==SOURCE
+    assert win.spec_hscale_button.text()=="25600 Гц"
+    assert win._spec_vscroll_source_candidate[
+        "operator_reference_f_range_word_used"] is True
+    rect=win.spec_plot.getViewBox().sceneBoundingRect()
+    assert rect.width()>3
+    class Click:
+        def button(self): return Qt.LeftButton
+        def scenePos(self):return QPointF(
+            rect.left()+rect.width()*0.3,rect.center().y())
+    win._spec_click(Click())
+    assert win._spec_last_cursor is not None
+    assert win._spec_last_cursor["fft_source"]==SOURCE
+    win.spec_reference_restore_button.click()
+    qt_app.processEvents()
+    assert win.session is None
+    assert win._full_spectrum is None
+    assert win._spectrum_reference is None
+    assert not win.tabs.isTabEnabled(2)
+    assert win.tabs.currentIndex()==0
+    assert win.title.text()==initial_title
+    assert not win.spec_reference_restore_button.isEnabled()
+    assert not win.spec_copy_button.isEnabled()
+    assert win.spec_mean_primary.text()=="Сначала откройте измерение"
+    assert len(win.spec_plot.listDataItems())==0
+    # Opening a real archive AFTER standalone x32dbg preview also works.
+    win.open_archive(fixture_zip(tmp_path))
+    assert win.session is not None
+    assert win._full_spectrum is not None
+    assert win.tabs.isTabEnabled(2)
+    assert win._full_spectrum["source"]!=SOURCE
+    win.close()
+    qt_app.processEvents()

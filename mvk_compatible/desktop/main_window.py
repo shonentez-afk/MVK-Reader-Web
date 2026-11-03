@@ -2065,12 +2065,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 'Во время записи Native эталоны x32dbg открывать нельзя')
             return
-        if self.session is None:
-            QMessageBox.information(
-                self,'Сначала откройте локальное измерение',
-                'Эталон Y x32dbg отображается НА ТОМ ЖЕ графике, что архив. '
-                'Сначала откройте BIN/TSXML или завершённый ZIP, затем эталон.')
-            return
+        # Original x32dbg Power/Y is self-contained: archive selection is
+        # OPTIONAL. This avoids misrepresenting a different BIN window as
+        # the source of the original reference.
         path,_=QFileDialog.getOpenFileName(
             self,'Локальный эталон GetSpectrum (JSON + Power/Y BIN)','',
             'x32dbg reference manifest (*.json)')
@@ -2108,11 +2105,42 @@ class MainWindow(QMainWindow):
         self._sync_spec_lines_presentation()
         self.spec_reference_restore_button.setEnabled(False)
         self.spec_reference_open_button.setEnabled(True)
+        self.title.setText(state['title_text'])
+        if not state['spectrum_tab_enabled']:
+            # With no archive, the Spectrum tab was originally disabled.
+            # Switch to the previous accessible tab before disabling it.
+            if self.tabs.currentIndex()==2:
+                self.tabs.setCurrentIndex(state['tab_index'])
+            self.tabs.setTabEnabled(2,False)
+        else:
+            self.tabs.setTabEnabled(2,True)
 
     def restore_archive_spectrum_after_reference(self):
-        """Explicit return restores the calculated view, including Copy gates."""
-        if self._spectrum_reference is not None:
+        """Return to the actual archive, or to an EMPTY main screen."""
+        if self._spectrum_reference is None:
+            return
+        if self.session is not None:
             self.refresh_spec()
+            return
+        self._leave_original_spectrum_reference()
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self.spec_plot.clear()
+        self.spec_line=None
+        self.spec_hline=None
+        self.spec_xor_crosshair=None
+        self._spec_last_cursor=None
+        self._spec_mouse_pixel=None
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
+        self.spec_original_copy_compare.setEnabled(False)
+        self.spec_canvas_geometry_button.setEnabled(False)
+        self.spec_mean_primary.setText('Сначала откройте измерение')
+        self.spec_mean.setText('Данные спектра: —')
+        self.spec_hint.setText('Спектр ещё не открыт')
+        self.spec_cursor_primary.setText('Курсор: —')
+        self.statusBar().showMessage(
+            'Эталон закрыт; исходное измерение не было открыто')
 
     def show_original_spectrum_reference(self,manifest_path):
         """Display ORIGINAL operator capture in the SAME spectrum PlotWidget.
@@ -2121,8 +2149,8 @@ class MainWindow(QMainWindow):
         archived sample bytes, FFT algorithms or actual device calibration.
         The read-only loader checks every Float32 word before ANY UI change.
         """
-        if self._live_active or self.session is None:
-            raise ValueError('Оригинальный эталон разрешён только при открытом офлайн-архиве')
+        if self._live_active:
+            raise ValueError('Оригинальный эталон нельзя открыть во время записи Native')
         ref=load_original_spectrum_reference(manifest_path)
         n_index=self.spec_n.findData(ref.n_fft)
         if n_index < 0:
@@ -2143,6 +2171,9 @@ class MainWindow(QMainWindow):
             'sample_rate_hz':self._spec_loaded_sample_rate_hz,
             'envelope_button_text':self.spec_envelope_button.text(),
             'enabled':[(control,control.isEnabled()) for control in frozen],
+            'tab_index':self.tabs.currentIndex(),
+            'spectrum_tab_enabled':self.tabs.isTabEnabled(2),
+            'title_text':self.title.text(),
         }
         self._spectrum_reference=ref
         for control,index in (
@@ -2237,6 +2268,10 @@ class MainWindow(QMainWindow):
             'Локально импортированный ЭТАЛОН x32dbg 007D17E7. '
             'Исходные массивы только прочитаны; real same-call provenance '
             'и точное совпадение Qt/TQGrapher PIXEL по-прежнему не доказаны.')
+        if self.session is None:
+            self.title.setText(
+                f'Эталон x32dbg · Tag{ref.mode} · нет открытого архива')
+        self.tabs.setTabEnabled(2,True)
         self.tabs.setCurrentIndex(2)
         self.statusBar().showMessage(
             'Stage111Z31A: оригинальный Y показан без FFT, SHA256 и '
@@ -2492,7 +2527,8 @@ class MainWindow(QMainWindow):
         self._spec_at_scene_pos(scene_pos,force=False)
 
     def _spec_at_scene_pos(self,pos,*,force=False):
-        if not self.session or self._full_spectrum is None or not isinstance(pos,QPointF):
+        if ((self.session is None and self._spectrum_reference is None)
+                or self._full_spectrum is None or not isinstance(pos,QPointF)):
             return
         try:
             vb=self.spec_plot.getViewBox()
