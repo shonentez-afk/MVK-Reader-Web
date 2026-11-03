@@ -53,13 +53,14 @@ MVK_CAPTURE_BEGIN EXPECTED_TAG=1 MODULE_BASE=00400000 CURRENT_EIP=007D154B RESUM
 
 Отсутствуют `MVK_STAGE=BEFORE/AFTER/SUMMARY`, `MVK_CAPTURE_DONE TAG=1`, данные EIP/thread/EBX/EBP/Frame provenance. Три уже существующих корректных файла означают, что сохранение больших массивов произошло, но без лога **не подтверждён окончательный проход до 007D1900** и неизменность потока/кадра; при этом full Y 131072 exact и before SHA совпадают с историческими эталонами, что является сильным согласованием source-формул. Не заявлять `end-to-end original three stop authenticated` и не маркировать всю S04=Closed.
 
-## Что делать дальше — только недостающий минимум
+## Актуальный следующий шаг
 
-- Если оригинальный x32dbg ещё остановлен в **007D1900**, вручную снять три HEX `dword:[ebx+30]`, `[ebx+34]`, `[ebx+38]` и текущее EIP/TID. Лучше сохранить 12 bytes `savedata "C:\MVK_CAPTURE\TAG1_summary_triplet.bin", ebx+30, C` (адрес/счётчик в x32dbg). Не запускать заново прежнюю FFT проверку.
-- Если `007D1900` уже пройден — не объявлять провал, оставить Tag1 **source-numeric power/Y verified on operator-supplied arrays**, final original triplet and same-call thread metadata pending.
-- Для Tag2/3 применять фиксированный автоматизированный захват, который сохраняет 12-байтный triplet физически, а не только в `RedirectLog`; отдельно сравнить исходную 007D2164 power integration и Float32 Y. Ранее проверенные Z2 scale words не подменяют raw Tag2/3.
-- GitHub сохраняет только derived report, тесты synthetic и будущие исходники automation; BIN/IDP/EXE/приборные измерения private. No change to original recorder.
+- Три оригинальных Tag1 summary HEX **УЖЕ ПОЛУЧЕНЫ** оператором и локально пересчитаны 3/3 exact; **не требовать их повторно**. Численная цепочка Tag1 Power/Y/Summary для переданных оператором массивов завершена.
+- Достоверно сохранившиеся original Call/Thread/Frame metadata в архивном `capture.log` отсутствуют. Если после получения следующих режимов потребуется независимый same-call аудит, проверять его отдельно; не перечёркивать из-за этого уже доказанные численные равенства.
+- Приоритет — полноценные Tag2 (ВС) и Tag3 (ВП): `power_before_mode.bin`, `power_after_mode.bin`, `display_y.bin` и физически сохранённый `summary_triplet.bin` 12 байт на каждый original режим, без повторения Z8/Z10/Tag1.
+- Подготовлен [V5 auto-capture](STAGE111Z30C_X32DBG_V5_TAG2_TAG3_AUTOCAPTURE_RU.md): проверка metadata на трёх остановках, запись summary в файл, независимый локальный verifier. Скрипты в ZIP из текущего чата, Windows original runtime V5 ещё не проверен; raw измерения приватны.
+- Native R6.1, прошивку, `main`, Web v0.3.40, старый original ZIP/IDP не менять.
 
 ## Формальный статус
 
-**Stage30C Tag1 numeric Power postmode 131072/131072 + displayed Y 131072/131072: PASS on submitted user-supplied original-runtime-claimed buffers.** Real same-invocation/source-domain/thread/Tag1 Output* metadata still OPERATOR-UNAUTHENTICATED / OPEN. Stage Z8 131072/131072 historical FFT and Tag0 Z10 3/3 are preserved. Tag2/3 full raw original parity OPEN.
+**Stage30C Tag1 численный Power 131072/131072 + Display Y 131072/131072 + Original Output summary 3/3: PASS** на операторских Win32-runtime-claimed массивах и малых HEX-словах. **Provenance EIP/TID/EBX каждого breakpoint не независимо подтверждён** (capture.log содержит только BEGIN), но это не отменяет численного равенства. Полный Tag2/Tag3 спектральный паритет ещё OPEN.
