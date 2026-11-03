@@ -1,3 +1,5 @@
+> **03.11.2026 — REAL TAG1 FIRST STOP HIT, CAPTURE DID NOT PASS:** operator screenshot Log has `MVK_CAPTURE_BEGIN EXPECTED_TAG=1 MODULE_BASE=00400000 CURRENT_EIP=765F10CC`, `INT3 breakpoint at mvkview.007D154B!`, then `MVK_CAPTURE_ABORT UNEXPECTED_BREAK_OR_WRONG_CONTEXT EIP=007D154B TID=00002CE8`. Thus `run + one-shot 007D154B` **worked**. Fail is one of the subsequent compound `bad_state` checks (params/frame/N/half/Fs/FRange/power buffer), NOT a wrong checkpoint. Capture not completed, no valid Tag1 power/Y goldens yet. Created client-side read-only `DIAG_TAG1_AT_154B.txt` which isolates 14 fail branches without run/savedata; static syntax/label checks passed, original Windows x32dbg execution not yet tested. **Keep x32dbg paused at 007D154B**, run diagnostic and report `MVK_DIAG_...` lines. Do not request another app startup or old Z8/Z10 dumps. Avoid automatic retry until root cause known.
+
 # Stage111Z30C V3 — нет MVK_READY_CHECK_PASS: диагностика исполнения x32dbg
 
 Дата: 03.11.2026.
