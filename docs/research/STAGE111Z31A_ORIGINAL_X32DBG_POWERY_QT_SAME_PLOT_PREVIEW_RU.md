@@ -1,3 +1,5 @@
+> **FINAL CI / AUTONOMOUS EXE VERIFIED 03.11.2026:** [run #41603127424](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41603127424) **SUCCESS** at exact source commit `8dff53f0f2203301d423f3e925255bae476edfa8`: Linux 1240 passed / 14 skipped / 30 subtests; Windows Core 1250 passed / 4 skipped / 30 subtests; Windows Qt smoke 49 passed. Windows one-file EXE PE/build/manifest verification PASS; separate downloaded file integrity not attested here. [EXE artifact #13215722408](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41603127424/artifacts/13215722408) `MVKViewCompatible_Stage111_Windows_Preview` ZIP 68492837 bytes; inside `MVKViewCompatible_Stage111_PREVIEW.exe` SHA256 `aee6b96f85c5cc6fe5fbc5a7fc0512513cc310e0beae043313267c9268cb6e1f`, `SHA256SUMS.txt`, `BUILD_INFO.txt`, `BUILD_VERIFICATION.json`. Native Go R6.1 built/tested from existing source, recorder not modified. Independent actual operator Windows UI pixel screenshot comparison remains OPEN.
+
 # Stage111Z31A — эталон оригинальных Power/Y на том же графике Qt без FFT и без обязательного архива
 
 **Дата:** 03.11.2026. **Ветка:** `research/stage111-mvkview-desktop-20261029`.
