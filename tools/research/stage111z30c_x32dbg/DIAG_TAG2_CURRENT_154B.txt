@@ -1,0 +1,54 @@
+// Stage111Z30C Tag2 V5 failure diagnosis at CURRENT GetSpectrum 007D154B
+// Read-only: NO run, NO savedata, NO memory modifications, NO breakpoints.
+// Leave the original MVKView paused exactly at 007D154B.
+log "MVK_TAG2_DIAG_START EIP={p:cip} EBX={p:ebx} EBP={p:ebp} TID={p:tid()}"
+mov $mvk6base, mod.main()
+mov $mvk6first, $mvk6base+3D154B
+cmp cip, $mvk6first
+jne mvk6_wrong_eip
+cmp mem.valid(ebx+38), 1
+jne mvk6_bad_params
+cmp mem.valid(ebp-2C), 1
+jne mvk6_bad_slot
+mov $mvk6mode, dword:[ebx+18]
+mov $mvk6n, dword:[ebx+4]
+mov $mvk6half, dword:[ebx+28]
+mov $mvk6fs, dword:[ebx+2C]
+mov $mvk6env, dword:[ebx+8]
+mov $mvk6ptr, dword:[ebp-2C]
+mov $mvk6len, $mvk6half*4
+mov $mvk6end, $mvk6ptr+$mvk6len-1
+log "MVK_TAG2_DIAG_META MODE={d:$mvk6mode} N={d:$mvk6n} HALF={d:$mvk6half} FS={d:$mvk6fs} ENV={d:$mvk6env}"
+log "MVK_TAG2_DIAG_PTR POINTER={p:$mvk6ptr} BYTES={d:$mvk6len} LAST={p:$mvk6end}"
+log "MVK_TAG2_DIAG_PAGES START_VALID={d:mem.valid($mvk6ptr)} END_VALID={d:mem.valid($mvk6end)} BASE={p:mem.base($mvk6ptr)} SIZE={d:mem.size($mvk6ptr)}"
+cmp $mvk6mode, 2
+jne mvk6_wrong_mode
+cmp $mvk6ptr, 0
+je mvk6_null_ptr
+cmp mem.valid($mvk6ptr), 1
+jne mvk6_invalid_ptr
+cmp mem.valid($mvk6end), 1
+jne mvk6_invalid_end
+log "MVK_TAG2_DIAG_OK BOTH_BUFFER_ENDPOINTS_READABLE"
+ret
+mvk6_wrong_eip:
+log "MVK_TAG2_DIAG_FAIL_WRONG_EIP actual={p:cip} expected={p:$mvk6first}"
+ret
+mvk6_bad_params:
+log "MVK_TAG2_DIAG_FAIL_PARAMS_PAGE EBX={p:ebx}"
+ret
+mvk6_bad_slot:
+log "MVK_TAG2_DIAG_FAIL_POINTER_SLOT EBP={p:ebp}"
+ret
+mvk6_wrong_mode:
+log "MVK_TAG2_DIAG_FAIL_MODE actual={d:$mvk6mode} expected=2"
+ret
+mvk6_null_ptr:
+log "MVK_TAG2_DIAG_FAIL_NULL_POWER_POINTER"
+ret
+mvk6_invalid_ptr:
+log "MVK_TAG2_DIAG_FAIL_POWER_PAGE PTR={p:$mvk6ptr} PAGEBASE={p:mem.base($mvk6ptr)}"
+ret
+mvk6_invalid_end:
+log "MVK_TAG2_DIAG_FAIL_POWER_LAST_PAGE END={p:$mvk6end}"
+ret
