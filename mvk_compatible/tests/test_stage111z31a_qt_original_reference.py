@@ -35,7 +35,11 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     old_mode=win.spec_mode.currentIndex()
     old_fft_index=win.spec_n.currentIndex()
     old_copy=win.spec_copy_button.isEnabled()
-
+    old_title=win.title.text()
+    old_adc_tip=win.adc.toolTip()
+    assert "MVK" in old_title
+    assert win.spec_plot.getPlotItem().getAxis("left").labelText=="дБ"
+    
     manifest,config,p,y=create_reference_fixture(
         tmp_path/f"original_{mode}",mode=mode,fs=65536,n=1024)
     result=win.show_original_spectrum_reference(manifest)
@@ -58,6 +62,10 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     assert win.spec_reference_restore_button.isEnabled()
     assert not win.spec_mode.isEnabled()
     assert not win.spec_n.isEnabled()
+    assert "ЭТАЛОН x32dbg" in win.title.text()
+    assert "MVK" not in win.title.text()
+    assert "АЦП эталона не подтверждён" in win.title.text()
+    assert "НЕ доказанный канал эталона" in win.adc.toolTip()
     assert "ОРИГИНАЛ x32dbg" in win.spec_mean_primary.text()
     assert "0 ULP" in win.spec_mean.text()
     assert "оригинал" in win.spec_hint.text().lower() or "x32dbg" in win.spec_hint.text().lower()
@@ -98,6 +106,9 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     assert win.spec_mode.currentIndex()==old_mode
     assert win.spec_n.currentIndex()==old_fft_index
     assert win.spec_copy_button.isEnabled()==old_copy
+    assert win.title.text()==old_title
+    assert win.adc.toolTip()==old_adc_tip
+    assert win.spec_plot.getPlotItem().getAxis("left").labelText=="дБ"
     assert not win._full_spectrum.get("original_capture_reference_only",False)
     win.close()
     qt_app.processEvents()
@@ -156,7 +167,9 @@ def test_qt_x32dbg_reference_standalone_without_any_archive(tmp_path,qt_app):
     assert win.tabs.isTabEnabled(2)
     assert win.tabs.currentIndex()==2
     assert win._spectrum_reference is not None
-    assert "нет открытого архива" in win.title.text()
+    assert "ЭТАЛОН x32dbg" in win.title.text()
+    assert "Tag0" in win.title.text()
+    assert "АЦП эталона не подтверждён" in win.title.text()
     assert not win.spec_copy_button.isEnabled()
     assert win.spec_plot.getPlotItem().getAxis("bottom").labelText=="Гц"
     assert win._full_spectrum["source"]==SOURCE

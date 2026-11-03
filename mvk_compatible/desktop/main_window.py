@@ -2106,6 +2106,7 @@ class MainWindow(QMainWindow):
         self.spec_reference_restore_button.setEnabled(False)
         self.spec_reference_open_button.setEnabled(True)
         self.title.setText(state['title_text'])
+        self.adc.setToolTip(state['adc_tooltip'])
         if not state['spectrum_tab_enabled']:
             # With no archive, the Spectrum tab was originally disabled.
             # Switch to the previous accessible tab before disabling it.
@@ -2174,6 +2175,7 @@ class MainWindow(QMainWindow):
             'tab_index':self.tabs.currentIndex(),
             'spectrum_tab_enabled':self.tabs.isTabEnabled(2),
             'title_text':self.title.text(),
+            'adc_tooltip':self.adc.toolTip(),
         }
         self._spectrum_reference=ref
         for control,index in (
@@ -2268,9 +2270,14 @@ class MainWindow(QMainWindow):
             'Локально импортированный ЭТАЛОН x32dbg 007D17E7. '
             'Исходные массивы только прочитаны; real same-call provenance '
             'и точное совпадение Qt/TQGrapher PIXEL по-прежнему не доказаны.')
-        if self.session is None:
-            self.title.setText(
-                f'Эталон x32dbg · Tag{ref.mode} · нет открытого архива')
+        # This must be visible even if a DIFFERENT BIN/TSXML archive is still
+        # selected. Do not display its MVK serial/ADC as if it proved the
+        # source of this unrelated user-captured original Power/Y.
+        self.title.setText(
+            f'ЭТАЛОН x32dbg · Tag{ref.mode} · N={ref.n_fft} · '
+            'АЦП эталона не подтверждён')
+        self.adc.setToolTip(
+            'Это канал выбранного архива, НЕ доказанный канал эталона x32dbg.')
         self.tabs.setTabEnabled(2,True)
         self.tabs.setCurrentIndex(2)
         self.statusBar().showMessage(
@@ -2369,7 +2376,12 @@ class MainWindow(QMainWindow):
             self.spec_plot.addItem(self.spec_xor_crosshair,ignoreBounds=True)
             self._spec_last_cursor=None
             self._spec_mouse_pixel=None
-            self.spec_plot.setLabel('left',d['unit'])
+            # Long engineering calibration disclaimer belongs in the
+            # existing visible summary. Native PageSpectrum uses the short
+            # Y-axis caption 'дБ'; a verbose label consumes plot width and
+            # falsely suggests a different axis unit for log spectra.
+            self.spec_plot.setLabel(
+                'left','дБ' if self.spec_mode.currentIndex()==0 else d['unit'])
             self._spec_data_ymin=float(np.min(yy[visible])) if np.any(visible) else 0.
             self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
             if self._spec_data_ymax<=self._spec_data_ymin:
