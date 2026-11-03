@@ -58,7 +58,7 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     assert win.spec_reference_restore_button.isEnabled()
     assert not win.spec_mode.isEnabled()
     assert not win.spec_n.isEnabled()
-    assert "ЭТАЛОН" in win.spec_mean_primary.text()
+    assert "ОРИГИНАЛ x32dbg" in win.spec_mean_primary.text()
     assert "0 ULP" in win.spec_mean.text()
     assert "оригинал" in win.spec_hint.text().lower() or "x32dbg" in win.spec_hint.text().lower()
     assert win.spec_plot.getPlotItem().getAxis("bottom").labelText=="Гц"
