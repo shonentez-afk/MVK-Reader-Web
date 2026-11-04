@@ -1,0 +1,59 @@
+name: One-time cleanup of old MVKView Actions artifacts
+
+on:
+  push:
+    branches:
+      - research/stage111-mvkview-desktop-20261029
+    paths:
+      - '.github/workflows/storage-prune-once.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mvkview-artifact-prune-once
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Preserve newest 3 verified Windows builds
+    if: github.repository == 'shonentez-afk/MVK-Reader-Web'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete old duplicate Stage111 Windows preview artifacts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          gh api --paginate "repos/${GH_REPO}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | [.created_at, .name, (.id|tostring), (.size_in_bytes|tostring)] | @tsv' \
+            > "${RUNNER_TEMP}/mvk-artifacts.tsv"
+          sort -r "${RUNNER_TEMP}/mvk-artifacts.tsv" > "${RUNNER_TEMP}/mvk-artifacts-sorted.tsv"
+          seen=0
+          removed=0
+          bytes=0
+          while IFS=$'\t' read -r created name id size; do
+            [[ "${name}" == 'MVKViewCompatible_Stage111_Windows_Preview' ]] || continue
+            [[ "${id}" =~ ^[0-9]+$ ]] || exit 2
+            [[ "${size}" =~ ^[0-9]+$ ]] || exit 2
+            seen=$((seen+1))
+            if (( seen <= 3 )); then
+              echo "KEEP ${name} ${id} (${created})"
+              continue
+            fi
+            if (( removed >= 500 )); then
+              echo "::warning::Reached safe per-run deletion cap of 500."
+              break
+            fi
+            gh api --method DELETE "repos/${GH_REPO}/actions/artifacts/${id}" >/dev/null
+            echo "DELETE ${name} ${id} ${size} bytes"
+            removed=$((removed+1))
+            bytes=$((bytes+size))
+          done < "${RUNNER_TEMP}/mvk-artifacts-sorted.tsv"
+          echo "MVK Stage111: removed ${removed} older artifacts (${bytes} bytes), kept up to 3 latest." | tee -a "${GITHUB_STEP_SUMMARY}"
