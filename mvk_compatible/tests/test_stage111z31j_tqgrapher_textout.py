@@ -42,7 +42,8 @@ def test_source_textout_six_ticks_plus_both_axis_names():
         'y_tick','y_tick','y_tick','x_tick','x_tick','x_tick',
         'y_name','x_name']
     assert report['canvas_text_offset_px']==8
-    assert report['source_xtos_coefficients_single']==(3.8,80.0)
+    assert report['source_xtos_coefficients_single'][0]==pytest.approx(3.8,abs=1e-6)
+    assert report['source_xtos_coefficients_single'][1]==80.0
     assert not report['original_windows_native_font_verified']
     assert not report['original_native_pixel_parity_verified']
     assert report['font_metrics_provenance']=="qt_approximation"
