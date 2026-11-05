@@ -1,5 +1,17 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31Q — продолжение СПЕКТРА: BIN→полный Y и N/Fs/курсор (05.11.2026)
+
+**Сделан код, оригинальный same-window опыт пока открыт.** Новый локальный инструмент `mvk_compatible/private_same_window_spectrum_compare.py` (commit `4620cb5`) **повторно использует** ранее подтверждённый оригинальный Power/Y reader Stage31A, расчёт `DirectBinSession/OfflineSession.spectrum` и FIR кандидата. До сравнения **всех N/2 Float32 Y** он требует доказательства сопоставимости: операторский SHA исходного Float32 окна, АЦП, Fs, N, точные границы выборки, режим, EnvelopeCode, domain, исходный FRange из Power/Y; всё проверяет fail-closed. Отчёт даёт bitwise/ULP/первый отличающийся бин, но **не** выдаёт операторский SHA за независимую Win32-аутентификацию.
+
+- Синтетические регрессии `test_stage111z31q_same_window_spectrum.py`: все 4 Tag0–3, SHA/канал/Fs/N/window-отказы, честное несовпадение полной кривой и локальная огибающая FIR; commit `c2a3629`.
+- Qt регрессия `test_stage111z31q_qt_spectrum_edges.py`: обычные файловые BIN/TSXML, N=8192/65536/262144, Fs=16384/65536, 4 режима, dense↔sparse zoom, точный курсор, averaging1/3, бесследный выход курсора, сохранение всех N/2 Float32, исходного BIN и summary; commit `b955c9c`.
+- [CI #42004815613](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42004815613): Linux Core **1454 passed/65 skipped**, Windows Core **1516 passed/7 skipped**, Qt **49 passed**, Qt DPR=1.5 **46 passed**. Linux+Windows jobs **SUCCESS**; Windows EXE job **ещё выполнялся в момент этой записи**, не объявлять окончательный 3/3 до подтверждения.
+- Отчёт с CLI и форматом доказательного манифеста: [Stage31Q](docs/research/STAGE111Z31Q_FULL_Y_SAME_WINDOW_SPECTRUM_AND_GRAPH_TESTS_RU.md). `Projects.7z` и `mvkview.idp` локально сверены по известным SHA. Приватные PAS/IDP, BIN/TSXML/Y, PCAP не отправлены на GitHub.
+- **Открытые именно ORIGINAL-ворота:** на №83/№44 раньше были численные BIN→экран тройки; full оригинальный Y **того же** BIN и raw-window SHA в текущих вложениях отсутствует, поэтому bitwise-сквозная original аттестация не сделана. Original Win32 envelope preFFT/Y **того же окна** также отсутствует, source-derived обратная длина FIR не объявлена оригинальной runtime эквивалентностью. **Не повторять** FFT N262144 golden, 4× Power→Y original Golden, FRange source, Hann/x87, FIR коэффициенты, TQGRSeries и Native R6.1.
+- Приоритет не меняется: **СПЕКТР (оставшиеся real input gates) → ВРЕМЕННОЙ СИГНАЛ → РАСЧЁТНЫЕ ДАННЫЕ → СТРАНИЦЫ**. Рабочая ветка `research/stage111-mvkview-desktop-20261029`; `main` не менять.
+
+
 ## Stage111Z31P — новые данные ORIGINAL SOURCE (05.11.2026)
 
 - В приватном `Projects.7z` восстановлен **общий источник выбора кода фильтра 0–31**: `_Unit128:0084587D..0084594B` строит 32 пункта, `0084B274` синхронизирует `bAdcEnvelopeType.Tag` и `bSpecEnvelopeType.Tag`, `00846AB4` очищает обе старые серии, `00847248` обновляет активную страницу. Исходники/IDP не публиковать.
