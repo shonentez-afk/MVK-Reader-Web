@@ -75,6 +75,10 @@ def _compose_layer(base, width, height, segments, ink):
         return base
     for first in range(0,len(segments),SEGMENT_CHUNK):
         part=segments[first:first+SEGMENT_CHUNK]
+        if isinstance(part,np.ndarray):
+            # Stage31H produces a packed (N,4) ndarray; the Stage31G
+            # bounded TCo2Draw API deliberately accepts explicit lists.
+            part=part.tolist()
         base=source_raster_rgba(
             width=width,height=height,segments=part,ink=ink,
             initial_rgba=base)
