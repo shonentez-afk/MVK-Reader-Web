@@ -10,7 +10,7 @@ from fractions import Fraction
 import math
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtCore import Qt, QPoint, QPointF
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
@@ -26,6 +26,7 @@ from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
 from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
+from ..core.qt_spectrum_viewport_observation import describe_qt_viewport_geometry
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -763,12 +764,17 @@ class MainWindow(QMainWindow):
         stack.addWidget(QLabel('Частоты до, Гц'))
         self.spec_hz=self._float(10,32768,25600,1)
         stack.addWidget(self.spec_hz)
-        stack.addWidget(QLabel('FRange · исследовательская калибровка'))
+        self.spec_manual_f_range_label=QLabel(
+            'FRange гипотезы архива · НЕ x32dbg')
+        self.spec_manual_f_range_label.setObjectName(
+            'labelArchiveAssumedFRangeDistinctFromOriginal')
+        stack.addWidget(self.spec_manual_f_range_label)
         self.spec_f_range=self._float(0.000001,1000000.0,1.,6)
         self.spec_f_range.setToolTip(
-            'Delphi TMvkChannelStorage.FRange; исходный конструктор =1, '
-            'фактическая калибровка архива НЕ подтверждена. '
-            'Не изменяет BIN и не подменяет AUX4700.')
+            'Только исследовательская гипотеза FRange архива BIN/TSXML '
+            '(по умолчанию 1). Значение НЕ равно подтверждённому FRange '
+            'отдельного исходного спектра x32dbg. Для эталона читается '
+            'точный Single из локального JSON; spinbox его не подменяет.')
         stack.addWidget(self.spec_f_range)
         self.spec_graph_default_label=QLabel(
             'GraphDefaultVScale: исходный расчёт ещё не применён')
@@ -880,6 +886,18 @@ class MainWindow(QMainWindow):
             'TMvkChannelStorage.FRange. Это статический источник, НЕ '
             'подтверждённый численный коэффициент текущих исходных отсчётов.')
         research_stack.addWidget(self.spec_source_gain_label)
+        self.spec_x32dbg_f_range_label=QLabel(
+            'FRange x32dbg: эталон не открыт; ручной FRange архива — отдельно.')
+        self.spec_x32dbg_f_range_label.setObjectName(
+            'labelActualX32dbgFRange')
+        self.spec_x32dbg_f_range_label.setWordWrap(True)
+        self.spec_x32dbg_f_range_label.setTextInteractionFlags(
+            Qt.TextSelectableByMouse)
+        self.spec_x32dbg_f_range_label.setToolTip(
+            'FRange конкретного сохранённого оригинального GetSpectrum '
+            'принимается только из проверенного локального JSON-манифеста. '
+            'Поле FRange=1 ниже относится к независимой гипотезе архива.')
+        research_stack.addWidget(self.spec_x32dbg_f_range_label)
         self.spec_reference_open_button=QPushButton('Эталон x32dbg · открыть Power/Y…')
         self.spec_reference_open_button.setObjectName('openOriginalX32dbgSpectrumReference')
         self.spec_reference_open_button.setToolTip(
@@ -1172,12 +1190,17 @@ class MainWindow(QMainWindow):
             ' · На границе x87 результат Python требует аппаратной сверки'
             if candidate['original_x87_boundary_requires_runtime_reference']
             else '')
+        source_scope=(
+            'Single FRange взят из проверенного x32dbg JSON; '
+            'оригинальное x87/Canvas ЕЩЁ НЕ СВЕРЕНЫ'
+            if self._spectrum_reference is not None
+            else 'FRange гипотезы архива и x87 НЕ ПОДТВЕРЖДЕНЫ')
         self.spec_graph_default_label.setText(
             "GraphDefaultVScale · реконструкция _Unit128: "
             f"FRange={candidate['candidate_f_range_single']:.7g} ×"
             f"{candidate['source_mode_multiplier']} → "
             f"{candidate['candidate_graph_default_vscale_single']:.7g}; "
-            "FRange архива и x87 НЕ ПОДТВЕРЖДЕНЫ; "
+            + source_scope + '; '
             f"исходное CW={candidate['original_idr_static_initial_x87_cw_hex']} "
             "(PC64, runtime не измерен)" + warning)
 
@@ -2059,6 +2082,21 @@ class MainWindow(QMainWindow):
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
 
+    def _sync_x32dbg_reference_f_range_label(self):
+        """Display the real reference Single separately from archive guess."""
+        ref=self._spectrum_reference
+        if ref is None:
+            self.spec_x32dbg_f_range_label.setText(
+                'FRange x32dbg: эталон не открыт. '
+                'FRange=1 ниже — отдельная гипотеза архива.')
+            return
+        f32bits=int(np.asarray([ref.f_range],dtype='<f4').view('<u4')[0])
+        self.spec_x32dbg_f_range_label.setText(
+            f'ОРИГИНАЛ x32dbg · FRange={ref.f_range:.9g} '
+            f'· Single 0x{f32bits:08X} (из JSON)\n'
+            'Это не ручной FRange гипотезы архива ниже; '
+            'Power/Y подтверждены по SHA и всем Float32.')
+
     def choose_original_spectrum_reference(self):
         """User explicitly selects local reference JSON; never open a device."""
         if self._live_active:
@@ -2083,6 +2121,7 @@ class MainWindow(QMainWindow):
         state=self._spectrum_reference_saved
         self._spectrum_reference=None
         self._spectrum_reference_saved=None
+        self._sync_x32dbg_reference_f_range_label()
         if state is None:return
         for control,was_enabled in state['enabled']:
             control.setEnabled(was_enabled)
@@ -2108,6 +2147,10 @@ class MainWindow(QMainWindow):
         self.title.setText(state['title_text'])
         self.title.setToolTip(state['title_tooltip'])
         self.adc.setToolTip(state['adc_tooltip'])
+        if self.session is None:
+            self._spec_graph_default_vscale_candidate=None
+            self.spec_graph_default_label.setText(
+                'GraphDefaultVScale: нет активного архива или x32dbg эталона')
         if not state['spectrum_tab_enabled']:
             # With no archive, the Spectrum tab was originally disabled.
             # Switch to the previous accessible tab before disabling it.
@@ -2181,6 +2224,7 @@ class MainWindow(QMainWindow):
             'adc_tooltip':self.adc.toolTip(),
         }
         self._spectrum_reference=ref
+        self._sync_x32dbg_reference_f_range_label()
         for control,index in (
             (self.spec_mode,ref.mode),(self.spec_n,n_index),
             (self.spec_avg,0 if ref.mode==0 else 1),
@@ -2669,49 +2713,88 @@ class MainWindow(QMainWindow):
             self.narrow_result.setText('Узкополосный расчёт отклонён: '+str(exc))
             self.statusBar().showMessage('Отклонено: '+str(exc))
 
+    def _collect_canvas_geometry_candidate(self):
+        """Measure actual Qt ViewBox coordinates; model Delphi separately."""
+        if self._full_spectrum is None:
+            raise ValueError('Текущий график ещё не построен')
+        view=self.spec_plot.viewport()
+        fm=view.fontMetrics()
+        xr,yr=self.spec_plot.getViewBox().viewRange()
+        d=source_paintbox_registration(
+            pixel_width=int(view.width()),pixel_height=int(view.height()),
+            zero_text_width=int(fm.horizontalAdvance('0')),
+            six_decimals_text_width=int(fm.horizontalAdvance('0.000000')),
+            zero_text_height=int(fm.height()),
+            x_name_present=True,y_name_present=True,
+            scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
+            scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
+            series_x_start=0.,series_x_scale=float(self._full_spectrum['df_hz']))
+        # Geometry of the CURRENT PySide6 ViewBox in the viewport's logical
+        # pixels. This is independently measured Qt geometry, NOT the
+        # source-derived Delphi PixelRect above or physical screenshot px.
+        scene=self.spec_plot.getViewBox().sceneBoundingRect()
+        local_tl=self.spec_plot.mapFromScene(scene.topLeft())
+        local_br=self.spec_plot.mapFromScene(scene.bottomRight())
+        screen_origin=view.mapToGlobal(QPoint(0,0))
+        d['qt_measured_runtime_geometry']=describe_qt_viewport_geometry(
+            viewport_width=int(view.width()),
+            viewport_height=int(view.height()),
+            plot_left=float(local_tl.x()),plot_top=float(local_tl.y()),
+            plot_right=float(local_br.x()),plot_bottom=float(local_br.y()),
+            viewport_global_left=float(screen_origin.x()),
+            viewport_global_top=float(screen_origin.y()),
+            device_pixel_ratio=float(view.devicePixelRatioF()),
+            logical_dpi_x=int(view.logicalDpiX()),
+            logical_dpi_y=int(view.logicalDpiY()),
+            research_dock_visible=bool(self.spec_inspector.isVisible()))
+        # These metrics are observed Qt, not Delphi font or GDI pixels.
+        d['qt_viewport_device_pixel_ratio']=float(view.devicePixelRatioF())
+        d['qt_viewport_logical_dpi_x']=int(view.logicalDpiX())
+        d['qt_viewport_logical_dpi_y']=int(view.logicalDpiY())
+        d['qt_font_family_candidate']=view.font().family()
+        d['dfm_design_form_font_family']=DFM_DESIGN_FONT_FAMILY
+        d['dfm_design_form_font_height']=DFM_DESIGN_FONT_HEIGHT
+        d['dfm_design_pixels_per_inch']=DFM_DESIGN_PIXELS_PER_INCH
+        d['dfm_design_spectrum_paintbox_size']=PAINTBOX_DIMENSIONS['spectrum']
+        d['original_dfm_runtime_canvas_font_verified']=False
+        # This source-derived affine is kept ONLY as a candidate.
+        bridge=QtPaintBoxBridge(
+            source_canvas=d,
+            qt_scene_left=float(scene.left()),qt_scene_right=float(scene.right()),
+            qt_scene_top=float(scene.top()),qt_scene_bottom=float(scene.bottom()),
+            qt_device_pixel_ratio=d['qt_viewport_device_pixel_ratio'])
+        d['qt_to_tpaintbox_bridge_candidate']=bridge.describe()
+        d['qt_scene_plot_rect_source']='OBSERVED_QT_VIEWBOX_NOT_ORIGINAL_DELPHI'
+        self._spec_canvas_geometry_preview=d
+        return d
+
     def _show_canvas_geometry_candidate(self):
-        """Source TQGrapher formulas + *Qt* metrics, never claim Delphi pixels."""
-        if not self._full_spectrum:return
+        """Show observed Qt geometry separately from source-derived model."""
+        if self._full_spectrum is None:return
         try:
-            view=self.spec_plot.viewport()
-            fm=view.fontMetrics()
-            xr,yr=self.spec_plot.getViewBox().viewRange()
-            d=source_paintbox_registration(
-                pixel_width=int(view.width()),pixel_height=int(view.height()),
-                zero_text_width=int(fm.horizontalAdvance('0')),
-                six_decimals_text_width=int(fm.horizontalAdvance('0.000000')),
-                zero_text_height=int(fm.height()),
-                x_name_present=True,y_name_present=True,
-                scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
-                scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
-                series_x_start=0.,series_x_scale=float(self._full_spectrum['df_hz']))
-            # Qt paint-device metrics are diagnostic, never original Delphi Canvas.
-            d['qt_viewport_device_pixel_ratio']=float(view.devicePixelRatioF())
-            d['qt_viewport_logical_dpi_x']=int(view.logicalDpiX())
-            d['qt_viewport_logical_dpi_y']=int(view.logicalDpiY())
-            d['qt_font_family_candidate']=view.font().family()
-            d['dfm_design_form_font_family']=DFM_DESIGN_FONT_FAMILY
-            d['dfm_design_form_font_height']=DFM_DESIGN_FONT_HEIGHT
-            d['dfm_design_pixels_per_inch']=DFM_DESIGN_PIXELS_PER_INCH
-            d['dfm_design_spectrum_paintbox_size']=PAINTBOX_DIMENSIONS['spectrum']
-            d['original_dfm_runtime_canvas_font_verified']=False
-            scene=self.spec_plot.getViewBox().sceneBoundingRect()
-            # Both coordinate frames must be explicit. This is only an affine
-            # hypothesis, not a measured original MVKView runtime registration.
-            bridge=QtPaintBoxBridge(
-                source_canvas=d,
-                qt_scene_left=float(scene.left()),qt_scene_right=float(scene.right()),
-                qt_scene_top=float(scene.top()),qt_scene_bottom=float(scene.bottom()),
-                qt_device_pixel_ratio=d['qt_viewport_device_pixel_ratio'])
-            d['qt_to_tpaintbox_bridge_candidate']=bridge.describe()
-            self._spec_canvas_geometry_preview=d
+            d=self._collect_canvas_geometry_candidate()
+            observed=d['qt_measured_runtime_geometry']
+            plot=observed['qt_plot_bounds_in_viewport_logical']
+            device=observed['qt_plot_size_nominal_device_pixels_if_uniform_dpr']
             QMessageBox.information(
                 self,'TQGrapher Canvas — только исследовательская геометрия',
-                f"Виртуальный Canvas (Qt): {d['canvas_width']} × {d['canvas_height']} px\n"
+                f"ФАКТИЧЕСКИЙ Qt viewport (лог.): "
+                f"{observed['qt_viewport_size_logical']['width']} × "
+                f"{observed['qt_viewport_size_logical']['height']}; "
+                f"DPR={observed['qt_device_pixel_ratio_observed']:.3g}\n"
+                f"ФАКТИЧЕСКАЯ Qt ViewBox (в viewport лог.): "
+                f"L{plot['left']:.0f} R{plot['right']:.0f} "
+                f"T{plot['top']:.0f} B{plot['bottom']:.0f}; "
+                f"док открыт={observed['research_dock_visible']}\n"
+                f"Условный device-размер по DPR: "
+                f"{device['width']:.1f} × {device['height']:.1f}; "
+                "НЕ физическая PixelRect исходной Delphi\n"
+                f"МОДЕЛЬ TQGrapher на Qt-viewport: "
+                f"{d['canvas_width']} × {d['canvas_height']} (лог. Qt)\n"
                 f"Margin по оригиналу: min(W/53,H/30)={d['margin_before_tqgrapher_minimum']}"
                 f" → после минимума 10: {d['effective_source_margin']} px\n"
-                f"Исходная PixelRect: L={d['pixel_left']}, R={d['pixel_right']}, "
-                f"T={d['pixel_top']}, B={d['pixel_bottom']}\n"
+                f"МОДЕЛЬ PixelRect (не оригинал!): L={d['pixel_left']}, "
+                f"R={d['pixel_right']}, T={d['pixel_top']}, B={d['pixel_bottom']}\n"
                 f"itosM={d['itos_m']:.9g}, itosC={d['itos_c']:.9g}\n"
                 f"stoiM={d['stoi_m']:.9g}, stoiC={d['stoi_c']:.9g}\n"
                 f"ytosM={d['ytos_m']:.9g}, ytosC={d['ytos_c']:.9g}\n"

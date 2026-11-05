@@ -243,3 +243,82 @@ def test_qt_reference_without_original_summary_words_labels_as_unverified(
     win.spec_reference_restore_button.click()
     win.close()
     qt_app.processEvents()
+
+
+
+@pytest.mark.parametrize("archive_open", [False, True])
+def test_z31d_separate_original_frange_and_measure_qt_viewbox_not_delphi(
+        tmp_path, qt_app, archive_open):
+    """Real Qt scene bounds and original FRange are distinct from TSXML/manual."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.qt_spectrum_viewport_observation import SOURCE as OBSERVED
+    win = MainWindow()
+    if archive_open:
+        win.open_archive(fixture_zip(tmp_path))
+    win.show()
+    qt_app.processEvents()
+    archive_guess = win.spec_f_range.value()
+    assert archive_guess == 1.0
+    assert "не открыт" in win.spec_x32dbg_f_range_label.text()
+
+    manifest, _, _, _ = create_reference_fixture(
+        tmp_path / f"original_z31d_{archive_open}", mode=0,
+        n=1024, fs=65536)
+    win.show_original_spectrum_reference(manifest)
+    qt_app.processEvents()
+    label = win.spec_x32dbg_f_range_label.text()
+    assert "ОРИГИНАЛ x32dbg" in label
+    assert "0x43FF4853" in label
+    assert "510,565" not in label  # JSON Float32 is displayed independent of locale.
+    assert "510.565" in label
+    assert "гипотезы архива" in label
+    assert win.spec_manual_f_range_label.text() == (
+        "FRange гипотезы архива · НЕ x32dbg")
+    assert win.spec_f_range.value() == archive_guess
+    assert "x32dbg JSON" in win.spec_graph_default_label.text()
+    assert "FRange гипотезы архива и x87" not in (
+        win.spec_graph_default_label.text())
+    assert "TSXML" in win.spec_source_gain_label.text()
+
+    win.spec_inspector.show()
+    qt_app.processEvents()
+    d = win._collect_canvas_geometry_candidate()
+    o = d["qt_measured_runtime_geometry"]
+    assert o["source"] == OBSERVED
+    assert o["research_dock_visible"] is True
+    assert o["qt_viewport_size_logical"]["width"] == (
+        win.spec_plot.viewport().width())
+    assert o["qt_viewport_size_logical"]["height"] == (
+        win.spec_plot.viewport().height())
+    assert o["qt_device_pixel_ratio_observed"] == pytest.approx(
+        win.spec_plot.viewport().devicePixelRatioF())
+    assert o["qt_logical_dpi_observed"]["x"] == (
+        win.spec_plot.viewport().logicalDpiX())
+    assert o["qt_plot_size_logical"]["width"] > 0
+    assert o["qt_plot_size_logical"]["height"] > 0
+    assert o["qt_plot_size_nominal_device_pixels_if_uniform_dpr"]["width"] == pytest.approx(
+        o["qt_plot_size_logical"]["width"] *
+        o["qt_device_pixel_ratio_observed"])
+    assert d["qt_scene_plot_rect_source"] == (
+        "OBSERVED_QT_VIEWBOX_NOT_ORIGINAL_DELPHI")
+    assert d["original_pixel_rectangle_verified"] is False
+    assert o["original_tpaintbox_runtime_rectangle_verified"] is False
+    assert o["qt_to_delphi_pixel_parity_verified"] is False
+    assert d["qt_to_tpaintbox_bridge_candidate"][
+        "original_delphi_pixel_parity_verified"] is False
+
+    win.spec_inspector.hide()
+    qt_app.processEvents()
+    d_after = win._collect_canvas_geometry_candidate()
+    assert d_after["qt_measured_runtime_geometry"]["research_dock_visible"] is False
+    assert d_after["qt_measured_runtime_geometry"]["qt_plot_size_logical"]["width"] > 0
+    # Do not assert dock-free and dock-open pixels MUST coincide with some
+    # original Win32 TPaintBox: that remains unmeasured at runtime.
+
+    win.restore_archive_spectrum_after_reference()
+    qt_app.processEvents()
+    assert "не открыт" in win.spec_x32dbg_f_range_label.text()
+    assert win.spec_f_range.value() == archive_guess
+    assert win._spectrum_reference is None
+    win.close()
+    qt_app.processEvents()
