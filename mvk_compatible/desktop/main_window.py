@@ -28,6 +28,8 @@ from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox
 from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
 from ..core.qt_spectrum_viewport_observation import describe_qt_viewport_geometry
 from ..core.tqgrapher_grid_idr_candidate import source_tqgrapher_grid_candidate
+from ..core.tco2draw_grid_source import (source_tco2draw_grid_contract,
+    GRID_LINE_HEX, BACKGROUND_HEX)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -77,6 +79,7 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_apply_busy=False
         self._spec_source_grid_model=None
         self._spec_source_grid_axis_label_fonts=None
+        self._spec_source_grid_lines=[]  # Owned 10x10 research-only Qt overlay items.
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -926,7 +929,9 @@ class MainWindow(QMainWindow):
             'Исходные _Unit128:00844B2B/32 и _Unit115:007CAC89: '
             '10 интервалов X/Y, Single spacing. ТОЛЬКО локальный '
             'проверенный Power/Y x32dbg; реальный Delphi TCanvas, '
-            'шрифт/format/pen цвета и пиксели ещё НЕ приняты.')
+            'цвет сетки TCo2Draw #C0C0C0 и фон #FFFFFF восстановлены. '
+            'Software AA и TCanvas.TextOut не равны Qt; '
+            'runtime шрифт/DPI/пиксели ещё НЕ приняты.')
         self.spec_source_grid_checkbox.setEnabled(False)
         self.spec_source_grid_checkbox.toggled.connect(
             self._toggle_source_tqgrapher_grid_candidate)
@@ -2113,7 +2118,18 @@ class MainWindow(QMainWindow):
 
 
     def _restore_default_spec_axis_grid(self):
-        """Remove research ticks/fonts and restore ordinary pyqtgraph axes."""
+        """Restore ordinary Qt ticks, grid and fonts; remove source-only items.
+
+        The source overlay must never escape to an archived or live spectrum.
+        """
+        applied=(self._spec_source_grid_applied
+                 or bool(self._spec_source_grid_lines))
+        for line in self._spec_source_grid_lines:
+            self.spec_plot.removeItem(line)
+        self._spec_source_grid_lines=[]
+        if applied:
+            # Exactly the ordinary white-background pyqtgraph default from _plot.
+            self.spec_plot.showGrid(x=True,y=True,alpha=.2)
         if self._spec_source_grid_applied:
             for name in ('bottom','left'):
                 axis=self.spec_plot.getPlotItem().getAxis(name)
@@ -2144,17 +2160,20 @@ class MainWindow(QMainWindow):
             self._sync_source_tqgrapher_grid_candidate()
         except (ValueError,OverflowError,TypeError) as exc:
             self._restore_default_spec_axis_grid()
+            was_blocked=self.spec_source_grid_checkbox.blockSignals(True)
             self.spec_source_grid_checkbox.setChecked(False)
+            self.spec_source_grid_checkbox.blockSignals(was_blocked)
             self.statusBar().showMessage(
                 'Сетка исходного TQGrapher не принята: '+str(exc))
 
     def _sync_source_tqgrapher_grid_candidate(self,*_):
-        """Recompute source Single-grid spacing from CURRENT Qt X/Y range.
+        """Source-grid X/Y positions and RGB; Qt pixels still NOT Delphi.
 
-        A research-only Tahoma -13 DFM font is also installed on axes.
-        It is NOT an independently measured original runtime TCanvas font.
-        This changes only Qt rendering of explicit source Power/Y; arrays,
-        summary, cursor source and physical device recording are untouched.
+        Unit115 007CACB3 creates WHITE TCo2Draw bitmap, 007CACFC changes
+        raster ink to RGB #C0C0C0, and grid lines precede series ink.
+        Qt InfiniteLine renders each source grid line as a separate item
+        behind the original Power/Y curve. Do NOT pretend its 1 logical
+        px QPen implements the TCo2Draw scanline sqrt-distance blender.
         """
         if (self._spec_source_grid_apply_busy
                 or self._spectrum_reference is None
@@ -2167,6 +2186,7 @@ class MainWindow(QMainWindow):
             model=source_tqgrapher_grid_candidate(
                 scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
                 scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]))
+            model['tco2draw_source_style']=source_tco2draw_grid_contract()
             if self._spec_source_grid_model is not None and all(
                 self._spec_source_grid_model[key]==model[key]
                 for key in ('x_grid_ticks','y_grid_ticks',
@@ -2180,7 +2200,7 @@ class MainWindow(QMainWindow):
                     name:QFont(axes.getAxis(name).label.font())
                     for name in ('bottom','left')}
             font=QFont('Tahoma')
-            font.setPixelSize(13)  # DFM design -13 at 96 PPI; NOT runtime proof.
+            font.setPixelSize(13)  # DFM design -13, not observed native DPI.
             for name,values,labels in (
                 ('bottom',model['x_grid_ticks'],model['x_tick_labels_candidate']),
                 ('left',model['y_grid_ticks'],model['y_tick_labels_candidate'])
@@ -2189,6 +2209,24 @@ class MainWindow(QMainWindow):
                 axis.setTickFont(font)
                 axis.label.setFont(font)
                 axis.setTicks([list(zip(values,labels))])
+            # AxisItem's alpha=.2 Qt grid must not be drawn on top of
+            # original-source RGB lines. No invisible duplicate lines.
+            self.spec_plot.showGrid(x=False,y=False)
+            for line in self._spec_source_grid_lines:
+                self.spec_plot.removeItem(line)
+            self._spec_source_grid_lines=[]
+            for angle,values in (
+                (90,model['x_grid_ticks']),
+                (0,model['y_grid_ticks'])
+            ):
+                for value in values:
+                    line=pg.InfiniteLine(
+                        pos=value,angle=angle,movable=False,
+                        pen=pg.mkPen(GRID_LINE_HEX,width=1))
+                    line.setZValue(-100)  # TQGrapher draws grid BEFORE series.
+                    line.setAcceptedMouseButtons(Qt.NoButton)
+                    self.spec_plot.addItem(line,ignoreBounds=True)
+                    self._spec_source_grid_lines.append(line)
             self._spec_source_grid_applied=True
             self._spec_source_grid_model=model
             self.spec_source_grid_info.setText(
@@ -2197,8 +2235,10 @@ class MainWindow(QMainWindow):
                 f"Y через {model['source_h_line_spacing_y_single']:.7g}; "
                 f'{len(model["x_grid_ticks"])} / '
                 f'{len(model["y_grid_ticks"])} линий. '
+                f'Цвет исходного TCo2Draw {GRID_LINE_HEX}, фон {BACKGROUND_HEX}; '
+                'сетка под кривой, отдельный Qt QPen. '
                 'Tahoma 13 Qt px — DFM-кандидат; FormatFloat, '
-                'Delphi GDI и пиксели НЕ подтверждены.')
+                'Delphi GDI TextOut/AA/DPI и пиксели НЕ подтверждены.')
         finally:
             self._spec_source_grid_apply_busy=False
 
@@ -2912,7 +2952,9 @@ class MainWindow(QMainWindow):
                 f"DPR={observed['qt_device_pixel_ratio_observed']:.3g}\n"
                 f"Исследовательская сетка TQGrapher: "
                 f"{'ВКЛ (10×10)' if self._spec_source_grid_applied else 'ВЫКЛ (авто Qt)'}; "
-                "точные GDI пиксели НЕ приняты\n"
+                f"TCo2Draw: исходные линии {GRID_LINE_HEX}, "
+                f"фон {BACKGROUND_HEX}, software bitmap; "
+                "не GDI Pen и не пиксельный Qt паритет\n"
                 f"ФАКТИЧЕСКАЯ Qt ViewBox (в viewport лог.): "
                 f"L{plot['left']:.0f} R{plot['right']:.0f} "
                 f"T{plot['top']:.0f} B{plot['bottom']:.0f}; "
