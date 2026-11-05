@@ -278,7 +278,8 @@ def test_z31d_separate_original_frange_and_measure_qt_viewbox_not_delphi(
     assert "x32dbg JSON" in win.spec_graph_default_label.text()
     assert "FRange гипотезы архива и x87" not in (
         win.spec_graph_default_label.text())
-    assert "TSXML" in win.spec_source_gain_label.text()
+    assert "FRange" in win.spec_source_gain_label.text()
+    assert "x32dbg" not in win.spec_source_gain_label.text()  # R6.1 ZIP/TSXML source stays independent
 
     win.spec_inspector.show()
     qt_app.processEvents()
