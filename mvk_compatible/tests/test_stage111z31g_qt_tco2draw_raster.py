@@ -10,6 +10,11 @@ def _y_bits(win):
                       dtype='<f4').view('<u4').copy()
 
 
+def _source_bits(win):
+    return np.asarray(win._full_spectrum['amplitude'],
+                      dtype='<f4').view('<u4').copy()
+
+
 def test_tco2draw_optin_raster_zoom_return_and_unmodified_y(tmp_path,qt_app):
     from mvk_compatible.desktop.main_window import MainWindow
     win=MainWindow()
@@ -19,6 +24,7 @@ def test_tco2draw_optin_raster_zoom_return_and_unmodified_y(tmp_path,qt_app):
     win.show_original_spectrum_reference(manifest)
     qt_app.processEvents()
     y0=_y_bits(win)
+    raw0=_source_bits(win)
     summary=win._spectrum_summary.copy()
     assert not win.spec_source_raster_checkbox.isEnabled()
 
@@ -51,7 +57,9 @@ def test_tco2draw_optin_raster_zoom_return_and_unmodified_y(tmp_path,qt_app):
     assert new_item is not None and new_item is not item
     assert item.scene() is None
     assert win._spec_source_grid_model['source_v_line_spacing_x_single']==1280
-    np.testing.assert_array_equal(_y_bits(win),y0)
+    # PlotDataItem clip-to-view shows a shorter slice after zoom; the raw
+    # source Float32 array, not its viewport slice, must stay byte exact.
+    np.testing.assert_array_equal(_source_bits(win),raw0)
 
     win.spec_source_raster_checkbox.click()
     qt_app.processEvents()
