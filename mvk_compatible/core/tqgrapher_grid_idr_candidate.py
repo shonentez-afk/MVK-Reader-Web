@@ -3,7 +3,7 @@
 Original code in operator-provided Projects.7z (never committed here):
  _Unit128.pas SpecGrapher initialization 00844B2B/00844B32:
      AutoVSpacing=10; AutoHSpacing=10
- _Unit115.pas TQGrapher.Draw 007CAC89..007CACAF:
+ _Unit114.pas Float32 formatter 007B2090(3), 007B2100..007B21BC.\n _Unit115.pas TQGrapher.Draw 007CAC89..007CACAF:
      HLineSpacing=ScrHeight/AutoHSpacing;
      VLineSpacing=abs(ScrWidth/AutoVSpacing)
  Grid points: integer k * spacing, within current screen bounds with
@@ -53,16 +53,41 @@ def _index_ticks(lo, hi, step):
         for k in range(low, high + 1))
 
 
-def _label(value, step):
-    """Readable Qt label, NOT a proven copy of native 007B2090."""
+def _label(value, step, *, decimal_separator=","):
+    """Source-derived 3 significant-ish FIXED decimal mask, no exponent.
+
+    User-provided _Unit114.pas 007B2090(3, &text, Float32):
+      zero -> "0"; otherwise construct "0." + zeroes until a
+      Float32(abs(value)) scaled repeatedly by 10 is >= 10^(3-1).
+      Pass mask to RTL FormatFloat(0042EE10) and trim trailing zeroes
+      and then its locale-aware decimal separator. This recovers the
+      control flow, NOT exact Delphi FormatFloat float/x87 tie rounding
+      or the original process TFormatSettings.
+    """
     v = _finite(value, "tick value")
-    s = _finite(step, "tick spacing")
-    if abs(v) < max(1e-9, s * 1e-6):
+    _finite(step, "tick spacing")
+    if decimal_separator not in (".", ","):
+        raise ValueError("Only display decimal separators . and , supported")
+    source_single = float(np.float32(v))
+    if not math.isfinite(source_single):
+        raise ValueError("Tick value overflows original Single")
+    if source_single == 0.0:
         return "0"
-    if abs(v - round(v)) < max(1e-7, abs(v) * 1e-7):
-        return str(int(round(v)))
-    text = f"{v:.7g}"
-    return "0" if text in ("-0", "-0.0") else text
+    magnitude = np.float32(abs(source_single))
+    decimal_places = 0
+    while float(magnitude) < 100.0 and decimal_places < 60:
+        magnitude = np.float32(magnitude * np.float32(10.0))
+        decimal_places += 1
+        if not math.isfinite(float(magnitude)):
+            raise ValueError("Original Float32 tick text scaling overflow")
+    if decimal_places == 60 and float(magnitude) < 100.0:
+        raise ValueError("Original tick text formatting precision unresolved")
+    text = f"{source_single:.{decimal_places}f}"
+    if decimal_places:
+        text = text.rstrip("0").rstrip(".")
+    if text in ("-0", ""):
+        text = "0"
+    return text.replace(".", decimal_separator)
 
 
 def source_tqgrapher_grid_candidate(
@@ -105,6 +130,8 @@ def source_tqgrapher_grid_candidate(
         "y_grid_ticks": y,
         "x_tick_labels_candidate": tuple(_label(v, spacing_v) for v in x),
         "y_tick_labels_candidate": tuple(_label(v, spacing_h) for v in y),
+        "source_label_formatter": "UNIT114_007B2090_THREE_DIGIT_FIXEDPOINT_SOURCE_CANDIDATE",
+        "source_label_decimal_separator_qt_candidate": ",",
         "source_approx_index_tolerance": 0.0001,
         "original_runtime_source_grid_counts_verified": False,
         "original_rtl_tick_format_parity_verified": False,
