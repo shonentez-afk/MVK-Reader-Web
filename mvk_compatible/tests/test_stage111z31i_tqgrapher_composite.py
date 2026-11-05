@@ -65,7 +65,8 @@ def test_single_bin_peak_not_discarded_in_shared_source_bitmap():
     values[50001]=-20.
     before=values.view('<u4').copy()
     result=_composite(
-        values,scr_width=32768,series_x_scale=0.25)
+        values,scr_width=32768,series_x_scale=0.25,
+        scr_bottom=-120.,scr_height=120.)
     np.testing.assert_array_equal(values.view('<u4'),before)
     assert result['series_model']['data_size_original']==131072
     assert any(hi-lo>0 for _,lo,hi,*_ in result['series_model']['columns'])
@@ -117,8 +118,6 @@ def test_initial_bitmap_must_be_opaque_uint8_and_expected_shape(bad):
     {'canvas_width':10000,'canvas_height':10000},
     {'canvas_width':True},
     {'scr_width':0},{'scr_height':-1},
-    {'zero_text_width':1000},
-    {'six_decimals_text_width':1000},
 ])
 def test_composite_invalid_frame_and_unsupported_ranges_fail_closed(patch):
     with pytest.raises(ValueError):
@@ -130,3 +129,15 @@ def test_invalid_original_series_data_fail_closed():
         _composite(np.array([1.,np.nan],dtype='<f4'))
     with pytest.raises(ValueError):
         _composite(np.array([],dtype='<f4'))
+
+
+def test_original_source_canvas_falls_back_to_margin_for_oversized_text():
+    # The DELPHI source explicitly returns PixelLeft to Margin when
+    # TextWidth('0.000000') exceeds the drawable rectangle; this is
+    # supported original behavior, NOT an invalid-input failure.
+    a=_composite(zero_text_width=1000)
+    b=_composite(six_decimals_text_width=1000)
+    assert a['canvas']['x_fallback_to_margin']
+    assert b['canvas']['x_fallback_to_margin']
+    assert a['canvas']['pixel_left']==a['canvas']['margin']
+    assert b['canvas']['pixel_left']==b['canvas']['margin']
