@@ -1,0 +1,72 @@
+# MVKView Compatible — текущий проверенный статус
+
+**Дата аудита: 05.11.2026.** Этот файл — единая точка входа для следующего этапа. Ветка: `research/stage111-mvkview-desktop-20261029`. Цель — автономный Windows-аналог **MVKView 1.0.47** с встроенным проверенным Go Native R6.1. Ветка `main` содержит прежний Web v0.3.40, её не менять.
+
+**Приоритет по прямому решению пользователя:** расчёты и вывод графиков важнее точного повторения шрифтов. **Порядок:** довести СПЕКТР → ВРЕМЕННОЙ СИГНАЛ → РАСЧЁТНЫЕ ДАННЫЕ → оставшиеся страницы.
+
+## 0. Подтверждённая сборка
+
+- Тестированный код: `a4d00c80f3a70e85fa43d96564b43ea86a0eafe6`. На момент аудита ветка: `88d67140519887402175f5e9e7b8b3f0db46ddca`. GitHub compare подтвердил: **после протестированного кода четыре коммита затронули только документацию**.
+- [GitHub Actions #41988511152](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41988511152): **3/3 SUCCESS**; Linux Core **1438 passed / 53 skipped**; Windows Core **1488 passed / 7 skipped**; Windows Qt **49 passed**; Qt при фактически измеренном DPR=1.5 **46 passed**. Go R6.1 build/test, PyInstaller onefile, PE/SHA/manifest — PASS.
+- [Windows EXE artifact #13397357837](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41988511152/artifacts/13397357837): ZIP **68 559 023 байта**, EXE SHA256 `21cb15ea1c51a300c5c9f285069d176cee363b66fc692d9ecb679a1eba3b3922`; GitHub срок хранения **до 19.11.2026**.
+
+**Доказательность:** REAL-ORIGINAL = пользовательские original BIN/x32dbg/скрин/числа; REAL-DEVICE = реальный аппаратный Native тест; SOURCE = реконструкция исходного алгоритма/таблиц; CI/SYNTHETIC = автоматический тест нашей реализации, **не** новая оригинальная runtime-пара. Старые оригинальные BIN/PNG не опубликованы и не пересчитаны заново в этом аудите.
+
+## 1. УЖЕ СДЕЛАНО — НЕ НАЧИНАТЬ ЗАНОВО
+
+| Компонент | Что именно принято | Уровень и источник |
+|---|---|---|
+| FFT GetSpectrum | Оригинальный операторский preFFT→Power, `N=262144`, **131072/131072 Float32 побитово** в одном реальном захвате; история original stream/thread не удостоверена независимо. | REAL-ORIGINAL, [StageZ8](docs/research/STAGE111Z8_FIRST_NONZERO_ORIGINAL_FFT_262144_BITWISE_GOLDEN_RU.md) |
+| Tag0–Tag3 | По каждому отдельному оригинальному захвату полные `Power→Y` **131072/131072 Float32 bitwise**, итоговая тройка original summary **3/3 Float32 HEX**. Tag2/Tag3 имеют разные original window metadata — **не утверждать общую временную выборку**. | REAL-ORIGINAL, [Tag0](docs/research/STAGE111Z30C_TAG0_ORIGINAL_LOG_FULL_Y_131072_BITWISE_FOUR_MODES_RU.md), [Tag1](docs/research/STAGE111Z30C_TAG1_POWER_AND_Y_FIRST_FULL_OPERATOR_CAPTURE_RU.md), [Tag2](docs/research/STAGE111Z30C_TAG2_ORIGINAL_INTEGRATION_Y_SUMMARY_131072_BITWISE_RU.md), [Tag3](docs/research/STAGE111Z30C_TAG3_ORIGINAL_DOUBLE_INTEGRATION_Y_SUMMARY_131072_BITWISE_RU.md) |
+| FRange | Уже установлены `GetFloatByAddr(0x0E)`, исходный writer/reader, `InternalChannelGain` TSXML, fallback, оригинальная Float32 подготовка `buffer/FRange`, отсутствие двойной калибровки BIN. Original Tag0 `0x43FF4853 = 510.5650329589844`. **Не перепроверять заново происхождение/формулу.** | SOURCE + one original word, [Stage52](docs/research/STAGE52_FRANGE_ORIGIN_RU.md), [61–62](docs/research/STAGE62_ARCHIVE_FRANGE_SOURCE_RU.md), [Z24](docs/research/STAGE111Z24_RECHECK_STAGE52_FRANGE_AND_NATIVE_R6_1_RU.md) |
+| Hann/x87 | Полная независимая C/x87 реконструкция periodic Hann **262144/262144** совпала с нашим кандидатом; 4 исходных слова отдельно подтверждены, синтетический C/x87 FFT совпал с Python на 6 размерах. | SOURCE+SYNTHETIC, [Stage31K](docs/research/STAGE111Z31K_SPECTRUM_CALCULATION_AUDIT_RU.md), [31L](docs/research/STAGE111Z31L_X87_FFT_ORACLE_PRIOR_ORIGINAL_GOLDEN_RU.md) |
+| Реальный BIN→оригинальные цифры | **Прибор №83 АЦП4 (23.10):** из BIN 37.5944 Гц, 4.157 мм/с, 4.611 мм/с; оригинальный экран 37.59 Гц, 4.176 мм/с, 4.620 мм/с. **Прибор №44 АЦП1:** BIN 9.2902 мм/с, 14.25 Гц, 6.3791 мм/с; экран 9.29 мм/с, 14.5 Гц, 6.37 мм/с. **Сверка УЖЕ была**, но №44 пик отличается на 0.25 Гц; это не побитовое сравнение всех Y-бинов. Операторские исходные файлы/скриншоты здесь не перезапускались. | REAL-ORIGINAL historical, [сводный аудит](docs/research/STAGE111Z31N_REUSE_FIRST_SPECTRUM_VALIDATION_RU.md) |
+| Оригинальный и Qt скрин одного спектра | Исходный **Tag0 x32dbg Power/Y** был загружен в Qt напрямую, сравнен с оригинальным screenshot: курсор **3800 Гц/−55.32 дБ**, summary **6.89 / 3800 / 0.7786**; нормализованная геометрия ~0.53/0.21 px. **Это SAME-Power/Y, НЕ пересчёт того же BIN.** Скрин Stage31B с АЦП1/−1.746 дБ — ДРУГОЙ BIN; не принимать его за same-data. | REAL-ORIGINAL SCREEN+Qt, [Z14](docs/research/STAGE111Z14_ORIGINAL_SPECTRUM_SCREENSHOT_PIXEL_REFERENCE_RU.md), [31B](docs/research/STAGE111Z31B_FIRST_QT_SCREENSHOT_1920_VISUAL_AUDIT_RU.md), [31C](docs/research/STAGE111Z31C_WINDOWS_150_PERCENT_DPI_QT_SOURCE_VISUAL_PARITY_RU.md) |
+| Источник графика/курсор/шкалы | Source `TQGRSeries`: `DataSize=TRUNC((N/2)/1.28)`; при N262144 Fs65536 видны 102400 бинов, правая граница оси **25600 Гц**, а не Nyquist32768. Min/max per pixel, курсор, исходные 10 горизонтальных и 6+6 вертикальных шкал/6 FFT N восстановлены по оригиналу. Отдельные позиции курсора подтверждены скриншотами. | SOURCE + chosen real screenshots, [31H](docs/research/STAGE111Z31H_TQGRSERIES_SOURCE_PIXEL_COLUMNS_RU.md), [111S](docs/research/STAGE111S_SOURCE_SPECTRUM_SCROLLBARS_RU.md), [111T](docs/research/STAGE111T_VERTICAL_AND_SOURCE_FFT_RU.md) |
+| Native Go R6.1 | Прибор №84: **30.0128 сек**, RAW **69 685 884/69 685 884 байт** совпал с независимым PCAP-prefix; **15 725 824/15 725 824** Float32 исходных BIN проверены, 8 ADC+2 TACH, 19 экспортируемых файлов, 0 client→device прикладных байтов. Это проверка **отдельного приёмника**, не новой Qt-интеграции. | REAL-DEVICE, [Stage109](docs/research/STAGE109_R6_1_FIRST_REAL_LIVE_DEV84_ACCEPTANCE_RU.md) |
+
+## 2. РЕАЛИЗОВАНО И ЗЕЛЁНО В CI, НО ОРИГИНАЛЬНЫЙ 1:1 НЕ ДОКАЗАН
+
+| Возможность | Есть в приложении | Точная граница |
+|---|---|---|
+| Архивы | Read-only Native ZIP, `DirectBinSession` для оригинального BIN+TSXML `RealDataType=Single` (ADC1–8, при наличии групп). Каналы, длина/offset, SHA/метаданные проверяются. | Счётные `Byte` данные обоснованно **не** преобразуются в ускорение. Некоторые исходные TSXML/fallback-условия оригинала и фактические физические единицы не приняты повсеместно |
+| Обычный спектр | `refresh_spec`: все N/2 для расчётов, Tag0–3, выбор N/режима/окна, original-derived summary, вывод Copy/Save, шкалы, оригинальная плотная min/max кривая с возвратом всех исходных точек при zoom (Stage31N). | **Последний Stage31N Qt тест инжектирует синтетические `_full_spectrum` и `session=object()`**. Тест полного GUI-пути `DirectBinSession.open→refresh_spec→zoom→cursor→Copy/Save` с новым плотным рендером отдельно пока не сделан |
+| Огибающая | Исходные 10 банков FIR×512 по локальному `mvkview.idp`, IF/IQ и cascading decimation, source-derived `/FRange` до FIR, 4 режима после FFT; **6493/6493 Float32** source scalar vs optimized на синтетике с настоящими коэффициентами. | Не сравнен **original Win32 full envelope Y** на том же pre-FIR окне/EnvelopeCode. Профиль оригинальных FIR пользователь загружает локально, в EXE не вшивается |
+| Временной сигнал | Вкладка и offline waveform, исходная выборка окон GetSignal latest/sequential, курсор/сегменты, ограниченный live preview реальных 8192 отсчётов через один Go receiver. | Нет оригинального полного GetSignal return Float32 той же записи и подтверждения всех окон/полос |
+| DSP показатели / задачи | 24 штатные DSP величины, 43 приборные третьоктавы, датчики, статусы, необработанные TACH-регистры, исследовательские 15 PageStatus modes из AUX/VALUES. При BIN-only отсутствующие AUX не выдумываются. | Не доказаны оригинальные коэффициенты третьоктавных DSP-фильтров, alarm thresholds, TACH RPM/полная физика, не все 15 режимов оригинального UI |
+| Live + GUI | Один встроенный Go R6.1, Start/Stop по допуску, live preliminary waveform/spectrum на 8192/ADC, журнал/статусы/финальный ZIP. | Интегрированный **Qt+Go на реальном Windows-приборе ещё не испытан**; live 8192 не равно full original N262144, recovery и long-run остаются открытыми |
+| Интерфейс | 3 действующие верхние вкладки **«Задачи», «Временной сигнал», «Спектр»** и несколько рабочих подстраниц задач. Исходные 7 Page* из DFM известны. | Полная оригинальная PageConfig/PageCalib/PageFile/PageStatus UI-функциональность и мастер по всем страницам **НЕ закончены**, по решению пользователя отложены |
+
+## 3. ДЕЙСТВИТЕЛЬНО ОСТАЛОСЬ — по приоритетам
+
+### P0. Спектр: не переписывать уже принятую математику
+
+1. **Единый E2E регрессионный маршрут обычного архива**: на локальном синтетическом BIN+валидном TSXML пройти через настоящее Qt открытие, `refresh_spec`, dense→sparse zoom, курсор/scale/copy/save; проверять неизменность полного N/2 Float32 и приборных частот. **Это выявленный при аудите отсутствующий тест для кода Stage31N, не повторная оригинальная съёмка.**
+2. **Сквозная проверка полного Y из реального BIN на одинаковом окне**, не только 3 итоговых цифр. Использовать **уже полученные** дела №83/№44 и существующие `stage83_compare_spectra.py`, `private_getspectrum_*.py`. Если реального полного original Y/CSV по соответствующему BIN нет, честно оставить это data gate, сохранив предыдущую успешную проверку чисел; **не просить переснять старые скрины**.
+3. **Огибающая**: сопоставить full original Win32 result post-FIR/pre-Hann или Y с нашим из того же окна с подтверждёнными EnvelopeCode/FRange. FIR и source структурно уже восстановлены, повторно коэффициенты не искать.
+4. **Курсор/масштабы/пики/форматы**: функциональные тесты всех 4 режимов, края диапазонов/N/Fs, averaging/precise, переходы dense/sparse, Copy/Save, вторая серия; при необходимости исправлять только конкретное отличие **на числах и графике**, не на Tahoma.
+5. Проверить ещё 1–2 **других** реальных N/Fs/канала только при наличии старых доступных записей; не объявлять универсальную побитовую эквивалентность по 4 original эталонам.
+
+### P1. Интеграция и долговременная запись
+
+- После спектра/в рамках полевой приёмки протестировать **один** реальный сеанс встроенного Qt+Go, более долгую запись и штатный Stop/обрыв/сохранение. При доступном одинаковом исходном потоке использовать **уже готовый** [original BIN ↔ Native R6.1](docs/research/STAGE111Z27_ORIGINAL_NATIVE_SAME_RUN_BIN_TSXML_COMPARATOR_RU.md). **Same-hardware-session оригинальный парный BIN ранее отсутствовал**; Stage109 подтверждает собственный приёмник, не оригинальную MVKView byte parity. Не создавать второго TCP-клиента и не подключаться без допуска оператора.
+
+### P2. Только после принятого спектра — GetSignal
+
+- Использовать имеющиеся исходные GetSignal/window/ring/waveform и приватный comparator, дополнить реальный original GetSignal Float32 return того же интервала, фильтры, курсор, экспорт. **Не начинать GetSignal с нуля.**
+
+### P3. Затем приборные расчёты и остальные страницы
+
+- Добрать original DSP/third-octave formula parity, TACH RPM/Alarm, оригинальные PageConfig/PageCalib/Status/File и UI/UX, полевую приёмку. **Не путать DSP 43 третьоктавы с обычным FFT GetSpectrum.**
+
+## 4. Что ЗАПРЕЩЕНО повторять и публиковать
+
+Не делать заново **FFT N262144; Tag0–3 Power→Y; original summary; FRange writer/reader/formula; Hann; 10×512 FIR source; TQGRSeries min/max; курсор Tag0; Native R6.1; существующие бин/CSV-компараторы**. Не возвращаться к старой Web-архитектуре.
+
+Не загружать в GitHub или CI приватные оригинальные PAS/IDP/DFM, user PCAPNG/RAW/BIN/TSXML/Power/Y, original EXE/скриншоты; хранить только отчёты, SHA, исходно-производный код и синтетические тесты.
+
+**Практическое определение «спектр готов»:** все четыре режима воспроизводятся, частоты/СКЗ/пики/единицы правдоподобны и проверяемы на принятых эталонах, при увеличении/уменьшении не пропадают пики, курсор/масштабирование/экспорт работают, архивный E2E тест зелёный, ограничения огибающей и несинхронных исходных данных чётко оговорены. **Полное доказательство для всех возможных входов не обещать.**
+
+### Главные ссылки
+
+[Исторические BIN/скрин сравнения](docs/research/STAGE111Z31N_REUSE_FIRST_SPECTRUM_VALIDATION_RU.md) · [Аудит численного GetSpectrum](docs/research/STAGE111Z31K_SPECTRUM_CALCULATION_AUDIT_RU.md) · [Stage31N исходный рендер обычного архива](docs/research/STAGE111Z31N_ARCHIVE_GRAPH_NUMERICAL_PRIORITIES_RU.md) · [Исторический мастер-план](docs/research/STAGE111Z25_FULL_RECOVERY_MASTER_PLAN_RU.md). При конфликте старого OPEN с более поздней оригинальной приёмкой использовать **данную матрицу + конкретный эталонный отчёт**, не исторический заголовок.
