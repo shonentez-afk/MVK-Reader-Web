@@ -106,6 +106,9 @@ class MainWindow(QMainWindow):
         self._archive_source_projection_signature=None
         self._archive_source_projection_model=None
         self._archive_source_projection_busy=False
+        # Source _Unit128:0084B274 shares one original EnvelopeCode (0..31).
+        self._wave_envelope_dirty=False
+        self._spectrum_envelope_dirty=False
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -379,6 +382,14 @@ class MainWindow(QMainWindow):
     def _active_tab_changed(self,index):
         if index!=1:self.wave_inspector.hide()
         if index!=2:self.spec_inspector.hide()
+        # Original _Unit128:0084B2C8 clears both source graph series, then
+        # 00847248 updates the active page. Refresh inactive Qt pages lazily.
+        if self.session is None or self._live_active:
+            return
+        if index==1 and self._wave_envelope_dirty:
+            self.refresh_wave()
+        if index==2 and self._spectrum_envelope_dirty and self._spectrum_reference is None:
+            self._toggle_spec_envelope(self.spec_envelope_button.isChecked())
 
     def _toggle_current_research(self):
         if self.tabs.currentIndex()==1:
@@ -564,9 +575,38 @@ class MainWindow(QMainWindow):
         self.wave_envelope_code.setCurrentIndex(
             0 if self.wave_envelope_code.currentIndex() else 20)
 
+    def _sync_original_envelope_menu_tag(self,source):
+        """Mirror original shared ADC+Spectrum TButton.Tag (0..31).
+
+        Source _Unit128:0084B274 sets both tags from one menu item. Here the
+        Qt research-only enable checkbox remains a separate safety control.
+        """
+        if self._spectrum_reference is not None:
+            return
+        target=(self.spec_envelope_code if source is self.wave_envelope_code
+                else self.wave_envelope_code)
+        code=int(source.currentData() or 0)
+        other_index=target.findData(code)
+        if other_index<0:
+            raise ValueError('Invalid original EnvelopeCode 0..31')
+        if target.currentIndex()!=other_index:
+            previously=target.blockSignals(True)
+            try:
+                target.setCurrentIndex(other_index)
+            finally:
+                target.blockSignals(previously)
+
     def _wave_filter_selected(self,*_):
+        self._sync_original_envelope_menu_tag(self.wave_envelope_code)
         self._sync_wave_primary_labels()
+        self._wave_envelope_dirty=True
         self.refresh_wave()
+        if self.spec_envelope_button.isChecked():
+            self._spectrum_envelope_dirty=True
+            if self.spec_envelope_code.currentData()==0:
+                self.spec_envelope_button.setChecked(False)
+            elif self.tabs.currentIndex()==2:
+                self._toggle_spec_envelope(True)
 
     def _wave_mode_selected(self,*_):
         self._sync_wave_primary_labels()
@@ -1509,7 +1549,17 @@ class MainWindow(QMainWindow):
             bar.blockSignals(False)
 
     def _spec_envelope_code_changed(self,*_):
-        if self.spec_envelope_button.isChecked():
+        self._sync_original_envelope_menu_tag(self.spec_envelope_code)
+        self._sync_wave_primary_labels()
+        self._wave_envelope_dirty=True
+        if self.tabs.currentIndex()==1:
+            self.refresh_wave()
+        code=int(self.spec_envelope_code.currentData() or 0)
+        if code==0 and self.spec_envelope_button.isChecked():
+            # Original Tag=0 is no filter: clear/recalculate an active FIR
+            # trace instead of leaving its old peaks under "Без фильтра".
+            self.spec_envelope_button.setChecked(False)
+        elif self.spec_envelope_button.isChecked():
             self._toggle_spec_envelope(True)
 
     def _toggle_spec_envelope(self,checked):
@@ -1547,6 +1597,9 @@ class MainWindow(QMainWindow):
                 self.spec_envelope_button.blockSignals(False)
                 self.spec_compare_button.setEnabled(True)
                 self.statusBar().showMessage(str(e))
+                # A failed FIR transition must not preserve a stale curve.
+                self.refresh_spec()
+                self._sync_fft_menu_availability()
                 return
         self.refresh_spec()
         if self.session is not None:
@@ -2116,7 +2169,13 @@ class MainWindow(QMainWindow):
         self.spec_envelope_button.setText('Огибающая (исслед.)')
         self.spec_envelope_code.setEnabled(True)
         if self.spec_envelope_code.currentIndex()==0:
-            self.spec_envelope_code.setCurrentIndex(20)
+            # Retain existing research default code 20 but do not silently
+            # activate FIR on the ADC merely by loading an IDP profile.
+            was_blocked=self.spec_envelope_code.blockSignals(True)
+            try:
+                self.spec_envelope_code.setCurrentIndex(20)
+            finally:
+                self.spec_envelope_code.blockSignals(was_blocked)
         self.wave_envelope_load.setText('Локальные коэффициенты готовы (только этот запуск)')
         self.wave_hint.setText(
             'Огибающая доступна только по исходному IDR профилю; '
@@ -2184,7 +2243,15 @@ class MainWindow(QMainWindow):
                    else 'Локальный расчёт · оригинал не аттестован'))
             self.wave_cursor_primary.setText('Курсор: —')
             self._sync_wave_primary_labels()
-        except (OSError,KeyError,ValueError) as e:self._error(e)
+            self._wave_envelope_dirty=False
+        except (OSError,KeyError,ValueError) as e:
+            # Original invalidates both series when EnvelopeCode changes.
+            self.wave_plot.clear()
+            self.wave_line=None
+            self._wave_hover_window=None
+            self.wave_hint.setText('Нет действительного сигнала: '+str(e))
+            self.wave_mean_primary.setText('Сигнал не рассчитан')
+            self._error(e)
 
 
 
@@ -3147,6 +3214,7 @@ class MainWindow(QMainWindow):
                 self._apply_original_vscale_candidate(restored)
             # Final source X/Y view has been applied.
             self._sync_archive_source_projection()
+            self._spectrum_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
             # An archive may change after DirectBinSession.open(). A failed
             # re-read MUST NOT leave its old plot, cursor, or three-value
