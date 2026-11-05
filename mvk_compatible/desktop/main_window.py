@@ -11,7 +11,7 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QFont, QFontMetrics
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
@@ -36,6 +36,8 @@ from ..core.tqgr_series_source_candidate import (
     source_tqgr_series_columns, SOURCE as TQGR_SERIES_SOURCE)
 from ..core.tqgrapher_composite_source_candidate import (
     build_tqgrapher_composite)
+from .tqgrapher_textout_qt_candidate import (
+    qt_textout_source_positions_rgba, qt_source_font_candidate)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -2339,6 +2341,7 @@ class MainWindow(QMainWindow):
                 axis=self.spec_plot.getPlotItem().getAxis(name)
                 axis.setTicks(None)
                 axis.setTickFont(None)
+                axis.label.setVisible(True)
                 if self._spec_source_grid_axis_label_fonts is not None:
                     axis.label.setFont(
                         self._spec_source_grid_axis_label_fonts[name])
@@ -2433,8 +2436,10 @@ class MainWindow(QMainWindow):
                 self._spec_source_grid_axis_label_fonts={
                     name:QFont(axes.getAxis(name).label.font())
                     for name in ('bottom','left')}
-            font=QFont('Tahoma')
-            font.setPixelSize(13)  # Original DFM only, NOT runtime font.
+            font=qt_source_font_candidate()
+            # The SAME candidate font must supply all Qt TextWidth/Height
+            # and the QPainter raster. This is NOT a native GDI measurement.
+            fm=QFontMetrics(font)
             for name,ticks,labels in (
                 ('bottom',model['x_grid_ticks'],model['x_tick_labels_candidate']),
                 ('left',model['y_grid_ticks'],model['y_tick_labels_candidate'])
@@ -2442,7 +2447,13 @@ class MainWindow(QMainWindow):
                 axis=axes.getAxis(name)
                 axis.setTickFont(font)
                 axis.label.setFont(font)
-                axis.setTicks([list(zip(ticks,labels))])
+                if combined:
+                    # Original tick labels will now be inside the one
+                    # research bitmap. Do not double-label with Qt axis.
+                    axis.setTicks([[(tick,'') for tick in ticks]])
+                else:
+                    axis.setTicks([list(zip(ticks,labels))])
+                axis.label.setVisible(not combined)
             self.spec_plot.showGrid(x=False,y=False)
             for line in self._spec_source_grid_lines:
                 self.spec_plot.removeItem(line)
@@ -2456,7 +2467,6 @@ class MainWindow(QMainWindow):
             if raster:
                 w,h=size
                 if combined:
-                    fm=self.spec_plot.viewport().fontMetrics()
                     count=int(self._spec_display_contract['grapher_series_bins'])
                     data=np.asarray(self._full_spectrum['amplitude'],dtype='<f4')
                     if count<=0 or count>data.size:
@@ -2473,8 +2483,19 @@ class MainWindow(QMainWindow):
                         series_x_start=0.,
                         series_x_scale=float(self._full_spectrum['df_hz']),
                         series_y_scale=1.,
-                        x_name_present=True,y_name_present=True)
+                        x_name_present=True,y_name_present=True,
+                        x_name='Гц',
+                        y_name=str(self._full_spectrum.get('unit','')),
+                        source_text_width=lambda t:int(fm.horizontalAdvance(t)),
+                        source_text_height=lambda t:int(fm.height()),
+                        research_textout_renderer=lambda image,events:
+                            qt_textout_source_positions_rgba(
+                                image,events,font=font))
                     pixels=composite['rgba']
+                    model['qt_textout_candidate_rendered']=composite[
+                        'qt_textout_candidate_rendered']
+                    model['source_textout_placements']=composite[
+                        'source_textout_layout']
                     model['combined_source']=composite['source']
                     model['combined_paintbox_rect']=(
                         composite['canvas']['pixel_left'],
@@ -2485,6 +2506,7 @@ class MainWindow(QMainWindow):
                     model['combined_series_segments']=composite['series_segment_count']
                     model['combined_frame_segments']=composite['border_segment_count']
                     model['original_runtime_pixel_parity_verified']=False
+                    model['original_runtime_tcanvas_font_verified']=False
                 else:
                     segments=source_grid_segments(
                         x_ticks=model['x_grid_ticks'],
@@ -2533,8 +2555,8 @@ class MainWindow(QMainWindow):
                 f'{len(model["x_grid_ticks"])} / '
                 f'{len(model["y_grid_ticks"])} линий. '
                 f'Цвет исходного TCo2Draw {GRID_LINE_HEX}, фон {BACKGROUND_HEX}. '
-                + ('ЕДИНЫЙ BMP: сетка → кривая → рамка, '
-                   'шрифт Qt измерен, НЕ оригинальный TCanvas; '
+                + ('ЕДИНЫЙ BMP: сетка → Qt TextOut-кандидат → кривая → рамка, '
+                   'метрики Tahoma 13 Qt px, НЕ оригинальный GDI TCanvas; '
                    if combined else
                    ('Software RGB растр сетки в Qt logical px; '
                     if raster else 'Простые линии Qt QPen; '))
