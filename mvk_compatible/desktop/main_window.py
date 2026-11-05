@@ -34,6 +34,8 @@ from ..core.tco2draw_raster_candidate import (source_raster_rgba,
     source_grid_segments, contract as tco2draw_raster_contract)
 from ..core.tqgr_series_source_candidate import (
     source_tqgr_series_columns, SOURCE as TQGR_SERIES_SOURCE)
+from ..core.tqgrapher_composite_source_candidate import (
+    build_tqgrapher_composite)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -2191,16 +2193,42 @@ class MainWindow(QMainWindow):
             'Кривая: обычная Qt. TQGRSeries доступна только '
             'для проверенного оригинального Power/Y.')
 
+    def _source_software_composite_selected(self):
+        """One original-order bitmap, opt-in on verified local Power/Y ONLY."""
+        return (self._spectrum_reference is not None
+                and self.spec_source_grid_checkbox.isChecked()
+                and self.spec_source_raster_checkbox.isChecked()
+                and self.spec_source_series_checkbox.isChecked())
+
+    def _rebuild_source_software_layers(self):
+        """Recompose layer order on mode changes; never alter original Y."""
+        self._spec_source_grid_model=None
+        if self.spec_source_grid_checkbox.isChecked():
+            self._safe_source_grid_update()
+        if self.spec_source_series_checkbox.isChecked():
+            # Qt stroke item remains allocated for reversible comparison,
+            # but MUST NOT be shown on top of the combined bitmap.
+            self._safe_source_tqgr_series_update()
+
     def _toggle_source_tqgr_series_candidate(self,enabled):
         if not enabled:
             self._clear_source_tqgr_series_overlay()
             self.spec_source_series_info.setText(
                 'Кривая: обычная Qt. Исходные данные не изменены.')
+            # When combined preview was active, remove black series
+            # strokes from software bitmap and leave gray grid only.
+            if (self._spectrum_reference is not None
+                    and self.spec_source_grid_checkbox.isChecked()):
+                self._spec_source_grid_model=None
+                self._safe_source_grid_update()
             return
         if self._spectrum_reference is None:
             self._restore_source_tqgr_series()
             return
         self._safe_source_tqgr_series_update()
+        if self._source_software_composite_selected():
+            self._spec_source_grid_model=None
+            self._safe_source_grid_update()
 
     def _safe_source_tqgr_series_update(self):
         try:
@@ -2237,6 +2265,11 @@ class MainWindow(QMainWindow):
             signature=(float(xr[0]),float(xr[1]),float(yr[0]),
                        float(yr[1]),w,h,size)
             if signature==self._spec_source_series_signature:
+                if self._spec_source_series_item is not None:
+                    self._spec_source_series_item.setVisible(
+                        not self._source_software_composite_selected())
+                if self._spec_source_series_raw_item is not None:
+                    self._spec_source_series_raw_item.setVisible(False)
                 return
             raw=self._spec_source_series_raw_item
             if raw is None:
@@ -2266,11 +2299,18 @@ class MainWindow(QMainWindow):
             self.spec_plot.addItem(curve,ignoreBounds=True)
             old=self._spec_source_series_item
             self._spec_source_series_item=curve
+            curve.setVisible(not self._source_software_composite_selected())
             if old is not None:
                 self.spec_plot.removeItem(old)
             raw.setVisible(False)  # Never replace source samples or summary.
             self._spec_source_series_model=result
             self._spec_source_series_signature=signature
+            if self._source_software_composite_selected():
+                self.spec_source_series_info.setText(
+                    f'ЕДИНЫЙ TCo2Draw: {len(segments)} source-штрихов '
+                    'составляют один RGBA вместе с сеткой и рамкой. '
+                    'Оригинальные TCanvas.TextOut/Font/DPI НЕ проверены.')
+                return
             self.spec_source_series_info.setText(
                 f'ИСТОЧНИК TQGRSeries: {result["data_size_original"]} Float32 → '
                 f'{len(result["columns"])} столбцов, '
@@ -2305,6 +2345,8 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_applied=False
         self._spec_source_grid_model=None
         self._spec_source_grid_axis_label_fonts=None
+        if self._spec_source_series_item is not None:
+            self._spec_source_series_item.setVisible(True)
         blocked=self.spec_source_raster_checkbox.blockSignals(True)
         self.spec_source_raster_checkbox.setChecked(False)
         self.spec_source_raster_checkbox.blockSignals(blocked)
@@ -2323,6 +2365,8 @@ class MainWindow(QMainWindow):
             return
         if not enabled:
             self._restore_default_spec_axis_grid()
+            if self.spec_source_series_checkbox.isChecked():
+                self._safe_source_tqgr_series_update()
             return
         self.spec_source_raster_checkbox.setEnabled(True)
         self._safe_source_grid_update()
@@ -2337,6 +2381,8 @@ class MainWindow(QMainWindow):
         # Recompute even if the source grid ticks have not changed.
         self._spec_source_grid_model=None
         self._safe_source_grid_update()
+        if self.spec_source_series_checkbox.isChecked():
+            self._safe_source_tqgr_series_update()
 
     def _safe_source_grid_update(self):
         try:
@@ -2365,6 +2411,7 @@ class MainWindow(QMainWindow):
             vb=self.spec_plot.getViewBox()
             xr,yr=vb.viewRange()
             raster=self.spec_source_raster_checkbox.isChecked()
+            combined=(raster and self._source_software_composite_selected())
             size=(max(4,int(round(vb.width()))),
                   max(4,int(round(vb.height()))))
             model=source_tqgrapher_grid_candidate(
@@ -2377,6 +2424,7 @@ class MainWindow(QMainWindow):
                             'x_tick_labels_candidate',
                             'y_tick_labels_candidate')) and
                 self._spec_source_grid_model.get('raster_preview_enabled')==raster and
+                self._spec_source_grid_model.get('combined_preview_active',False)==combined and
                 (not raster or
                  self._spec_source_grid_model.get('qt_raster_size')==size)):
                 return
@@ -2404,14 +2452,46 @@ class MainWindow(QMainWindow):
             self._spec_source_raster_item=None
             self._spec_source_raster_data=None
             model['raster_preview_enabled']=raster
+            model['combined_preview_active']=bool(combined)
             if raster:
                 w,h=size
-                segments=source_grid_segments(
-                    x_ticks=model['x_grid_ticks'],
-                    y_ticks=model['y_grid_ticks'],
-                    view_x=xr,view_y=yr,width=w,height=h)
-                pixels=source_raster_rgba(
-                    width=w,height=h,segments=segments)
+                if combined:
+                    fm=self.spec_plot.viewport().fontMetrics()
+                    count=int(self._spec_display_contract['grapher_series_bins'])
+                    data=np.asarray(self._full_spectrum['amplitude'],dtype='<f4')
+                    if count<=0 or count>data.size:
+                        raise ValueError('Original TQGRSeries size not accepted')
+                    composite=build_tqgrapher_composite(
+                        data[:count],
+                        canvas_width=w,canvas_height=h,
+                        zero_text_width=int(fm.horizontalAdvance('0')),
+                        six_decimals_text_width=int(
+                            fm.horizontalAdvance('0.000000')),
+                        zero_text_height=int(fm.height()),
+                        scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
+                        scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
+                        series_x_start=0.,
+                        series_x_scale=float(self._full_spectrum['df_hz']),
+                        series_y_scale=1.,
+                        x_name_present=True,y_name_present=True)
+                    pixels=composite['rgba']
+                    model['combined_source']=composite['source']
+                    model['combined_paintbox_rect']=(
+                        composite['canvas']['pixel_left'],
+                        composite['canvas']['pixel_top'],
+                        composite['canvas']['pixel_right'],
+                        composite['canvas']['pixel_bottom'])
+                    model['combined_grid_segments']=composite['grid_segment_count']
+                    model['combined_series_segments']=composite['series_segment_count']
+                    model['combined_frame_segments']=composite['border_segment_count']
+                    model['original_runtime_pixel_parity_verified']=False
+                else:
+                    segments=source_grid_segments(
+                        x_ticks=model['x_grid_ticks'],
+                        y_ticks=model['y_grid_ticks'],
+                        view_x=xr,view_y=yr,width=w,height=h)
+                    pixels=source_raster_rgba(
+                        width=w,height=h,segments=segments)
                 # Raster: row 0 is screen TOP. Qt image +Y goes upward,
                 # therefore reverse the array rows before ImageItem.
                 picture=pg.ImageItem(
@@ -2423,9 +2503,15 @@ class MainWindow(QMainWindow):
                 self.spec_plot.addItem(picture,ignoreBounds=True)
                 self._spec_source_raster_item=picture
                 self._spec_source_raster_data=pixels
+                if self._spec_source_series_item is not None:
+                    self._spec_source_series_item.setVisible(not combined)
+                if combined and self._spec_source_series_raw_item is not None:
+                    self._spec_source_series_raw_item.setVisible(False)
                 model['qt_raster_size']=size
                 model['tco2draw_raster_contract']=tco2draw_raster_contract()
             else:
+                if self._spec_source_series_item is not None:
+                    self._spec_source_series_item.setVisible(True)
                 for angle,ticks in (
                     (90,model['x_grid_ticks']),
                     (0,model['y_grid_ticks'])
@@ -2447,8 +2533,11 @@ class MainWindow(QMainWindow):
                 f'{len(model["x_grid_ticks"])} / '
                 f'{len(model["y_grid_ticks"])} линий. '
                 f'Цвет исходного TCo2Draw {GRID_LINE_HEX}, фон {BACKGROUND_HEX}. '
-                + ('Software RGB растер в Qt logical px; ' if raster
-                   else 'Простые линии Qt QPen; ')
+                + ('ЕДИНЫЙ BMP: сетка → кривая → рамка, '
+                   'шрифт Qt измерен, НЕ оригинальный TCanvas; '
+                   if combined else
+                   ('Software RGB растр сетки в Qt logical px; '
+                    if raster else 'Простые линии Qt QPen; '))
                 + 'Tahoma 13 Qt px — кандидат DFM; FormatFloat и Delphi '
                   'Font/PixelRect/DPI/pixel parity НЕ подтверждены.')
         finally:
