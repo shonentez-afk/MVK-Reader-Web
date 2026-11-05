@@ -72,10 +72,10 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
         spectrum_triplet_text)
     fields=spectrum_triplet_text(
         win._spectrum_summary,decimal_separator=',').split('\t')
-    assert "СКЗ спектра: " + fields[0] in win.spec_mean_primary.text()
-    assert "Пик спектра: " + fields[1] + " Гц" in win.spec_mean_primary.text()
-    assert "Амплитуда: " + fields[2] in win.spec_mean_primary.text()
-    assert "3/3 HEX" in win.spec_mean_primary.text()
+    assert "СКЗ: " + fields[0] in win.spec_mean_primary.text()
+    assert "Пик: " + fields[1] + " Гц" in win.spec_mean_primary.text()
+    assert "Ампл.: " + fields[2] in win.spec_mean_primary.text()
+    assert "Ориг. HEX: 3/3" in win.spec_mean_primary.text()
     assert "Физические единицы" in win.spec_mean_primary.toolTip()
     # The entire 4-line source summary fits the original fixed-height panel.
     from PySide6.QtCore import Qt
@@ -237,8 +237,8 @@ def test_qt_reference_without_original_summary_words_labels_as_unverified(
     report=win.show_original_spectrum_reference(manifest)
     qt_app.processEvents()
     assert report["summary_3x_float32_equal_when_operator_words_given"] is None
-    assert "Итог НЕ сверён" in win.spec_mean_primary.text()
-    assert "3/3 HEX совпали" not in win.spec_mean_primary.text()
+    assert "Нет HEX: из Power" in win.spec_mean_primary.text()
+    assert "Ориг. HEX: 3/3" not in win.spec_mean_primary.text()
     assert "Power/Y" in win.spec_mean.text() or "Y" in win.spec_mean.text()
     win.spec_reference_restore_button.click()
     win.close()

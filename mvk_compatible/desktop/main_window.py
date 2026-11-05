@@ -2265,12 +2265,15 @@ class MainWindow(QMainWindow):
             ref.summary,decimal_separator=',').split('\t')
         original_summary_accepted=ref.original_summary_words_equal is True
         verification=(
-            'x32dbg · 3/3 HEX совпали' if original_summary_accepted
-            else 'Из Power · итог НЕ сверён')
+            'Ориг. HEX: 3/3' if original_summary_accepted
+            else 'Нет HEX: из Power')
+        # The native 177px tools column gives only ~144px usable QLabel
+        # width. Keep each of the four lines short enough not to wrap, or
+        # their 5-line height clips beyond the fixed original 106px panel.
         self.spec_mean_primary.setText(
-            f'СКЗ спектра: {fields[0]}\n'
-            f'Пик спектра: {fields[1]} Гц\n'
-            f'Амплитуда: {fields[2]}\n'
+            f'СКЗ: {fields[0]}\n'
+            f'Пик: {fields[1]} Гц\n'
+            f'Ампл.: {fields[2]}\n'
             + verification)
         self.spec_mean_primary.setToolTip(
             'Результаты x32dbg GetSpectrum рассчитаны из оригинального '
