@@ -88,6 +88,14 @@ jobs:
         run: |
           python -m pytest -q mvk_compatible/tests/test_desktop_qt.py mvk_compatible/tests/test_stage111z25_native_recorder_qt.py mvk_compatible/tests/test_stage111z26b_live_qt.py --junitxml=windows-qt-junit.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test original-reference Qt panel and cursor at 150 percent DPI
+        env:
+          QT_SCALE_FACTOR: '1.5'
+        run: |
+          python -c "from PySide6.QtWidgets import QApplication,QWidget; app=QApplication([]); widget=QWidget(); dpr=widget.devicePixelRatioF(); print('Qt effective DPR =', dpr); assert abs(dpr-1.5)<0.01, 'Qt ignored explicit 150% scale'"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q mvk_compatible/tests/test_stage111z31a_qt_original_reference.py --junitxml=windows-qt-dpi150-junit.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   windows-exe-preview:
     name: Windows - verified autonomous EXE artifact
