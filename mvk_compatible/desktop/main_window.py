@@ -11,7 +11,7 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QPoint, QPointF
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
@@ -27,6 +27,7 @@ from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cu
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
 from ..core.tqgrapher_qt_canvas_bridge_candidate import QtPaintBoxBridge
 from ..core.qt_spectrum_viewport_observation import describe_qt_viewport_geometry
+from ..core.tqgrapher_grid_idr_candidate import source_tqgrapher_grid_candidate
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -72,6 +73,10 @@ class MainWindow(QMainWindow):
         self._spectrum_summary=None
         self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
         self._spectrum_reference_saved=None
+        self._spec_source_grid_applied=False
+        self._spec_source_grid_apply_busy=False
+        self._spec_source_grid_model=None
+        self._spec_source_grid_axis_label_fonts=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -913,6 +918,28 @@ class MainWindow(QMainWindow):
         self.spec_reference_restore_button.clicked.connect(
             self.restore_archive_spectrum_after_reference)
         research_stack.addWidget(self.spec_reference_restore_button)
+        self.spec_source_grid_checkbox=QCheckBox(
+            'Сетка TQGrapher 10×10 · исследовательская')
+        self.spec_source_grid_checkbox.setObjectName(
+            'toggleSourceTQGrapherGridCandidate')
+        self.spec_source_grid_checkbox.setToolTip(
+            'Исходные _Unit128:00844B2B/32 и _Unit115:007CAC89: '
+            '10 интервалов X/Y, Single spacing. ТОЛЬКО локальный '
+            'проверенный Power/Y x32dbg; реальный Delphi TCanvas, '
+            'шрифт/format/pen цвета и пиксели ещё НЕ приняты.')
+        self.spec_source_grid_checkbox.setEnabled(False)
+        self.spec_source_grid_checkbox.toggled.connect(
+            self._toggle_source_tqgrapher_grid_candidate)
+        research_stack.addWidget(self.spec_source_grid_checkbox)
+        self.spec_source_grid_info=QLabel(
+            'Сетка Qt: обычная. TQGrapher 10×10 доступна '
+            'только для проверенного оригинального Power/Y.')
+        self.spec_source_grid_info.setObjectName(
+            'labelSourceTQGrapherGridResearchOnly')
+        self.spec_source_grid_info.setWordWrap(True)
+        self.spec_source_grid_info.setTextInteractionFlags(
+            Qt.TextSelectableByMouse)
+        research_stack.addWidget(self.spec_source_grid_info)
         legacy=[]
         while stack.count():
             item=stack.takeAt(0)
@@ -1013,6 +1040,8 @@ class MainWindow(QMainWindow):
         self.spec_hscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(0,v))
         self.spec_vscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(1,v))
         self.spec_plot.getViewBox().sigRangeChanged.connect(self._sync_spec_scroll)
+        self.spec_plot.getViewBox().sigRangeChanged.connect(
+            self._sync_source_tqgrapher_grid_candidate)
 
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
         self._spec_last_valid_fft_n=None
@@ -2082,6 +2111,97 @@ class MainWindow(QMainWindow):
         except (OSError,KeyError,ValueError) as e:self._error(e)
 
 
+
+    def _restore_default_spec_axis_grid(self):
+        """Remove research ticks/fonts and restore ordinary pyqtgraph axes."""
+        if self._spec_source_grid_applied:
+            for name in ('bottom','left'):
+                axis=self.spec_plot.getPlotItem().getAxis(name)
+                axis.setTicks(None)
+                axis.setTickFont(None)
+                if self._spec_source_grid_axis_label_fonts is not None:
+                    axis.label.setFont(
+                        self._spec_source_grid_axis_label_fonts[name])
+        self._spec_source_grid_applied=False
+        self._spec_source_grid_model=None
+        self._spec_source_grid_axis_label_fonts=None
+        self.spec_source_grid_info.setText(
+            'Сетка Qt: обычная. TQGrapher 10×10 — '
+            'только исследовательское сравнение на оригинальном Power/Y.')
+
+    def _toggle_source_tqgrapher_grid_candidate(self,enabled):
+        """Opt-in; never changes arrays/FFT/Device/archived sample provenance."""
+        if enabled and self._spectrum_reference is None:
+            was_blocked=self.spec_source_grid_checkbox.blockSignals(True)
+            self.spec_source_grid_checkbox.setChecked(False)
+            self.spec_source_grid_checkbox.blockSignals(was_blocked)
+            self._restore_default_spec_axis_grid()
+            return
+        if not enabled:
+            self._restore_default_spec_axis_grid()
+            return
+        try:
+            self._sync_source_tqgrapher_grid_candidate()
+        except (ValueError,OverflowError,TypeError) as exc:
+            self._restore_default_spec_axis_grid()
+            self.spec_source_grid_checkbox.setChecked(False)
+            self.statusBar().showMessage(
+                'Сетка исходного TQGrapher не принята: '+str(exc))
+
+    def _sync_source_tqgrapher_grid_candidate(self,*_):
+        """Recompute source Single-grid spacing from CURRENT Qt X/Y range.
+
+        A research-only Tahoma -13 DFM font is also installed on axes.
+        It is NOT an independently measured original runtime TCanvas font.
+        This changes only Qt rendering of explicit source Power/Y; arrays,
+        summary, cursor source and physical device recording are untouched.
+        """
+        if (self._spec_source_grid_apply_busy
+                or self._spectrum_reference is None
+                or not self.spec_source_grid_checkbox.isChecked()
+                or self._full_spectrum is None):
+            return
+        self._spec_source_grid_apply_busy=True
+        try:
+            xr,yr=self.spec_plot.getViewBox().viewRange()
+            model=source_tqgrapher_grid_candidate(
+                scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
+                scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]))
+            if self._spec_source_grid_model is not None and all(
+                self._spec_source_grid_model[key]==model[key]
+                for key in ('x_grid_ticks','y_grid_ticks',
+                            'x_tick_labels_candidate',
+                            'y_tick_labels_candidate')
+            ):
+                return
+            axes=self.spec_plot.getPlotItem()
+            if not self._spec_source_grid_applied:
+                self._spec_source_grid_axis_label_fonts={
+                    name:QFont(axes.getAxis(name).label.font())
+                    for name in ('bottom','left')}
+            font=QFont('Tahoma')
+            font.setPixelSize(13)  # DFM design -13 at 96 PPI; NOT runtime proof.
+            for name,values,labels in (
+                ('bottom',model['x_grid_ticks'],model['x_tick_labels_candidate']),
+                ('left',model['y_grid_ticks'],model['y_tick_labels_candidate'])
+            ):
+                axis=axes.getAxis(name)
+                axis.setTickFont(font)
+                axis.label.setFont(font)
+                axis.setTicks([list(zip(values,labels))])
+            self._spec_source_grid_applied=True
+            self._spec_source_grid_model=model
+            self.spec_source_grid_info.setText(
+                f'ИССЛЕДОВАНИЕ TQGrapher: X через '
+                f"{model['source_v_line_spacing_x_single']:.7g} Гц, "
+                f"Y через {model['source_h_line_spacing_y_single']:.7g}; "
+                f'{len(model["x_grid_ticks"])} / '
+                f'{len(model["y_grid_ticks"])} линий. '
+                'Tahoma 13 Qt px — DFM-кандидат; FormatFloat, '
+                'Delphi GDI и пиксели НЕ подтверждены.')
+        finally:
+            self._spec_source_grid_apply_busy=False
+
     def _sync_x32dbg_reference_f_range_label(self):
         """Display the real reference Single separately from archive guess."""
         ref=self._spectrum_reference
@@ -2118,6 +2238,13 @@ class MainWindow(QMainWindow):
     def _leave_original_spectrum_reference(self):
         """Restore original archive controls, without touching source samples."""
         if self._spectrum_reference is None:return
+        # Reset all opt-in research axes before any archive or empty screen
+        # becomes visible. Never leak source grid/tick font into other plots.
+        was_blocked=self.spec_source_grid_checkbox.blockSignals(True)
+        self.spec_source_grid_checkbox.setChecked(False)
+        self.spec_source_grid_checkbox.blockSignals(was_blocked)
+        self._restore_default_spec_axis_grid()
+        self.spec_source_grid_checkbox.setEnabled(False)
         state=self._spectrum_reference_saved
         self._spectrum_reference=None
         self._spectrum_reference_saved=None
@@ -2225,6 +2352,7 @@ class MainWindow(QMainWindow):
         }
         self._spectrum_reference=ref
         self._sync_x32dbg_reference_f_range_label()
+        self.spec_source_grid_checkbox.setEnabled(True)
         for control,index in (
             (self.spec_mode,ref.mode),(self.spec_n,n_index),
             (self.spec_avg,0 if ref.mode==0 else 1),
@@ -2782,6 +2910,10 @@ class MainWindow(QMainWindow):
                 f"{observed['qt_viewport_size_logical']['width']} × "
                 f"{observed['qt_viewport_size_logical']['height']}; "
                 f"DPR={observed['qt_device_pixel_ratio_observed']:.3g}\n"
+                f"Исследовательская сетка TQGrapher: "
+                f"{'ВКЛ (10×10)' if self._spec_source_grid_applied else 'ВЫКЛ (авто Qt)'}; "
+                "точные GDI пиксели НЕ приняты
+"
                 f"ФАКТИЧЕСКАЯ Qt ViewBox (в viewport лог.): "
                 f"L{plot['left']:.0f} R{plot['right']:.0f} "
                 f"T{plot['top']:.0f} B{plot['bottom']:.0f}; "
