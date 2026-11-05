@@ -2912,8 +2912,7 @@ class MainWindow(QMainWindow):
                 f"DPR={observed['qt_device_pixel_ratio_observed']:.3g}\n"
                 f"Исследовательская сетка TQGrapher: "
                 f"{'ВКЛ (10×10)' if self._spec_source_grid_applied else 'ВЫКЛ (авто Qt)'}; "
-                "точные GDI пиксели НЕ приняты
-"
+                "точные GDI пиксели НЕ приняты\n"
                 f"ФАКТИЧЕСКАЯ Qt ViewBox (в viewport лог.): "
                 f"L{plot['left']:.0f} R{plot['right']:.0f} "
                 f"T{plot['top']:.0f} B{plot['bottom']:.0f}; "
