@@ -2301,11 +2301,11 @@ class MainWindow(QMainWindow):
                 f"Y через {model['source_h_line_spacing_y_single']:.7g}; "
                 f'{len(model["x_grid_ticks"])} / '
                 f'{len(model["y_grid_ticks"])} линий. '
-                f'Цвет {GRID_LINE_HEX}, фон {BACKGROUND_HEX}. '
+                f'Цвет исходного TCo2Draw {GRID_LINE_HEX}, фон {BACKGROUND_HEX}. '
                 + ('Software RGB растер в Qt logical px; ' if raster
                    else 'Простые линии Qt QPen; ')
-                + 'Tahoma 13 Qt px — кандидат DFM; Delphi Font/PixelRect/'
-                  'DPI/pixel parity НЕ подтверждены.')
+                + 'Tahoma 13 Qt px — кандидат DFM; FormatFloat и Delphi '
+                  'Font/PixelRect/DPI/pixel parity НЕ подтверждены.')
         finally:
             self._spec_source_grid_apply_busy=False
 
