@@ -94,7 +94,7 @@ jobs:
         run: |
           python -c "from PySide6.QtWidgets import QApplication,QWidget; app=QApplication([]); widget=QWidget(); dpr=widget.devicePixelRatioF(); print('Qt effective DPR =', dpr); assert abs(dpr-1.5)<0.01, 'Qt ignored explicit 150% scale'"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pytest -q mvk_compatible/tests/test_stage111z31a_qt_original_reference.py mvk_compatible/tests/test_stage111z31e_qt_tqgrapher_grid.py mvk_compatible/tests/test_stage111z31f_qt_tco2draw_grid.py mvk_compatible/tests/test_stage111z31g_qt_tco2draw_raster.py --junitxml=windows-qt-dpi150-junit.xml
+          python -m pytest -q mvk_compatible/tests/test_stage111z31a_qt_original_reference.py mvk_compatible/tests/test_stage111z31e_qt_tqgrapher_grid.py mvk_compatible/tests/test_stage111z31f_qt_tco2draw_grid.py mvk_compatible/tests/test_stage111z31g_qt_tco2draw_raster.py mvk_compatible/tests/test_stage111z31h_qt_tqgr_series.py --junitxml=windows-qt-dpi150-junit.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   windows-exe-preview:
