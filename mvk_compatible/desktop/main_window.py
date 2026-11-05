@@ -10,7 +10,7 @@ from fractions import Fraction
 import math
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
@@ -30,6 +30,8 @@ from ..core.qt_spectrum_viewport_observation import describe_qt_viewport_geometr
 from ..core.tqgrapher_grid_idr_candidate import source_tqgrapher_grid_candidate
 from ..core.tco2draw_grid_source import (source_tco2draw_grid_contract,
     GRID_LINE_HEX, BACKGROUND_HEX)
+from ..core.tco2draw_raster_candidate import (source_raster_rgba,
+    source_grid_segments, contract as tco2draw_raster_contract)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -80,6 +82,8 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_model=None
         self._spec_source_grid_axis_label_fonts=None
         self._spec_source_grid_lines=[]  # Owned 10x10 research-only Qt overlay items.
+        self._spec_source_raster_item=None  # Private-reference research view only.
+        self._spec_source_raster_data=None
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -936,6 +940,18 @@ class MainWindow(QMainWindow):
         self.spec_source_grid_checkbox.toggled.connect(
             self._toggle_source_tqgrapher_grid_candidate)
         research_stack.addWidget(self.spec_source_grid_checkbox)
+        self.spec_source_raster_checkbox=QCheckBox(
+            'Растер TCo2Draw по исходному алгоритму · исследовательский')
+        self.spec_source_raster_checkbox.setObjectName(
+            'toggleSourceTCo2DrawRaster')
+        self.spec_source_raster_checkbox.setToolTip(
+            'X/Y-major, 3 пикселя и смешивание RGB из Unit115. Только '
+            'проверенный эталон Power/Y, логический Qt ViewBox. '
+            'НЕ оригинальный PixelRect, Delphi DPI или TCanvas.Font.')
+        self.spec_source_raster_checkbox.setEnabled(False)
+        self.spec_source_raster_checkbox.toggled.connect(
+            self._toggle_source_tco2draw_raster)
+        research_stack.addWidget(self.spec_source_raster_checkbox)
         self.spec_source_grid_info=QLabel(
             'Сетка Qt: обычная. TQGrapher 10×10 доступна '
             'только для проверенного оригинального Power/Y.')
@@ -1046,6 +1062,8 @@ class MainWindow(QMainWindow):
         self.spec_vscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(1,v))
         self.spec_plot.getViewBox().sigRangeChanged.connect(self._sync_spec_scroll)
         self.spec_plot.getViewBox().sigRangeChanged.connect(
+            self._sync_source_tqgrapher_grid_candidate)
+        self.spec_plot.getViewBox().sigResized.connect(
             self._sync_source_tqgrapher_grid_candidate)
 
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
@@ -2118,17 +2136,18 @@ class MainWindow(QMainWindow):
 
 
     def _restore_default_spec_axis_grid(self):
-        """Restore ordinary Qt ticks, grid and fonts; remove source-only items.
-
-        The source overlay must never escape to an archived or live spectrum.
-        """
-        applied=(self._spec_source_grid_applied
-                 or bool(self._spec_source_grid_lines))
+        """Restore standard pyqtgraph; no source raster must leak to archive."""
+        applied=(self._spec_source_grid_applied or
+                 bool(self._spec_source_grid_lines) or
+                 self._spec_source_raster_item is not None)
         for line in self._spec_source_grid_lines:
             self.spec_plot.removeItem(line)
         self._spec_source_grid_lines=[]
+        if self._spec_source_raster_item is not None:
+            self.spec_plot.removeItem(self._spec_source_raster_item)
+        self._spec_source_raster_item=None
+        self._spec_source_raster_data=None
         if applied:
-            # Exactly the ordinary white-background pyqtgraph default from _plot.
             self.spec_plot.showGrid(x=True,y=True,alpha=.2)
         if self._spec_source_grid_applied:
             for name in ('bottom','left'):
@@ -2141,39 +2160,55 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_applied=False
         self._spec_source_grid_model=None
         self._spec_source_grid_axis_label_fonts=None
+        blocked=self.spec_source_raster_checkbox.blockSignals(True)
+        self.spec_source_raster_checkbox.setChecked(False)
+        self.spec_source_raster_checkbox.blockSignals(blocked)
+        self.spec_source_raster_checkbox.setEnabled(False)
         self.spec_source_grid_info.setText(
-            'Сетка Qt: обычная. TQGrapher 10×10 — '
-            'только исследовательское сравнение на оригинальном Power/Y.')
+            'Сетка Qt: обычная. TQGrapher 10×10 и программный TCo2Draw '
+            'доступны только для проверенного оригинального Power/Y.')
 
     def _toggle_source_tqgrapher_grid_candidate(self,enabled):
-        """Opt-in; never changes arrays/FFT/Device/archived sample provenance."""
+        """Research-only source rendering, disabled for archives and Native."""
         if enabled and self._spectrum_reference is None:
-            was_blocked=self.spec_source_grid_checkbox.blockSignals(True)
+            blocked=self.spec_source_grid_checkbox.blockSignals(True)
             self.spec_source_grid_checkbox.setChecked(False)
-            self.spec_source_grid_checkbox.blockSignals(was_blocked)
+            self.spec_source_grid_checkbox.blockSignals(blocked)
             self._restore_default_spec_axis_grid()
             return
         if not enabled:
             self._restore_default_spec_axis_grid()
             return
+        self.spec_source_raster_checkbox.setEnabled(True)
+        self._safe_source_grid_update()
+
+    def _toggle_source_tco2draw_raster(self,*_):
+        if not (self._spectrum_reference is not None
+                and self.spec_source_grid_checkbox.isChecked()):
+            blocked=self.spec_source_raster_checkbox.blockSignals(True)
+            self.spec_source_raster_checkbox.setChecked(False)
+            self.spec_source_raster_checkbox.blockSignals(blocked)
+            return
+        # Recompute even if the source grid ticks have not changed.
+        self._spec_source_grid_model=None
+        self._safe_source_grid_update()
+
+    def _safe_source_grid_update(self):
         try:
             self._sync_source_tqgrapher_grid_candidate()
-        except (ValueError,OverflowError,TypeError) as exc:
+        except (ValueError,OverflowError,TypeError,MemoryError) as exc:
             self._restore_default_spec_axis_grid()
-            was_blocked=self.spec_source_grid_checkbox.blockSignals(True)
+            blocked=self.spec_source_grid_checkbox.blockSignals(True)
             self.spec_source_grid_checkbox.setChecked(False)
-            self.spec_source_grid_checkbox.blockSignals(was_blocked)
-            self.statusBar().showMessage(
-                'Сетка исходного TQGrapher не принята: '+str(exc))
+            self.spec_source_grid_checkbox.blockSignals(blocked)
+            self.statusBar().showMessage('Растер TQGrapher отключён: '+str(exc))
 
     def _sync_source_tqgrapher_grid_candidate(self,*_):
-        """Source-grid X/Y positions and RGB; Qt pixels still NOT Delphi.
+        """Source-derived 10x10 and optional software raster in Qt logical px.
 
-        Unit115 007CACB3 creates WHITE TCo2Draw bitmap, 007CACFC changes
-        raster ink to RGB #C0C0C0, and grid lines precede series ink.
-        Qt InfiniteLine renders each source grid line as a separate item
-        behind the original Power/Y curve. Do NOT pretend its 1 logical
-        px QPen implements the TCo2Draw scanline sqrt-distance blender.
+        Both modes use the SAME verified original Power/Y arrays. ImageItem
+        is an opt-in approximation of original TCo2Draw raster coverage,
+        never an attested Win32 TBitmap or TCanvas DPI pixel reference.
         """
         if (self._spec_source_grid_apply_busy
                 or self._spectrum_reference is None
@@ -2182,17 +2217,23 @@ class MainWindow(QMainWindow):
             return
         self._spec_source_grid_apply_busy=True
         try:
-            xr,yr=self.spec_plot.getViewBox().viewRange()
+            vb=self.spec_plot.getViewBox()
+            xr,yr=vb.viewRange()
+            raster=self.spec_source_raster_checkbox.isChecked()
+            size=(max(4,int(round(vb.width()))),
+                  max(4,int(round(vb.height()))))
             model=source_tqgrapher_grid_candidate(
                 scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
                 scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]))
             model['tco2draw_source_style']=source_tco2draw_grid_contract()
-            if self._spec_source_grid_model is not None and all(
+            if (self._spec_source_grid_model is not None and all(
                 self._spec_source_grid_model[key]==model[key]
                 for key in ('x_grid_ticks','y_grid_ticks',
                             'x_tick_labels_candidate',
-                            'y_tick_labels_candidate')
-            ):
+                            'y_tick_labels_candidate')) and
+                self._spec_source_grid_model.get('raster_preview_enabled')==raster and
+                (not raster or
+                 self._spec_source_grid_model.get('qt_raster_size')==size)):
                 return
             axes=self.spec_plot.getPlotItem()
             if not self._spec_source_grid_applied:
@@ -2200,33 +2241,58 @@ class MainWindow(QMainWindow):
                     name:QFont(axes.getAxis(name).label.font())
                     for name in ('bottom','left')}
             font=QFont('Tahoma')
-            font.setPixelSize(13)  # DFM design -13, not observed native DPI.
-            for name,values,labels in (
+            font.setPixelSize(13)  # Original DFM only, NOT runtime font.
+            for name,ticks,labels in (
                 ('bottom',model['x_grid_ticks'],model['x_tick_labels_candidate']),
                 ('left',model['y_grid_ticks'],model['y_tick_labels_candidate'])
             ):
                 axis=axes.getAxis(name)
                 axis.setTickFont(font)
                 axis.label.setFont(font)
-                axis.setTicks([list(zip(values,labels))])
-            # AxisItem's alpha=.2 Qt grid must not be drawn on top of
-            # original-source RGB lines. No invisible duplicate lines.
+                axis.setTicks([list(zip(ticks,labels))])
             self.spec_plot.showGrid(x=False,y=False)
             for line in self._spec_source_grid_lines:
                 self.spec_plot.removeItem(line)
             self._spec_source_grid_lines=[]
-            for angle,values in (
-                (90,model['x_grid_ticks']),
-                (0,model['y_grid_ticks'])
-            ):
-                for value in values:
-                    line=pg.InfiniteLine(
-                        pos=value,angle=angle,movable=False,
-                        pen=pg.mkPen(GRID_LINE_HEX,width=1))
-                    line.setZValue(-100)  # TQGrapher draws grid BEFORE series.
-                    line.setAcceptedMouseButtons(Qt.NoButton)
-                    self.spec_plot.addItem(line,ignoreBounds=True)
-                    self._spec_source_grid_lines.append(line)
+            if self._spec_source_raster_item is not None:
+                self.spec_plot.removeItem(self._spec_source_raster_item)
+            self._spec_source_raster_item=None
+            self._spec_source_raster_data=None
+            model['raster_preview_enabled']=raster
+            if raster:
+                w,h=size
+                segments=source_grid_segments(
+                    x_ticks=model['x_grid_ticks'],
+                    y_ticks=model['y_grid_ticks'],
+                    view_x=xr,view_y=yr,width=w,height=h)
+                pixels=source_raster_rgba(
+                    width=w,height=h,segments=segments)
+                # Raster: row 0 is screen TOP. Qt image +Y goes upward,
+                # therefore reverse the array rows before ImageItem.
+                picture=pg.ImageItem(
+                    np.ascontiguousarray(pixels[::-1]),axisOrder='row-major')
+                picture.setRect(QRectF(
+                    float(xr[0]),float(yr[0]),
+                    float(xr[1]-xr[0]),float(yr[1]-yr[0])))
+                picture.setZValue(-100)
+                self.spec_plot.addItem(picture,ignoreBounds=True)
+                self._spec_source_raster_item=picture
+                self._spec_source_raster_data=pixels
+                model['qt_raster_size']=size
+                model['tco2draw_raster_contract']=tco2draw_raster_contract()
+            else:
+                for angle,ticks in (
+                    (90,model['x_grid_ticks']),
+                    (0,model['y_grid_ticks'])
+                ):
+                    for value in ticks:
+                        line=pg.InfiniteLine(
+                            pos=value,angle=angle,movable=False,
+                            pen=pg.mkPen(GRID_LINE_HEX,width=1))
+                        line.setZValue(-100)
+                        line.setAcceptedMouseButtons(Qt.NoButton)
+                        self.spec_plot.addItem(line,ignoreBounds=True)
+                        self._spec_source_grid_lines.append(line)
             self._spec_source_grid_applied=True
             self._spec_source_grid_model=model
             self.spec_source_grid_info.setText(
@@ -2235,10 +2301,11 @@ class MainWindow(QMainWindow):
                 f"Y через {model['source_h_line_spacing_y_single']:.7g}; "
                 f'{len(model["x_grid_ticks"])} / '
                 f'{len(model["y_grid_ticks"])} линий. '
-                f'Цвет исходного TCo2Draw {GRID_LINE_HEX}, фон {BACKGROUND_HEX}; '
-                'сетка под кривой, отдельный Qt QPen. '
-                'Tahoma 13 Qt px — DFM-кандидат; FormatFloat, '
-                'Delphi GDI TextOut/AA/DPI и пиксели НЕ подтверждены.')
+                f'Цвет {GRID_LINE_HEX}, фон {BACKGROUND_HEX}. '
+                + ('Software RGB растер в Qt logical px; ' if raster
+                   else 'Простые линии Qt QPen; ')
+                + 'Tahoma 13 Qt px — кандидат DFM; Delphi Font/PixelRect/'
+                  'DPI/pixel parity НЕ подтверждены.')
         finally:
             self._spec_source_grid_apply_busy=False
 
@@ -2393,6 +2460,7 @@ class MainWindow(QMainWindow):
         self._spectrum_reference=ref
         self._sync_x32dbg_reference_f_range_label()
         self.spec_source_grid_checkbox.setEnabled(True)
+        self.spec_source_raster_checkbox.setEnabled(False)
         for control,index in (
             (self.spec_mode,ref.mode),(self.spec_n,n_index),
             (self.spec_avg,0 if ref.mode==0 else 1),
