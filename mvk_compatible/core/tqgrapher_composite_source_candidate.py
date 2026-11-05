@@ -20,6 +20,7 @@ from .tqgr_series_source_candidate import source_tqgr_series_columns
 from .tqgrapher_paintbox_registration_idr_candidate import (
     source_paintbox_registration,
 )
+from .tqgrapher_textout_source_candidate import source_textout_layout
 
 SOURCE="APP_DERIVED_TQGRAPHER_SINGLE_TCO2DRAW_BITMAP_STAGE111Z31I"
 SERIES_RGB=(0,0,0)
@@ -94,7 +95,10 @@ def build_tqgrapher_composite(
         scr_bottom:float,scr_height:float,
         series_x_start:float=0.,series_x_scale:float=1.,
         series_y_scale:float=1.,
-        x_name_present:bool=True,y_name_present:bool=True):
+        x_name_present:bool=True,y_name_present:bool=True,
+        x_name:str="",y_name:str="",
+        source_text_width=None,source_text_height=None,
+        research_textout_renderer=None):
     """Return pixel RGBA and source-derived frame geometry in one result.
 
     The caller supplies the REAL native PaintBox pixel size and original
@@ -148,8 +152,31 @@ def build_tqgrapher_composite(
         width=canvas_width,height=canvas_height,
         segments=grid_segments,ink=GRID_LINE_RGB,
         background=BACKGROUND_RGB)
-    # Original GDI TextOut labels are not available at native font/DPI.
-    # Do not simulate or misrepresent them as original GDI pixels.
+    # Pixel positions are source-derived. Glyphs remain an OPTIONAL Qt
+    # research overlay, before series and frame, never GDI pixel parity.
+    text_plan=None
+    qt_labels_rendered=False
+    if any(arg is not None for arg in (
+            source_text_width,source_text_height,research_textout_renderer)):
+        if not (callable(source_text_width) and
+                callable(source_text_height) and
+                callable(research_textout_renderer)):
+            raise ValueError("TextOut renderer requires matching metrics")
+        text_plan=source_textout_layout(
+            canvas=canvas,grid=grid,text_width=source_text_width,
+            text_height=source_text_height,
+            x_name=x_name,y_name=y_name,
+            font_provenance="qt_approximation")
+        candidate=research_textout_renderer(
+            frame,text_plan['events'])
+        if (not isinstance(candidate,np.ndarray) or
+                candidate.dtype!=np.uint8 or
+                candidate.shape!=frame.shape or
+                not np.all(candidate[:,:,3]==255)):
+            raise ValueError("research TextOut returned invalid RGBA")
+        # Do not share a potentially mutable QImage view with the core.
+        frame=np.array(candidate,copy=True,order='C')
+        qt_labels_rendered=True
     trace_segments=traces['segments']
     frame=_compose_layer(frame,canvas_width,canvas_height,
                          trace_segments,SERIES_RGB)
@@ -172,6 +199,8 @@ def build_tqgrapher_composite(
         "border_segment_count":len(border_segments),
         "layer_order":source_tqgrapher_composite_contract()['draw_order'],
         "tcanvas_textout_implemented":False,
+        "qt_textout_candidate_rendered":qt_labels_rendered,
+        "source_textout_layout":text_plan,
         "font_metrics_are_native_original":False,
         "original_runtime_pixel_parity_verified":False,
         "original_signal_and_fft_data_modified":False,
