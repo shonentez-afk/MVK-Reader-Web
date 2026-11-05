@@ -90,3 +90,33 @@ def test_custom_count_only_a_research_synthetic_not_source_acceptance():
     assert result["source_h_line_spacing_y_single"] == 30
     assert len(result["x_grid_ticks"]) == len(result["y_grid_ticks"]) == 6
     assert result["original_runtime_source_grid_counts_verified"] is False
+
+
+
+@pytest.mark.parametrize("value,expected", [
+    (0., "0"),
+    (-0., "0"),
+    (1000., "1000"),
+    (123.456, "123"),
+    (99.5, "99,5"),
+    (12.34, "12,3"),
+    (-1.25, "-1,25"),
+    (.00123, "0,00123"),
+    (.000001234, "0,00000123"),
+])
+def test_source_unit114_007b2090_fixed_point_three_digit_mask(value,expected):
+    from mvk_compatible.core.tqgrapher_grid_idr_candidate import _label
+    assert _label(value,1.) == expected
+
+
+def test_original_rtl_formatting_control_flow_not_fake_delphi_parity():
+    from mvk_compatible.core.tqgrapher_grid_idr_candidate import _label
+    assert _label(1.25,1.,decimal_separator=".") == "1.25"
+    with pytest.raises(ValueError,match="decimal"):
+        _label(1.25,1.,decimal_separator=";")
+    g=source_tqgrapher_grid_candidate(
+        scr_left=0,scr_width=10,scr_bottom=-1,scr_height=2)
+    assert g["source_label_formatter"].startswith("UNIT114_007B2090")
+    assert g["source_label_decimal_separator_qt_candidate"] == ","
+    assert g["y_tick_labels_candidate"][1].startswith("-0,")
+    assert g["original_rtl_tick_format_parity_verified"] is False
