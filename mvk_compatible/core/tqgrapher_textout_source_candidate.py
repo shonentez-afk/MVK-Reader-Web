@@ -64,7 +64,8 @@ def source_textout_layout(
     """
     if not callable(text_width) or not callable(text_height):
         raise ValueError("TextWidth/TextHeight callbacks required")
-    if font_provenance not in ("qt_approximation","unverified_native_capture"):
+    if font_provenance not in ("qt_approximation","unverified_native_capture",
+                                 "gdi_reconstructed_from_dfm"):
         raise ValueError("font metric provenance must remain explicit")
     x_name=_text(x_name,"x_name")
     y_name=_text(y_name,"y_name")

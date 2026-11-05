@@ -6,6 +6,7 @@ Delphi MVKView parity is IN PROGRESS: FFT and AC remain labelled candidates.
 """
 from __future__ import annotations
 from pathlib import Path
+from contextlib import nullcontext
 from fractions import Fraction
 import math
 import numpy as np
@@ -38,6 +39,8 @@ from ..core.tqgrapher_composite_source_candidate import (
     build_tqgrapher_composite)
 from .tqgrapher_textout_qt_candidate import (
     qt_textout_source_positions_rgba, qt_source_font_candidate)
+from .win32_gdi_source_candidate import (
+    Win32SourceTextCanvas, native_gdi_supported)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -2471,26 +2474,44 @@ class MainWindow(QMainWindow):
                     data=np.asarray(self._full_spectrum['amplitude'],dtype='<f4')
                     if count<=0 or count>data.size:
                         raise ValueError('Original TQGRSeries size not accepted')
-                    composite=build_tqgrapher_composite(
-                        data[:count],
-                        canvas_width=w,canvas_height=h,
-                        zero_text_width=int(fm.horizontalAdvance('0')),
-                        six_decimals_text_width=int(
-                            fm.horizontalAdvance('0.000000')),
-                        zero_text_height=int(fm.height()),
-                        scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
-                        scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
-                        series_x_start=0.,
-                        series_x_scale=float(self._full_spectrum['df_hz']),
-                        series_y_scale=1.,
-                        x_name_present=True,y_name_present=True,
-                        x_name='Гц',
-                        y_name=str(self._full_spectrum.get('unit','')),
-                        source_text_width=lambda t:int(fm.horizontalAdvance(t)),
-                        source_text_height=lambda t:int(fm.height()),
-                        research_textout_renderer=lambda image,events:
-                            qt_textout_source_positions_rgba(
-                                image,events,font=font))
+                    # One candidate source bitmap. On Windows native GDI
+                    # supplies both text metrics and glyph pixels; elsewhere
+                    # Qt remains the explicitly approximate fallback.
+                    context=(Win32SourceTextCanvas()
+                             if native_gdi_supported() else nullcontext(None))
+                    with context as gdi:
+                        tw=(gdi.text_width if gdi is not None
+                            else lambda text:int(fm.horizontalAdvance(text)))
+                        th=(gdi.text_height if gdi is not None
+                            else lambda text:int(fm.height()))
+                        text_renderer=(gdi.draw_text if gdi is not None
+                            else lambda image,events:
+                                qt_textout_source_positions_rgba(
+                                    image,events,font=font))
+                        composite=build_tqgrapher_composite(
+                            data[:count],
+                            canvas_width=w,canvas_height=h,
+                            zero_text_width=int(tw('0')),
+                            six_decimals_text_width=int(tw('0.000000')),
+                            zero_text_height=int(th('0')),
+                            scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
+                            scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
+                            series_x_start=0.,
+                            series_x_scale=float(self._full_spectrum['df_hz']),
+                            series_y_scale=1.,
+                            x_name_present=True,y_name_present=True,
+                            x_name='Гц',
+                            y_name=str(self._full_spectrum.get('unit','')),
+                            source_text_width=tw,source_text_height=th,
+                            font_metric_provenance=(
+                                'gdi_reconstructed_from_dfm' if gdi
+                                else 'qt_approximation'),
+                            research_textout_renderer=text_renderer)
+                        model['spectrum_textout_engine']=(
+                            'WIN32_GDI_DFM_CANDIDATE' if gdi
+                            else 'QT_RESEARCH_FALLBACK')
+                        model['spectrum_textout_native_metrics']=(
+                            gdi.diagnostics() if gdi is not None else None)
                     pixels=composite['rgba']
                     model['qt_textout_candidate_rendered']=composite[
                         'qt_textout_candidate_rendered']
@@ -2555,8 +2576,9 @@ class MainWindow(QMainWindow):
                 f'{len(model["x_grid_ticks"])} / '
                 f'{len(model["y_grid_ticks"])} линий. '
                 f'Цвет исходного TCo2Draw {GRID_LINE_HEX}, фон {BACKGROUND_HEX}. '
-                + ('ЕДИНЫЙ BMP: сетка → Qt TextOut-кандидат → кривая → рамка, '
-                   'метрики Tahoma 13 Qt px, НЕ оригинальный GDI TCanvas; '
+                + ('ЕДИНЫЙ BMP: сетка → подписи → кривая → рамка; '
+                   'Windows GDI Tahoma -13 из DFM (или Qt fallback); '
+                   'реальный runtime Canvas/DPI оригинала НЕ проверен; '
                    if combined else
                    ('Software RGB растр сетки в Qt logical px; '
                     if raster else 'Простые линии Qt QPen; '))

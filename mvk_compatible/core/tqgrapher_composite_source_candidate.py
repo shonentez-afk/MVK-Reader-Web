@@ -98,7 +98,8 @@ def build_tqgrapher_composite(
         x_name_present:bool=True,y_name_present:bool=True,
         x_name:str="",y_name:str="",
         source_text_width=None,source_text_height=None,
-        research_textout_renderer=None):
+        research_textout_renderer=None,
+        font_metric_provenance:str='qt_approximation'):
     """Return pixel RGBA and source-derived frame geometry in one result.
 
     The caller supplies the REAL native PaintBox pixel size and original
@@ -166,7 +167,7 @@ def build_tqgrapher_composite(
             canvas=canvas,grid=grid,text_width=source_text_width,
             text_height=source_text_height,
             x_name=x_name,y_name=y_name,
-            font_provenance="qt_approximation")
+            font_provenance=font_metric_provenance)
         candidate=research_textout_renderer(
             frame,text_plan['events'])
         if (not isinstance(candidate,np.ndarray) or
@@ -200,6 +201,8 @@ def build_tqgrapher_composite(
         "layer_order":source_tqgrapher_composite_contract()['draw_order'],
         "tcanvas_textout_implemented":False,
         "qt_textout_candidate_rendered":qt_labels_rendered,
+        "textout_candidate_rendered":qt_labels_rendered,
+        "font_metric_provenance":font_metric_provenance,
         "source_textout_layout":text_plan,
         "font_metrics_are_native_original":False,
         "original_runtime_pixel_parity_verified":False,
