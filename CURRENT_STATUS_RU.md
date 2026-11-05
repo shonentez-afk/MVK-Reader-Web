@@ -1,5 +1,15 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31P — новые данные ORIGINAL SOURCE (05.11.2026)
+
+- В приватном `Projects.7z` восстановлен **общий источник выбора кода фильтра 0–31**: `_Unit128:0084587D..0084594B` строит 32 пункта, `0084B274` синхронизирует `bAdcEnvelopeType.Tag` и `bSpecEnvelopeType.Tag`, `00846AB4` очищает обе старые серии, `00847248` обновляет активную страницу. Исходники/IDP не публиковать.
+- В коде [commit 647df93](https://github.com/shonentez-afk/MVK-Reader-Web/commit/647df93b6c134d96e968c8df56175e1b85664183) зеркалируются **явные изменения** EnvelopeCode, неактивная страница пересчитывается при открытии, смена на код0 или отказ FIR убирают старую кривую и возвращают обычный FFT, ошибки очищают stale график.
+- Тесты [commit 7048e3c](https://github.com/shonentez-afk/MVK-Reader-Web/commit/7048e3c0ba12cd450f8f5a76e018c4729091dd55): синтетические Tag0/1..31, no-filter, insufficient FIR, без оригинальных данных. CI [#42000962349](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42000962349) **на момент обновления выполняется, acceptance НЕ заявлена**.
+- Отдельно исходник `_Unit128:00848148` проверяет `FSampleRate=SelectedSampleRate` до GetSpectrum, при несовпадении очищает график. Для неоднородных многоканальных архивов это предмет следующего source-regression gate, не новая победа в 1:1.
+- **Stage31O CI уже 3/3 SUCCESS**: [#41999051774](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41999051774); [Windows artifact #13401234601](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41999051774/artifacts/13401234601).
+- Подробности: [Stage31P source audit](docs/research/STAGE111Z31P_ORIGINAL_SOURCE_ENVELOPE_MENU_INVALIDATION_RU.md). Не повторять реальные 4×131072 Power/Y/Tag0-3, FFT N262144, FRange, Hann, FIR coefficients и старые BIN №83/44 численные сравнения. Открыты только **same-window original full Y**, original envelope result, дополнительные N/Fs/ADC и практическая приёмка курсора/масштабов. Приоритет: **СПЕКТР → ВРЕМЕННОЙ → РАСЧЁТЫ → СТРАНИЦЫ**.
+
+
 ## Stage111Z31O — реализация P0 архивного Qt E2E (05.11.2026)
 
 - Коммит исправления `906439ba63330eb590a1bd1f7641fda2e7e27135`: при ошибке повторного чтения или расчёта BIN/TSXML `refresh_spec` теперь очищает **старую кривую, полный спектр, summary, курсор, Copy/Save и исследовательские подписи**, не оставляя предыдущий результат как актуальный. Алгоритмы FFT/FRange/Power/Y не изменены.
