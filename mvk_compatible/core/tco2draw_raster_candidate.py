@@ -71,8 +71,12 @@ def _line(image, x0,y0,x1,y1,ink):
                     paint(x,y,x*cosa+tmp)
 
 def source_raster_rgba(*,width,height,segments,ink=GRID_LINE_RGB,
-                       background=BACKGROUND_RGB):
-    """Return (H,W,4) RGBA in Qt LOGICAL pixels, +Y downward."""
+                       background=BACKGROUND_RGB,initial_rgba=None):
+    """Return (H,W,4) RGBA in Qt LOGICAL pixels, +Y downward.
+
+    Optional initial_rgba composes on a COPIED existing 32bpp scanline
+    bitmap; original layer order is retained, input never mutated.
+    """
     if (any(isinstance(v,bool) or not isinstance(v,numbers.Integral)
             for v in (width,height))):
         raise ValueError("integer image dimensions required")
@@ -89,9 +93,21 @@ def source_raster_rgba(*,width,height,segments,ink=GRID_LINE_RGB,
         if not isinstance(coords,(tuple,list)) or len(coords)!=4:
             raise ValueError("four coordinates required per segment")
         normalized.append(tuple(_f32(v) for v in coords))
-    rgba=np.empty((height,width,4),dtype=np.uint8)
-    rgba[:,:,:3]=background
-    rgba[:,:,3]=255
+    if initial_rgba is None:
+        rgba=np.empty((height,width,4),dtype=np.uint8)
+        rgba[:,:,:3]=background
+        rgba[:,:,3]=255
+    else:
+        # Original TCo2Draw paints GRID -> SERIES -> FRAME onto ONE
+        # 32-bit scanline buffer. A validated copy lets independent
+        # passes reproduce the same ordered RGB blending, without
+        # modifying caller-owned frames or archived measurement data.
+        if (not isinstance(initial_rgba,np.ndarray)
+                or initial_rgba.dtype!=np.uint8
+                or initial_rgba.shape!=(height,width,4)
+                or not np.all(initial_rgba[:,:,3]==255)):
+            raise ValueError("initial_rgba must be opaque HxWx4 uint8")
+        rgba=np.array(initial_rgba,copy=True,order='C')
     for coords in normalized:
         _line(rgba,*coords,ink)
     return rgba
