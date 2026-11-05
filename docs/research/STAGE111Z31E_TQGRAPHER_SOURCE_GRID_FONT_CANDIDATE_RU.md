@@ -1,3 +1,5 @@
+> **ФИНАЛЬНАЯ ПРИЁМКА Stage111Z31E, 05.11.2026:** [GitHub Actions #41963606029](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41963606029) **SUCCESS — все 3 jobs** на точном коммите исходников `224ef1021e87abad1c7fe9e114e243fe06276e2f`. Linux Core **1291 PASS /24 SKIP/1 warning/30 subtests**; Windows Core **1311 PASS /4 SKIP/1 warning/30 subtests**; обычный Windows Qt **49 PASS**; отдельный Qt при реальном `devicePixelRatioF=1.5` и `QT_SCALE_FACTOR=1.5` **10 PASS**. Неизменённый Native Go R6.1 успешно собран и протестирован внутри PyInstaller. Проверка PE и EXE/манифеста PASS. [Скачать Windows Preview artifact ID 13387185361](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41963606029/artifacts/13387185361): ZIP 68 510 183 байт, GitHub upload SHA256 `0fd53708d094195792f27bc8dd3d76a38e7684d1e728097de6009609d3615f7d`; внутри `MVKViewCompatible_Stage111_PREVIEW.exe` 68 508 833 байт SHA256 `0e9657adb7c8ce4d8f7f16dd9bdaf67723d6e4d70ff241a3588483b46dd78896` + SHA256SUMS/BUILD_INFO/BUILD_VERIFICATION. Рисование и шрифты оригинального Delphi GDI pixel-perfect всё ещё OPEN, исследовательский режим сетки по умолчанию выключен.
+
 # Stage 111Z31E — исходная сетка TQGrapher (10×10) и кандидат шрифта Qt, без подмены подтверждённого спектра
 
 **Дата:** 05.11.2026. **Ветка:** `research/stage111-mvkview-desktop-20261029`. Речь об автономной Windows MVKView Compatible, не старом Web или main.
@@ -16,7 +18,7 @@
 - `007CAC9D..007CACAF`: `VLineSpacing = Single(abs(ScrWidth / AutoVSpacing))`, **вертикальные** линии по частоте;
 - `007CAD1C..007CAE3B`: проход горизонтальных линий при `HLineSpacing>0`, индексные границы с допуском extended `0.0001` (см. `007CAD35/007CAD53`);
 - `007CAE3B..007CB086`: аналогичные вертикальные линии, включая отдельную ветвь для отрицательного `ScrWidth`;
-- обе подписи выводятся по вызову `007B2090` с аргументом 3 и `TCanvas.TextOut`; **байтовая семантика форматирования 007B2090 и измеренный Win32 TCanvas.Font не подтверждены**;
+- обе подписи выводятся по вызову `007B2090` с аргументом 3 и `TCanvas.TextOut`. Дополнительная перепроверка `_Unit114.pas:007B2090..007B21BC` подтвердила **ветвление `NAN`/ноль, маску фиксированной записи `0.` + нули до трёх значащих десятичных разрядов, вызов RTL `0042EE10` и удаление завершающих нулей с учётом `TFormatSettings.DecimalSeparator`**. Это восстановленная логика, но **точное RTL округление Float32/x87 на граничных значениях, runtime-параметры локали и исходный Win32 TCanvas.Font ещё НЕ подтверждены**;
 - `007CACEE..007CACF9` TQGrapher копирует шрифт из переданного `TCanvas.FFont` в собственный offscreen canvas. Видимый `DFM` содержит `Tahoma/Height=-13/PPI=96`, но копирование исходного TPaintBox.Font на runtime нужно проверить отдельно.
 
 Ни `AutoVSpacing=10`, ни Tahoma из DFM нельзя использовать как доказательство идентичности старых скриншотов: **runtime оригинальной VCL, Win32 DPI-awareness, сетка GDI/Draw и физическая PixelRect остаются открытыми**.
@@ -36,7 +38,7 @@
 - `tests/test_stage111z31e_tqgrapher_source_grid.py`: синтетические проверочные векторы 10×10, изменения диапазонов, некорректные параметры, числовые / provenance gates.
 - `tests/test_stage111z31e_qt_tqgrapher_grid.py`: Offscreen Windows Qt **Tag0–Tag3** в режиме синтетического оригинального Power/Y, запрет для обычного архива, переключение/откат сетки, работа с 25600→12800 Гц, отсутствие изменений исходной Float32 кривой и показателей.
 - Отдельный Windows Qt шаг на `QT_SCALE_FACTOR=1.5` (проверяет `devicePixelRatioF=1.5`) запускает все тесты `test_stage111z31a_qt_original_reference.py`; Stage31E grid GUI также проверяется основным Windows Core test suite, а исходный массив не попадает в GitHub.
-- Текущий первый запуск Stage31E коммита `16373218bc71d78cb354b0ebe0c983261259eed1` обнаружил и исправил синтаксическую опечатку в новой diagnostic строке (исправление `84576ea0ebd7e9900916169f9378e05ee908c3e5`); окончательный CI/EXE SHA надо проверять на следующем successful code commit.
+- Первый запуск по коду `16373218bc71d78cb354b0ebe0c983261259eed1` выявил синтаксическую опечатку в новой diagnostic строке (исправление `84576ea0ebd7e9900916169f9378e05ee908c3e5`). Дополнительно было восстановлено исходное форматирование `007B2090` и расширены тесты. **ФИНАЛЬНЫЙ CI SUCCESS** для последней проверенной исходной ревизии указан ниже.
 
 ## Приоритеты дальнейшего восстановления
 
