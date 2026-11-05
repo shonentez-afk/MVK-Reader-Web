@@ -32,6 +32,8 @@ from ..core.tco2draw_grid_source import (source_tco2draw_grid_contract,
     GRID_LINE_HEX, BACKGROUND_HEX)
 from ..core.tco2draw_raster_candidate import (source_raster_rgba,
     source_grid_segments, contract as tco2draw_raster_contract)
+from ..core.tqgr_series_source_candidate import (
+    source_tqgr_series_columns, SOURCE as TQGR_SERIES_SOURCE)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
 from ..core.mvk_original_scale_tables_idr_candidate import (
@@ -84,6 +86,11 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_lines=[]  # Owned 10x10 research-only Qt overlay items.
         self._spec_source_raster_item=None  # Private-reference research view only.
         self._spec_source_raster_data=None
+        self._spec_source_series_raw_item=None  # Original PlotDataItem; never mutated.
+        self._spec_source_series_item=None  # Research stroke overlay only.
+        self._spec_source_series_model=None
+        self._spec_source_series_signature=None
+        self._spec_source_series_busy=False
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -952,6 +959,29 @@ class MainWindow(QMainWindow):
         self.spec_source_raster_checkbox.toggled.connect(
             self._toggle_source_tco2draw_raster)
         research_stack.addWidget(self.spec_source_raster_checkbox)
+        self.spec_source_series_checkbox=QCheckBox(
+            'Кривая TQGRSeries · минимум/максимум по пикселям')
+        self.spec_source_series_checkbox.setObjectName(
+            'toggleSourceTQGRSeriesPixelColumns')
+        self.spec_source_series_checkbox.setToolTip(
+            'Исходный алгоритм Unit115:007CB12F-007CB3E5: по одному '
+            'экранному X собираются min/max из нескольких Float32, '
+            'с сохранением ближайшего порядка обхода и клиппинга. '
+            'Только SHA-verified Power/Y; Qt logical viewport НЕ '
+            'равен исходному TPaintBox/Win32 DPI/пикселям.')
+        self.spec_source_series_checkbox.setEnabled(False)
+        self.spec_source_series_checkbox.toggled.connect(
+            self._toggle_source_tqgr_series_candidate)
+        research_stack.addWidget(self.spec_source_series_checkbox)
+        self.spec_source_series_info=QLabel(
+            'Кривая: обычная Qt. Источник TQGRSeries доступен '
+            'только для проверенного оригинального Power/Y.')
+        self.spec_source_series_info.setObjectName(
+            'labelSourceTQGRSeriesPixelResearchOnly')
+        self.spec_source_series_info.setWordWrap(True)
+        self.spec_source_series_info.setTextInteractionFlags(
+            Qt.TextSelectableByMouse)
+        research_stack.addWidget(self.spec_source_series_info)
         self.spec_source_grid_info=QLabel(
             'Сетка Qt: обычная. TQGrapher 10×10 доступна '
             'только для проверенного оригинального Power/Y.')
@@ -1065,6 +1095,10 @@ class MainWindow(QMainWindow):
             self._sync_source_tqgrapher_grid_candidate)
         self.spec_plot.getViewBox().sigResized.connect(
             self._sync_source_tqgrapher_grid_candidate)
+        self.spec_plot.getViewBox().sigRangeChanged.connect(
+            self._sync_source_tqgr_series_candidate)
+        self.spec_plot.getViewBox().sigResized.connect(
+            self._sync_source_tqgr_series_candidate)
 
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
         self._spec_last_valid_fft_n=None
@@ -2135,6 +2169,117 @@ class MainWindow(QMainWindow):
 
 
 
+    def _clear_source_tqgr_series_overlay(self):
+        """Restore unchanged original PlotDataItem without touching its data."""
+        if self._spec_source_series_item is not None:
+            self.spec_plot.removeItem(self._spec_source_series_item)
+        self._spec_source_series_item=None
+        if self._spec_source_series_raw_item is not None:
+            self._spec_source_series_raw_item.setVisible(True)
+        self._spec_source_series_model=None
+        self._spec_source_series_signature=None
+
+    def _restore_source_tqgr_series(self):
+        """Fail closed when reference is left, replaced or archived."""
+        self._clear_source_tqgr_series_overlay()
+        self._spec_source_series_raw_item=None
+        blocked=self.spec_source_series_checkbox.blockSignals(True)
+        self.spec_source_series_checkbox.setChecked(False)
+        self.spec_source_series_checkbox.blockSignals(blocked)
+        self.spec_source_series_checkbox.setEnabled(False)
+        self.spec_source_series_info.setText(
+            'Кривая: обычная Qt. TQGRSeries доступна только '
+            'для проверенного оригинального Power/Y.')
+
+    def _toggle_source_tqgr_series_candidate(self,enabled):
+        if not enabled:
+            self._clear_source_tqgr_series_overlay()
+            self.spec_source_series_info.setText(
+                'Кривая: обычная Qt. Исходные данные не изменены.')
+            return
+        if self._spectrum_reference is None:
+            self._restore_source_tqgr_series()
+            return
+        self._safe_source_tqgr_series_update()
+
+    def _safe_source_tqgr_series_update(self):
+        try:
+            self._sync_source_tqgr_series_candidate()
+        except (ValueError,TypeError,KeyError,OverflowError,MemoryError) as exc:
+            self._clear_source_tqgr_series_overlay()
+            blocked=self.spec_source_series_checkbox.blockSignals(True)
+            self.spec_source_series_checkbox.setChecked(False)
+            self.spec_source_series_checkbox.blockSignals(blocked)
+            self.spec_source_series_info.setText(
+                'TQGRSeries не принят: '+str(exc))
+            self.statusBar().showMessage(
+                'Исследовательская кривая выключена: '+str(exc))
+
+    def _sync_source_tqgr_series_candidate(self,*_):
+        """Compare source per-column extrema on ORIGINAL verified Power/Y.
+
+        The derived Float32 input is read-only. PlotCurveItem is a Qt
+        *visual* renderer of Delphi-derived segments, not the original
+        TCo2Draw 32bpp software raster or physical TPaintBox pixels.
+        """
+        if (self._spec_source_series_busy
+                or self._spectrum_reference is None
+                or self._full_spectrum is None
+                or not self.spec_source_series_checkbox.isChecked()):
+            return
+        self._spec_source_series_busy=True
+        try:
+            vb=self.spec_plot.getViewBox()
+            xr,yr=vb.viewRange()
+            w=max(4,int(round(vb.width())))
+            h=max(4,int(round(vb.height())))
+            size=int(self._spec_display_contract['grapher_series_bins'])
+            signature=(float(xr[0]),float(xr[1]),float(yr[0]),
+                       float(yr[1]),w,h,size)
+            if signature==self._spec_source_series_signature:
+                return
+            raw=self._spec_source_series_raw_item
+            if raw is None:
+                raise ValueError('No original PlotDataItem for reference')
+            y=np.asarray(self._full_spectrum['amplitude'],dtype='<f4')
+            if size<=0 or size>y.size:
+                raise ValueError('Reference TQGRSeries DataSize out of range')
+            result=source_tqgr_series_columns(
+                y[:size],
+                scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
+                scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]),
+                x_start=0.,x_scale=float(self._full_spectrum['df_hz']),
+                y_scale=1.,
+                pixel_left=0,pixel_right=w-1,
+                pixel_top=0,pixel_bottom=h-1)
+            segments=result['segments']
+            if not len(segments):
+                raise ValueError('TQGRSeries has no visible pixel columns')
+            xx=segments[:,[0,2]].reshape(-1)
+            yy=segments[:,[1,3]].reshape(-1)
+            data_x=float(xr[0])+xx/(w-1)*float(xr[1]-xr[0])
+            data_y=float(yr[1])-yy/(h-1)*float(yr[1]-yr[0])
+            curve=pg.PlotCurveItem(
+                x=data_x,y=data_y,connect='pairs',
+                pen=pg.mkPen('#000000',width=1),antialias=False)
+            curve.setZValue(20)
+            self.spec_plot.addItem(curve,ignoreBounds=True)
+            old=self._spec_source_series_item
+            self._spec_source_series_item=curve
+            if old is not None:
+                self.spec_plot.removeItem(old)
+            raw.setVisible(False)  # Never replace source samples or summary.
+            self._spec_source_series_model=result
+            self._spec_source_series_signature=signature
+            self.spec_source_series_info.setText(
+                f'ИСТОЧНИК TQGRSeries: {result["data_size_original"]} Float32 → '
+                f'{len(result["columns"])} столбцов, '
+                f'{len(segments)} штрихов, Qt {w}×{h} логических px. '
+                'Сохранены min/max и порядок по исходному Unit115; '
+                'не доказаны Win32 PixelRect, шрифт, x87 и pixel parity.')
+        finally:
+            self._spec_source_series_busy=False
+
     def _restore_default_spec_axis_grid(self):
         """Restore standard pyqtgraph; no source raster must leak to archive."""
         applied=(self._spec_source_grid_applied or
@@ -2351,6 +2496,7 @@ class MainWindow(QMainWindow):
         self.spec_source_grid_checkbox.setChecked(False)
         self.spec_source_grid_checkbox.blockSignals(was_blocked)
         self._restore_default_spec_axis_grid()
+        self._restore_source_tqgr_series()
         self.spec_source_grid_checkbox.setEnabled(False)
         state=self._spectrum_reference_saved
         self._spectrum_reference=None
@@ -2461,6 +2607,7 @@ class MainWindow(QMainWindow):
         self._sync_x32dbg_reference_f_range_label()
         self.spec_source_grid_checkbox.setEnabled(True)
         self.spec_source_raster_checkbox.setEnabled(False)
+        self.spec_source_series_checkbox.setEnabled(True)
         for control,index in (
             (self.spec_mode,ref.mode),(self.spec_n,n_index),
             (self.spec_avg,0 if ref.mode==0 else 1),
@@ -2497,7 +2644,7 @@ class MainWindow(QMainWindow):
         self.spec_plot.clear()
         self.spec_plot.setLabel('bottom','Гц')
         self.spec_plot.setLabel('left',d['unit'])
-        self.spec_plot.plot(
+        self._spec_source_series_raw_item=self.spec_plot.plot(
             xx[:visible_bins],yy[:visible_bins],pen=pg.mkPen('#000000'))
         self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen(None))
         self.spec_line.setVisible(False)
