@@ -35,6 +35,7 @@ from ..core.tco2draw_raster_candidate import (source_raster_rgba,
     source_grid_segments, contract as tco2draw_raster_contract)
 from ..core.tqgr_series_source_candidate import (
     source_tqgr_series_columns, SOURCE as TQGR_SERIES_SOURCE)
+from ..core.spectrum_archive_plot_projection import spectrum_archive_plot_projection
 from ..core.tqgrapher_composite_source_candidate import (
     build_tqgrapher_composite)
 from .tqgrapher_textout_qt_candidate import (
@@ -98,6 +99,12 @@ class MainWindow(QMainWindow):
         self._spec_source_series_model=None
         self._spec_source_series_signature=None
         self._spec_source_series_busy=False
+        # Ordinary archive uses source per-column min/max when compressed.
+        self._archive_raw_line=None
+        self._archive_source_curve=None
+        self._archive_source_projection_signature=None
+        self._archive_source_projection_model=None
+        self._archive_source_projection_busy=False
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
@@ -1106,6 +1113,10 @@ class MainWindow(QMainWindow):
             self._sync_source_tqgr_series_candidate)
         self.spec_plot.getViewBox().sigResized.connect(
             self._sync_source_tqgr_series_candidate)
+        self.spec_plot.getViewBox().sigRangeChanged.connect(
+            self._sync_archive_source_projection)
+        self.spec_plot.getViewBox().sigResized.connect(
+            self._sync_archive_source_projection)
 
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
         self._spec_last_valid_fft_n=None
@@ -2871,6 +2882,80 @@ class MainWindow(QMainWindow):
             'побитовое сравнение Power/Y прошли; Copy/Save отключены')
         return ref.report()
 
+    def _clear_archive_source_projection(self):
+        """Remove display-only strokes without touching measured FFT bins."""
+        curve=self._archive_source_curve
+        self._archive_source_curve=None
+        self._archive_source_projection_signature=None
+        self._archive_source_projection_model=None
+        if curve is not None and curve.scene() is not None:
+            self.spec_plot.removeItem(curve)
+        if (self._archive_raw_line is not None and
+                self._archive_raw_line.scene() is not None):
+            self._archive_raw_line.setVisible(True)
+
+    def _sync_archive_source_projection(self,*_):
+        """Original pixel-column extrema for standard BIN/TSXML plots.
+
+        Sparse zoom falls back to the FULL original point sequence.
+        Never mutate Float32 powers, displayed amplitudes or summary.
+        """
+        if (self._archive_source_projection_busy
+                or self.session is None
+                or self._live_active
+                or self._spectrum_reference is not None
+                or self._full_spectrum is None
+                or self._archive_raw_line is None
+                or self._archive_raw_line.scene() is None
+                or getattr(self,'_spec_display_contract',None) is None):
+            return
+        self._archive_source_projection_busy=True
+        try:
+            vb=self.spec_plot.getViewBox()
+            xr,yr=vb.viewRange()
+            w=max(4,int(round(vb.width())))
+            h=max(4,int(round(vb.height())))
+            signature=(id(self._full_spectrum),float(xr[0]),float(xr[1]),
+                       float(yr[0]),float(yr[1]),w,h)
+            if signature==self._archive_source_projection_signature:
+                return
+            d=self._full_spectrum
+            n_fft=int(self._spec_display_contract['full_fft_power_bins'])*2
+            projection=spectrum_archive_plot_projection(
+                d['amplitude'],n_fft=n_fft,
+                sample_rate_hz=float(d['df_hz'])*n_fft,
+                view_x=tuple(xr),view_y=tuple(yr),
+                pixel_width=w,pixel_height=h)
+            meta={key:value for key,value in projection.items()
+                  if key not in ('pairs_x_hz','pairs_y')}
+            if projection['draw_mode']!='original_pixel_column_minmax':
+                self._clear_archive_source_projection()
+                self._archive_source_projection_signature=signature
+                self._archive_source_projection_model=meta
+                return
+            new_curve=pg.PlotCurveItem(
+                x=projection['pairs_x_hz'],
+                y=projection['pairs_y'],
+                connect='pairs',pen=pg.mkPen('#000000',width=1),
+                antialias=False)
+            new_curve.setZValue(20)
+            self.spec_plot.addItem(new_curve,ignoreBounds=True)
+            old=self._archive_source_curve
+            self._archive_source_curve=new_curve
+            self._archive_source_projection_signature=signature
+            self._archive_source_projection_model=meta
+            self._archive_raw_line.setVisible(False)
+            if old is not None and old.scene() is not None:
+                self.spec_plot.removeItem(old)
+        except (ValueError,TypeError,KeyError,OverflowError,MemoryError) as exc:
+            self._clear_archive_source_projection()
+            self._archive_source_projection_model={
+                'draw_mode':'full_original_samples_fallback',
+                'reason':str(exc),
+                'original_delphi_pixel_runtime_verified':False}
+        finally:
+            self._archive_source_projection_busy=False
+
     def _fft_backend(self):
         return 'idr_float32' if self.spec_backend.currentIndex()==0 else 'numpy'
 
@@ -2941,13 +3026,17 @@ class MainWindow(QMainWindow):
             yy=np.asarray(d['amplitude'],dtype=np.float64)
             visible=(xx<=self._spec_visible_max_hz)&(
                 np.arange(len(xx))<display_contract['grapher_series_bins'])
+            # Clear previously compressed *visuals*, not stored FFT.
+            self._clear_archive_source_projection()
+            self._archive_raw_line=None
             self.spec_plot.clear()
             # Native TQGrapher labels the axis by its UNIT, not a long title.
             self.spec_plot.setLabel('bottom','Гц')
             # Original MVKView spectrum is a black hairline over white.
             # Original XOR-green cursor is separately studied (do not
             # approximate it by a static colored spectrum line).
-            self.spec_plot.plot(xx[visible],yy[visible],pen=pg.mkPen('#000000'))
+            self._archive_raw_line=self.spec_plot.plot(
+                xx[visible],yy[visible],pen=pg.mkPen('#000000'))
             # Preserve existing testable X/Y InfiniteLine state and callbacks,
             # but make their pen invisible. Only the last-drawn overlay uses
             # original bitwise pmXor green on top of a black spectral trace.
@@ -3045,7 +3134,11 @@ class MainWindow(QMainWindow):
                     old_tag=tag if previous else None,
                     old_position=previous['delphi_position'] if previous else 0)
                 self._apply_original_vscale_candidate(restored)
+            # Final source X/Y view has been applied.
+            self._sync_archive_source_projection()
         except (OSError,KeyError,ValueError) as e:
+            self._clear_archive_source_projection()
+            self._archive_raw_line=None
             self._full_spectrum=None
             self._spectrum_summary=None
             self.spec_copy_button.setEnabled(False)
