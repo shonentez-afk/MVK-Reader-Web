@@ -127,3 +127,91 @@ def compare_original_snapshot_pair(
             "binary_captures_ever_uploaded_by_tool":False,
         },
     }
+
+
+
+def compare_source_idr_fft_capture_pair(
+    pre_fft_file: str | Path,
+    reference_fft_power_file: str | Path,
+    *, pre_fft_is_after_original_dc_and_filters: bool,
+    reference_power_is_before_low_bin_and_mode_changes: bool,
+    sample_rate_hz: int | None = None,
+) -> dict:
+    """Stage111Z31K: source Float32 radix2 candidate vs user-local FFT power.
+
+    Original GetSpectrum first loads ring data, subtracts DC and can apply
+    envelope filtering. The original trace at 007D1FE8 then applies Hann
+    and the actual FFT. Caller must explicitly certify BOTH snapshot
+    stage identities; never silently subtract DC twice or compare
+    post-integration Power to raw FFT Power.
+
+    Returns only aggregate discrepancies. A synthetic candidate-created
+    target can pass bitwise; it is NOT evidence of original Win32 parity.
+    """
+    from .fft_idr_candidate import idr_power_spectrum
+
+    if (type(pre_fft_is_after_original_dc_and_filters) is not bool
+            or type(reference_power_is_before_low_bin_and_mode_changes)
+            is not bool):
+        raise ValueError("Explicit original snapshot stage flags required")
+    if not pre_fft_is_after_original_dc_and_filters:
+        raise ValueError("Pre-FFT buffer stage must be operator-confirmed")
+    if not reference_power_is_before_low_bin_and_mode_changes:
+        raise ValueError("Power must be captured before GetSpectrum mode changes")
+    if sample_rate_hz is not None and (
+            type(sample_rate_hz) is not int
+            or not 1<=sample_rate_hz<=1_000_000):
+        raise ValueError("Sample rate must be a valid source integer")
+    source,source_sha=_read_local_single_snapshot(
+        pre_fft_file,max_bytes=_ORIGINAL_WAVEFORM_BYTES_MAX)
+    target,target_sha=_read_local_single_snapshot(
+        reference_fft_power_file,max_bytes=_MAX_ORIGINAL_POWER_BYTES)
+    n=int(source.size)
+    if (n<1024 or n>262_144 or n & (n-1) or len(target)!=n//2
+            or not np.any(source) or not np.any(target)
+            or np.any(target<0)):
+        raise ValueError("Source FFT comparison needs one valid N/2 power pair")
+    source_bits=source.view("<u4").copy()
+    target_bits=target.view("<u4").copy()
+    candidate,_=idr_power_spectrum(
+        source,backend="idr_float32",remove_dc=False)
+    double_baseline=independent_numpy_hann_power(source)
+    if not np.array_equal(source.view("<u4"),source_bits):
+        raise ValueError("Source snapshot was unexpectedly modified")
+    if not np.array_equal(target.view("<u4"),target_bits):
+        raise ValueError("Reference power snapshot was unexpectedly modified")
+    good=int(np.count_nonzero(
+        np.asarray(candidate,dtype="<f4").view("<u4")==target_bits))
+    benchmark=int(np.count_nonzero(
+        np.asarray(double_baseline,dtype="<f4").view("<u4")==target_bits))
+    actual=target.astype(np.float64)
+    diff=np.abs(candidate.astype(np.float64)-actual)
+    relative=diff/np.maximum(np.abs(actual),1e-9)
+    total=float(np.sum(actual,dtype=np.float64))
+    return {
+        "source":"LOCAL_OPERATOR_FFT_INPUT_TO_POWER_STAGE111Z31K",
+        "captured_n_fft":n,
+        "captured_power_float32_bins":n//2,
+        "input_float32_sha256":source_sha,
+        "reference_power_float32_sha256":target_sha,
+        "idr_float32_fft_bitwise_equal_bins":good,
+        "idr_float32_fft_bitwise_equal_fraction":good/len(target),
+        "independent_double_numpy_bitwise_equal_bins":benchmark,
+        "source_candidate_peak_bin":int(np.argmax(candidate)),
+        "reference_power_peak_bin":int(np.argmax(target)),
+        "same_peak_bin":int(np.argmax(candidate))==int(np.argmax(target)),
+        "source_candidate_p99_relative_error":float(np.quantile(relative,.99)),
+        "source_candidate_max_absolute_power_error":float(np.max(diff)),
+        "source_candidate_integrated_power_relative_error":
+            abs(float(np.sum(candidate,dtype=np.float64))-total)/
+                max(total,1e-9),
+        "sample_rate_hz":sample_rate_hz,
+        "same_source_window_authenticated_by_original_runtime":False,
+        "input_stage_declared_by_operator_not_proven_by_tool":True,
+        "power_stage_declared_by_operator_not_proven_by_tool":True,
+        "original_all_fft_input_bitwise_parity_verified":False,
+        "private_file_paths_in_result":False,
+        "raw_samples_in_result":False,
+        "no_dc_removed_again":True,
+        "network_or_instrument_access":False,
+    }
