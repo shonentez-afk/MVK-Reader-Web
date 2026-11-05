@@ -36,6 +36,7 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     old_fft_index=win.spec_n.currentIndex()
     old_copy=win.spec_copy_button.isEnabled()
     old_title=win.title.text()
+    old_title_tip=win.title.toolTip()
     old_adc_tip=win.adc.toolTip()
     assert "MVK" in old_title
     assert win.spec_plot.getPlotItem().getAxis("left").labelText=="дБ"
@@ -64,8 +65,24 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     assert not win.spec_n.isEnabled()
     assert "ЭТАЛОН x32dbg" in win.title.text()
     assert "MVK" not in win.title.text()
-    assert "АЦП эталона не подтверждён" in win.title.text()
+    assert "АЦП ?" in win.title.text()
+    assert "АЦП, исходное окно" in win.title.toolTip()
     assert "НЕ доказанный канал эталона" in win.adc.toolTip()
+    from mvk_compatible.core.spectrum_summary_export_candidate import (
+        spectrum_triplet_text)
+    fields=spectrum_triplet_text(
+        win._spectrum_summary,decimal_separator=',').split('\t')
+    assert "СКЗ спектра: " + fields[0] in win.spec_mean_primary.text()
+    assert "Пик спектра: " + fields[1] + " Гц" in win.spec_mean_primary.text()
+    assert "Амплитуда: " + fields[2] in win.spec_mean_primary.text()
+    assert "3/3 HEX" in win.spec_mean_primary.text()
+    assert "Физические единицы" in win.spec_mean_primary.toolTip()
+    # The entire 4-line source summary fits the original fixed-height panel.
+    from PySide6.QtCore import Qt
+    text_box=win.spec_mean_primary.fontMetrics().boundingRect(
+        0,0,win.spec_mean_primary.width(),1000,
+        Qt.TextWordWrap,win.spec_mean_primary.text())
+    assert text_box.height()<=win.spec_mean_primary.height()
     assert "ОРИГИНАЛ x32dbg" in win.spec_mean_primary.text()
     assert "0 ULP" in win.spec_mean.text()
     assert "оригинал" in win.spec_hint.text().lower() or "x32dbg" in win.spec_hint.text().lower()
@@ -107,6 +124,7 @@ def test_qt_same_archive_plot_can_temporarily_show_original_operator_y(
     assert win.spec_n.currentIndex()==old_fft_index
     assert win.spec_copy_button.isEnabled()==old_copy
     assert win.title.text()==old_title
+    assert win.title.toolTip()==old_title_tip
     assert win.adc.toolTip()==old_adc_tip
     assert win.spec_plot.getPlotItem().getAxis("left").labelText=="дБ"
     assert not win._full_spectrum.get("original_capture_reference_only",False)
@@ -169,7 +187,7 @@ def test_qt_x32dbg_reference_standalone_without_any_archive(tmp_path,qt_app):
     assert win._spectrum_reference is not None
     assert "ЭТАЛОН x32dbg" in win.title.text()
     assert "Tag0" in win.title.text()
-    assert "АЦП эталона не подтверждён" in win.title.text()
+    assert "АЦП ?" in win.title.text()
     assert not win.spec_copy_button.isEnabled()
     assert win.spec_plot.getPlotItem().getAxis("bottom").labelText=="Гц"
     assert win._full_spectrum["source"]==SOURCE
@@ -203,5 +221,25 @@ def test_qt_x32dbg_reference_standalone_without_any_archive(tmp_path,qt_app):
     assert win._full_spectrum is not None
     assert win.tabs.isTabEnabled(2)
     assert win._full_spectrum["source"]!=SOURCE
+    win.close()
+    qt_app.processEvents()
+
+
+def test_qt_reference_without_original_summary_words_labels_as_unverified(
+        tmp_path,qt_app):
+    """Power→Y exact does NOT by itself verify a missing original triplet."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    win=MainWindow()
+    manifest,config,_,_=create_reference_fixture(
+        tmp_path/"no_original_triplet",mode=0)
+    config.pop("summary_hex")
+    manifest.write_text(json.dumps(config),encoding="utf-8")
+    report=win.show_original_spectrum_reference(manifest)
+    qt_app.processEvents()
+    assert report["summary_3x_float32_equal_when_operator_words_given"] is None
+    assert "Итог НЕ сверён" in win.spec_mean_primary.text()
+    assert "3/3 HEX совпали" not in win.spec_mean_primary.text()
+    assert "Power/Y" in win.spec_mean.text() or "Y" in win.spec_mean.text()
+    win.spec_reference_restore_button.click()
     win.close()
     qt_app.processEvents()

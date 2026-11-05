@@ -2106,6 +2106,7 @@ class MainWindow(QMainWindow):
         self.spec_reference_restore_button.setEnabled(False)
         self.spec_reference_open_button.setEnabled(True)
         self.title.setText(state['title_text'])
+        self.title.setToolTip(state['title_tooltip'])
         self.adc.setToolTip(state['adc_tooltip'])
         if not state['spectrum_tab_enabled']:
             # With no archive, the Spectrum tab was originally disabled.
@@ -2137,6 +2138,7 @@ class MainWindow(QMainWindow):
         self.spec_original_copy_compare.setEnabled(False)
         self.spec_canvas_geometry_button.setEnabled(False)
         self.spec_mean_primary.setText('Сначала откройте измерение')
+        self.spec_mean_primary.setToolTip('')
         self.spec_mean.setText('Данные спектра: —')
         self.spec_hint.setText('Спектр ещё не открыт')
         self.spec_cursor_primary.setText('Курсор: —')
@@ -2175,6 +2177,7 @@ class MainWindow(QMainWindow):
             'tab_index':self.tabs.currentIndex(),
             'spectrum_tab_enabled':self.tabs.isTabEnabled(2),
             'title_text':self.title.text(),
+            'title_tooltip':self.title.toolTip(),
             'adc_tooltip':self.adc.toolTip(),
         }
         self._spectrum_reference=ref
@@ -2254,11 +2257,28 @@ class MainWindow(QMainWindow):
         self.spec_original_copy_compare.setEnabled(False)
         self.spec_canvas_geometry_button.setEnabled(True)
         self.spec_cursor_primary.setText('Курсор эталона: —')
+        # The original PageSpectrum shows the three measurement values
+        # in its fixed 106px high left panel. Keep the technical Power/Y
+        # provenance in the research dock and tooltip: a four-line message
+        # about the debugger is too long here and clips the actual numbers.
+        fields=spectrum_triplet_text(
+            ref.summary,decimal_separator=',').split('\t')
+        original_summary_accepted=ref.original_summary_words_equal is True
+        verification=(
+            'x32dbg · 3/3 HEX совпали' if original_summary_accepted
+            else 'Из Power · итог НЕ сверён')
         self.spec_mean_primary.setText(
-            'ОРИГИНАЛ x32dbg · только график\n'
-            f"N={ref.n_fft}, Fs={ref.fs_hz}, Tag{ref.mode}\n"
-            f"Y совпадает с Power: {ref.n_fft//2}/{ref.n_fft//2}\n"
-            'Калибровка/окно не аттестованы')
+            f'СКЗ спектра: {fields[0]}\n'
+            f'Пик спектра: {fields[1]} Гц\n'
+            f'Амплитуда: {fields[2]}\n'
+            + verification)
+        self.spec_mean_primary.setToolTip(
+            'Результаты x32dbg GetSpectrum рассчитаны из оригинального '
+            'Power и сверены с тремя исходными HEX только при наличии '
+            'summary_hex в JSON. Физические единицы, калибровка, '
+            'конкретный АЦП, позиция окна и один runtime-вызов '
+            'НЕ аттестованы. Полные Power/Y 131072/131072 '
+            'проверены по SHA и по Float32.')
         self.spec_mean.setText(
             'ЭТАЛОН оригинального GetSpectrum, [EBP-2C]/[EBP-30]\n'
             f"Численное совпадение всех {ref.n_fft//2} Float32 · 0 ULP\n"
@@ -2274,8 +2294,11 @@ class MainWindow(QMainWindow):
         # selected. Do not display its MVK serial/ADC as if it proved the
         # source of this unrelated user-captured original Power/Y.
         self.title.setText(
-            f'ЭТАЛОН x32dbg · Tag{ref.mode} · N={ref.n_fft} · '
-            'АЦП эталона не подтверждён')
+            f'ЭТАЛОН x32dbg · Tag{ref.mode} · N={ref.n_fft} · АЦП ?')
+        self.title.setToolTip(
+            'Локальный исходный массив x32dbg, а не текущий архив. '
+            'АЦП, исходное окно и физическая калибровка эталона '
+            'не подтверждены. FFT повторно не вычислялся.')
         self.adc.setToolTip(
             'Это канал выбранного архива, НЕ доказанный канал эталона x32dbg.')
         self.tabs.setTabEnabled(2,True)
