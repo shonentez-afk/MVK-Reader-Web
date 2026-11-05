@@ -3148,17 +3148,30 @@ class MainWindow(QMainWindow):
             # Final source X/Y view has been applied.
             self._sync_archive_source_projection()
         except (OSError,KeyError,ValueError) as e:
+            # An archive may change after DirectBinSession.open(). A failed
+            # re-read MUST NOT leave its old plot, cursor, or three-value
+            # readout visible as if they belonged to the current source.
+            # Invalidate the data before clearing Qt items: range-change
+            # signals must not re-project a stale FFT during cleanup.
             self._clear_archive_source_projection()
-            self._archive_raw_line=None
             self._full_spectrum=None
             self._spectrum_summary=None
+            self._spec_display_contract=None
+            self._archive_raw_line=None
+            self._spec_last_cursor=None
+            self._spec_mouse_pixel=None
+            self.spec_line=None
+            self.spec_hline=None
+            self.spec_xor_crosshair=None
+            self.spec_plot.clear()
             self.spec_copy_button.setEnabled(False)
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)
             self.spec_canvas_geometry_button.setEnabled(False)
-            self._spectrum_summary=None
             self._sync_spectrum_summary_primary()
             self.spec_cursor_primary.setText('Курсор: —')
+            self.spec_mean.setText('Спектр не рассчитан: '+str(e))
+            self.spec_hint.setText('Нет действительного спектра: '+str(e))
             self._error(e)
 
     def _wave_click(self,event):
