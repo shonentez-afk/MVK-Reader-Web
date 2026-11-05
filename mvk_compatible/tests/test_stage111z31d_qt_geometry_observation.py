@@ -114,7 +114,7 @@ def test_observed_screenshot_cursor_agrees_but_not_full_pixel_parity():
     {"original_cursor": (-1, 0)},
     {"qt_bounds": (1, 2, 3)},
     {"qt_cursor": (math.nan, 10)},
-    {"qt_cursor": (200, 30)},
+    {"qt_cursor": (220, 30)},
 ])
 def test_bad_original_qt_landmarks_are_not_compared(patch):
     values = dict(
