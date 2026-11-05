@@ -12,11 +12,12 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
-from PySide6.QtGui import QAction, QFont, QFontMetrics
+from PySide6.QtGui import QAction, QFont, QFontMetrics, QPainterPath
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
-    QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy,QDockWidget)
+    QScrollBar,QScrollArea,QFrame,QToolButton,QMenu,QSizePolicy,QDockWidget,
+    QGraphicsPathItem)
 from ..core import OfflineSession
 from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
@@ -2933,11 +2934,21 @@ class MainWindow(QMainWindow):
                 self._archive_source_projection_signature=signature
                 self._archive_source_projection_model=meta
                 return
-            new_curve=pg.PlotCurveItem(
-                x=projection['pairs_x_hz'],
-                y=projection['pairs_y'],
-                connect='pairs',pen=pg.mkPen('#000000',width=1),
-                antialias=False)
+            # Preserve EXACT one original PlotDataItem (all DataSize
+            # source points) for cursor/export/tests, while painting the
+            # compressed min/max as a separate NON-DATA QGraphics item.
+            # PlotCurveItem would wrongly appear as a second spectrum
+            # in PlotItem.listDataItems() and break existing contracts.
+            x_pairs=projection['pairs_x_hz'].reshape(-1,2)
+            y_pairs=projection['pairs_y'].reshape(-1,2)
+            native_path=QPainterPath()
+            for (x1,x2),(y1,y2) in zip(x_pairs,y_pairs):
+                native_path.moveTo(float(x1),float(y1))
+                native_path.lineTo(float(x2),float(y2))
+            new_curve=QGraphicsPathItem(native_path)
+            pen=pg.mkPen('#000000',width=1)
+            pen.setCosmetic(True)  # one device pixel, zoom cannot thicken line
+            new_curve.setPen(pen)
             new_curve.setZValue(20)
             self.spec_plot.addItem(new_curve,ignoreBounds=True)
             old=self._archive_source_curve
