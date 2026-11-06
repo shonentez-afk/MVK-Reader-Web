@@ -1,5 +1,21 @@
 # MVKView Compatible — текущий проверенный статус
 
+## GitHub Actions — завершённая очистка 06.11.2026
+
+**Выполнено, не план:** [run #42142569340](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42142569340) **SUCCESS**. До очистки: **621** workflow run; удалено **614/614** старых завершённых запусков; после очистки осталось **7**. Результат подтверждён GitHub REST API и job log, включая `Remaining repository workflow runs ... 7`.
+
+Сохранённые workflow runs (все SUCCESS):
+- [#42004815613](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42004815613) — последний принятый Stage111Z31Q Windows EXE, полный Y и Qt N/Fs регрессия. [EXE artifact #13404846459](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42004815613/artifacts/13404846459) **не удалён** и был доступен при постпроверке, исходный EXE SHA256 `1fa972694805b4666743b0d91696f4486dc7d8305391fa3b26d111d4cda677f3`.
+- [#42000962349](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42000962349) — Stage31P, оригинальный shared EnvelopeCode / очистка FIR-серий.
+- [#41999051774](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41999051774) — Stage31O BIN/TSXML GUI E2E.
+- [#40900170911](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40900170911) — контроль прежнего Stage111 desktop.
+- [#41282476570](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/41282476570) — последний зелёный main/Web.
+- [#40632448001](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/40632448001) — последний зелёный docs/reconcile.
+- [#42142569340](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42142569340) — успешный запуск очистки.
+
+Защита от удаления действующих/незавершённых проверок и перечисленных Stage111 эталонов реализована в `.github/workflows/storage-prune-once.yml` с `actions: write`, без изменения основного `stage111-desktop-offline.yml`. Публичные исходники, коммиты, SHA-отчёты, `main`, Go R6.1, исходные данные и правила расчёта не изменялись. Удаление прошлых Actions **не возвращает ранее израсходованные минуты CI**; старые Job logs и промежуточные артефакты уже недоступны. Дальше — ожидать только реальную пару original full Y + same-BIN/EnvelopeCode; принятую FFT/FRange/FIR математику заново не исследовать.
+
+
 ## Stage111Z31Q — продолжение СПЕКТРА: BIN→полный Y и N/Fs/курсор (05.11.2026)
 
 **Сделан код, оригинальный same-window опыт пока открыт.** Новый локальный инструмент `mvk_compatible/private_same_window_spectrum_compare.py` (commit `4620cb5`) **повторно использует** ранее подтверждённый оригинальный Power/Y reader Stage31A, расчёт `DirectBinSession/OfflineSession.spectrum` и FIR кандидата. До сравнения **всех N/2 Float32 Y** он требует доказательства сопоставимости: операторский SHA исходного Float32 окна, АЦП, Fs, N, точные границы выборки, режим, EnvelopeCode, domain, исходный FRange из Power/Y; всё проверяет fail-closed. Отчёт даёт bitwise/ULP/первый отличающийся бин, но **не** выдаёт операторский SHA за независимую Win32-аутентификацию.
