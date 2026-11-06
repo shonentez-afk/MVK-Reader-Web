@@ -1,4 +1,4 @@
-name: One-time cleanup of old MVKView Actions artifacts
+name: One-time cleanup of old MVKView Actions runs and artifacts
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   prune:
-    name: Preserve newest 3 verified Windows builds
+    name: Preserve verified Windows builds and important CI baselines
     if: github.repository == 'shonentez-afk/MVK-Reader-Web'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -57,3 +57,107 @@ jobs:
             bytes=$((bytes+size))
           done < "${RUNNER_TEMP}/mvk-artifacts-sorted.tsv"
           echo "MVK Stage111: removed ${removed} older artifacts (${bytes} bytes), kept up to 3 latest." | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Delete superseded completed Actions runs (preserve verified baselines)
+        shell: bash
+        run: |
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          
+          repo = os.environ["GH_REPO"]
+          own_run = int(os.environ["GITHUB_RUN_ID"])
+          if repo != "shonentez-afk/MVK-Reader-Web" or os.environ["GITHUB_REF_NAME"] != "research/stage111-mvkview-desktop-20261029":
+              raise SystemExit("Safety gate: unexpected repository or branch")
+          token = os.environ["GH_TOKEN"]
+          headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "mvk-stage111-one-time-cleanup"
+          }
+          base = "https://api.github.com/repos/" + repo + "/actions"
+          
+          def api(endpoint, method="GET"):
+              request = urllib.request.Request(base + endpoint, headers=headers, method=method)
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8")) if method == "GET" else None
+          
+          all_runs = []
+          total = None
+          for page in range(1, 16):
+              result = api("/runs?per_page=100&page=" + str(page))
+              if total is None:
+                  total = result["total_count"]
+              batch = result["workflow_runs"]
+              all_runs.extend(batch)
+              if not batch or len(all_runs) >= total:
+                  break
+          if total is None or len(all_runs) != total or not 10 <= len(all_runs) <= 1500:
+              raise SystemExit("Safety gate: pagination incomplete or unexpected run count")
+          ids = {run["id"] for run in all_runs}
+          # These reviewed green baselines are written in CURRENT_STATUS_RU.md.
+          pinned = {42004815613, 42000962349, 41999051774}
+          if not pinned.issubset(ids) or own_run not in ids:
+              raise SystemExit("Safety gate: required verified baselines/current run missing")
+          keep = set(pinned) | {own_run}
+          for branch, workflow, count in (
+              ("research/stage111-mvkview-desktop-20261029", "MVKView Compatible - Windows EXE", 3),
+              ("research/stage111-mvkview-desktop-20261029", "Stage111 native desktop OFFLINE", 1),
+              ("main", "Offline syntax and calibration tests", 1),
+              ("docs/reconcile-stage13-20261027", "Offline syntax and calibration tests", 1),
+          ):
+              eligible = [r for r in all_runs if r["head_branch"] == branch
+                          and r["name"] == workflow
+                          and r["status"] == "completed" and r["conclusion"] == "success"]
+              eligible.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
+              keep.update(r["id"] for r in eligible[:count])
+          # NEVER delete an unfinished job, even on a formerly unlisted workflow.
+          keep.update(r["id"] for r in all_runs if r["status"] != "completed")
+          targets = [r for r in all_runs if r["id"] not in keep and r["status"] == "completed"]
+          print("Initial workflow runs:", total)
+          print("Protected runs:", len(keep), "ids:", ",".join(map(str, sorted(keep))))
+          print("Completed superseded runs to delete:", len(targets))
+          if len(targets) > 1500:
+              raise SystemExit("Safety gate: too many runs")
+          
+          deleted = 0
+          failures = []
+          for run in targets:
+              endpoint = "/runs/" + str(run["id"])
+              for retry in range(5):
+                  try:
+                      api(endpoint, method="DELETE")
+                      deleted += 1
+                      break
+                  except urllib.error.HTTPError as error:
+                      if error.code == 404:
+                          deleted += 1
+                          break
+                      if error.code in (403, 429, 500, 502, 503, 504) and retry < 4:
+                          time.sleep(min(80, 10 * (2 ** retry)))
+                          continue
+                      failures.append((run["id"], error.code))
+                      break
+                  except Exception as error:
+                      failures.append((run["id"], type(error).__name__))
+                      break
+              if deleted % 50 == 0 and deleted:
+                  print("Deleted", deleted, "of", len(targets), "superseded runs")
+              time.sleep(0.24)
+          
+          line = ("Stage111 action cleanup: deleted " + str(deleted)
+                  + " of " + str(len(targets)) + " obsolete completed workflow runs; "
+                  + "protected " + str(len(keep)) + " important/active runs.")
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n### Actions workflow run cleanup\n")
+              summary.write(line + "\n\n")
+              summary.write("Protected run IDs: " + ", ".join(str(x) for x in sorted(keep)) + "\n")
+              if failures:
+                  summary.write("Failed deletions: " + str(failures[:15]) + "\n")
+          if failures:
+              raise SystemExit("Run deletion incomplete: " + str(failures[:15]))
+          remaining = api("/runs?per_page=100&page=1")["total_count"]
+          print("Remaining repository workflow runs (including this cleanup):", remaining)
