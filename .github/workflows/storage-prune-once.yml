@@ -60,6 +60,7 @@ jobs:
       - name: Delete superseded completed Actions runs (preserve verified baselines)
         shell: bash
         run: |
+          python3 - <<'PY'
           import json
           import os
           import time
@@ -145,7 +146,7 @@ jobs:
                       break
               if deleted % 50 == 0 and deleted:
                   print("Deleted", deleted, "of", len(targets), "superseded runs")
-              time.sleep(0.24)
+              time.sleep(0.65)
           
           line = ("Stage111 action cleanup: deleted " + str(deleted)
                   + " of " + str(len(targets)) + " obsolete completed workflow runs; "
@@ -161,3 +162,4 @@ jobs:
               raise SystemExit("Run deletion incomplete: " + str(failures[:15]))
           remaining = api("/runs?per_page=100&page=1")["total_count"]
           print("Remaining repository workflow runs (including this cleanup):", remaining)
+          PY
