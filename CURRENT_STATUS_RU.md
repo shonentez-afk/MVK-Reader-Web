@@ -1,5 +1,12 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31W — новый GigaCode main/obmen проверен (09.11.2026)
+
+В [обновлённом отчёте](https://github.com/shonentez-afk/MVK-Reader-Web/blob/main/obmen) агент исправил Fs 65536, FRange 510.565, FAdcDataType0, ring_size 2097152 Float32, mask2097151, проверил доступность work/ring через MCP. **Но сам отчёт содержит STOP:** `EBX+18=0x00048000=294912`, хотя source-checked SpectrumMode по этому адресу должен быть `0..3`; та же величина заявлена в `EBX+20`. Таблица capture ошибочно помечает `154B` как preFFT и `17E7` как preFFT; на деле это postFFT/premode и postmode/Y. `N262144` — verified FFT length, Power/Y по 131072 ×4=524288 байт; ring 2097152 **samples** занимает 8MiB, не 2MB. Старый и новый текст дают **разные 4 байта** для четвёртого Float32 (`BD B0 03 BF` vs `B0 03 BF BD`), прежний аудит правильно декодировал старый вариант. Снимков самих бинарных MCP read_memory в тексте нет. [Подробный аудит Stage111Z31W](docs/research/STAGE111Z31W_GIGACODE_SECOND_OBMEN_AUDIT_RU.md).
+
+**Выполнить только MCP read-only 60-byte Params с текущего EBX и 56-byte Storage с [EBP-4], локальный Python `struct.unpack_from` + SHA + raw offset-labelled hex, особо `EBX+18` и `EBX+20`. Не нажимать F9/не ставить шесть single-shot BP до устранения недостоверного SpectrumMode. Оригинальный A/B same-window по-прежнему OPEN.**
+
+
 > **Stage111Z31V — наблюдение UI при INT3:** пользователь уточнил, что при переходе на вкладку спектра оригинальная MVKView немедленно остановилась на `007D14AA`, когда логарифмическая шкала ещё не прогрузилась. Это совместимо с `GetSpectrum` до FFT: незавершённый график **не ошибка и не подтверждение mode=0/1**. Не нажимать F9 ради дорисовки до снятия исходного окна. Настоящий SpectrumMode только `[EBX+0x18]`. Зафиксировано в отчёте Z31V.
 
 
