@@ -119,7 +119,7 @@ jobs:
             throw 'Patched B hash does not match its run config'
           }
           Write-Host 'Z31R v1.4 PS5.1 missing-BP patcher PASS; original x32dbg runtime still untested.'
-# Stage111Z31U: source-proven original Float32 enum correction.
+          # Stage111Z31U: source-proven original Float32 enum correction.
           # Recreate an old v1.4 B from this synthetic generated v1.5 file.
           python (Join-Path $tool 'tests/generate_v14_storage_fixture.py') $run.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
