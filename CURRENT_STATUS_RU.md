@@ -2,7 +2,7 @@
 
 ## Stage111Z31X CI synthetic tests
 
-Добавлен [unittest-smoke](tools/research/stage111z31r_x32dbg_two_mode_capture/tests/test_preflight_getspectrum.py) для запуска локального `Preflight-GetSpectrum.py --self-test` и проверки обязательного аргумента каталога через уже существующий Linux/Windows Z31R workflow. **До физического подтверждения CI не маркировать как PASS.** Оригинальный процесс/драйвер/прошивка не участвуют.
+Добавлен [unittest-smoke](tools/research/stage111z31r_x32dbg_two_mode_capture/tests/test_preflight_getspectrum.py) для запуска локального `Preflight-GetSpectrum.py --self-test` и проверки обязательного аргумента каталога через уже существующий Linux/Windows Z31R workflow. **GitHub Actions #42612092918 2/2 SUCCESS:** Linux и Windows synthetic tests (включая новую self-test) + Windows PowerShell5.1 smoke. Это **не проверка оригинального x32dbg**. Оригинальный процесс/драйвер/прошивка не участвуют.
 
 
 ## Stage111Z31X — подготовлен контекст и локальный Python-проверщик для GigaCode

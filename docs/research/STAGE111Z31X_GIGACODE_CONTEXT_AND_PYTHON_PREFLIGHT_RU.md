@@ -2,6 +2,10 @@
 
 Дата: 09.11.2026. Назначение: **GigaCode (его собственная модель)** + x64dbg Automate MCP + оригинальная Win32 MVKView 1.0.47; не Cline/GLM. Рабочая ветка: `research/stage111-mvkview-desktop-20261029`. Привязка к состоянию: original paused EIP `007D14AA`, переход на страницу спектра прерван **до отрисовки логарифмической шкалы**.
 
+## Автоматизированная синтетическая проверка
+
+[GitHub Actions #42612092918](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42612092918) — **2/2 SUCCESS**: Linux Python synthetic verifier PASS, Windows Python synthetic verifier PASS, Windows PowerShell 5.1 package smoke PASS. Новый `test_preflight_getspectrum.py` проверяет в обоих окружениях запускаемый Python self-test с четырьмя кейсами и обязательность аргумента папки. Это **не испытание на оригинальном процессе MVKView** и не восстановление полного A/B захвата. Исходные BIN/IDP не использовались и не публиковались.
+
 ## Роль агента
 
 GigaCode — оператор MCP и исследователь несовпадений. **Математику, размер/тип, endianness, смещения и критерии PASS вычисляет локальный код.** Никаких выводов «готово» по собственному текстовому пересказу 60 байт. Отчёт `main/obmen` считается операторским журналом, не оригинальным бинарным доказательством.
