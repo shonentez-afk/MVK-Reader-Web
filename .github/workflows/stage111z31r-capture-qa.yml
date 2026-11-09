@@ -57,18 +57,41 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $run=Get-ChildItem -LiteralPath $root -Directory | Select-Object -First 1
           if ($null -eq $run) { throw 'Generator did not create run directory' }
-          $script=Join-Path $run.FullName 'CAPTURE_BOTH.txt'
+          $a=Join-Path $run.FullName 'RESUME_A_FROM_14AA.txt'
+          $b=Join-Path $run.FullName 'RESUME_B_FROM_14AA.txt'
+          $arm=Join-Path $run.FullName 'ARM_B_ONLY.txt'
           $check=Join-Path $run.FullName 'CHECK_READY.txt'
           $cfg=Join-Path $run.FullName 'capture_config.json'
-          foreach ($p in @($script,$check,$cfg)) {
+          $runMe=Join-Path $run.FullName 'RUN_ME.txt'
+          foreach ($p in @($a,$b,$arm,$check,$cfg,$runMe)) {
             if (-not (Test-Path -LiteralPath $p)) { throw "Missing generated $p" }
           }
-          $body=Get-Content -LiteralPath $script -Raw
-          if ($body -match '__[A-Z_]+__') { throw 'Unexpanded script placeholder' }
-          if ($body -notmatch 'run 0x007D14AA') { throw 'Wrong start breakpoint' }
-          if ($body -notmatch 'Z31R_BOTH_COMPLETE') { throw 'Missing completion marker' }
+          if (Test-Path (Join-Path $run.FullName 'CAPTURE_BOTH.txt')) {
+            throw 'Deprecated hanging monolithic script must not be generated'
+          }
+          $aText=Get-Content -LiteralPath $a -Raw
+          $bText=Get-Content -LiteralPath $b -Raw
+          $armText=Get-Content -LiteralPath $arm -Raw
+          foreach ($body in @($aText,$bText,$armText)) {
+            if ($body -match '__[A-Z_]+__') { throw 'Unexpanded script placeholder' }
+          }
+          if ($aText -notmatch 'cmp eip,0x007D14AA' -or $aText -notmatch 'Z31R_A_SAVED') {
+            throw 'A is not an explicit current-INT3 rescue script'
+          }
+          if ($bText -notmatch 'cmp eip,0x007D14AA' -or $bText -notmatch 'Z31R_BOTH_COMPLETE') {
+            throw 'B is not an explicit current-INT3 rescue script'
+          }
+          if ($aText -match 'run 0x007D14AA' -or $bText -match 'run 0x007D14AA') {
+            throw 'Scripts must not wait for first human-triggered GetSpectrum'
+          }
+          if ($armText -notmatch 'bpcond 0x007D14AA') { throw 'Filter 20 arm is missing' }
           $config=Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
-          if ($config.fft_n -ne 4096 -or $config.envelope_code -ne 20 -or $config.adc_claim -ne 4) {
+          if ($config.fft_n -ne 4096 -or $config.envelope_code -ne 20 -or $config.adc_claim -ne 4 -or
+              $config.resume_from_original_eip_14aa -ne $true) {
             throw 'Wrong generated metadata'
           }
-          Write-Host 'Z31R PS5.1 prepare smoke PASS; x32dbg live original not tested.'
+          if ($config.script_a_sha256 -ne (Get-FileHash $a -Algorithm SHA256).Hash.ToLowerInvariant() -or
+              $config.script_b_sha256 -ne (Get-FileHash $b -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw 'Generated script hashes mismatch'
+          }
+          Write-Host 'Z31R v1.3 PS5.1 rescue generator PASS; real x32dbg execution still untested.'
