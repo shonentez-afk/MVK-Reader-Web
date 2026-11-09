@@ -1,15 +1,17 @@
 {
-  "created": "2026-11-09",
+  "schema": "MVKVIEW_CAPTURE_TOOL_PACKAGE_SHA256_V1",
+  "package": "MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_V1_3_RESUME_FROM_INT3",
+  "intent": "READ_ONLY_PRIVATE_WIN32_X32DBG",
+  "verification": "synthetic_only_not_original_runtime",
   "files": {
-    "CAPTURE_BOTH.template.txt": "1b939fa0f453e08a84bd37c94429a8a437a43650b8cde4b0407ddc0426e71aae",
+    "ARM_B_ONLY.template.txt": "e150d71bd04419cdf5737df8fb90225d3c251ecb16c72610557544f133deffb2",
     "CHECK_READY.template.txt": "763cecf4bb922ada5bb5945b1cfeac86c08076a137509bae40793300b94bd9f4",
     "Prepare-Capture.cmd": "29ef7254e6b035973eb3aa1c17768e4d1e230f95a3b10714a645f1cc38103ae9",
-    "Prepare-Capture.ps1": "4f57eaa6adf17addd98fd889b06b60e008154621326008dad843bda903034331",
-    "README_RU.md": "93b16c23da911400928d1cea8b423c7987ae06ac9e8d9d0f705f24dc6910afb0",
-    "Verify-Capture.py": "f177ee8ead5e77c95c40e083f02a1f14c6ec67f1ab71ddbc1abef22dca9b383c",
-    "tests/test_stage111z31r_offline.py": "b7012029155de3ce2faa5bc59e7ad0ba2e74b2f41ac027f916128fb992a8b595"
-  },
-  "original_proprietary_data_included": false,
-  "package": "MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_V1_2_MENU_LABEL_PS51_FIXED",
-  "tests": "14/14 synthetic offline PASS; live x32dbg NOT tested"
+    "Prepare-Capture.ps1": "1de43e8548f8f84142f16a2557a500108228e4b172f74b4fa4562c722270b587",
+    "README_RU.md": "b4efcf362fe65efb183038d741a73ccf4f7d97a39f9a3af83b3fb3cb92cccc35",
+    "RESUME_A_FROM_14AA.template.txt": "6588f7ed8ba96c6c32bea5b8b93428394c8cd05b0ba442fbfed3495ff347ce23",
+    "RESUME_B_FROM_14AA.template.txt": "f0ec0bbc9b9c98f41fd91e5801c03be6423e6469f5340d848f4d6745fcb4d8a7",
+    "Verify-Capture.py": "f63a3ece24173aa95bc31dd24112b3834e1799bf0709350438c56d22f7ddc79a",
+    "tests/test_stage111z31r_offline.py": "46ccba66dbf017aad0489a61d972515130a7f2b167899c27bff91d01572244c5"
+  }
 }
