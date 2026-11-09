@@ -90,7 +90,7 @@ $steps = @(
  '4) With original GUI still open, F12 Pause again then launch ONE script:',
  ('scriptexec "' + $scriptFile + '"'),
  '5) Trigger/refresh plain spectrum in original GUI only when it resumes.',
- '6) After first capture a message appears. Click OK, choose EnvelopeCode 20 and trigger a new spectrum calculation.',
+ '6) After first capture a message appears. Click OK, choose menu '1oct 16 kHz' (EnvelopeCode 20) and trigger a new spectrum calculation.',
  '7) Do NOT manually press F9 or skip x32dbg scripts while they are active.',
  '8) After Z31R_BOTH_COMPLETE check with: py -3 Verify-Capture.py "RUN_FOLDER"',
  '9) If a FAIL appears, keep all partial files and the x32dbg Log. Do not bypass pointer or window checks.',
