@@ -1,4 +1,4 @@
-// Z31R V1.3 RESUME B from 007D14AA. Generated ASCII by Prepare-Capture.ps1.
+// Z31R V1.4 RESUME B from 007D14AA. Generated ASCII by Prepare-Capture.ps1.
 // Requires original mvkview v1.0.47 loaded, GUI active, capture mode=2.
 // No original EXE patching, no device IO. This script performs read-only savedata.
 LogEnable
@@ -54,7 +54,8 @@ log "Z31R_PREFLIGHT_OK: original image instruction anchors match IDP"
 // Only start when the ORIGINAL x32dbg EIP equals the real GetSpectrum stop.
 cmp eip,0x007D14AA
 jne Z31R_FAIL_RESUME_ENTRY
-bpc 0x007D14AA
+// At an existing live EIP=14AA, do NOT require a breakpoint to exist.
+// There may be none (manual pause or already cleared by previous script).
 // ===== ENVELOPE =====
 log "Z31R_B_RESUME: continuing from CURRENT EIP=007D14AA with code20"
 cmp eip, 0x007D14AA

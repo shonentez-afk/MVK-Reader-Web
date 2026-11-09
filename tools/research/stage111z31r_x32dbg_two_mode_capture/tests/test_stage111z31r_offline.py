@@ -123,9 +123,30 @@ class TestStaticScript(unittest.TestCase):
         self.assertIn('SaveLog "__OUT__\\capture_log_b_snapshot.txt"',b)
         self.assertIn('bp 0x007D14AA, Z31R_ENVELOPE_CODE20',arm)
         self.assertIn('bpcond 0x007D14AA, "dword:[ebx+8]==0x14"',arm)
-        self.assertIn('bpc 0x007D14AA',b)
+        self.assertNotIn('bpc 0x007D14AA',b)
+        self.assertIn('do NOT require a breakpoint to exist',b)
         self.assertNotIn('run ',arm)
         self.assertNotIn('savedata ',arm)
+
+    def test_resume_b_never_clears_nonexistent_breakpoint(self):
+        b=(SOURCE/'RESUME_B_FROM_14AA.template.txt').read_text('ascii')
+        start=b.index('cmp eip,0x007D14AA')
+        first_run=b.index('run 0x007D14B8')
+        self.assertNotIn('bpc ', b[start:first_run])
+        self.assertNotIn('bc ', b[start:first_run])
+        self.assertNotIn('bpcond ', b[start:first_run])
+        self.assertIn('cmp dword:[ebx+8], __ENV_HEX__', b[start:first_run])
+        self.assertIn('jne Z31R_FAIL_FILTER', b[start:first_run])
+
+    def test_local_existing_run_patcher_is_fail_closed(self):
+        s=(SOURCE/'Fix-Existing-B.ps1').read_text('utf-8')
+        for check in ('Z31R_', 'RESUME_B_FROM_14AA.txt',
+                      'bpc 0x007D14AA', 'RESUME_B_FROM_14AA.v13.backup.txt',
+                      'script_b_sha256', 'RESUME_B', 'Get-FileHash'):
+            self.assertIn(check,s)
+        self.assertNotIn('Start-Process',s)
+        self.assertNotIn('x32dbg.exe',s)
+        self.assertNotIn('run 0x',s)
 
     def test_all_original_signatures_verified_before_capture(self):
         for stage in ('A','B'):

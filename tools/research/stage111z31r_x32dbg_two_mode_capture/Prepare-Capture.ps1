@@ -1,4 +1,4 @@
-# Stage111Z31R. Generates ONE two-mode x32dbg capture, offline and read-only.
+# Stage111Z31R v1.4. Generates one split-mode capture, offline and read-only.
 # Works with Windows PowerShell 5.1. Does NOT start original MVKView or a device.
 [CmdletBinding()]
 param(
@@ -92,7 +92,7 @@ if (-not [string]::IsNullOrWhiteSpace($ArchiveTsxml)) {
 $configPath = Join-Path $runPath 'capture_config.json'
 $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
 $steps = @(
- 'Z31R v1.3: Resume-safe ORIGINAL two-mode capture. NO original device connection.',
+ 'Z31R v1.4: Resume-safe ORIGINAL two-mode capture. NO original device connection.',
  ('RUN FOLDER: ' + $runPath),
  '0) Original MVKView1.0.47 must be open in x32dbg; source archive ADC4 loaded.',
  '1) CHECK_READY only once if x32dbg is PAUSED:',
@@ -108,7 +108,7 @@ $steps = @(
  ('scriptexec "' + $armBFile + '"'),
  '5) AFTER ARM_B script says finished, press F9 ONCE. In the ORIGINAL GUI select 1oct 16 kHz (EnvelopeCode 20).',
  '   Recalculate spectrum. x32dbg ignores code0 hits; stops at EIP=007D14AA with code20.',
- '6) From x32dbg PAUSED at EIP=007D14AA and [EBX+8]==0x14 execute:',
+ '6) From x32dbg PAUSED at EIP=007D14AA and [EBX+8]==0x14 execute (B no longer requires an existing BP):',
  ('scriptexec "' + $bFile + '"'),
  '7) Wait until Z31R_BOTH_COMPLETE, then check: py -3 Verify-Capture.py "RUN_FOLDER"',
  '8) Do not re-run any resume script at wrong EIP, do not overwrite old files, do not modify memory.',

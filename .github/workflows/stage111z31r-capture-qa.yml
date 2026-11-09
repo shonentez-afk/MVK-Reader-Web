@@ -94,4 +94,28 @@ jobs:
               $config.script_b_sha256 -ne (Get-FileHash $b -Algorithm SHA256).Hash.ToLowerInvariant()) {
             throw 'Generated script hashes mismatch'
           }
-          Write-Host 'Z31R v1.3 PS5.1 rescue generator PASS; real x32dbg execution still untested.'
+          # Recreate an OLD generated v1.3 B on this synthetic runner.
+          # The new v1.4 patcher must update that SAME run folder,
+          # without opening x32dbg, changing the original archive, or F9.
+          $bText=[System.IO.File]::ReadAllText($b,[System.Text.Encoding]::ASCII)
+          $legacy=$bText.Replace('Z31R V1.4 RESUME B','Z31R V1.3 RESUME B')
+          $pattern='(?m)^// At an existing live EIP=14AA, do NOT require a breakpoint to exist\.\r?\n// There may be none \(manual pause or already cleared by previous script\)\.'
+          $legacy=[regex]::Replace($legacy,$pattern,'bpc 0x007D14AA')
+          if ($legacy -notmatch 'bpc 0x007D14AA') { throw 'Could not construct a legacy v1.3 fixture' }
+          [System.IO.File]::WriteAllText($b,$legacy,[System.Text.Encoding]::ASCII)
+          $config.script_b_sha256=(Get-FileHash $b -Algorithm SHA256).Hash.ToLowerInvariant()
+          $config | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $cfg -Encoding UTF8
+          $hashA=(Get-FileHash $a -Algorithm SHA256).Hash
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $tool 'Fix-Existing-B.ps1') -RunFolder $run.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath (Join-Path $run.FullName 'RESUME_B_FROM_14AA.v13.backup.txt'))) {
+            throw 'B backup not saved'
+          }
+          $patched=[System.IO.File]::ReadAllText($b,[System.Text.Encoding]::ASCII)
+          if ($patched -match '(?m)^bpc\s+0x007D14AA') { throw 'Buggy breakpoint clear survived' }
+          if ((Get-FileHash $a -Algorithm SHA256).Hash -ne $hashA) { throw 'Patcher changed A unexpectedly' }
+          $cfgPatched=Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
+          if ($cfgPatched.script_b_sha256 -ne (Get-FileHash $b -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw 'Patched B hash does not match its run config'
+          }
+          Write-Host 'Z31R v1.4 PS5.1 missing-BP patcher PASS; original x32dbg runtime still untested.'
