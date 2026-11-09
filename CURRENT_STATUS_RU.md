@@ -1,5 +1,14 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31U — исправлен исходный тип Float32 ring в x32dbg (09.11.2026)
+
+**REAL пользовательский скрин:** `Z31R_B_RESUME` прошёл; дальше `Z31R_FAIL_STORAGE: ... FAdcDataType not 1`. В приватном исходнике `_Unit115.pas` `007D0A04..007D0A2F` подтверждено: **TMvkChannelStorage.FAdcDataType=0 для Float32, =2 для byte, 1 INVALID**. Прежние v1.4 B/A и `Verify-Capture.py` ошибочно проверяли type1; их синтетические тесты тоже строили type1. На текущем скрине **нет действительного значения original storage type**, поэтому реальный x32dbg numeric test остаётся OPEN; не считать установленным, что там0.
+
+Исходный исправленный код `fcbbca15` (и workflow `3e8dfac1`): A/B и verifier теперь type0, split pointer/type ошибки, probe pointer/type/Fs перед guards, усиленный memory-region check, отдельный `Fix-Existing-Storage.ps1` для уже подготовленной папки `C:\MVK_CAPTURE\Z31R_20261109_115102_88200486` с SHA/backup и сохранением A/B/logs. ZIP **v1.5** `MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_v1_5_STORAGE_FIX.zip` (32 543 байта, SHA256 `7aff9e0546bff112f5e7001e089a9c975ce996bd9350b1529049328b2fbead5d`) доступен в чате; в GitHub только текстовые исходники. [Отчёт Z31U](docs/research/STAGE111Z31U_FADC_DATATYPE_SOURCE_FIX_RU.md).
+
+[QA #42566735159](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42566735159) **2/2 SUCCESS**, Linux 21/21, Windows 21/21 + реальный PowerShell 5.1 patched existing B `Z31R_STORAGE_PATCH_OK`, old backup / config SHA / A unchanged. **Далее сначала пользователь в x32dbg Paused/EIP14AA/code20 читает `dword:[ebp-4]` и `dword:[dword:[ebp-4]+0x0C]`**. Если type0 — запускать патчер v1.5 и текущий B; иначе прислать тип и адрес. F9 НЕ нажимать. Оригинальные полные Y/FIR/а затем A ещё не сняты. Не возвращаться к уже принятым FFT/FRange/Tag0–3. Main/Native/десктоп не изменены.
+
+
 ## Stage111Z31T — устранён реальный сбой B на отсутствующем breakpoint (09.11.2026)
 
 **REAL screenshot:** пользователь находился Paused на `EIP=007D14AA`, `[EBX+8]=0x14` (огибающая «1окт 16 кГц»); A дал ожидаемый `Z31R_FAIL_FILTER`, B прошёл preflight и остановился на `No such breakpoint "0x007D14AA"`. Это из-за нашего **безусловного `bpc 0x007D14AA` в B**, когда точки уже нет; **не численный сбой FFT/FIR**. После этого полного original B или A ещё не получено.
