@@ -49,7 +49,7 @@ def synth_run(root,*,n=4096,end=16999,mode=2,broken_end=False,corrupt_normalized
         (p/'summary_triplet.bin').write_bytes((p/'params_final.bin').read_bytes()[0x30:0x3C])
         s=bytearray(0x38)
         put32(s,4,0x3F800000)
-        put32(s,0x0C,1)
+        put32(s,0x0C,0)
         put32(s,0x10,cap)
         put32(s,0x14,cap-1)
         put32(s,0x18,65536)
@@ -96,7 +96,10 @@ class TestStaticScript(unittest.TestCase):
             self.assertIn('Z31R_FAIL_FILTER',body)
             self.assertIn('Z31R_FAIL_OPCODE',body)
             self.assertIn('cmp mem.base($z31r_chk_address),mem.base($z31r_chk_last)',body)
-            self.assertIn('cmp dword:[$z31r_ctx_storage+0x0C],0x1',body)
+            self.assertIn('cmp dword:[$z31r_ctx_storage+0x0C],0x0',body)
+            self.assertNotIn('cmp dword:[$z31r_ctx_storage+0x0C],0x1',body)
+            self.assertIn('Z31R_FAIL_STORAGE_TYPE',body)
+            self.assertIn('STORAGE_PROBE',body)
             self.assertIn('cmp $z31r_ctx_start,dword:[$z31r_ctx_storage+0x28]',body)
             self.assertTrue(body.isascii())
             for field in ('params_pre_dc.bin','input_normalized_pre_dc.bin',
@@ -255,6 +258,27 @@ class TestSyntheticReceipt(unittest.TestCase):
             (root/'A'/'frange.bin').write_bytes(struct.pack('<f',510.))
             with self.assertRaisesRegex(ValueError,'FRange'):
                 ver.verify(root)
+
+    def test_source_verified_storage_float_code_zero_and_wrong_enum_fail_closed(self):
+        # Original _Unit115 Create has Float32 code0, byte code2; neither 1 nor 2
+        # is a Float32 ring. A passing synthetic test must use actual code0.
+        for code in (1,2,3):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);synth_run(root)
+                s=root/'B'/'storage.bin';data=bytearray(s.read_bytes())
+                put32(data,0x0C,code);s.write_bytes(data)
+                with self.assertRaisesRegex(ValueError,'storage type/RAW Fs mismatch'):
+                    ver.verify(root)
+
+    def test_package_type_guard_matches_original_assembly(self):
+        for stage in ('A','B'):
+            body=(SOURCE/f'RESUME_{stage}_FROM_14AA.template.txt').read_text('ascii')
+            self.assertIn('cmp dword:[$z31r_ctx_storage+0x0C],0x0',body)
+            self.assertIn('Z31R_FAIL_STORAGE_TYPE:',body)
+            self.assertNotIn('not 1 (float ring)',body)
+        source=(SOURCE/'Verify-Capture.py').read_text('utf-8')
+        self.assertIn('u32(storage,0x0C)!=0',source)
+        self.assertNotIn('u32(storage,0x0C)!=1',source)
 
 if __name__=='__main__':
     unittest.main()

@@ -88,7 +88,9 @@ def verify_one(root: Path, cfg: dict, label: str, code: int) -> dict:
     frange=read_exact(root,p/'frange.bin',4)
     if storage[4:8]!=frange:
         raise ValueError(label+' original FRange from storage does not equal saved field')
-    if u32(storage,0x0C)!=1 or u32(storage,0x18)!=fs:
+    # _Unit115:007D0A04..007D0A2F: code 0=Float32 ring; code 2=byte ring.
+    # Code 1 was a false assumption in the v1.4 capture validator.
+    if u32(storage,0x0C)!=0 or u32(storage,0x18)!=fs:
         raise ValueError(label+' original storage type/RAW Fs mismatch')
     gain=f32(frange)
     if not math.isfinite(gain) or gain<=0:
@@ -145,7 +147,7 @@ def verify_one(root: Path, cfg: dict, label: str, code: int) -> dict:
         'f_range_float32_hex':f'{u32(frange,0):08X}',
         'ring_wrapped':bool(tail_n),'ring_head_float32_count':first_n,
         'ring_tail_float32_count':tail_n,
-        'source_ring_type_float32':True,
+        'source_ring_type_float32':True, 'source_ring_adc_datatype':0,
         'buffer_snapshot_matches_planned_window':True,
         'source_same_capture_thread_and_frame_verified_by_log':False,
         '_ring':ring, '_normalized':raw_pre_dc,

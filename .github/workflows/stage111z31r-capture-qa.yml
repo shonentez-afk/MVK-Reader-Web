@@ -98,7 +98,7 @@ jobs:
           # The new v1.4 patcher must update that SAME run folder,
           # without opening x32dbg, changing the original archive, or F9.
           $bText=[System.IO.File]::ReadAllText($b,[System.Text.Encoding]::ASCII)
-          $legacy=$bText.Replace('Z31R V1.4 RESUME B','Z31R V1.3 RESUME B')
+          $legacy=$bText.Replace('Z31R V1.5 RESUME B','Z31R V1.3 RESUME B')
           $pattern='(?m)^// At an existing live EIP=14AA, do NOT require a breakpoint to exist\.\r?\n// There may be none \(manual pause or already cleared by previous script\)\.'
           $legacy=[regex]::Replace($legacy,$pattern,'bpc 0x007D14AA')
           if ($legacy -notmatch 'bpc 0x007D14AA') { throw 'Could not construct a legacy v1.3 fixture' }
@@ -119,3 +119,32 @@ jobs:
             throw 'Patched B hash does not match its run config'
           }
           Write-Host 'Z31R v1.4 PS5.1 missing-BP patcher PASS; original x32dbg runtime still untested.'
+# Stage111Z31U: source-proven original Float32 enum correction.
+          # Recreate an old v1.4 B from this synthetic generated v1.5 file.
+          python (Join-Path $tool 'tests/generate_v14_storage_fixture.py') $run.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $legacyCfg=Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
+          $badB=[System.IO.File]::ReadAllText($b,[System.Text.Encoding]::ASCII)
+          if ($badB -notmatch 'FAdcDataType not 1 \(float ring\)' -or
+              $badB -notmatch 'cmp dword:\[\$z31r_ctx_storage\+0x0C\],0x1' -or
+              $legacyCfg.script_b_sha256 -ne (Get-FileHash $b -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw 'Could not construct historical v1.4 storage-code fixture'
+          }
+          $aShaBefore=(Get-FileHash $a -Algorithm SHA256).Hash
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $tool 'Fix-Existing-Storage.ps1') -RunFolder $run.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $backupStorage=Join-Path $run.FullName 'RESUME_B_FROM_14AA.v14.bad_datatype.backup.txt'
+          if (-not (Test-Path -LiteralPath $backupStorage)) { throw 'Missing old B storage backup' }
+          $freshB=[System.IO.File]::ReadAllText($b,[System.Text.Encoding]::ASCII)
+          if ($freshB -notmatch 'Z31R_B_STORAGE_PROBE' -or
+              $freshB -notmatch 'cmp dword:\[\$z31r_ctx_storage\+0x0C\],0x0' -or
+              $freshB -notmatch 'Z31R_FAIL_STORAGE_TYPE:' -or
+              $freshB -match '(?m)^bpc\s+0x007D14AA') {
+            throw 'New B did not preserve safe datatype and breakpoint guards'
+          }
+          $verifiedCfg=Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
+          if ($verifiedCfg.script_b_sha256 -ne (Get-FileHash $b -Algorithm SHA256).Hash.ToLowerInvariant() -or
+              (Get-FileHash $a -Algorithm SHA256).Hash -ne $aShaBefore) {
+            throw 'B SHA mismatch or unexpected modification of A'
+          }
+          Write-Host 'Z31R v1.5 PowerShell 5.1 source-enum existing-run repair PASS; original x32dbg runtime not tested.'

@@ -1,4 +1,4 @@
-// Z31R V1.3 RESUME A from 007D14AA. Generated ASCII by Prepare-Capture.ps1.
+// Z31R V1.5 RESUME A from 007D14AA. Generated ASCII by Prepare-Capture.ps1.
 // Requires original mvkview v1.0.47 loaded, GUI active, capture mode=2.
 // No original EXE patching, no device IO. This script performs read-only savedata.
 LogEnable
@@ -72,8 +72,18 @@ cmp $z31r_ctx_storage,0
 je Z31R_FAIL_STORAGE
 cmp mem.base($z31r_ctx_storage),0
 je Z31R_FAIL_STORAGE
-cmp dword:[$z31r_ctx_storage+0x0C],0x1
+// FAdcDataType, FSampleRate and Float32-ring pointer must be readable.
+mov $z31r_storage_last,$z31r_ctx_storage
+add $z31r_storage_last,0x37
+cmp $z31r_storage_last,$z31r_ctx_storage
+jbe Z31R_FAIL_STORAGE
+cmp mem.base($z31r_storage_last),mem.base($z31r_ctx_storage)
 jne Z31R_FAIL_STORAGE
+// Original TMvkChannelStorage.Create at 007D0A04: FAdcDataType 0=Float32, 2=Byte.
+// Old Z31R v1.4 incorrectly required 1 (invalid enum); never bypass pointer guards.
+log "Z31R_A_STORAGE_PROBE: PTR={p:$z31r_ctx_storage} FAdcDataType={x:dword:[$z31r_ctx_storage+0x0C]} Fs={x:dword:[$z31r_ctx_storage+0x18]}"
+cmp dword:[$z31r_ctx_storage+0x0C],0x0
+jne Z31R_FAIL_STORAGE_TYPE
 cmp dword:[$z31r_ctx_storage+0x18], __RAW_FS_HEX__
 jne Z31R_FAIL_RATE
 cmp dword:[ebx+0x24],0
@@ -339,7 +349,10 @@ Z31R_FAIL_FRAME:
 log "Z31R_FAIL_FRAME: changed EBP/EBX/TID/storage within one GetSpectrum; not same function call."
 jmp Z31R_ABORT
 Z31R_FAIL_STORAGE:
-log "Z31R_FAIL_STORAGE: invalid storage pointer or FAdcDataType not 1 (float ring)."
+log "Z31R_FAIL_STORAGE: invalid storage pointer or missing Float32 ring; check EBP-4 pointer and memory region."
+jmp Z31R_ABORT
+Z31R_FAIL_STORAGE_TYPE:
+log "Z31R_FAIL_STORAGE_TYPE: Float32 storage requires FAdcDataType=0 in original _Unit115; value 2 is byte ring. Inspect storage pointer, do not force type."
 jmp Z31R_ABORT
 Z31R_FAIL_FILTER:
 log "Z31R_FAIL_FILTER: expected PLAIN code0 then envelope code20; a different call hit this stop."

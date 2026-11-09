@@ -1,4 +1,4 @@
-# Stage111Z31R v1.4. Generates one split-mode capture, offline and read-only.
+# Stage111Z31R v1.5. Generates one split-mode capture, offline and read-only.
 # Works with Windows PowerShell 5.1. Does NOT start original MVKView or a device.
 [CmdletBinding()]
 param(
@@ -72,6 +72,7 @@ $config = [ordered]@{
     envelope_code = $EnvelopeCode
     envelope_output_fs_hz = $EnvelopeOutputFs
     source_archive_same_run_not_automatically_proven = $true
+    source_float_storage_adctype = 0  # confirmed _Unit115; byte rings are type 2
     generated_utc = [DateTime]::UtcNow.ToString('o')
     original_program = 'MVKView 1.0.47 x32dbg only'
     script_a_sha256 = (Get-FileHash -LiteralPath $aFile -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -92,7 +93,7 @@ if (-not [string]::IsNullOrWhiteSpace($ArchiveTsxml)) {
 $configPath = Join-Path $runPath 'capture_config.json'
 $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
 $steps = @(
- 'Z31R v1.4: Resume-safe ORIGINAL two-mode capture. NO original device connection.',
+ 'Z31R v1.5: Resume-safe ORIGINAL two-mode capture. NO original device connection.',
  ('RUN FOLDER: ' + $runPath),
  '0) Original MVKView1.0.47 must be open in x32dbg; source archive ADC4 loaded.',
  '1) CHECK_READY only once if x32dbg is PAUSED:',
