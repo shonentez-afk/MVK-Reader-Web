@@ -1,5 +1,12 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31V — проверка GigaCode MCP obmen, 09.11.2026
+
+Оператор передал полный [main/obmen](https://github.com/shonentez-afk/MVK-Reader-Web/blob/main/obmen): GigaCode через MCP дошёл до EIP 007D14AA, указал EBX=02A40E58, EBP=0019F270 и type0, но неправильно вычислил Fs из байт `00 00 01 00` как **256 вместо 65536**, FRange `53 48 FF 43` как ≈510.28 вместо **510.56503296**, неверно распознал Float32 из первых четырёх слов; ошибочно объявил `SpectrumMode=[EBX+0C]` вместо **[EBX+18]**, N262144 ≠ размер FFT и 4096 из [EBP-14] размером выходного спектра. Перепутал контрольные точки: 14B8 **после DC**, 153D **до FFT после FIR**, 154B **после FFT до mode**, 17E7 **после mode с полным Y**, 1900 **summary**. `Storage+34` ring и `[EBP-2C]` work имеют разные адреса по определению; отличие от ECX не является доказательством invalid. Оригинальный source/FFT Tag0–3 не изменять. [Полный аудит Stage111Z31V](docs/research/STAGE111Z31V_GIGACODE_OBMEN_MCP_AUDIT_RU.md).
+
+**STOP:** НЕ запускать рекомендованные GigaCode шесть single-shot BP и F9, пока не получены сырые bytes EBX 0x3C/Storage 0x38/EBP locals через MCP и повторно детерминированно декодированы локальным Python `struct` с доказанными region/bounds. MCP+отладчик CONNECT observed, original FULL A/B parity OPEN.
+
+
 ## Stage111Z31U — исправлен исходный тип Float32 ring в x32dbg (09.11.2026)
 
 **REAL пользовательский скрин:** `Z31R_B_RESUME` прошёл; дальше `Z31R_FAIL_STORAGE: ... FAdcDataType not 1`. В приватном исходнике `_Unit115.pas` `007D0A04..007D0A2F` подтверждено: **TMvkChannelStorage.FAdcDataType=0 для Float32, =2 для byte, 1 INVALID**. Прежние v1.4 B/A и `Verify-Capture.py` ошибочно проверяли type1; их синтетические тесты тоже строили type1. На текущем скрине **нет действительного значения original storage type**, поэтому реальный x32dbg numeric test остаётся OPEN; не считать установленным, что там0.
