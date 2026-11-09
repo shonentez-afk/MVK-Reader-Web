@@ -1,5 +1,10 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31X CI synthetic tests
+
+Добавлен [unittest-smoke](tools/research/stage111z31r_x32dbg_two_mode_capture/tests/test_preflight_getspectrum.py) для запуска локального `Preflight-GetSpectrum.py --self-test` и проверки обязательного аргумента каталога через уже существующий Linux/Windows Z31R workflow. **До физического подтверждения CI не маркировать как PASS.** Оригинальный процесс/драйвер/прошивка не участвуют.
+
+
 ## Stage111Z31X — подготовлен контекст и локальный Python-проверщик для GigaCode
 
 Собрана [единая инструкция GigaCode](docs/research/STAGE111Z31X_GIGACODE_CONTEXT_AND_PYTHON_PREFLIGHT_RU.md): правильные пути к исходным Python FFT/Power→Y, проверенному `Verify-Capture.py`, сценариям A/B, текущим blocker Z31W, стадиям GetSpectrum и требованиям read-only MCP. Добавлен стандартно-библиотечный [Preflight-GetSpectrum.py](tools/research/stage111z31r_x32dbg_two_mode_capture/Preflight-GetSpectrum.py) для локальной строгой проверки **пяти бинарных снимков+session JSON** при EIP=14AA (0x3C/0x20/4/0x38/0x30 байт), независимого reread, `mode in 0..3`, Float32 type0, Fs, ring mask/history, Storage ptr и SHA. Никаких MCP calls/сети/возобновления внутри скрипта, no original snapshots in GitHub. **Реальная физическая проба GigaCode остаётся OPEN**, `EBX+18=0x48000` должен давать BLOCK. Текущий x32dbg Paused не трогать до работы на ПК.
