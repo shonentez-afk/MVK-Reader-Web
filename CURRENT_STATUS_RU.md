@@ -1,5 +1,14 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31S — 09.11.2026: original 14AA достигнут, исправлено прерывание сценария
+
+**Новое REAL-ORIGINAL evidence:** на пользовательском скрине x32dbg `Z31R_READY_OK` (адреса совпали), `INT3 breakpoint at mvkview.007D14AA!` — оригинальный GetSpectrum остановлен **до DC/FIR**. ДАЛЬШЕ `Script is terminated by user`, физических A/B дампов **нет**, original численное full-Y/FIR паритет НЕ доказан. Повторный монолитный сценарий из EIP 14AA закономерно выдал `Z31R_FAIL_STARTUP`; это **не ошибка FFT**.
+
+Подготовлен исправленный **возобновляемый** ZIP **`MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_v1_3_RESUME.zip`** (23670 байт; SHA256 `0ebbed00b5de3996a8fd8c6b36517656c80f4127bfc28800beff82cab85025f6`), выдан в чате. Старый `CAPTURE_BOTH.txt` больше не генерируется: вместо ожидания GUI внутри длительного `scriptexec` два коротких `RESUME_A_FROM_14AA.txt` и `RESUME_B_FROM_14AA.txt` + `ARM_B_ONLY.txt` с условным `bpcond [EBX+8]==0x14`. Если пользователь всё ещё PAUSED/EIP 14AA/code0 — **начать RESUME_A сразу, без F9 и без перезапуска архива**. Изменено только исследовательское средство захвата; функции FFT/FRange/FIR/Qt/Native не менялись.
+
+[Z31S отчёт](docs/research/STAGE111Z31S_X32DBG_REAL_14AA_STOP_RECOVERY_RU.md) · [Исходники v1.3](tools/research/stage111z31r_x32dbg_two_mode_capture/README_RU.md) · [QA GitHub #42563110474](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42563110474) **2/2 SUCCESS**, Linux 17/17, Windows 17/17 + реальный Windows PowerShell 5.1 smoke / SHA контроль. **НЕ заявлять реальный pass x32dbg после 14AA до пользовательского ZIP.** Original full-Y same-BIN и envelope остаются единственными нужными численными доказательствами для спектра.
+
+
 ## Stage111Z31R — единый защищённый original x32dbg захват двух режимов (09.11.2026)
 
 **Уточнение меню 09.11:** оригинальный IDP `_Unit128` подтверждает: `EnvelopeCode=20` подписан в меню **«1окт 16 кГц»** — октавная полоса с центром 16 кГц, не 20 Гц. Промежуточная FIR частота 65536 Гц → финальная выходная Fs 32768 Гц (децимация 2), ранее установленное требование CAPTURE_BOTH было правильным. Для устранения непонятной инструкции подготовлен ZIP **v1.2** `MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_v1_2.zip`, SHA256 `fe189ce7020e95e8d883ab4302a6e93385e2049f83721190b3da1033cee6df28`, меняет только названия пунктов меню. Исправлена ошибка кавычек в PowerShell подсказке v1.1; **Windows/Linux CI #42562385095 2/2 SUCCESS** (Windows PS5.1 generator smoke). Версии ZIP v1.1 не использовать; адреса x32dbg/математика/параметры остались прежними.
