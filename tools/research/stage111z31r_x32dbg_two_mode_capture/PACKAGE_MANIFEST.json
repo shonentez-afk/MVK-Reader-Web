@@ -1,0 +1,15 @@
+{
+  "created": "2026-11-09",
+  "files": {
+    "CAPTURE_BOTH.template.txt": "842c0a56bbf654975f8d366045fa0d07f733e4a1a7bdd1ae18659ba9b69341bf",
+    "CHECK_READY.template.txt": "763cecf4bb922ada5bb5945b1cfeac86c08076a137509bae40793300b94bd9f4",
+    "Prepare-Capture.cmd": "29ef7254e6b035973eb3aa1c17768e4d1e230f95a3b10714a645f1cc38103ae9",
+    "Prepare-Capture.ps1": "1260d5cce86177f45b3faa38071d5c65253f8288d5375b28d96c02172d73f4aa",
+    "README_RU.md": "7a2379f5983892d00e4f0808d39adcd652f314c034bca65425e04fb1b3800a5e",
+    "Verify-Capture.py": "f177ee8ead5e77c95c40e083f02a1f14c6ec67f1ab71ddbc1abef22dca9b383c",
+    "tests/test_stage111z31r_offline.py": "b7012029155de3ce2faa5bc59e7ad0ba2e74b2f41ac027f916128fb992a8b595"
+  },
+  "original_proprietary_data_included": false,
+  "package": "MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_V1",
+  "tests": "14/14 synthetic offline PASS; live x32dbg NOT tested"
+}
