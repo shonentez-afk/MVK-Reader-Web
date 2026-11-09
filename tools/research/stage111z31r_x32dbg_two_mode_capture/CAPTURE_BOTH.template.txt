@@ -308,7 +308,7 @@ log "Z31R_A_COMPLETE EIP={p:eip} PID={x:$pid} TID={x:tid()} END={x:$z31r_ctx_end
 mov $z31r_first_end,$z31r_ctx_end
 mov $z31r_first_storage,$z31r_ctx_storage
 mov $z31r_first_tid,$z31r_ctx_tid
-msg "PLAIN capture finished. Press OK to resume; then choose EnvelopeCode 20 and recalculate spectrum in MVKView. Do NOT press F9 manually."
+msg "PLAIN capture finished. Press OK to resume; then choose menu 1oct 16kHz (EnvelopeCode 20) and recalculate spectrum in MVKView. Do NOT press F9 manually."
 // ===== ENVELOPE =====
 log "Z31R_B_WAIT: preparing next ORIGINAL GetSpectrum trigger"
 run 0x007D14AA
