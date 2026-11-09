@@ -1,0 +1,74 @@
+name: MVKView Z31R x32dbg capture package QA (no original binaries)
+
+on:
+  push:
+    branches:
+      - research/stage111-mvkview-desktop-20261029
+    paths:
+      - 'tools/research/stage111z31r_x32dbg_two_mode_capture/**'
+      - '.github/workflows/stage111z31r-capture-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mvk-z31r-capture-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-static:
+    name: Linux synthetic verifier and script static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Test without x32dbg or private measurements
+        run: python -m unittest discover -v -s tools/research/stage111z31r_x32dbg_two_mode_capture/tests -p "test_*.py"
+
+  windows-powershell:
+    name: Windows PowerShell 5.1 generator smoke (no original MVKView)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Windows Python synthetic tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -v -s tools/research/stage111z31r_x32dbg_two_mode_capture/tests -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare one real-script-shaped Windows capture folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tool='tools/research/stage111z31r_x32dbg_two_mode_capture'
+          $root=Join-Path $env:RUNNER_TEMP 'MVK_Z31R_QA'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $tool 'Prepare-Capture.ps1') -Adc 4 -N 4096 -SpectrumType 2 -Root $root
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $run=Get-ChildItem -LiteralPath $root -Directory | Select-Object -First 1
+          if ($null -eq $run) { throw 'Generator did not create run directory' }
+          $script=Join-Path $run.FullName 'CAPTURE_BOTH.txt'
+          $check=Join-Path $run.FullName 'CHECK_READY.txt'
+          $cfg=Join-Path $run.FullName 'capture_config.json'
+          foreach ($p in @($script,$check,$cfg)) {
+            if (-not (Test-Path -LiteralPath $p)) { throw "Missing generated $p" }
+          }
+          $body=Get-Content -LiteralPath $script -Raw
+          if ($body -match '__[A-Z_]+__') { throw 'Unexpanded script placeholder' }
+          if ($body -notmatch 'run 0x007D14AA') { throw 'Wrong start breakpoint' }
+          if ($body -notmatch 'Z31R_BOTH_COMPLETE') { throw 'Missing completion marker' }
+          $config=Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json
+          if ($config.fft_n -ne 4096 -or $config.envelope_code -ne 20 -or $config.adc_claim -ne 4) {
+            throw 'Wrong generated metadata'
+          }
+          Write-Host 'Z31R PS5.1 prepare smoke PASS; x32dbg live original not tested.'
