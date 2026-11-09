@@ -182,21 +182,32 @@ def verify(root: Path) -> dict:
         raise ValueError('Envelope must use longer real input history than plain FFT')
     # Evidence should never be 'proven' by reading capture.log alone. It is
     # optional because earlier RedirectLog often wrote just redirect headers.
-    log_verified=False
-    for filename in ('capture_log_snapshot.txt','capture.log'):
+    # Each pass is resumed from an actual EIP=14AA stop, not held in a
+    # long-running x32dbg script while the human selects the next GUI mode.
+    # Logs are split to avoid old RedirectLog overwriting plain-mode evidence.
+    # Plain and envelope marker files must BOTH be present to claim marker QA.
+    def has_marker(filename, needles):
         logfile=root/filename
-        if logfile.is_file() and not logfile.is_symlink() and logfile.stat().st_size<=1_000_000:
-            raw=logfile.read_bytes()
-            for encoding in ('utf-8-sig','utf-16','utf-16-le','cp1251'):
-                try:
-                    text=raw.decode(encoding)
-                except UnicodeError:
-                    continue
-                if ('Z31R_A_COMPLETE' in text and 'Z31R_B_COMPLETE' in text
-                    and 'Z31R_BOTH_COMPLETE' in text):
-                    log_verified=True
-                    break
-            if log_verified: break
+        if not logfile.is_file() or logfile.is_symlink() or logfile.stat().st_size>1_000_000:
+            return False
+        raw=logfile.read_bytes()
+        for encoding in ('utf-8-sig','utf-16','utf-16-le','cp1251'):
+            try:
+                text=raw.decode(encoding)
+            except UnicodeError:
+                continue
+            if all(needle in text for needle in needles):
+                return True
+        return False
+    log_verified=(
+        has_marker('capture_log_a_snapshot.txt', ('Z31R_A_COMPLETE', 'Z31R_A_SAVED'))
+        and has_marker('capture_log_b_snapshot.txt', ('Z31R_B_COMPLETE', 'Z31R_BOTH_COMPLETE'))
+    )
+    if not log_verified:
+        # Legacy single-script v1.2 receipts are supported for data validation.
+        log_verified=any(has_marker(name, (
+            'Z31R_A_COMPLETE','Z31R_B_COMPLETE','Z31R_BOTH_COMPLETE'))
+            for name in ('capture_log_snapshot.txt','capture.log'))
     for x in (a,b):
         x.pop('_ring');x.pop('_normalized')
         x['source_same_capture_thread_and_frame_verified_by_log']=log_verified
