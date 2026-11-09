@@ -1,5 +1,14 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31T — устранён реальный сбой B на отсутствующем breakpoint (09.11.2026)
+
+**REAL screenshot:** пользователь находился Paused на `EIP=007D14AA`, `[EBX+8]=0x14` (огибающая «1окт 16 кГц»); A дал ожидаемый `Z31R_FAIL_FILTER`, B прошёл preflight и остановился на `No such breakpoint "0x007D14AA"`. Это из-за нашего **безусловного `bpc 0x007D14AA` в B**, когда точки уже нет; **не численный сбой FFT/FIR**. После этого полного original B или A ещё не получено.
+
+Исправлен [код capture v1.4](tools/research/stage111z31r_x32dbg_two_mode_capture/README_RU.md): B больше не пытается удалить отсутствующий breakpoint. Отдельный `Fix-Existing-B.ps1` патчит **именно текущую** папку `C:\MVK_CAPTURE\Z31R_20261109_115102_88200486`, создаёт backup и обновляет SHA в `capture_config.json` без вмешательства в original runtime. Пакет `MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE_v1_4_NO_BPC.zip`, 26 610 байт, SHA256 `4b8009bafc6951c3e88206123ff4bf251a1b7101ca75034c8d8285f1a7b0413b`, выдан отдельно в чат. [Отчёт](docs/research/STAGE111Z31T_B_ENVELOPE_MISSING_BPC_SAFE_RESUME_RU.md), код `6e4a36d649831e25278f1e7cdb525d8a582cc3b4`.
+
+[QA GitHub #42564978974](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42564978974) **2/2 SUCCESS**: Linux **19/19**, Windows **19/19**, настоящий PowerShell5.1 patch smoke для simulated legacy B, backup/config hash/A-unchanged PASS. Оригинальный x32dbg B после v1.4 **ещё не испытан**. Продолжить только с текущей остановки B, затем добрать A и численно сравнить; основной Desktop EXE/Native Go/математика не изменены.
+
+
 ## Stage111Z31S — 09.11.2026: original 14AA достигнут, исправлено прерывание сценария
 
 **Новое REAL-ORIGINAL evidence:** на пользовательском скрине x32dbg `Z31R_READY_OK` (адреса совпали), `INT3 breakpoint at mvkview.007D14AA!` — оригинальный GetSpectrum остановлен **до DC/FIR**. ДАЛЬШЕ `Script is terminated by user`, физических A/B дампов **нет**, original численное full-Y/FIR паритет НЕ доказан. Повторный монолитный сценарий из EIP 14AA закономерно выдал `Z31R_FAIL_STARTUP`; это **не ошибка FFT**.
