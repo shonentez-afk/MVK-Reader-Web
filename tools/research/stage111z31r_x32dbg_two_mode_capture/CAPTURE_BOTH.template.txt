@@ -1,0 +1,632 @@
+// Z31R SINGLE two-mode capture. Generated ASCII by Prepare-Capture.ps1.
+// Requires original mvkview v1.0.47 loaded, GUI active, capture mode=2.
+// No original EXE patching, no device IO. This script performs read-only savedata.
+LogEnable
+RedirectLog "__OUT__\capture.log"
+// Read-only original image signature checks; absolute VA, NOT ASLR relocated.
+log "Z31R_PREFLIGHT_BEGIN"
+cmp mem.valid(0x007D14AA), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14AA], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14AB], 0x4B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14AC], 0x04
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D14B8), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14B8], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14B9], 0x43
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14BA], 0x08
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D153D), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D153D], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D153E], 0x4B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D153F], 0x04
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D154B), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D154B], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D154C], 0x43
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D154D], 0x28
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D17E7), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D17E7], 0x33
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D17E8], 0xC0
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D1900), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D1900], 0x33
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D1901], 0xC0
+jne Z31R_FAIL_OPCODE
+log "Z31R_PREFLIGHT_OK: original image instruction anchors match IDP"
+// Refuse to start in the middle of GetSpectrum: previous INT3/V6 state.
+cmp eip,0x007D13D4
+jb Z31R_READY_START
+cmp eip,0x007D1921
+ja Z31R_READY_START
+jmp Z31R_FAIL_STARTUP
+Z31R_READY_START:
+log "Z31R_BEGIN: use original GUI, one run for PLAIN then ENVELOPE"
+// ===== PLAIN =====
+log "Z31R_A_WAIT: preparing next ORIGINAL GetSpectrum trigger"
+run 0x007D14AA
+cmp eip, 0x007D14AA
+jne Z31R_FAIL_STOP
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+8], 0x0
+jne Z31R_FAIL_FILTER
+mov $z31r_ctx_ebx,ebx
+mov $z31r_ctx_ebp,ebp
+mov $z31r_ctx_tid,tid()
+cmp mem.base(ebp-4),0
+je Z31R_FAIL_FRAME
+mov $z31r_ctx_storage,dword:[ebp-4]
+cmp $z31r_ctx_storage,0
+je Z31R_FAIL_STORAGE
+cmp mem.base($z31r_ctx_storage),0
+je Z31R_FAIL_STORAGE
+cmp dword:[$z31r_ctx_storage+0x0C],0x1
+jne Z31R_FAIL_STORAGE
+cmp dword:[$z31r_ctx_storage+0x18], __RAW_FS_HEX__
+jne Z31R_FAIL_RATE
+cmp dword:[ebx+0x24],0
+jne Z31R_FAIL_WINDOW
+mov $z31r_ctx_end,dword:[ebx+0x20]
+mov $z31r_ctx_raw_n,dword:[ebx+0x04]
+cmp $z31r_ctx_raw_n,__N_HEX__
+jb Z31R_FAIL_LENGTH
+cmp $z31r_ctx_raw_n,0x00200000
+ja Z31R_FAIL_LENGTH
+cmp $z31r_ctx_end,$z31r_ctx_raw_n
+jb Z31R_FAIL_WINDOW
+mov $z31r_ctx_start,$z31r_ctx_end
+sub $z31r_ctx_start,$z31r_ctx_raw_n
+cmp dword:[$z31r_ctx_storage+0x2C],0
+jne Z31R_FAIL_HISTORY
+cmp $z31r_ctx_start,dword:[$z31r_ctx_storage+0x28]
+jb Z31R_FAIL_HISTORY
+cmp dword:[$z31r_ctx_storage+0x24],0
+jne Z31R_FAIL_WINDOW
+cmp $z31r_ctx_end,dword:[$z31r_ctx_storage+0x20]
+ja Z31R_FAIL_WINDOW
+mov $z31r_ctx_buffer_n,dword:[$z31r_ctx_storage+0x10]
+mov $z31r_ctx_mask,dword:[$z31r_ctx_storage+0x14]
+cmp $z31r_ctx_buffer_n,0x1000
+jb Z31R_FAIL_HISTORY
+cmp $z31r_ctx_buffer_n,0x00800000
+ja Z31R_FAIL_HISTORY
+mov $z31r_tmp,$z31r_ctx_mask
+add $z31r_tmp,1
+cmp $z31r_tmp,$z31r_ctx_buffer_n
+jne Z31R_FAIL_HISTORY
+cmp $z31r_ctx_raw_n,$z31r_ctx_buffer_n
+ja Z31R_FAIL_HISTORY
+mov $z31r_ring_ptr,dword:[$z31r_ctx_storage+0x34]
+cmp $z31r_ring_ptr,0
+je Z31R_FAIL_STORAGE
+mov $z31r_ctx_work,dword:[ebp-0x2C]
+mov $z31r_raw_bytes,$z31r_ctx_raw_n
+mul $z31r_raw_bytes,4
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_raw_bytes
+call Z31R_ASSERT_BUFFER
+mov $z31r_chk_address, $z31r_ctx_ebx
+mov $z31r_chk_size, 0x3C
+call Z31R_ASSERT_BUFFER
+mov $z31r_chk_address, $z31r_ctx_storage
+mov $z31r_chk_size, 0x38
+call Z31R_ASSERT_BUFFER
+mov $z31r_ring_index,$z31r_ctx_start
+and $z31r_ring_index,$z31r_ctx_mask
+mov $z31r_ring_first_n,$z31r_ctx_buffer_n
+sub $z31r_ring_first_n,$z31r_ring_index
+cmp $z31r_ring_first_n,$z31r_ctx_raw_n
+jbe Z31R_A_FIRST_SEGMENT_READY
+mov $z31r_ring_first_n,$z31r_ctx_raw_n
+Z31R_A_FIRST_SEGMENT_READY:
+mov $z31r_ring_first_bytes,$z31r_ring_first_n
+mul $z31r_ring_first_bytes,4
+mov $z31r_ring_start_ptr,$z31r_ring_index
+mul $z31r_ring_start_ptr,4
+add $z31r_ring_start_ptr,$z31r_ring_ptr
+mov $z31r_chk_address, $z31r_ring_start_ptr
+mov $z31r_chk_size, $z31r_ring_first_bytes
+call Z31R_ASSERT_BUFFER
+mov $z31r_ring_tail_n,$z31r_ctx_raw_n
+sub $z31r_ring_tail_n,$z31r_ring_first_n
+cmp $z31r_ring_tail_n,0
+je Z31R_A_NO_TAIL_GUARD
+mov $z31r_ring_tail_bytes,$z31r_ring_tail_n
+mul $z31r_ring_tail_bytes,4
+mov $z31r_chk_address, $z31r_ring_ptr
+mov $z31r_chk_size, $z31r_ring_tail_bytes
+call Z31R_ASSERT_BUFFER
+Z31R_A_NO_TAIL_GUARD:
+log "Z31R_A_PRE EIP={p:eip} PID={x:$pid} TID={x:tid()} EBX={p:ebx} EBP={p:ebp} STORAGE={p:$z31r_ctx_storage} END={x:$z31r_ctx_end} N_INPUT={x:$z31r_ctx_raw_n} RAW_FS={x:dword:[$z31r_ctx_storage+0x18]}"
+savedata "__OUT__\A\params_pre_dc.bin", $z31r_ctx_ebx, 0x3C
+savedata "__OUT__\A\storage.bin", $z31r_ctx_storage, 0x38
+savedata "__OUT__\A\frange.bin", $z31r_ctx_storage+0x4, 0x4
+savedata "__OUT__\A\input_normalized_pre_dc.bin", $z31r_ctx_work, $z31r_raw_bytes
+savedata "__OUT__\A\ring_head.bin", $z31r_ring_start_ptr, $z31r_ring_first_bytes
+cmp $z31r_ring_tail_n,0
+je Z31R_A_NO_TAIL_SAVE
+savedata "__OUT__\A\ring_tail.bin", $z31r_ring_ptr, $z31r_ring_tail_bytes
+Z31R_A_NO_TAIL_SAVE:
+run 0x007D14B8
+cmp eip, 0x007D14B8
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], 0x0
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+log "Z31R_A_AFTER_DC EIP={p:eip} TID={x:tid()}"
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_raw_bytes
+call Z31R_ASSERT_BUFFER
+savedata "__OUT__\A\input_after_dc.bin", $z31r_ctx_work, $z31r_raw_bytes
+savedata "__OUT__\A\params_after_dc.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D153D
+cmp eip, 0x007D153D
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], 0x0
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+4], __N_HEX__
+jne Z31R_FAIL_LENGTH
+mov $z31r_output_fs,dword:[ebx+0x2C]
+cmp $z31r_output_fs,0
+je Z31R_FAIL_RATE
+cmp $z31r_output_fs,__RAW_FS_HEX__
+jne Z31R_FAIL_RATE
+mov $z31r_fft_bytes,__N_HEX__
+mul $z31r_fft_bytes,4
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_fft_bytes
+call Z31R_ASSERT_BUFFER
+log "Z31R_A_PREFFT EIP={p:eip} FS_OUT={x:$z31r_output_fs} N={x:dword:[ebx+4]}"
+savedata "__OUT__\A\before_fft.bin", $z31r_ctx_work, $z31r_fft_bytes
+savedata "__OUT__\A\params_pre_fft.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D154B
+cmp eip, 0x007D154B
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], 0x0
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+0x28],__HALF_N_HEX__
+jne Z31R_FAIL_LENGTH
+cmp dword:[ebx+0x2C],$z31r_output_fs
+jne Z31R_FAIL_RATE
+mov $z31r_half_bytes,__HALF_N_HEX__
+mul $z31r_half_bytes,4
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_half_bytes
+call Z31R_ASSERT_BUFFER
+savedata "__OUT__\A\power_before_mode.bin", $z31r_ctx_work, $z31r_half_bytes
+savedata "__OUT__\A\params_after_fft.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D17E7
+cmp eip, 0x007D17E7
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], 0x0
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+mov $z31r_y_ptr,dword:[ebp-0x30]
+mov $z31r_chk_address, $z31r_y_ptr
+mov $z31r_chk_size, $z31r_half_bytes
+call Z31R_ASSERT_BUFFER
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_half_bytes
+call Z31R_ASSERT_BUFFER
+log "Z31R_A_Y EIP={p:eip} Y_PTR={p:$z31r_y_ptr} PWR_PTR={p:$z31r_ctx_work}"
+savedata "__OUT__\A\power_after_mode.bin", $z31r_ctx_work, $z31r_half_bytes
+savedata "__OUT__\A\display_y.bin", $z31r_y_ptr, $z31r_half_bytes
+savedata "__OUT__\A\params_after_y.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D1900
+cmp eip, 0x007D1900
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], 0x0
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+savedata "__OUT__\A\params_final.bin", $z31r_ctx_ebx, 0x3C
+savedata "__OUT__\A\summary_triplet.bin", $z31r_ctx_ebx+0x30, 0xC
+log "Z31R_A_COMPLETE EIP={p:eip} PID={x:$pid} TID={x:tid()} END={x:$z31r_ctx_end} RAW_N={x:$z31r_ctx_raw_n}"
+mov $z31r_first_end,$z31r_ctx_end
+mov $z31r_first_storage,$z31r_ctx_storage
+mov $z31r_first_tid,$z31r_ctx_tid
+msg "PLAIN capture finished. Press OK to resume; then choose EnvelopeCode 20 and recalculate spectrum in MVKView. Do NOT press F9 manually."
+// ===== ENVELOPE =====
+log "Z31R_B_WAIT: preparing next ORIGINAL GetSpectrum trigger"
+run 0x007D14AA
+cmp eip, 0x007D14AA
+jne Z31R_FAIL_STOP
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+8], __ENV_HEX__
+jne Z31R_FAIL_FILTER
+mov $z31r_ctx_ebx,ebx
+mov $z31r_ctx_ebp,ebp
+mov $z31r_ctx_tid,tid()
+cmp mem.base(ebp-4),0
+je Z31R_FAIL_FRAME
+mov $z31r_ctx_storage,dword:[ebp-4]
+cmp $z31r_ctx_storage,0
+je Z31R_FAIL_STORAGE
+cmp mem.base($z31r_ctx_storage),0
+je Z31R_FAIL_STORAGE
+cmp dword:[$z31r_ctx_storage+0x0C],0x1
+jne Z31R_FAIL_STORAGE
+cmp dword:[$z31r_ctx_storage+0x18], __RAW_FS_HEX__
+jne Z31R_FAIL_RATE
+cmp dword:[ebx+0x24],0
+jne Z31R_FAIL_WINDOW
+mov $z31r_ctx_end,dword:[ebx+0x20]
+mov $z31r_ctx_raw_n,dword:[ebx+0x04]
+cmp $z31r_ctx_raw_n,__N_HEX__
+jb Z31R_FAIL_LENGTH
+cmp $z31r_ctx_raw_n,0x00200000
+ja Z31R_FAIL_LENGTH
+cmp $z31r_ctx_end,$z31r_ctx_raw_n
+jb Z31R_FAIL_WINDOW
+mov $z31r_ctx_start,$z31r_ctx_end
+sub $z31r_ctx_start,$z31r_ctx_raw_n
+cmp dword:[$z31r_ctx_storage+0x2C],0
+jne Z31R_FAIL_HISTORY
+cmp $z31r_ctx_start,dword:[$z31r_ctx_storage+0x28]
+jb Z31R_FAIL_HISTORY
+cmp dword:[$z31r_ctx_storage+0x24],0
+jne Z31R_FAIL_WINDOW
+cmp $z31r_ctx_end,dword:[$z31r_ctx_storage+0x20]
+ja Z31R_FAIL_WINDOW
+mov $z31r_ctx_buffer_n,dword:[$z31r_ctx_storage+0x10]
+mov $z31r_ctx_mask,dword:[$z31r_ctx_storage+0x14]
+cmp $z31r_ctx_buffer_n,0x1000
+jb Z31R_FAIL_HISTORY
+cmp $z31r_ctx_buffer_n,0x00800000
+ja Z31R_FAIL_HISTORY
+mov $z31r_tmp,$z31r_ctx_mask
+add $z31r_tmp,1
+cmp $z31r_tmp,$z31r_ctx_buffer_n
+jne Z31R_FAIL_HISTORY
+cmp $z31r_ctx_raw_n,$z31r_ctx_buffer_n
+ja Z31R_FAIL_HISTORY
+mov $z31r_ring_ptr,dword:[$z31r_ctx_storage+0x34]
+cmp $z31r_ring_ptr,0
+je Z31R_FAIL_STORAGE
+mov $z31r_ctx_work,dword:[ebp-0x2C]
+mov $z31r_raw_bytes,$z31r_ctx_raw_n
+mul $z31r_raw_bytes,4
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_raw_bytes
+call Z31R_ASSERT_BUFFER
+mov $z31r_chk_address, $z31r_ctx_ebx
+mov $z31r_chk_size, 0x3C
+call Z31R_ASSERT_BUFFER
+mov $z31r_chk_address, $z31r_ctx_storage
+mov $z31r_chk_size, 0x38
+call Z31R_ASSERT_BUFFER
+mov $z31r_ring_index,$z31r_ctx_start
+and $z31r_ring_index,$z31r_ctx_mask
+mov $z31r_ring_first_n,$z31r_ctx_buffer_n
+sub $z31r_ring_first_n,$z31r_ring_index
+cmp $z31r_ring_first_n,$z31r_ctx_raw_n
+jbe Z31R_B_FIRST_SEGMENT_READY
+mov $z31r_ring_first_n,$z31r_ctx_raw_n
+Z31R_B_FIRST_SEGMENT_READY:
+mov $z31r_ring_first_bytes,$z31r_ring_first_n
+mul $z31r_ring_first_bytes,4
+mov $z31r_ring_start_ptr,$z31r_ring_index
+mul $z31r_ring_start_ptr,4
+add $z31r_ring_start_ptr,$z31r_ring_ptr
+mov $z31r_chk_address, $z31r_ring_start_ptr
+mov $z31r_chk_size, $z31r_ring_first_bytes
+call Z31R_ASSERT_BUFFER
+mov $z31r_ring_tail_n,$z31r_ctx_raw_n
+sub $z31r_ring_tail_n,$z31r_ring_first_n
+cmp $z31r_ring_tail_n,0
+je Z31R_B_NO_TAIL_GUARD
+mov $z31r_ring_tail_bytes,$z31r_ring_tail_n
+mul $z31r_ring_tail_bytes,4
+mov $z31r_chk_address, $z31r_ring_ptr
+mov $z31r_chk_size, $z31r_ring_tail_bytes
+call Z31R_ASSERT_BUFFER
+Z31R_B_NO_TAIL_GUARD:
+log "Z31R_B_PRE EIP={p:eip} PID={x:$pid} TID={x:tid()} EBX={p:ebx} EBP={p:ebp} STORAGE={p:$z31r_ctx_storage} END={x:$z31r_ctx_end} N_INPUT={x:$z31r_ctx_raw_n} RAW_FS={x:dword:[$z31r_ctx_storage+0x18]}"
+savedata "__OUT__\B\params_pre_dc.bin", $z31r_ctx_ebx, 0x3C
+savedata "__OUT__\B\storage.bin", $z31r_ctx_storage, 0x38
+savedata "__OUT__\B\frange.bin", $z31r_ctx_storage+0x4, 0x4
+savedata "__OUT__\B\input_normalized_pre_dc.bin", $z31r_ctx_work, $z31r_raw_bytes
+savedata "__OUT__\B\ring_head.bin", $z31r_ring_start_ptr, $z31r_ring_first_bytes
+cmp $z31r_ring_tail_n,0
+je Z31R_B_NO_TAIL_SAVE
+savedata "__OUT__\B\ring_tail.bin", $z31r_ring_ptr, $z31r_ring_tail_bytes
+Z31R_B_NO_TAIL_SAVE:
+run 0x007D14B8
+cmp eip, 0x007D14B8
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], __ENV_HEX__
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+log "Z31R_B_AFTER_DC EIP={p:eip} TID={x:tid()}"
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_raw_bytes
+call Z31R_ASSERT_BUFFER
+savedata "__OUT__\B\input_after_dc.bin", $z31r_ctx_work, $z31r_raw_bytes
+savedata "__OUT__\B\params_after_dc.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D153D
+cmp eip, 0x007D153D
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], __ENV_HEX__
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+4], __N_HEX__
+jne Z31R_FAIL_LENGTH
+mov $z31r_output_fs,dword:[ebx+0x2C]
+cmp $z31r_output_fs,0
+je Z31R_FAIL_RATE
+cmp $z31r_output_fs,__ENVELOPE_FS_HEX__
+jne Z31R_FAIL_RATE
+mov $z31r_fft_bytes,__N_HEX__
+mul $z31r_fft_bytes,4
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_fft_bytes
+call Z31R_ASSERT_BUFFER
+log "Z31R_B_PREFFT EIP={p:eip} FS_OUT={x:$z31r_output_fs} N={x:dword:[ebx+4]}"
+savedata "__OUT__\B\before_fft.bin", $z31r_ctx_work, $z31r_fft_bytes
+savedata "__OUT__\B\params_pre_fft.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D154B
+cmp eip, 0x007D154B
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], __ENV_HEX__
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+0x28],__HALF_N_HEX__
+jne Z31R_FAIL_LENGTH
+cmp dword:[ebx+0x2C],$z31r_output_fs
+jne Z31R_FAIL_RATE
+mov $z31r_half_bytes,__HALF_N_HEX__
+mul $z31r_half_bytes,4
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_half_bytes
+call Z31R_ASSERT_BUFFER
+savedata "__OUT__\B\power_before_mode.bin", $z31r_ctx_work, $z31r_half_bytes
+savedata "__OUT__\B\params_after_fft.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D17E7
+cmp eip, 0x007D17E7
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], __ENV_HEX__
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+mov $z31r_y_ptr,dword:[ebp-0x30]
+mov $z31r_chk_address, $z31r_y_ptr
+mov $z31r_chk_size, $z31r_half_bytes
+call Z31R_ASSERT_BUFFER
+mov $z31r_chk_address, $z31r_ctx_work
+mov $z31r_chk_size, $z31r_half_bytes
+call Z31R_ASSERT_BUFFER
+log "Z31R_B_Y EIP={p:eip} Y_PTR={p:$z31r_y_ptr} PWR_PTR={p:$z31r_ctx_work}"
+savedata "__OUT__\B\power_after_mode.bin", $z31r_ctx_work, $z31r_half_bytes
+savedata "__OUT__\B\display_y.bin", $z31r_y_ptr, $z31r_half_bytes
+savedata "__OUT__\B\params_after_y.bin", $z31r_ctx_ebx, 0x3C
+run 0x007D1900
+cmp eip, 0x007D1900
+jne Z31R_FAIL_STOP
+cmp ebx, $z31r_ctx_ebx
+jne Z31R_FAIL_FRAME
+cmp ebp, $z31r_ctx_ebp
+jne Z31R_FAIL_FRAME
+cmp tid(), $z31r_ctx_tid
+jne Z31R_FAIL_FRAME
+cmp dword:[ebp-4], $z31r_ctx_storage
+jne Z31R_FAIL_FRAME
+cmp dword:[ebx+8], __ENV_HEX__
+jne Z31R_FAIL_FILTER
+cmp dword:[ebx+18], __MODE_HEX__
+jne Z31R_FAIL_MODE
+cmp dword:[ebx+20], $z31r_ctx_end
+jne Z31R_FAIL_WINDOW
+cmp dword:[ebx+24], 0x0
+jne Z31R_FAIL_WINDOW
+savedata "__OUT__\B\params_final.bin", $z31r_ctx_ebx, 0x3C
+savedata "__OUT__\B\summary_triplet.bin", $z31r_ctx_ebx+0x30, 0xC
+log "Z31R_B_COMPLETE EIP={p:eip} PID={x:$pid} TID={x:tid()} END={x:$z31r_ctx_end} RAW_N={x:$z31r_ctx_raw_n}"
+cmp $z31r_first_storage,$z31r_ctx_storage
+jne Z31R_FAIL_PAIR_SOURCE
+cmp $z31r_first_end,$z31r_ctx_end
+je Z31R_B_SAME_END
+log "Z31R_PAIR_END_MISMATCH: both individual captures saved, NOT same-window evidence"
+jmp Z31R_B_FINISH
+Z31R_B_SAME_END:
+log "Z31R_PAIR_END_EQUAL: same original end index, RAW lengths may differ; no archive mapping proven"
+Z31R_B_FINISH:
+log "Z31R_BOTH_COMPLETE: full data saved; run Verify-Capture.py"
+SaveLog "__OUT__\capture_log_snapshot.txt"
+StopRedirectLog
+ret
+// ===== checked buffer helper =====
+Z31R_ASSERT_BUFFER:
+cmp $z31r_chk_address,0
+je Z31R_FAIL_MEMORY
+cmp $z31r_chk_size,0
+je Z31R_FAIL_MEMORY
+mov $z31r_chk_last,$z31r_chk_address
+add $z31r_chk_last,$z31r_chk_size
+cmp $z31r_chk_last,$z31r_chk_address
+jbe Z31R_FAIL_MEMORY
+sub $z31r_chk_last,1
+cmp mem.base($z31r_chk_address),0
+je Z31R_FAIL_MEMORY
+cmp mem.base($z31r_chk_last),0
+je Z31R_FAIL_MEMORY
+cmp mem.base($z31r_chk_address),mem.base($z31r_chk_last)
+jne Z31R_FAIL_MEMORY
+ret
+Z31R_FAIL_STARTUP:
+log "Z31R_FAIL_STARTUP: EIP inside GetSpectrum or startup break. Resume GUI first, do not re-run from old INT3."
+jmp Z31R_ABORT
+Z31R_FAIL_OPCODE:
+log "Z31R_FAIL_OPCODE: absolute VA/opcode mismatch; check original build, ASLR and exact x32dbg image. NO DUMPS."
+jmp Z31R_ABORT
+Z31R_FAIL_STOP:
+log "Z31R_FAIL_STOP: unexpected breakpoint (old TAG0/TAG2/Tag3 breakpoint?), not expected GetSpectrum stop."
+jmp Z31R_ABORT
+Z31R_FAIL_FRAME:
+log "Z31R_FAIL_FRAME: changed EBP/EBX/TID/storage within one GetSpectrum; not same function call."
+jmp Z31R_ABORT
+Z31R_FAIL_STORAGE:
+log "Z31R_FAIL_STORAGE: invalid storage pointer or FAdcDataType not 1 (float ring)."
+jmp Z31R_ABORT
+Z31R_FAIL_FILTER:
+log "Z31R_FAIL_FILTER: expected PLAIN code0 then envelope code20; a different call hit this stop."
+jmp Z31R_ABORT
+Z31R_FAIL_MODE:
+log "Z31R_FAIL_MODE: SpectrumType was changed in original GUI."
+jmp Z31R_ABORT
+Z31R_FAIL_LENGTH:
+log "Z31R_FAIL_LENGTH: FFT size or N/2 mismatch / unsupported requested history."
+jmp Z31R_ABORT
+Z31R_FAIL_RATE:
+log "Z31R_FAIL_RATE: raw/output sample-rate changed; expected Fs 65536 -> envelope output 32768."
+jmp Z31R_ABORT
+Z31R_FAIL_WINDOW:
+log "Z31R_FAIL_WINDOW: invalid or changed LastProcessedPos within same GetSpectrum."
+jmp Z31R_ABORT
+Z31R_FAIL_HISTORY:
+log "Z31R_FAIL_HISTORY: ring wraps with missing history / high UInt64 / unexpected buffer layout."
+jmp Z31R_ABORT
+Z31R_FAIL_MEMORY:
+log "Z31R_FAIL_MEMORY: buffer pointer invalid or crosses distinct memory regions, dump refused."
+jmp Z31R_ABORT
+Z31R_FAIL_PAIR_SOURCE:
+log "Z31R_FAIL_PAIR_SOURCE: storage changed between two modes; cannot claim one ADC."
+jmp Z31R_ABORT
+Z31R_ABORT:
+SaveLog "__OUT__\capture_log_snapshot.txt"
+StopRedirectLog
+error "Z31R capture aborted safely. Keep partial files and send capture_log_snapshot.txt or x32dbg Log; do NOT manually F9 through pending script."
