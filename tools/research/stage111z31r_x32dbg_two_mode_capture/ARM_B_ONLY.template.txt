@@ -1,0 +1,10 @@
+// Stage111Z31R v1.3. Only set conditional breakpoint; NO run/savedata.
+// Execute when the original process is paused after phase A (EIP 007D1900).
+// Later resume with F9 (ONLY after this script has FINISHED),
+// then select original menu 1oct 16 kHz (EnvelopeCode 20) in MVKView GUI.
+// The breakpoint will ignore plain code0 and stop when EBX+8 == 0x14.
+log "Z31R_ARM_B_START: setting conditional software BP at 007D14AA"
+bp 0x007D14AA, Z31R_ENVELOPE_CODE20
+bpcond 0x007D14AA, "dword:[ebx+8]==0x14"
+log "Z31R_ARM_B_READY: script finished. Resume original, select 1oct 16 kHz. STOP at EIP=007D14AA with EBX+8=0x14."
+ret
