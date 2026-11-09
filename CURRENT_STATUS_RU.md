@@ -1,5 +1,18 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31R — единый защищённый original x32dbg захват двух режимов (09.11.2026)
+
+**ГОТОВ К ПЕРВОМУ ОПЕРАТОРСКОМУ ТЕСТУ; НЕ заявлять original Windows runtime PASS.** Для недостающих original full-Y↔BIN/TSXML и FIR/IQ same-window собран `MVK_STAGE111Z31R_TWO_MODE_X32DBG_CAPTURE.zip` (21 290 байт, SHA256 `bcd05422fe5718439cce2523dfe3fd2f7dc7a717828d7885d23c961ce5ce0e71`, выдаётся в чате). Все **исходники и тесты** сохранены в [`tools/research/stage111z31r_x32dbg_two_mode_capture/`](tools/research/stage111z31r_x32dbg_two_mode_capture/README_RU.md). Полный [отчёт Stage111Z31R](docs/research/STAGE111Z31R_SAFE_X32DBG_TWO_MODE_CAPTURE_RU.md).
+
+- **Один x32dbg CAPTURE_BOTH**, два прохода: A SpectrumType2 / EnvelopeCode0, затем B тот же архив/ADC4/N/Fs/Type2 и EnvelopeCode20; оператор один раз переключает фильтр. `Prepare-Capture.cmd` создаёт уникальную папку, `RUN_ME.txt` с `scriptexec` preflight и основным скриптом; `Verify-Capture.py` сверяет физические bin/Params, ring wrap, checksum/наличие full Y и одинаковое входное окно (отказ по разному source end/tail).
+- Source-derived 6 остановок оригинального `GetSpectrum`: `007D14AA` preDC нормализованный Input + снимок original ring; `007D14B8` postDC/preFIR; `007D153D` postFIR/preFFT; `007D154B` full pre-mode Power; `007D17E7` full post-mode Power + full Y; `007D1900` original physical summary. Локально сверено 6/6 opcode сигнатур приватного IDP, исходный EXE/IDP/BIN/PAS **не коммитились**.
+- Учтены ошибки предыдущих V2–V6: system/entry BP вместо GetSpectrum, ложный `mem.valid` V5, ограниченный V6 postFFT-only, неполный `capture.log`, невалидные указатели, разрывы TID/EBP/EBX/Params, недостаток истории, исходный ring wrap и исторические Tag2/3 разных `[EBX+20]`. Предусмотрены fail-closed guards; **не обходить ошибки напрямую**.
+- [GitHub Actions QA #42547430857](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42547430857) **2/2 SUCCESS**: Linux 14/14 Python тестов, Windows 14/14 тестов **плюс проверенный реальный генератор PowerShell 5.1**. ZIP проверен CRC. ЭТО НЕ runtime x32dbg и не новое доказательство совпадения original Win32 ↔ MVK BIN; нужны файлы пользовательского захвата.
+- Основной Desktop/Native R6.1, `main` и ранее принятые FFT/FRange/FIR/Tag0–3 **не менялись**, основной Windows EXE остаётся прежний подтверждённый [#42004815613](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42004815613).
+
+**Следующее действие:** оператор загружает сохранённый BIN №83/АЦП4 в оригинальную MVKView под x32dbg, запускает `CHECK_READY`, затем один `CAPTURE_BOTH`, передаёт приватный ZIP результата в чат. Только после этого закрывать actual full-Y/FIR same-window; исходный прибор не подключать и не подменять №83 записанным в другое время PCAP.
+
+
 ## GitHub Actions — завершённая очистка 06.11.2026
 
 **Выполнено, не план:** [run #42142569340](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42142569340) **SUCCESS**. До очистки: **621** workflow run; удалено **614/614** старых завершённых запусков; после очистки осталось **7**. Результат подтверждён GitHub REST API и job log, включая `Remaining repository workflow runs ... 7`.
