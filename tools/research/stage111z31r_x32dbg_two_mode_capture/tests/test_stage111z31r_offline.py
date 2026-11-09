@@ -78,57 +78,87 @@ def synth_run(root,*,n=4096,end=16999,mode=2,broken_end=False,corrupt_normalized
 
 
 class TestStaticScript(unittest.TestCase):
-    def test_has_complete_two_stage_original_chain(self):
-        s=(SOURCE/'CAPTURE_BOTH.template.txt').read_text(encoding='ascii')
-        for a in ('0x007D14AA','0x007D14B8','0x007D153D','0x007D154B',
-                  '0x007D17E7','0x007D1900'):
-            self.assertEqual(s.count('run '+a),2,a)
-        for phase in ('A','B'):
+    def test_resume_scripts_start_exactly_at_current_int3(self):
+        for stage in ('A','B'):
+            body=(SOURCE/f'RESUME_{stage}_FROM_14AA.template.txt').read_text('ascii')
+            self.assertIn('cmp eip,0x007D14AA',body)
+            self.assertIn('jne Z31R_FAIL_RESUME_ENTRY',body)
+            self.assertIn('Z31R_FAIL_RESUME_ENTRY:',body)
+            self.assertNotIn('run 0x007D14AA',body)
+            self.assertIn('run 0x007D14B8',body)
+            self.assertIn('run 0x007D153D',body)
+            self.assertIn('run 0x007D154B',body)
+            self.assertIn('run 0x007D17E7',body)
+            self.assertIn('run 0x007D1900',body)
+            self.assertIn('Z31R_FAIL_MEMORY',body)
+            self.assertIn('Z31R_FAIL_HISTORY',body)
+            self.assertIn('Z31R_FAIL_FRAME',body)
+            self.assertIn('Z31R_FAIL_FILTER',body)
+            self.assertIn('Z31R_FAIL_OPCODE',body)
+            self.assertIn('cmp mem.base($z31r_chk_address),mem.base($z31r_chk_last)',body)
+            self.assertIn('cmp dword:[$z31r_ctx_storage+0x0C],0x1',body)
+            self.assertIn('cmp $z31r_ctx_start,dword:[$z31r_ctx_storage+0x28]',body)
+            self.assertTrue(body.isascii())
             for field in ('params_pre_dc.bin','input_normalized_pre_dc.bin',
                           'ring_head.bin','input_after_dc.bin','before_fft.bin',
                           'power_before_mode.bin','power_after_mode.bin',
                           'display_y.bin','summary_triplet.bin','params_final.bin'):
-                self.assertIn('__OUT__\\'+phase+'\\'+field,s)
-        for pattern in ('Z31R_FAIL_STOP','Z31R_FAIL_MEMORY',
-                        'Z31R_FAIL_HISTORY','Z31R_FAIL_FRAME','Z31R_FAIL_FILTER',
-                        'Z31R_FAIL_OPCODE','Z31R_FAIL_PAIR_SOURCE'):
-            self.assertIn(pattern,s)
-        self.assertIn('cmp mem.base($z31r_chk_address),mem.base($z31r_chk_last)',s)
-        self.assertIn('cmp dword:[$z31r_ctx_storage+0x0C],0x1',s)
-        self.assertIn('cmp $z31r_ctx_start,dword:[$z31r_ctx_storage+0x28]',s)
-        self.assertIn('RedirectLog ',s)
-        self.assertIn('SaveLog ',s)
-        self.assertIn('Z31R_BOTH_COMPLETE',s)
-        self.assertEqual(s.count('run 0x007D14AA'),2)
-        self.assertNotRegex(s, r'(?m)^\s*F9\b')
-        self.assertNotIn('mem.valid($z31r_ctx_work)',s)
-        self.assertTrue(s.isascii())
-        source_lines=s.splitlines()
-        labels={x[:-1] for x in source_lines if x.endswith(':') and x.startswith('Z31R_')}
-        for line in source_lines:
-            m=re.match(r'^(?:j[a-z]+|call) (Z31R_[A-Z_]+)$',line)
-            if m:
-                self.assertIn(m.group(1),labels,'unresolved script label '+m.group(1))
-    def test_all_original_signatures_verified_before_first_run(self):
-        s=(SOURCE/'CAPTURE_BOTH.template.txt').read_text('ascii')
-        pre=s.split('run 0x007D14AA')[0]
-        for addr,signature in [('007D14AA',['8B','4B','04']),('007D14B8',['8B','43','08']),
-                               ('007D153D',['8B','4B','04']),('007D154B',['8B','43','28']),
-                               ('007D17E7',['33','C0']),('007D1900',['33','C0'])]:
-            a=int(addr,16)
-            for i,byte in enumerate(signature):
-                self.assertIn(f'cmp byte:[0x{a+i:08X}], 0x{byte}',pre)
+                self.assertIn('__OUT__\\'+stage+'\\'+field,body)
+            labels={x[:-1] for x in body.splitlines() if x.endswith(':') and x.startswith('Z31R_')}
+            for line in body.splitlines():
+                m=re.match(r'^(?:j[a-z]+|call) (Z31R_[A-Z_]+)$',line)
+                if m:
+                    self.assertIn(m.group(1),labels,'unresolved script label '+m.group(1))
+
+    def test_no_cross_mode_wait_inside_running_script(self):
+        a=(SOURCE/'RESUME_A_FROM_14AA.template.txt').read_text('ascii')
+        b=(SOURCE/'RESUME_B_FROM_14AA.template.txt').read_text('ascii')
+        arm=(SOURCE/'ARM_B_ONLY.template.txt').read_text('ascii')
+        self.assertNotIn('msg "PLAIN capture',a)
+        self.assertNotIn('Z31R_B_WAIT',a)
+        self.assertNotIn('Z31R_A_WAIT',b)
+        self.assertIn('Z31R_A_SAVED',a)
+        self.assertIn('Z31R_BOTH_COMPLETE',b)
+        self.assertIn('SaveLog "__OUT__\\capture_log_a_snapshot.txt"',a)
+        self.assertIn('SaveLog "__OUT__\\capture_log_b_snapshot.txt"',b)
+        self.assertIn('bp 0x007D14AA, Z31R_ENVELOPE_CODE20',arm)
+        self.assertIn('bpcond 0x007D14AA, "dword:[ebx+8]==0x14"',arm)
+        self.assertIn('bpc 0x007D14AA',b)
+        self.assertNotIn('run ',arm)
+        self.assertNotIn('savedata ',arm)
+
+    def test_all_original_signatures_verified_before_capture(self):
+        for stage in ('A','B'):
+            s=(SOURCE/f'RESUME_{stage}_FROM_14AA.template.txt').read_text('ascii')
+            pre=s.split('cmp eip,0x007D14AA')[0]
+            for addr,signature in [('007D14AA',['8B','4B','04']),('007D14B8',['8B','43','08']),
+                                   ('007D153D',['8B','4B','04']),('007D154B',['8B','43','28']),
+                                   ('007D17E7',['33','C0']),('007D1900',['33','C0'])]:
+                a=int(addr,16)
+                for i,byte in enumerate(signature):
+                    self.assertIn(f'cmp byte:[0x{a+i:08X}], 0x{byte}',pre)
+
     def test_readonly_preflight_no_run_or_savedata(self):
         s=(SOURCE/'CHECK_READY.template.txt').read_text('ascii')
         self.assertNotIn('run 0x',s)
         self.assertNotIn('savedata ',s)
         self.assertIn('Z31R_READY_OK',s)
-    def test_ps5_generator_contains_unique_path_guards(self):
+
+    def test_ps5_generator_uses_new_resume_files_and_preserves_unique_paths(self):
         s=(SOURCE/'Prepare-Capture.ps1').read_text('utf8')
         for k in ('NewGuid','New-Item -ItemType Directory','__HALF_N_HEX__',
-                  'ConvertTo-Json','-Encoding UTF8','Get-FileHash','ArchiveBin'):
+                  'ConvertTo-Json','-Encoding UTF8','Get-FileHash','ArchiveBin',
+                  'RESUME_A_FROM_14AA.txt','RESUME_B_FROM_14AA.txt','ARM_B_ONLY.txt'):
             self.assertIn(k,s)
+        self.assertNotIn("Load-Template 'CAPTURE_BOTH.template.txt'",s)
+        self.assertNotIn("Write-Host 'CAPTURE_BOTH:'",s)
 
+    def test_no_original_data_or_hardcoded_output_dumps(self):
+        a=(SOURCE/'RESUME_A_FROM_14AA.template.txt').read_bytes()
+        b=(SOURCE/'RESUME_B_FROM_14AA.template.txt').read_bytes()
+        self.assertNotIn(b'mvkview.idp',a+b)
+        self.assertNotIn(b'Projects.7z',a+b)
+        self.assertNotIn(b'0x43FF4853',a+b)
 
 class TestSyntheticReceipt(unittest.TestCase):
     def test_real_ring_wrap_and_normalized_overlap_pair(self):
@@ -142,6 +172,14 @@ class TestSyntheticReceipt(unittest.TestCase):
             self.assertTrue(report['spectra']['envelope']['ring_wrapped'])
             self.assertFalse(report['original_and_native_bin_same_window_independently_verified'])
             self.assertFalse(report['x32dbg_marker_text_present'])
+    def test_split_logs_prove_both_markers_only_when_both_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);synth_run(root)
+            (root/'capture_log_a_snapshot.txt').write_text('Z31R_A_COMPLETE\nZ31R_A_SAVED\n')
+            self.assertFalse(ver.verify(root)['x32dbg_marker_text_present'])
+            (root/'capture_log_b_snapshot.txt').write_text('Z31R_B_COMPLETE\nZ31R_BOTH_COMPLETE\n')
+            self.assertTrue(ver.verify(root)['x32dbg_marker_text_present'])
+
     def test_wrong_end_is_valid_single_capture_but_not_pair(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);synth_run(root,broken_end=True)
