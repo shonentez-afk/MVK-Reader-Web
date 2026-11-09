@@ -1,5 +1,10 @@
 # MVKView Compatible — текущий проверенный статус
 
+## Stage111Z31X — подготовлен контекст и локальный Python-проверщик для GigaCode
+
+Собрана [единая инструкция GigaCode](docs/research/STAGE111Z31X_GIGACODE_CONTEXT_AND_PYTHON_PREFLIGHT_RU.md): правильные пути к исходным Python FFT/Power→Y, проверенному `Verify-Capture.py`, сценариям A/B, текущим blocker Z31W, стадиям GetSpectrum и требованиям read-only MCP. Добавлен стандартно-библиотечный [Preflight-GetSpectrum.py](tools/research/stage111z31r_x32dbg_two_mode_capture/Preflight-GetSpectrum.py) для локальной строгой проверки **пяти бинарных снимков+session JSON** при EIP=14AA (0x3C/0x20/4/0x38/0x30 байт), независимого reread, `mode in 0..3`, Float32 type0, Fs, ring mask/history, Storage ptr и SHA. Никаких MCP calls/сети/возобновления внутри скрипта, no original snapshots in GitHub. **Реальная физическая проба GigaCode остаётся OPEN**, `EBX+18=0x48000` должен давать BLOCK. Текущий x32dbg Paused не трогать до работы на ПК.
+
+
 ## Stage111Z31W — новый GigaCode main/obmen проверен (09.11.2026)
 
 В [обновлённом отчёте](https://github.com/shonentez-afk/MVK-Reader-Web/blob/main/obmen) агент исправил Fs 65536, FRange 510.565, FAdcDataType0, ring_size 2097152 Float32, mask2097151, проверил доступность work/ring через MCP. **Но сам отчёт содержит STOP:** `EBX+18=0x00048000=294912`, хотя source-checked SpectrumMode по этому адресу должен быть `0..3`; та же величина заявлена в `EBX+20`. Таблица capture ошибочно помечает `154B` как preFFT и `17E7` как preFFT; на деле это postFFT/premode и postmode/Y. `N262144` — verified FFT length, Power/Y по 131072 ×4=524288 байт; ring 2097152 **samples** занимает 8MiB, не 2MB. Старый и новый текст дают **разные 4 байта** для четвёртого Float32 (`BD B0 03 BF` vs `B0 03 BF BD`), прежний аудит правильно декодировал старый вариант. Снимков самих бинарных MCP read_memory в тексте нет. [Подробный аудит Stage111Z31W](docs/research/STAGE111Z31W_GIGACODE_SECOND_OBMEN_AUDIT_RU.md).
