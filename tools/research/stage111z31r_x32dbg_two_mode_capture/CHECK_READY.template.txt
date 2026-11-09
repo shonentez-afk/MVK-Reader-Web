@@ -1,0 +1,53 @@
+// x32dbg read-only self-check. Does not resume or save raw data.
+log "Z31R_PREFLIGHT: READY_CHECK"
+// Read-only original image signature checks; absolute VA, NOT ASLR relocated.
+log "Z31R_PREFLIGHT_BEGIN"
+cmp mem.valid(0x007D14AA), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14AA], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14AB], 0x4B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14AC], 0x04
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D14B8), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14B8], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14B9], 0x43
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D14BA], 0x08
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D153D), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D153D], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D153E], 0x4B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D153F], 0x04
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D154B), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D154B], 0x8B
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D154C], 0x43
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D154D], 0x28
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D17E7), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D17E7], 0x33
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D17E8], 0xC0
+jne Z31R_FAIL_OPCODE
+cmp mem.valid(0x007D1900), 0x1
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D1900], 0x33
+jne Z31R_FAIL_OPCODE
+cmp byte:[0x007D1901], 0xC0
+jne Z31R_FAIL_OPCODE
+log "Z31R_PREFLIGHT_OK: original image instruction anchors match IDP"
+log "Z31R_READY_OK: safe code layout, not proof the right archive is selected"
+ret
+Z31R_FAIL_OPCODE:
+error "Z31R_READY_FAIL: expected original 1.0.47 VA/opcodes not available. Do not run capture."
