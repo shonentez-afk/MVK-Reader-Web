@@ -1,0 +1,17 @@
+{
+  "schema": "MVKVIEW_STAGE111Z31AI_B_ONLY_V1",
+  "adc_claim": 1,
+  "spectrum_mode": 0,
+  "envelope_code": 20,
+  "raw_n": 262195,
+  "fft_n": 131072,
+  "y_bins": 65536,
+  "source_end": 557107,
+  "storage_oldest": 294912,
+  "source_fs": 65536,
+  "output_fs": 32768,
+  "capacity": 2097152,
+  "mask": 2097151,
+  "frange_u32": "0x43FF4853",
+  "expected_pre_dc_sha256": "86856251ab33201aec2ccbf43f0e33ea0bf658cd3f1112183071d13b665949c5"
+}
