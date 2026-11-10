@@ -1,3 +1,7 @@
+## Stage111Z31Y 10.11.2026 — проверены переданные пользователем реальные файлы GigaCode
+
+Пять `.bin` и один `session_at_14AA.json` действительно прочитаны *здесь* побайтно независимым Python: 32-byte Params reread и Storage ptr match, N262144/Fs65536/FRange510.565/Float32 ring2097152, source window start32768/end294912 согласованы. **`STRUCTURAL_PREFLIGHT_PASS_NOT_RUNTIME_ATTESTATION` для файлов**, но **`BLOCK_CAPTURE_MODE` для Stage111Z31R velocity A/B**, потому что `[EBX+18]=0` (LOG), а целевой SpectrumType=2 (VELOCITY); `[EBX+20]=0x48000` — end index, не mode. Сохранены полные SHA256 без приватных файлов в GitHub. Original live opcode/region/TID/cross-stage и real A/B full Y/FIR остаются OPEN. **Не нажимать F9 и не запускать velocity capture по mode0**; следующее: выбрать исследование LOG как отдельный режим либо снять EIP14AA velocity2 по инструкции под контролем оператора. [Подробный аудит](docs/research/STAGE111Z31Y_UPLOADED_BINARY_PREFLIGHT_AUDIT_RU.md). Stage111Z31X new gate CI [#42736482828](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42736482828) 2 jobs SUCCESS (только synthetic). Основной код/EXE не трогались.
+
 # MVKView Compatible — текущий проверенный статус
 
 ## Stage111Z31X CI synthetic tests
