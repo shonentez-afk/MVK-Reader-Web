@@ -1,89 +1,23 @@
+План изучен. В GitHub уже исправлен проверщик одиночного LOG-спектра.
 
+Рабочая ветка:
+`research/stage111-mvkview-desktop-20261029`
 
-Все 5 файлов успешно прочитаны из GitHub.
+Прочитай обновлённые:
+- `tools/research/stage111z31r_x32dbg_two_mode_capture/README_RU.md`
+- `tools/research/stage111z31r_x32dbg_two_mode_capture/Verify-Capture.py`
 
-## Результаты чтения исходников
+Необходимо подготовить полный локальный комплект Stage111Z31R, а не только прочитать пять файлов через GitHub. Генератор требует ещё `CHECK_READY.template.txt`, `RESUME_B_FROM_14AA.template.txt` и `ARM_B_ONLY.template.txt`. Скачай все исходники этой папки на рабочий ПК.
 
-| № | Файл | Статус | Размер |
-|---|------|--------|--------|
-| 1 | `README_RU.md` | ✅ Прочитан | Полное содержание |
-| 2 | `Prepare-Capture.ps1` | ✅ Прочитан | 100% исходный код |
-| 3 | `RESUME_A_FROM_14AA.template.txt` | ✅ Прочитан | Полное содержание |
-| 4 | `Verify-Capture.py` | ✅ Прочитан | Полное содержание |
-| 5 | `Preflight-GetSpectrum.py` | ✅ Прочитан | Полное содержание (оригинал) |
+Для текущего LOG Mode 0:
 
----
+1. Подготовь новый каталог через `Prepare-Capture.ps1 -Adc 4 -N 262144 -SpectrumType 0 -Root "C:\MVK_LOG"`.
+2. Не изменяй вручную `EnvelopeCode=20` в конфигурации. Он относится к будущему B; сценарий A сам проверяет фильтр 0.
+3. Убедись, что `RESUME_A_FROM_14AA.txt` создан в корне нового каталога `Z31R_...`, а не в папке `A`.
+4. Проверь SHA-256 сценария, отсутствие незаменённых шаблонных переменных и правильность проверки Mode 0.
+5. После захвата A используй обновлённый `Verify-Capture.py` с аргументом `--plain-only`. Обычная проверка без этого флага требует A+B.
+6. Не запускай B, ARM_B и не переключай страницу спектров.
 
-## Анализ исходников для LOG Mode 0
+Сейчас разрешаю **только локальную подготовку файлов и проверки, не изменяющие состояние оригинального процесса**. MVKView должна оставаться Paused на `007D14AA`. Пока не запускай `RESUME_A` и не нажимай F9.
 
-### RESUME_A_FROM_14AA.template.txt — Anchor-проверка opcode
-
-Скрипт проверяет точные байты инструкций в ключевых точках:
-
-| Адрес | Ожидаемый opcode | Инструкция | Наш EIP |
-|-------|-----------------|------------|---------|
-| **0x007D14AA** | `8B 4B 04` | `mov ecx,[EBX+4]` | ✅ **совпадает** |
-| 0x007D14B8 | `8B 43 08` | `mov eax,[EBX+8]` | — |
-| 0x007D153D | `8B 4B 04` | `mov ecx,[EBX+4]` | — |
-| 0x007D154B | `8B 43 28` | `mov eax,[EBX+28]` | — |
-| 0x007D17E7 | `33 C0` | `xor eax,eax` | — |
-| 0x007D1900 | `33 C0` | `xor eax,eax` | — |
-
-**Ранее проверено MCP disassemble — все anchor-инструкции совпадают с оригинальной MVKView 1.0.47.**
-
-### Prepare-Capture.ps1 — параметры для Mode 0
-
-Шаблон по умолчанию генерирует для **Mode 2 VELOCITY** (EnvelopeCode=20, SpectrumType=2).
-
-**Для нашего захвата LOG Mode 0 нужны:**
-
-| Параметр | Значение по умолчанию | **Для LOG Mode 0** |
-|----------|----------------------|-------------------|
-| `$Adc` | 4 | **4** ✅ |
-| `$N` | 262144 | **262144** ✅ |
-| `$SpectrumType` | 2 | **0** |
-| `$EnvelopeCode` | 20 | **0** |
-| `$RawFs` | 65536 | **65536** ✅ |
-
-### RESUME_A_FROM_14AA.template.txt — подстановка
-
-Скрипт проверяет `[EBX+18] == __MODE_HEX__` и `[EBX+8] == __ENV_HEX__`.
-
-Для LOG Mode 0:
-- `__MODE_HEX__ = 0x0`
-- `__ENV_HEX__ = 0x0`
-
-### Verify-Capture.py — требования
-
-- `capture_config.json` с `schema = MVKVIEW_STAGE111Z31R_TWO_MODE_CAPTURE_V1`
-- `fft_n = 262144`, `spectrum_mode = 0`, `envelope_code = 0`, `raw_sample_rate_hz = 65536`
-- Файлы в `A/params_*.bin`, `input_*.bin`, `power_*.bin`, `display_y.bin` и т.д.
-
----
-
-## План захвата LOG Mode 0
-
-### Вариант 1: Использовать Prepare-Capture.ps1 (рекомендуется)
-
-```powershell
-# Из папки tools/research/stage111z31r_x32dbg_two_mode_capture/
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Prepare-Capture.ps1" -Adc 4 -N 262144 -SpectrumType 0 -Root "C:\MVK_CAPTURE\GIGACODE_LOG_MODE0"
-```
-
-Это создаст:
-- `C:\MVK_CAPTURE\GIGACODE_LOG_MODE0\Z31R_...\A\RESUME_A_FROM_14AA.txt`
-- `C:\MVK_CAPTURE\GIGACODE_LOG_MODE0\Z31R_...\capture_config.json`
-
-### Вариант 2: Адаптировать существующую папку
-
-Если уже есть рабочая папка Z31R v1.5, можно заменить `RESUME_A_FROM_14AA.txt`, подставив `0x0` вместо `0x2` для MODE и `0x0` вместо `0x14` для ENV.
-
-### Выполнение захвата (после вашего разрешения)
-
-1. **Подготовка:** запустить `Prepare-Capture.ps1` с `-SpectrumType 0` → получить готовый скрипт
-2. **CHECK_READY:** `scriptexec "...\CHECK_READY.txt"` → ожидание `Z31R_PREFLIGHT_OK`
-3. **RESUME_A:** `scriptexec "...\RESUME_A_FROM_14AA.txt"` → ожидание `Z31R_A_SAVED`
-4. **Верификация:** `py -3 Verify-Capture.py "...\Z31R_..." --report "verification.json"`
-5. **Файлы:** `input_normalized_pre_dc.bin`, `power_before_mode.bin`, `power_after_mode.bin`, `display_y.bin`
-
-**До вашего разрешения ничего не выполняется. Процесс остаётся Paused на EIP=007D14AA.**
+Покажи полный путь созданного сценария, его SHA-256, параметры конфигурации и результат проверки готовности. Затем перейдём к самому захвату LOG-спектра.
