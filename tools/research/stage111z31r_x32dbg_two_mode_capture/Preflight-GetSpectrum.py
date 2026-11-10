@@ -48,7 +48,8 @@ def must(condition: bool, msg: str) -> None:
     if not condition:
         raise CaptureError(msg)
 
-def validate(root: Path) -> dict:
+def validate(root: Path, *, expected_mode: int | None = None,
+             expected_envelope: int | None = None) -> dict:
     params = load_exact(root, "params_at_14AA.bin", PARAMS_SIZE)
     verify = load_exact(root, "params_recheck_10_2f.bin", 0x20)
     storage_ptr_raw = load_exact(root, "storage_ptr_at_14AA.bin", 4)
@@ -98,6 +99,12 @@ def validate(root: Path) -> dict:
          f"BLOCK_MODE: DWORD[EBX+0x18]=0x{mode:08X} ({mode}); "
          "expected 0..3; do not guess offsets or start capture")
     must(envelope in (0, 20), f"BLOCK_FILTER: EnvelopeCode={envelope}; current capture supports only 0/20")
+    if expected_mode is not None:
+        must(mode == expected_mode,
+             f"BLOCK_CAPTURE_MODE: actual SpectrumMode={mode}; expected {expected_mode} for planned capture")
+    if expected_envelope is not None:
+        must(envelope == expected_envelope,
+             f"BLOCK_CAPTURE_FILTER: actual EnvelopeCode={envelope}; expected {expected_envelope} for planned capture")
     must(4096 <= n <= 262144 and (n & (n - 1)) == 0,
          f"BLOCK_N: FFT N={n} invalid for current 2-mode capture")
     must(data_type == 0, f"BLOCK_TYPE: FAdcDataType={data_type} != Float32 type 0")
@@ -169,6 +176,21 @@ def self_test() -> None:
             (root/"locals_at_14AA.bin").write_bytes(stack)
         save()
         assert validate(root)["fields"]["fft_half_bins"]==131072
+        # A structurally valid LOG mode is NOT the intended VELOCITY=2 capture.
+        w32(p,0x18,0)
+        save()
+        assert validate(root)["fields"]["spectrum_mode"] == 0
+        try: validate(root, expected_mode=2)
+        except CaptureError as e: assert "BLOCK_CAPTURE_MODE" in str(e)
+        else: raise AssertionError("wrong target capture mode accepted")
+        w32(p,0x18,2)
+        w32(p,0x08,20)
+        save()
+        assert validate(root)["fields"]["envelope_code"] == 20
+        try: validate(root, expected_envelope=0)
+        except CaptureError as e: assert "BLOCK_CAPTURE_FILTER" in str(e)
+        else: raise AssertionError("wrong target capture filter accepted")
+        w32(p,0x08,0)
         w32(p,0x18,0x00048000)
         save()
         try: validate(root)
@@ -186,13 +208,17 @@ def self_test() -> None:
         try: validate(root)
         except CaptureError as e: assert "second MCP read" in str(e)
         else: raise AssertionError("inconsistent second read accepted")
-    print("SELF_TEST_PASS: valid fixture + invalid mode + invalid ring + inconsistent reread (4/4)")
+    print("SELF_TEST_PASS: valid fixture + wrong target mode/filter + invalid mode + invalid ring + inconsistent reread (6/6)")
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("folder", nargs="?", type=Path,
                     help="local folder with five raw MCP snapshots + session_at_14AA.json")
     ap.add_argument("--self-test", action="store_true", help="offline deterministic synthetic QA")
+    ap.add_argument("--expected-mode", type=int, choices=(0, 1, 2, 3),
+                    help="planned SpectrumMode; e.g. 2 for Stage111Z31R velocity A/B")
+    ap.add_argument("--expected-envelope", type=int, choices=(0, 20),
+                    help="planned EnvelopeCode; 0 for A (plain), 20 for B")
     args = ap.parse_args()
     if args.self_test:
         self_test()
@@ -200,7 +226,8 @@ def main() -> int:
     if args.folder is None:
         ap.error("folder is required unless --self-test")
     try:
-        result = validate(args.folder)
+        result = validate(args.folder, expected_mode=args.expected_mode,
+                          expected_envelope=args.expected_envelope)
     except (CaptureError, OSError, ValueError, struct.error, json.JSONDecodeError) as exc:
         print(json.dumps({"status":"BLOCK", "reason":str(exc)},ensure_ascii=False,indent=2))
         return 2
