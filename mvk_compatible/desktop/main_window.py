@@ -66,6 +66,7 @@ from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectr
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .original_shell import install_original_shell
+from .original_task_ui import make_original_channel_tabs
 
 
 class MainWindow(QMainWindow):
@@ -190,7 +191,14 @@ class MainWindow(QMainWindow):
         self.title=QLabel('Сеанс не выбран')
         self.title.setTextInteractionFlags(Qt.TextSelectableByMouse)
         bar.addWidget(self.title)
-        layout.addLayout(bar)
+        # Original DFM has no permanent archive research toolbar above Pages.
+        # Keep its controls programmatically available, but hide this auxiliary
+        # Qt-only toolbar by default (operator can show it from View menu).
+        self.compat_toolbar=QWidget(wrapper)
+        self.compat_toolbar.setObjectName('compatibilityAuxToolbar')
+        self.compat_toolbar.setLayout(bar)
+        layout.addWidget(self.compat_toolbar)
+        self.compat_toolbar.hide()
 
         self.tabs=QTabWidget()
         layout.addWidget(self.tabs,1)
@@ -203,6 +211,11 @@ class MainWindow(QMainWindow):
         details.setShortcut('Ctrl+D')
         details.triggered.connect(self._toggle_current_research)
         view_menu.addAction(details)
+        aux=QAction('Служебная панель Qt',self)
+        aux.setCheckable(True)
+        aux.setChecked(False)
+        aux.toggled.connect(self.compat_toolbar.setVisible)
+        view_menu.addAction(aux)
         self.note=QLabel('OFFLINE просмотр · LIVE только через Native R6.1 с подтверждением · команды прибору отсутствуют')
         self.note.setStyleSheet('color: #9e6500; padding: 5px')
         layout.addWidget(self.note)
@@ -410,7 +423,14 @@ class MainWindow(QMainWindow):
         """
         tab=QWidget()
         self.tabs.addTab(tab,'Временной сигнал')
-        root=QHBoxLayout(tab)
+        page=QVBoxLayout(tab)
+        page.setContentsMargins(0,0,0,0)
+        page.setSpacing(0)
+        self.wave_channel_tabs=make_original_channel_tabs(self,'tcAdc')
+        page.addWidget(self.wave_channel_tabs)
+        contents=QWidget(tab)
+        page.addWidget(contents,1)
+        root=QHBoxLayout(contents)
         root.setContentsMargins(4,6,4,4)
         root.setSpacing(4)
         panel=QWidget()
@@ -646,7 +666,14 @@ class MainWindow(QMainWindow):
         """
         tab=QWidget()
         self.tabs.addTab(tab,'Спектр')
-        lay=QHBoxLayout(tab)
+        page=QVBoxLayout(tab)
+        page.setContentsMargins(0,0,0,0)
+        page.setSpacing(0)
+        self.spec_channel_tabs=make_original_channel_tabs(self,'tcSpectrum')
+        page.addWidget(self.spec_channel_tabs)
+        contents=QWidget(tab)
+        page.addWidget(contents,1)
+        lay=QHBoxLayout(contents)
         lay.setContentsMargins(4,6,4,4)
         lay.setSpacing(0)
 
