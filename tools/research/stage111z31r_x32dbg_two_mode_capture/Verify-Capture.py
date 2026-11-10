@@ -154,7 +154,7 @@ def verify_one(root: Path, cfg: dict, label: str, code: int) -> dict:
     }
 
 
-def verify(root: Path) -> dict:
+def verify(root: Path, *, plain_only: bool = False) -> dict:
     if root.is_symlink() or not root.is_dir():
         raise ValueError('Missing/symlinked capture directory')
     cpath=root/'capture_config.json'
@@ -174,6 +174,22 @@ def verify(root: Path) -> dict:
     if cfg['spectrum_mode'] not in MODES:
         raise ValueError('unsupported SpectrumType')
     a=verify_one(root,cfg,'A',0)
+    if plain_only:
+        # The unchanged v1.5 generator writes envelope_code=20 for future B.
+        # For a single LOG A pass it is metadata, NOT the actual filter of A.
+        # verify_one() independently checks code=0 in all six original Params.
+        a.pop('_ring'); a.pop('_normalized')
+        return {
+            'schema':'MVKVIEW_STAGE111Z31R_PLAIN_CAPTURE_REPORT_V1',
+            'result':'PLAIN_CAPTURE_FILES_VALID_NOT_ORIGINAL_PARITY',
+            'capture_files_and_parameters_verified':True,
+            'operator_claimed_adc':cfg['adc_claim'],
+            'operator_claimed_archive_identity_verified_independently':False,
+            'original_and_native_bin_same_window_independently_verified':False,
+            'original_executable_process_thread_provenance_independently_authenticated':False,
+            'spectra':{'plain':a},
+            'warnings':['Only plain A verified. B, live x32dbg provenance and original-to-BIN numeric parity not proven.'],
+        }
     b=verify_one(root,cfg,'B',cfg['envelope_code'])
     equal_end=a['original_raw_end_index']==b['original_raw_end_index']
     suffix_match=(len(b['_normalized'])>=len(a['_normalized'])
@@ -238,9 +254,11 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run_dir',help='locally generated run directory containing A/ and B/')
     parser.add_argument('--report',default=None,help='optional JSON output outside GitHub')
+    parser.add_argument('--plain-only',action='store_true',
+                        help='verify physical A/ only (LOG mode 0 supported); do not claim paired A/B or original-to-BIN parity')
     args=parser.parse_args(argv)
     try:
-        data=verify(Path(args.run_dir))
+        data=verify(Path(args.run_dir),plain_only=args.plain_only)
         content=json.dumps(data,ensure_ascii=False,sort_keys=True,indent=2)
         if args.report:
             target=Path(args.report)
@@ -248,7 +266,8 @@ def main(argv=None):
                 raise ValueError('refuse to overwrite an existing report')
             target.write_text(content+'\n',encoding='utf8')
         print(content)
-        return 0 if data['result']=='TWO_CAPTURE_FILES_VALID_SAME_END_AND_SAMPLES' else 2
+        return 0 if data['result'] in ('TWO_CAPTURE_FILES_VALID_SAME_END_AND_SAMPLES',
+                                       'PLAIN_CAPTURE_FILES_VALID_NOT_ORIGINAL_PARITY') else 2
     except (ValueError,OSError,KeyError,TypeError,OverflowError,struct.error) as error:
         print('Z31R VERIFY FAIL:',str(error),file=sys.stderr)
         return 3
