@@ -68,3 +68,26 @@ def test_source_config_file_calib_are_visible_but_device_commands_disabled(sourc
         if command:
             button = page.findChild(QPushButton, command)
             assert button is not None and not button.isEnabled()
+
+
+def test_original_source_task_launcher_and_channel_tabs(source_window):
+    win = source_window
+    assert win.original_start_launcher.objectName() == "SourcePageStartLauncher"
+    assert win.original_start_launcher.findChild(QPushButton, "bTaskView") is not None
+    assert win.original_start_launcher.findChild(QPushButton, "bTaskConnect") is not None
+    assert win.original_start_launcher.findChild(QPushButton, "bTaskConfigCh") is not None
+    btn_ip = win.original_start_launcher.findChild(QPushButton, "bTaskConfigIP")
+    assert btn_ip is not None and not btn_ip.isEnabled()
+    assert win.wave_channel_tabs.objectName() == "tcAdc"
+    assert win.spec_channel_tabs.objectName() == "tcSpectrum"
+    assert win.wave_channel_tabs.height() == 36
+    assert win.spec_channel_tabs.height() == 36
+    assert win.wave_channel_tabs.count() == win.adc.count()
+    win._set_active(True)
+    win.wave_channel_tabs.setCurrentIndex(6)
+    assert win.adc.currentIndex() == 6
+    assert win.spec_channel_tabs.currentIndex() == 6
+    win.spec_channel_tabs.setCurrentIndex(2)
+    assert win.adc.currentIndex() == 2
+    assert win.wave_channel_tabs.currentIndex() == 2
+    assert win.compat_toolbar.isHidden()
