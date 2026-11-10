@@ -65,6 +65,7 @@ from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
+from .original_shell import install_original_shell
 
 
 class MainWindow(QMainWindow):
@@ -205,6 +206,9 @@ class MainWindow(QMainWindow):
         self.note=QLabel('OFFLINE просмотр · LIVE только через Native R6.1 с подтверждением · команды прибору отсутствуют')
         self.note.setStyleSheet('color: #9e6500; padding: 5px')
         layout.addWidget(self.note)
+        # Recreate original IDR/Delphi 7-page root structure without replacing
+        # the existing three internal, fully functional archive/DSP tabs.
+        self.original_shell=install_original_shell(self,layout)
         self.statusBar().showMessage('Открыть локальное измерение или выбрать «Запись с прибора · Native R6.1»')
 
     def _calculated_tab(self):
@@ -1644,6 +1648,8 @@ class MainWindow(QMainWindow):
         self.task_signal_button.setEnabled(ready)
         self.task_spectrum_button.setEnabled(ready)
         self.task_metrics_button.setEnabled(ready)
+        if getattr(self,'original_shell',None) is not None:
+            self.original_shell.sync_availability()
 
     def _begin_live_capture(self):
         """Preview is a separate, explicitly unverified mode, never a ZIP session."""
