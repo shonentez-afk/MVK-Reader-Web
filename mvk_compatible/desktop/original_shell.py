@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from .original_task_ui import install_source_task_buttons
+
 from ..core.original_ui_form_contract import (
     ORIGINAL_ROOT_PAGES, ORIGINAL_ROOT_TAB_HEIGHT,
     ORIGINAL_FILE_SPLITTER_LEFT, ORIGINAL_CALIB_SPLITTER_LEFT,
@@ -227,6 +229,7 @@ class OriginalRootShell:
         layout.insertWidget(1, self.navigation)
         layout.insertWidget(2, self.stack, 1)
         window.tabs.tabBar().hide()  # 3 internal tabs no longer 3 top-level pages
+        window.original_start_launcher = install_source_task_buttons(window, self.navigation)
         self.navigation.currentChanged.connect(self._selected)
         window.tabs.currentChanged.connect(self._legacy_changed)
         self._selected(0)
