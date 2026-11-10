@@ -185,6 +185,35 @@ class TestStaticScript(unittest.TestCase):
         self.assertNotIn(b'0x43FF4853',a+b)
 
 class TestSyntheticReceipt(unittest.TestCase):
+    def test_plain_only_log_mode0_without_b_is_verified_but_not_proven_original_parity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);synth_run(root,mode=0)
+            import shutil
+            shutil.rmtree(root/'B')
+            data=ver.verify(root,plain_only=True)
+            self.assertEqual(data['result'],'PLAIN_CAPTURE_FILES_VALID_NOT_ORIGINAL_PARITY')
+            self.assertEqual(data['spectra']['plain']['spectrum_mode'],0)
+            self.assertTrue(data['capture_files_and_parameters_verified'])
+            self.assertFalse(data['original_and_native_bin_same_window_independently_verified'])
+            self.assertEqual(tuple(data['spectra']),('plain',))
+            with self.assertRaisesRegex(ValueError,'missing'):
+                ver.verify(root)
+
+    def test_plain_only_still_rejects_missing_full_y(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);synth_run(root,mode=0)
+            (root/'A'/'display_y.bin').unlink()
+            with self.assertRaisesRegex(ValueError,'missing'):
+                ver.verify(root,plain_only=True)
+
+    def test_plain_only_refuses_corrupted_params_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);synth_run(root,mode=0)
+            f=root/'A'/'params_after_fft.bin'
+            b=bytearray(f.read_bytes());put32(b,0x18,2);f.write_bytes(b)
+            with self.assertRaisesRegex(ValueError,'SpectrumType/EnvelopeCode'):
+                ver.verify(root,plain_only=True)
+
     def test_real_ring_wrap_and_normalized_overlap_pair(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);synth_run(root)
