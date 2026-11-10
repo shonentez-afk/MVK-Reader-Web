@@ -18,7 +18,23 @@ class GigaCodePreflightTests(unittest.TestCase):
         )
         self.assertEqual(p.returncode, 0, p.stdout + "\n" + p.stderr)
         self.assertIn("SELF_TEST_PASS:", p.stdout)
-        self.assertIn("(4/4)", p.stdout)
+        self.assertIn("(6/6)", p.stdout)
+
+    def test_cli_rejects_bad_expected_mode(self) -> None:
+        p = subprocess.run(
+            [sys.executable, str(SCRIPT), "--self-test", "--expected-mode", "4"],
+            capture_output=True, text=True, timeout=30, check=False
+        )
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("invalid choice", p.stderr)
+
+    def test_cli_rejects_bad_expected_envelope(self) -> None:
+        p = subprocess.run(
+            [sys.executable, str(SCRIPT), "--self-test", "--expected-envelope", "19"],
+            capture_output=True, text=True, timeout=30, check=False
+        )
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("invalid choice", p.stderr)
 
     def test_cli_rejects_missing_capture_folder(self) -> None:
         p = subprocess.run(
