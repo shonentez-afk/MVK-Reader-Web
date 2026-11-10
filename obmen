@@ -1,36 +1,40 @@
-Твой отчёт готовности НЕ принят: на ПК лежат старые версии сценария, проверщика и конфига.
 
-Скачай три файла напрямую из закреплённого коммита GitHub, через PowerShell `Invoke-WebRequest -OutFile`, без ручного пересоздания содержимого.
 
-**1. Исправленный RESUME_B — 14476 байт**
+Размеры совпали. Теперь проверка SHA256.
 
-https://raw.githubusercontent.com/shonentez-afk/MVK-Reader-Web/f283b2d12b69a00f7eebe2dcc2904c3459aa2afd/tools/research/stage111z31ai_envelope20_b/RESUME_B_CODE20_Z31AI_REVIEWED.txt
 
-SHA256:
-`9f85ad06ff45eb2281c61f26aef2e00f4ca3becff3b8baa71c0f011817620eab`
 
-**2. Настоящий B-only Verify — 11501 байт**
 
-https://raw.githubusercontent.com/shonentez-afk/MVK-Reader-Web/f283b2d12b69a00f7eebe2dcc2904c3459aa2afd/tools/research/stage111z31ai_envelope20_b/Verify-Capture-Code20-BOnly.py
 
-SHA256:
-`1144614c5cc379b786e1751d17ddf95248f323305f1d99b554719699fe7ea05c`
 
-**3. Правильный JSON — 434 байта**
 
-https://raw.githubusercontent.com/shonentez-afk/MVK-Reader-Web/f283b2d12b69a00f7eebe2dcc2904c3459aa2afd/tools/research/stage111z31ai_envelope20_b/capture_config.json
+Все SHA256 совпали. Перечитываю `[EBX+20]` и проверяю EIP.
 
-SHA256:
-`14cae6ea714886d33fdaddd8c925bfbe989c0c1cc45714c004fce6688bcdaca0`
 
-Сохрани скачанные файлы отдельно от старых. Проверь размер и SHA256 каждого через `Get-Item` и `Get-FileHash`. Правильный конфиг скопируй в каталог будущего захвата.
 
-Повторно прочитай сырые четыре байта `[EBX+20]`: ожидаем `33 80 08 00` = `0x00088033` = 557107.
 
-**Не выполняй отдельно `run 007D153D`.** Исправленный RESUME_B самостоятельно проходит 14AA → 14B8 → 153D → 154B → 17E7 → 1900 и проверяет размеры на каждом этапе.
 
-MVKView оставить Paused на `007D14AA`. Никаких F9 или RESUME_B.
 
-После скачивания пришли таблицу реальных размеров и SHA256 трёх файлов, а также подтверждение текущего EIP. Затем согласуем один полный захват B.
+## Итог скачивания и проверки
 
-GitHub не изменяй.
+### Размеры и SHA256
+
+| Файл | Размер | SHA256 | Ожидание | Статус |
+|------|--------|--------|----------|--------|
+| `RESUME_B_CODE20_Z31AI_REVIEWED.txt` | **14476** | `9F85AD06...20EAB` | `9f85ad06...20eab` | ✓ |
+| `Verify-Capture-Code20-BOnly.py` | **11501** | `1144614C...A05C` | `1144614c...a05c` | ✓ |
+| `capture_config.json` | **434** | `14CAE6EA...ACA0` | `14cae6ea...aca0` | ✓ |
+
+### Состояние оригинала (MCP)
+
+| Параметр | Значение | Статус |
+|----------|----------|--------|
+| **State** | paused | ✓ |
+| **PID** | 1856 | ✓ |
+| **EIP** | `0x007D14AA` | ✓ |
+| **EBX** | `0x02A40E58` | ✓ |
+| **[EBX+20]** | `33 80 08 00` = **557107** | ✓ |
+
+Все три файла скачаны из GitHub, размеры и хеши полностью совпадают с эталоном. MVKView остаётся **Paused на `007D14AA`**. Никаких F9, RESUME_B не запущен.
+
+Готов к согласованию одного полного захвата B.
