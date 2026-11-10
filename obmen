@@ -1,24 +1,127 @@
-ChatGPT завершил независимую проверку Stage111Z31AE.
 
-Полный отчёт:
-https://github.com/shonentez-afk/MVK-Reader-Web/blob/research/stage111-mvkview-desktop-20261029/docs/research/STAGE111Z31AH_CODE20_WORK_ADC1_SAME_END_EXACT_PARITY_RU.md
 
-**Подтверждено:**
-- Все 262195 отсчётов `work_raw.bin` побитово совпали с физическим `ADC1 BIN[1703230:1965425] / FRange`.
-- Последние 262144 отсчёта побитово совпали с предыдущим оригинальным LOG.
-- `work_raw.bin` — это PRE-DC, не POST-DC.
-- Исходной истории достаточно. Повторная загрузка архива не требуется.
+Начну с подготовки адаптации RESUME_B для EnvelopeCode=20.
 
-**Следующая задача:** подготовь полноценный защищённый сценарий захвата FIR/IQ с текущей остановки `007D14AA`, EnvelopeCode=20, SpectrumMode=0.
 
-Используй исходные инструменты:
-`C:\MVK_TOOLS\Z31R_LOCAL\src`
 
-Рабочие файлы сохраняй:
-`C:\MVK_LOG\STAGE111Z31AE_WORK`
 
-Учитывай разные размеры: rawN=262195, ожидаемый postFIR FFT N=131072, Y=65536. Подготовь поэтапный захват DC, FIR/IQ, FFT Power, LOG Y и Summary, с проверками состояния на каждой остановке. Фактическое N и Fs проверь на `007D153D`.
 
-**Пока не нажимай F9 и не запускай старый RESUME_B.** Сначала подготовь исправленный сценарий, тесты и ZIP для проверки ChatGPT.
+Создам адаптированный Verify-Capture.py для EnvelopeCode=20.
 
-GitHub не изменяй — этим занимается ChatGPT.
+
+
+
+
+Создам ПОЛНЫЙ ИНСТРУКТАЖ по захвату B.
+
+
+
+
+
+Создам config и финальный ZIP.
+
+
+
+
+
+Создам финальный ZIP со всеми файлами сценария.
+
+
+
+
+
+RESUME_B_CODE20.txt не создан. Создам через Python и финальный ZIP.
+
+
+
+
+
+Финальный ZIP.
+
+
+
+
+
+Создам финальный ZIP.
+
+
+
+
+
+Verify-Capture-Code20.py не скопировался. Создам его.
+
+
+
+
+
+Обновлю ZIP с Verify-Capture-Code20.py.
+
+
+
+
+
+Проверю содержимое ZIP.
+
+
+
+
+
+ZIP не создался. Создам через PowerShell.
+
+
+
+
+
+## Итог подготовки сценария B
+
+### Созданные файлы в `C:\MVK_LOG\STAGE111Z31AE_WORK\`
+
+| Файл | Размер | Назначение |
+|------|--------|-----------|
+| `RESUME_B_CODE20.txt` | 13581 Б | x32dbg script — захват B с Code=20 |
+| `Verify-Capture-Code20.py` | 14138 Б | Валидатор B для FFT N=131072 |
+| `Preflight-GetSpectrum-Z31AE-patched.py` | 11308 Б | Preflight с разрешённым rawN |
+| `capture_config_code20.txt` | 135 Б | JSON-конфиг для Verify |
+| `work_raw.bin` | 1048780 Б | Реальный рабочий массив 262195 Float32 |
+
+### ZIP-пакет
+
+`C:\Users\0-d-d-m-i-n\STAGE111Z31AE_SCENARIO_B_PACKAGE.zip` (12.5 КБ) — все инструменты кроме work_raw.bin.
+
+### Замещения в RESUME_B_CODE20.txt
+
+| Замена | Было | Стало |
+|--------|------|-------|
+| `__MODE_HEX__` | `<auto>` | `0x00000000` (SpectrumMode=0 LOG) |
+| `__ENV_HEX__` | `<auto>` | `0x00000014` (EnvelopeCode=20) |
+| `__RAW_FS_HEX__` | `<auto>` | `0x00010000` (rawFs=65536) |
+| `__ENVELOPE_FS_HEX__` | `<auto>` | `0x00008000` (outFs=32768) |
+| `__N_HEX__` | `<auto>` | `0x00040033` (rawN=262195) |
+| `__HALF_N_HEX__` | `<auto>` | `0x00010000` (halfY=65536) |
+
+### Цепочка проверок RESUME_B_CODE20
+
+```
+007D14AA → savedata params, storage, work, ring (guard: EnvelopeCode=20, Mode=0)
+  ↓
+007D14B8 → после DC-коррекции (guard: filter, mode, window)
+  ↓
+007D153D → post-FIR, pre-FFT (guard: N=262195, Fs=65536)
+  ↓
+007D154B → post-FFT, pre-Power (guard: halfN=65536, Fs=32768)
+  ↓
+007D17E7 → post-Power/Mode (guard: Y_ptr valid, work valid)
+  ↓
+007D1900 → final Output (guard: summary_triplet.bin saved)
+```
+
+### Готовность к выполнению
+
+**Оригинал:** Paused на `007D14AA`, EnvelopeCode=20, история достаточна.
+
+**Осталось:**
+1. Подтвердить FFT N=131072 на `007D153D` (требует разрешения на F9 до этой точки)
+2. После подтверждения — запустить RESUME_B_CODE20
+3. Валидировать через Verify-Capture-Code20.py
+
+GitHub не изменялся. Оригинальные инструменты в `C:\MVK_TOOLS\Z31R_LOCAL\src\` не тронуты.
