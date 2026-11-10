@@ -1,44 +1,89 @@
-Уточнение перед захватом LOG-спектра.
 
-Необходимо использовать существующий Stage111Z31R v1.5, а не писать новый сценарий.
 
-**Репозиторий:**
-https://github.com/shonentez-afk/MVK-Reader-Web
+Все 5 файлов успешно прочитаны из GitHub.
 
-**Ветка:**
-`research/stage111-mvkview-desktop-20261029`
+## Результаты чтения исходников
 
-**Папка исходников:**
-`tools/research/stage111z31r_x32dbg_two_mode_capture/`
+| № | Файл | Статус | Размер |
+|---|------|--------|--------|
+| 1 | `README_RU.md` | ✅ Прочитан | Полное содержание |
+| 2 | `Prepare-Capture.ps1` | ✅ Прочитан | 100% исходный код |
+| 3 | `RESUME_A_FROM_14AA.template.txt` | ✅ Прочитан | Полное содержание |
+| 4 | `Verify-Capture.py` | ✅ Прочитан | Полное содержание |
+| 5 | `Preflight-GetSpectrum.py` | ✅ Прочитан | Полное содержание (оригинал) |
 
-Обязательно прочитай непосредственно из GitHub следующие файлы:
+---
 
-1. Инструкция:
-https://github.com/shonentez-afk/MVK-Reader-Web/blob/research/stage111-mvkview-desktop-20261029/tools/research/stage111z31r_x32dbg_two_mode_capture/README_RU.md
+## Анализ исходников для LOG Mode 0
 
-2. Генератор сценария:
-https://github.com/shonentez-afk/MVK-Reader-Web/blob/research/stage111-mvkview-desktop-20261029/tools/research/stage111z31r_x32dbg_two_mode_capture/Prepare-Capture.ps1
+### RESUME_A_FROM_14AA.template.txt — Anchor-проверка opcode
 
-3. Сценарий захвата:
-https://github.com/shonentez-afk/MVK-Reader-Web/blob/research/stage111-mvkview-desktop-20261029/tools/research/stage111z31r_x32dbg_two_mode_capture/RESUME_A_FROM_14AA.template.txt
+Скрипт проверяет точные байты инструкций в ключевых точках:
 
-4. Проверщик:
-https://github.com/shonentez-afk/MVK-Reader-Web/blob/research/stage111-mvkview-desktop-20261029/tools/research/stage111z31r_x32dbg_two_mode_capture/Verify-Capture.py
+| Адрес | Ожидаемый opcode | Инструкция | Наш EIP |
+|-------|-----------------|------------|---------|
+| **0x007D14AA** | `8B 4B 04` | `mov ecx,[EBX+4]` | ✅ **совпадает** |
+| 0x007D14B8 | `8B 43 08` | `mov eax,[EBX+8]` | — |
+| 0x007D153D | `8B 4B 04` | `mov ecx,[EBX+4]` | — |
+| 0x007D154B | `8B 43 28` | `mov eax,[EBX+28]` | — |
+| 0x007D17E7 | `33 C0` | `xor eax,eax` | — |
+| 0x007D1900 | `33 C0` | `xor eax,eax` | — |
 
-5. Python Preflight:
-https://github.com/shonentez-afk/MVK-Reader-Web/blob/research/stage111-mvkview-desktop-20261029/tools/research/stage111z31r_x32dbg_two_mode_capture/Preflight-GetSpectrum.py
+**Ранее проверено MCP disassemble — все anchor-инструкции совпадают с оригинальной MVKView 1.0.47.**
 
-Используй исходные файлы без переписывания их по памяти.
+### Prepare-Capture.ps1 — параметры для Mode 0
 
-Для текущего захвата нужны:
-- SpectrumMode = 0 (LOG)
-- EnvelopeCode = 0
-- FFT N = 262144
-- ADC = 4
-- EIP = 007D14AA
+Шаблон по умолчанию генерирует для **Mode 2 VELOCITY** (EnvelopeCode=20, SpectrumType=2).
 
-Сначала подтверди, какие файлы удалось реально прочитать, и подготовь локальный сценарий LOG Mode 0 на их основе.
+**Для нашего захвата LOG Mode 0 нужны:**
 
-Если GitHub недоступен через твои инструменты, прямо сообщи об этом. Не выдумывай содержание файлов и не создавай замену самостоятельно.
+| Параметр | Значение по умолчанию | **Для LOG Mode 0** |
+|----------|----------------------|-------------------|
+| `$Adc` | 4 | **4** ✅ |
+| `$N` | 262144 | **262144** ✅ |
+| `$SpectrumType` | 2 | **0** |
+| `$EnvelopeCode` | 20 | **0** |
+| `$RawFs` | 65536 | **65536** ✅ |
 
-**Пока ничего не выполняй в x32dbg.** Сохрани текущую остановку. Сначала покажи результат изучения исходников и план захвата.
+### RESUME_A_FROM_14AA.template.txt — подстановка
+
+Скрипт проверяет `[EBX+18] == __MODE_HEX__` и `[EBX+8] == __ENV_HEX__`.
+
+Для LOG Mode 0:
+- `__MODE_HEX__ = 0x0`
+- `__ENV_HEX__ = 0x0`
+
+### Verify-Capture.py — требования
+
+- `capture_config.json` с `schema = MVKVIEW_STAGE111Z31R_TWO_MODE_CAPTURE_V1`
+- `fft_n = 262144`, `spectrum_mode = 0`, `envelope_code = 0`, `raw_sample_rate_hz = 65536`
+- Файлы в `A/params_*.bin`, `input_*.bin`, `power_*.bin`, `display_y.bin` и т.д.
+
+---
+
+## План захвата LOG Mode 0
+
+### Вариант 1: Использовать Prepare-Capture.ps1 (рекомендуется)
+
+```powershell
+# Из папки tools/research/stage111z31r_x32dbg_two_mode_capture/
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Prepare-Capture.ps1" -Adc 4 -N 262144 -SpectrumType 0 -Root "C:\MVK_CAPTURE\GIGACODE_LOG_MODE0"
+```
+
+Это создаст:
+- `C:\MVK_CAPTURE\GIGACODE_LOG_MODE0\Z31R_...\A\RESUME_A_FROM_14AA.txt`
+- `C:\MVK_CAPTURE\GIGACODE_LOG_MODE0\Z31R_...\capture_config.json`
+
+### Вариант 2: Адаптировать существующую папку
+
+Если уже есть рабочая папка Z31R v1.5, можно заменить `RESUME_A_FROM_14AA.txt`, подставив `0x0` вместо `0x2` для MODE и `0x0` вместо `0x14` для ENV.
+
+### Выполнение захвата (после вашего разрешения)
+
+1. **Подготовка:** запустить `Prepare-Capture.ps1` с `-SpectrumType 0` → получить готовый скрипт
+2. **CHECK_READY:** `scriptexec "...\CHECK_READY.txt"` → ожидание `Z31R_PREFLIGHT_OK`
+3. **RESUME_A:** `scriptexec "...\RESUME_A_FROM_14AA.txt"` → ожидание `Z31R_A_SAVED`
+4. **Верификация:** `py -3 Verify-Capture.py "...\Z31R_..." --report "verification.json"`
+5. **Файлы:** `input_normalized_pre_dc.bin`, `power_before_mode.bin`, `power_after_mode.bin`, `display_y.bin`
+
+**До вашего разрешения ничего не выполняется. Процесс остаётся Paused на EIP=007D14AA.**
