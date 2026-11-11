@@ -78,9 +78,17 @@ def install_source_task_buttons(window, navigation: QTabBar) -> QWidget:
         elif name == "bTaskConnect":
             b.clicked.connect(window.open_native_capture)
         elif name == "bTaskConfigCh":
-            b.clicked.connect(lambda _checked=False: navigation.setCurrentIndex(1))
+            b.clicked.connect(lambda _checked=False: (
+                window.original_config_panel.set_source_mode(6),
+                navigation.setCurrentIndex(1)))
+        elif name == "bTaskConfigIP":
+            # Only open local read-only Mode4; no original callback/device I/O.
+            b.setToolTip("Mode4 ConfigIP: просмотр локального файла, без прибора")
+            b.clicked.connect(lambda _checked=False: (
+                window.original_config_panel.set_source_mode(4),
+                navigation.setCurrentIndex(1)))
         else:
-            b.setEnabled(False)  # do not imitate original device configuration
+            b.setEnabled(False)  # calibration remains gated
         if name == "bTaskConfigCalib":
             b.hide()  # original DFM Visible=False
         grid.addWidget(b, *position[name])
