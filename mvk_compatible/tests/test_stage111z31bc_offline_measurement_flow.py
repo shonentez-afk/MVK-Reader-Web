@@ -56,8 +56,8 @@ def test_native_one_session_provenance_tick_channel_and_four_surfaces(tmp_path):
     fft=flow.spectrum(1024,0,0,max_hz=1e9,max_points=512)
     baseline_fft=source.spectrum(1,1024,0,0,max_hz=1e9,max_points=512)
     np.testing.assert_array_equal(
-        fft["amplitude"].astype("<f4").view("<u4"),
-        baseline_fft["amplitude"].astype("<f4").view("<u4"))
+        np.asarray(fft["amplitude"],dtype="<f4").view("<u4"),
+        np.asarray(baseline_fft["amplitude"],dtype="<f4").view("<u4"))
     assert fft["channel"]==status["channels"][0]["channel"]
     assert fft["source"]==baseline_fft["source"]
 
