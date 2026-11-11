@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 pytest.importorskip("pyqtgraph")
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QPushButton, QTabWidget
 from mvk_compatible.desktop.main_window import MainWindow
 
@@ -104,8 +105,9 @@ def test_stage111z31av_source_independent_status_page(source_window):
     # MODE_NAMES and calculated data continue to come from existing Stage28B.
     win.original_shell.status_tabs.setCurrentIndex(13)
     assert win.original_status_mode.currentIndex() == 13
-    assert win.original_shell.status_table.rowCount() == 6
-    assert win.original_shell.status_table.item(0, 0).text() == "ResultTacho"
+    # A BIN-only/empty session must NOT synthesize TACH register values.
+    assert win.original_shell.status_table.rowCount() == 1
+    assert win.original_shell.status_table.item(0, 0).text() == "Источник"
 
 
 def test_stage111z31av_pagefile_follows_real_archive_and_close(
@@ -116,8 +118,7 @@ def test_stage111z31av_pagefile_follows_real_archive_and_close(
     win.open_archive(fixture_zip(tmp_path))
     assert win.session is not None
     assert win.original_shell.file_channels.count() == 8
-    assert win.original_shell.file_channels.item(0).data(
-        __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.UserRole) == 1
+    assert win.original_shell.file_channels.item(0).data(Qt.UserRole) == 1
     assert win.original_shell.file_values.count() == 1
     win.original_root_tabs.setCurrentIndex(5)
     assert win.original_root_stack.currentWidget().objectName() == "PageFile"
