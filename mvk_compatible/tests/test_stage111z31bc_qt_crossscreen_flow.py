@@ -37,8 +37,12 @@ def test_four_original_pages_share_same_zip_session_channel_and_values(
         assert w._pagestatus_snapshot is not None
         assert w._pagestatus_snapshot["tick"]==flow.tick_index
         assert w._full_spectrum["channel"]==1
-        assert w.original_shell.file_values.count()==1
-        assert "VALUES" in w.original_shell.file_values.item(0).text()
+        # Stage BJ exposes all actual source-backed native results instead
+        # of a single old informational placeholder. The source is unchanged.
+        assert w.original_shell.file_values.count()==24
+        assert w.original_shell.file_spec.count()==43
+        first=w._pagestatus_snapshot['channels'][0]['parameters_24'][0]
+        assert first['name'] in w.original_shell.file_values.item(0).text()
         assert w.original_shell.status_table.rowCount()>0
 
         # A single UI channel selection updates File/Signal/FFT/Status;
