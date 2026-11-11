@@ -76,6 +76,13 @@ class OriginalWindowManForm(QDialog):
             button.setText(self._localize(key) if enabled else "")
             button.setVisible(enabled)
             button.setDefault(enabled and name in ("bYes", "bOk"))
+        # _Unit115:007C8C3F..007C8C80 shrinks forms when every button
+        # is hidden (ShowWait). Native Delphi non-client height is not
+        # available in Qt, so logical-client 2/3 is a candidate, not pixel QA.
+        height=(ORIGINAL_CLIENT_SIZE[1]*2//3
+                if not message.button_names else ORIGINAL_CLIENT_SIZE[1])
+        self.setFixedSize(ORIGINAL_CLIENT_SIZE[0],height)
+        self.setProperty("originalClientHeightCandidate", height)
         self.setProperty("originalSourceMessageMode", message.mode)
         self.setProperty("deviceCommandAllowed", False)
 
