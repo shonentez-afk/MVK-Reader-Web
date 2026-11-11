@@ -159,7 +159,9 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     assert win.spec_copy_button.isEnabled()           # explicit research candidate
     assert win.spec_save_button.isEnabled()           # safe user-selected research CSV
     start=win.spec_plot.getViewBox().viewRange()[0]
-    win.spec_hscale_button.click()
+    # Original _Unit128:0084EAF4 split-button main click OPENS a popup;
+    # select actual source Tag1 (12800Hz) instead of blocking on a popup.
+    win.spec_hscale_button.menu().actions()[1].trigger()
     qt_app.processEvents()
     mid=win.spec_plot.getViewBox().viewRange()[0]
     assert (mid[1]-mid[0]) < (start[1]-start[0])
@@ -721,10 +723,10 @@ def test_qt_stage111s_all_original_h_scale_menu_entries_and_position(tmp_path,qt
     assert [a.data() for a in actions]==list(HORIZONTAL_HZ)
     assert [a.text() for a in actions]==[r['caption'] for r in original_h_scale_options()]
     assert win._spec_original_hscale_selected is None
-    # Stage111Z.18: default now matches original 25600 Hz screen,
-    # so the first click selects the next original preset, 12800 Hz.
+    # Source mSpecHScale1Click is invoked by an explicitly chosen popup
+    # item (Tag1). The main split-button click must only open that popup.
     assert win.spec_hscale_button.text()=="25600 Гц"
-    win.spec_hscale_button.click()
+    actions[1].trigger()
     qt_app.processEvents()
     assert win._spec_original_hscale_selected==12800
     assert sum(a.isChecked() for a in actions)==1
