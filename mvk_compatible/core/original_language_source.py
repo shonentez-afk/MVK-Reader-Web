@@ -238,6 +238,11 @@ FALLBACK_RU={
     "errInvalidList":"Список значений недоступен",
     "Cancel":"Отмена",
     "Ok":"ОК",
+    "Yes":"Да",
+    "No":"Нет",
+    "Error":"Ошибка",
+    "Information":"Информация",
+    "Wait":"Ожидание",
 }
 assert not (set(FALLBACK_RU)-SOURCE_KEY_SET)
 
