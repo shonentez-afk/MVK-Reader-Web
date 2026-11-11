@@ -117,11 +117,22 @@ def render_source_cell(
     kind = "unresolved"
     display = UNKNOWN
     branch_supported = True
-    if case == 1:  # Float32; Delphi FormatSpec-based string is not proven.
+    if case == 1:  # Delphi _Unit114:007B2090 special branches.
         number = struct.unpack("<f", raw[:4])[0]
         kind = "float32-storage"
-        display = repr(number) if math.isfinite(number) else "non-finite"
-        branch_supported = False  # numeric value is exact, text is a candidate
+        if (value & 0x7F800000) == 0x7F800000 and (
+                value & 0x007FFFFF):
+            # Source sub_007B1CC0 detects only NaN, not +/- infinity.
+            display = "NAN"
+        elif value & 0x7FFFFFFF == 0:
+            # Original returns 0 also for negative zero.
+            display = "0"
+        elif math.isfinite(number):
+            display = repr(number)
+            branch_supported = False  # Delphi FormatFloat unverified
+        else:
+            display = "non-finite"
+            branch_supported = False  # original INF formatting unknown
     elif case == 2:
         kind, display = "int32", str(struct.unpack("<i", raw[:4])[0])
     elif case == 3:
