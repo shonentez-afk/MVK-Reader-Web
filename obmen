@@ -1,35 +1,7 @@
+$cfg = (Get-Content "$env:LOCALAPPDATA\AIStoryRPG-QA\gigacode-desktop-mcp.json" -Raw | ConvertFrom-Json).mcpServers.'ai-story-rpg-windows-qa'
 
-
-Согласно вашему алгоритму проверки, я **не вижу** инструментов `qa_status`, `qa_launch`, `qa_tree`, `qa_screenshot` и других в своём доступном интерфейсе. В списке моих активных MCP-инструментов присутствует только отладчик `x64dbg`.
-
-Следовательно, сообщаю строго по вашему требованию:
-**«MCP не подключён к GigaCode Desktop; проверка инструментов не выполнена».**
-
----
-
-### 🔍 Полный отчёт по пунктам
-
-**1. Подключение**
-Файл `%LOCALAPPDATA%\AIStoryRPG-QA\gigacode-desktop-mcp.json` существует. Имя сервера в конфиге: **`ai-story-rpg-windows-qa`**. Параметры командной строки (`command`, `args`, `cwd`, `env`) прописаны корректно, однако канал STDIO не транслирует инструменты в моё окружение.
-
-**2. Вызовы инструментов**
-Не выполнены. Среда не предоставляет RPC-эндпоинтов для QA-сервера.
-
-**3. Ошибки подключения**
-Инструменты AI Story RPG отсутствуют в панели GigaCode Desktop. Это означает, что IDE не смогла инициализировать STDIO-процесс, заблокировала его правами доступа, либо сервер падает при старте (ошибки экспорта функций `FastMCP`).
-
-**4. Фактические данные**
-- **Статус MCP-подключения:** Отключено
-- **Список доступных инструментов:** `qa_status` (отсутствует), `qa_begin` (отсутствует), `qa_launch` (отсутствует), `qa_tree` (отсутствует), `qa_screenshot` (отсутствует)
-- **Результат `qa_status`:** Н/Д (`null`)
-- **PID игры:** Н/Д
-- **Результат `qa_tree`:** Н/Д
-- **Результат `qa_screenshot` и путь к PNG:** Н/Д
-
----
-
-**Что требуется для исправления:**
-1. Перезапустите GigaCode Desktop (или IDE).
-2. Откройте лог подключений MCP (`Settings → AI → MCP Logs`).
-3. Найдите строчку `ai-story-rpg-windows-qa`. Если там `Error` или `Timeout`, проверьте, что путь `C:\Users\0-d-d-m-i-n\Downloads\tools\AI-Story-RPG\AI-Story-RPG\AI-Story-RPG\tools\windows_qa_mcp\__init__.py` не пустой и содержит `server` и `backend_windows`.
-4. После появления инструментов в интерфейсе, я смогу выполнить реальные вызовы `qa_status` → `qa_launch` → `qa_tree` → `qa_screenshot`.
+Write-Host "COMMAND:" $cfg.command
+Write-Host "ARGS:" ($cfg.args -join " ")
+Write-Host "CWD:" $cfg.cwd
+Write-Host "ENV:"
+$cfg.env | Format-List
