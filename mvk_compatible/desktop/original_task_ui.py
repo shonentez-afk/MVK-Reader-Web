@@ -22,11 +22,21 @@ def make_original_channel_tabs(window, object_name: str) -> QTabBar:
     tabs.setCurrentIndex(window.adc.currentIndex())
 
     def from_tabs(index: int) -> None:
-        if index >= 0 and index != window.adc.currentIndex():
+        # Never allow a hidden/disabled original ADC tab to point a valid
+        # BIN-only channel at another channel's samples.
+        if (0 <= index < tabs.count() and tabs.isTabEnabled(index)
+                and index != window.adc.currentIndex()):
             window.adc.setCurrentIndex(index)
 
     def from_model(index: int) -> None:
-        if 0 <= index < tabs.count() and index != tabs.currentIndex():
+        # Qt emits connected slots in order. Another earlier slot may have
+        # already rejected this old ADC and restored the authoritative
+        # source channel. Ignore a stale emitted INDEX instead of moving
+        # either DFM tab bar backwards after the Core safety gate.
+        if (0 <= index < tabs.count() and
+                index == window.adc.currentIndex()
+                and tabs.isTabEnabled(index)
+                and index != tabs.currentIndex()):
             tabs.setCurrentIndex(index)
 
     tabs.currentChanged.connect(from_tabs)
