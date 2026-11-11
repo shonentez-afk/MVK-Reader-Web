@@ -55,3 +55,8 @@ python tools\research\summarize_private_mvkview_parity.py --private-captures C:\
 4. Физическая калибровка с генератором, весь UI/62 обработчика, настоящие device parity и полное закрытие спектров/временного сигнала по всем режимам. **Никаких записей или калибровочных действий без отдельного разрешения/стенда**.
 
 Критерий принятия: исходный код + тесты + CI + оригинальная same-run приемка, отдельно от аппарата. Все Stage BF результаты **частичные**, не заявлять полное восстановление MVKView или 1:1 до исчерпывающей приёмки.
+
+
+## Финальная CI-приёмка source BF
+
+**ОФИЦИАЛЬНАЯ ПРИЁМКА BF (2026-11-11):** исходный source SHA `10319ca736e2fd1aedf28b292a2bb6b45815c4f7`; [GitHub Actions #42995021324](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42995021324) **SUCCESS**: Linux Core PASS, Windows Core + Qt DPI150 PASS, verified autonomous Windows EXE with bundled Native R6.1 PASS. [Артефакт #13843333202](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42995021324/artifacts/13843333202), `MVKViewCompatible_Stage111_Windows_Preview`, 68 680 818 байт, expires 2026-11-25T09:30:55Z. Дополнительные документационные коммиты не входят в source SHA и не меняют проверенную сборку. **НЕТ** оригинальной 1:1 Win32 runtime приёмки (нет парного снимка/измерения с оригиналом); конфигурационные device writes/Calib/F9 не запускались.
