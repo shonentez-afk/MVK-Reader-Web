@@ -23,6 +23,7 @@ from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
+from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.session=None
+        self._offline_flow=None  # One autonomous File/Signal/Spectrum/Status source
         self._native_dialog=None  # Stage111Z.25: integrated verified Go recorder controller
         self._live_active=False
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
@@ -1780,9 +1782,13 @@ class MainWindow(QMainWindow):
         if self._live_active:
             return
         self._live_prior_session=self.session
+        self._offline_flow=None  # Never mix verified offline evidence with LIVE preview
         self._live_active=True
         self._live_preview=None
         self.session=None
+        # File page is tied to the previous verified ZIP: hide it as soon
+        # as this separate, not-yet-accepted live source is entered.
+        self.original_shell.sync_file_session(None,())
         for i in range(8):
             self.adc.model().item(i).setEnabled(True)
         self._set_active(True)
@@ -1932,6 +1938,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(was_enabled)
         self._live_control_states=[]
         self.session=None
+        self._offline_flow=None
         self.wave_plot.clear()
         self.spec_plot.clear()
         self.wave_line=None
@@ -2054,6 +2061,7 @@ class MainWindow(QMainWindow):
                          if int(self.spec_n.itemText(i))<=len(samples)]
             if not valid_sizes:
                 raise ValueError('Для графического FFT требуется не менее 1024 отсчётов')
+            flow=OfflineMeasurementFlow.bind(s,channel=channels[0])
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
@@ -2061,6 +2069,7 @@ class MainWindow(QMainWindow):
         # selected archive's data, cursor, Copy or Save.
         self._leave_original_spectrum_reference()
         self.session=s
+        self._offline_flow=flow
         # A direct BIN may supply only ADC4: do not silently read ADC1
         # or mix unrelated files to fill absent channels.
         self.adc.blockSignals(True)
@@ -2100,7 +2109,7 @@ class MainWindow(QMainWindow):
             + ('Источник BIN/TSXML Single. Калибровка/приборные DSP '
                'не подтверждены.' if direct else
                'Экспорт Native R6.1. Приборные VALUES/AUX отдельно проверены.'))
-        self.original_shell.sync_file_session(s,channels)
+        self.original_shell.sync_file_session(s,channels,flow=flow)
         self.refresh_all()
         self.statusBar().showMessage(
             ('Открыт локальный BIN/TSXML Single; калибровка и приборный DSP НЕ подтверждены · '
@@ -2120,6 +2129,7 @@ class MainWindow(QMainWindow):
         self._leave_original_spectrum_reference()
         self._clear_archive_source_projection()
         self.session=None
+        self._offline_flow=None
         self._full_spectrum=None
         self._spectrum_summary=None
         self._pagestatus_snapshot=None
@@ -2177,12 +2187,31 @@ class MainWindow(QMainWindow):
             +' · физических единиц/паритета по этому BIN НЕТ.')
         self.spec_source_gain_label.setText(label)
 
+    def _current_offline_flow(self):
+        """Same selected channel/tick on File, ADC, Spectrum and Status.
+
+        This is a validated Core view over ONE verified source session;
+        stale snapshots from another archive or LIVE are rejected.
+        """
+        if (self._live_active or self.session is None or
+                self._offline_flow is None):
+            raise ValueError('Нет одного подтверждённого offline измерения')
+        flow=self._offline_flow
+        flow.require_session(self.session)
+        ch=self._ch()
+        tick=0 if flow.direct_bin else self.tick.value()-1
+        if flow.channel!=ch or flow.tick_index!=tick:
+            flow=flow.select(channel=ch,tick_index=tick)
+            self._offline_flow=flow
+        return flow
+
     def refresh_all(self,*_):
         if self._live_active:
             self._render_live_wave()
             self._render_live_spectrum()
             return
         if self.session is None:return
+        self._current_offline_flow()  # reject cross-session/channel references
         self._update_original_gain_inspector()
         self.refresh_calc()
         self.refresh_wave()
@@ -2253,7 +2282,10 @@ class MainWindow(QMainWindow):
             self.calc_status.setStyleSheet('color:#9e6500')
             return
         if not self.session:return
-        if isinstance(self.session,DirectBinSession):
+        flow=self._current_offline_flow()
+        # PageFile tick/ADC provenance must not lag PageStatus selection.
+        self.original_shell.update_file_evidence(flow)
+        if flow.direct_bin:
             self._pagestatus_snapshot=None
             self._refresh_source_pagestatus()
             # BIN/TSXML contains no authenticated AUX/VALUES DSP. Do not
@@ -2277,7 +2309,7 @@ class MainWindow(QMainWindow):
                 'приборные показатели DSP/третьоктавы НЕ вычисляются')
             return
         try:
-            d=self.session.calculations(self.tick.value()-1)
+            d=flow.status_snapshot()
             self._pagestatus_snapshot=d
             self._refresh_source_pagestatus()
             channel=d['channels'][self._ch()-1]
@@ -2315,7 +2347,27 @@ class MainWindow(QMainWindow):
                     'показан только текст из VALUES')
             self.note.setText('ALERT: состояние датчика '+channel['sensor_status'] if channel['health']!='OK'
                 else 'MVK_DSP: штатные значения; локальный FFT обозначен отдельно')
-        except (OSError,KeyError,ValueError) as e:self._error(e)
+        except (OSError,KeyError,ValueError) as e:
+            # Never leave previous verified DSP/tick displayed as if it
+            # belonged to the current (now rejected or modified) archive.
+            self._pagestatus_snapshot=None
+            self._refresh_source_pagestatus()
+            self.calc_source.setText('VALUES/AUX: текущий источник отклонён')
+            self.calc_status.setText('DSP недоступен: '+str(e))
+            self.calc_status.setStyleSheet('color:#ad2424')
+            for row in range(self.metrics.rowCount()):
+                for col in range(self.metrics.columnCount()):
+                    self._cell(self.metrics,row,col,'—')
+            for row in range(self.oct_table.rowCount()):
+                for col in range(self.oct_table.columnCount()):
+                    self._cell(self.oct_table,row,col,'—')
+            self.oct_plot.clear()
+            for label,widget in self.status_fields.values():
+                widget.setText(label+': нет проверенного текущего DSP')
+            self.sensor_bit_details.setText(
+                'Текущий VALUES/AUX не принят, прежние биты сброшены')
+            self._reset_dsp_tach_panel('Текущий VALUES/AUX не принят')
+            self._error(e)
 
     def choose_private_envelope_idp(self):
         """Only explicit user-selected local file; no retained bytes/network."""
@@ -2359,6 +2411,7 @@ class MainWindow(QMainWindow):
             self._render_live_wave()
             return
         if not self.session:return
+        flow=self._current_offline_flow()
         try:
             mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
             order=self._signal_order()
@@ -2366,8 +2419,8 @@ class MainWindow(QMainWindow):
             if code:
                 if self.envelope_profile is None:
                     raise ValueError('Требуются оригинальные локальные коэффициенты IDP')
-                d=self.session.envelope(
-                    self._ch(),code,self.wave_start.value(),
+                d=flow.envelope(
+                    code,self.wave_start.value(),
                     self.wave_seconds.value(),self.envelope_profile,
                     display_order=order)
                 self.wave_plot.setLabel('bottom',
@@ -2379,7 +2432,7 @@ class MainWindow(QMainWindow):
                     f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'}"
                     " · оригинальный формат/время/курсор НЕ приняты")
             else:
-                d=self.session.waveform(self._ch(),self.wave_start.value(),
+                d=flow.waveform(self.wave_start.value(),
                                         self.wave_seconds.value(),mode,
                                         display_order=order)
                 self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
@@ -3291,6 +3344,7 @@ class MainWindow(QMainWindow):
             self._render_live_spectrum()
             return
         if not self.session:return
+        flow=self._current_offline_flow()
         self._spec_original_hscale_selected=None
         self.spec_hscale_button.setText('Диапазон X')
         for action in self._spec_hscale_actions:
@@ -3298,7 +3352,7 @@ class MainWindow(QMainWindow):
         try:
             start=None if self.spec_last.isChecked() else self.wave_start.value()
             n_fft=int(self.spec_n.currentText())
-            samples,fs,_,_=self.session.samples(self._ch())
+            samples,fs,_,_=flow.samples()
             self._sync_spec_lines_presentation(fs)
             gate=self._spec_history_gate(n_fft,len(samples),fs)
             if not gate['can_compute_without_padding']:
@@ -3316,13 +3370,13 @@ class MainWindow(QMainWindow):
                 # Explicit archive-end choice; original Delphi pointer parity unknown.
                 end_s=None if self.spec_last.isChecked() else (
                     self.wave_start.value()+self.wave_seconds.value())
-                d=self.session.spectrum_envelope(self._ch(),code,n_fft,
+                d=flow.spectrum_envelope(code,n_fft,
                        self.envelope_profile,end_s=end_s,
                        mode=self.spec_mode.currentIndex(),
                        backend=self._fft_backend(),f_range=self.spec_f_range.value(),
                        input_domain=self.spec_input_domain.currentData())
             else:
-                d=self.session.spectrum(self._ch(),n_fft,self.spec_mode.currentIndex(),
+                d=flow.spectrum(n_fft,self.spec_mode.currentIndex(),
                                         start,max_hz=1e9,max_points=n_fft//2,
                                         backend=self._fft_backend(),
                                         f_range=self.spec_f_range.value(),

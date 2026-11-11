@@ -175,6 +175,10 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
         "Оригинальная структура PageFile — каналы слева, параметры экспорта "
         "справа. Сбор исходных файлов на приборе пока отключён; "
         "кнопка открытия работает только с локальными записями."))
+    evidence = _text(page, "Источник: измерение не выбрано")
+    evidence.setObjectName("sourceFileEvidence")
+    evidence.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    lay.addWidget(evidence)
     return page
 
 
@@ -320,6 +324,9 @@ class OriginalRootShell:
         self.file_channels = self.file_page.findChild(QListWidget, "cbFileChannels")
         self.file_spec = self.file_page.findChild(QListWidget, "cbFileSpec")
         self.file_values = self.file_page.findChild(QListWidget, "cbFileValues")
+        self.file_source_evidence = self.file_page.findChild(
+            QLabel, "sourceFileEvidence")
+        self._file_flow = None
         self.status_tabs.currentChanged.connect(
             window.original_status_mode.setCurrentIndex)
         self.file_channels.currentItemChanged.connect(self._file_channel_chosen)
@@ -441,6 +448,10 @@ class OriginalRootShell:
     def _sync_file_selection(self, index: int) -> None:
         if index < 0:
             return
+        if self._file_flow is not None and self.window.session is not None:
+            flow=self.window._current_offline_flow()
+            self._file_flow=flow
+            self.update_file_evidence(flow)
         self._remember_view_action('select_channel',index+1)
         for row in range(self.file_channels.count()):
             item = self.file_channels.item(row)
@@ -452,13 +463,43 @@ class OriginalRootShell:
                     self.file_channels.blockSignals(False)
                 return
 
-    def sync_file_session(self, session, channels) -> None:
-        """Populate the original PageFile panes only from opened local data."""
+    def update_file_evidence(self, flow) -> None:
+        """One checked source/ADC/tick, never invented DSP for direct BIN."""
+        if flow is None:
+            self.file_source_evidence.setText(
+                "Источник: измерение не выбрано")
+            return
+        try:
+            flow.require_session(self.window.session)
+            info = flow.source_record()
+            self.file_source_evidence.setText(
+                f"Один источник {info['measurement_kind']} · "
+                f"АЦП{info['selected_channel']} / "
+                f"{info['sample_count']} реальных Single @ "
+                f"{info['sample_rate_hz']:g} Гц · "
+                f"SHA256 {info['source_bin_sha256'][:16]}… · "
+                + ("AUX/VALUES DSP НЕТ; физическая калибровка НЕ подтверждена"
+                   if flow.direct_bin else
+                   f"VALUES tick {flow.tick_index+1}/{flow.session.updates}; "
+                   "AUX только при проверенном происхождении"))
+        except (OSError,ValueError,KeyError) as exc:
+            self.file_source_evidence.setText(
+                "ИСТОЧНИК ОТКЛОНЁН; данные файла изменены/недоступны: "
+                + str(exc))
+
+    def sync_file_session(self, session, channels, *, flow=None) -> None:
+        """Populate original PageFile strictly from the shared Core source."""
+        self._file_flow = flow
         self.file_channels.clear()
         self.file_spec.clear()
         self.file_values.clear()
         if session is None:
+            self.update_file_evidence(None)
             return
+        if flow is not None:
+            flow.require_session(session)
+            if tuple(channels) != flow.available_channels:
+                raise ValueError("File page channels differ from source Core")
         sources = {ch.adc: ch for ch in getattr(session, "channel_files", ())}
         for adc in channels:
             entry = sources.get(adc)
@@ -480,8 +521,10 @@ class OriginalRootShell:
             self.file_spec.addItem(
                 "Просмотр спектра — на странице «Спектр»")
             self.file_values.addItem(
-                f"Архив {session.serial}: VALUES/AUX доступны через расчётные данные")
+                f"Native R6.1 VALUES: {session.updates} проверенных тиков; "
+                "пиковые AUX — только при наличии связанной проверки")
         self._sync_file_selection(self.window.adc.currentIndex())
+        self.update_file_evidence(flow)
 
     def sync_availability(self) -> None:
         self.navigation.setTabEnabled(
