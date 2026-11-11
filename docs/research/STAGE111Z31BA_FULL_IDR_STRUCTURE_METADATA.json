@@ -1,0 +1,2575 @@
+{
+  "archive_name": "Projects.7z",
+  "dependency_hints": [
+    "CalibIntf",
+    "CalibThread",
+    "DSXFastFourier",
+    "IdTCPClient",
+    "QGrapher2",
+    "WindowMan",
+    "co2draw",
+    "mvksubsystems",
+    "mvkthread",
+    "uLanguages"
+  ],
+  "dfm_files_count": 3,
+  "dpr_files_count": 1,
+  "executable_code_semantics_verified": false,
+  "forms": {
+    "WindowManForm.dfm": {
+      "bound_handler_addresses": {
+        "bOkClick": "007C8B50"
+      },
+      "bound_handlers_missing_in_declared_class": [],
+      "class": "TWindowManForm",
+      "code_unit": "_Unit115.pas",
+      "component_count": 9,
+      "controls": [
+        {
+          "class": "TWindowManForm",
+          "events": {},
+          "geometry": {
+            "ClientHeight": 186,
+            "ClientWidth": 436,
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Left": 645,
+            "PixelsPerInch": 96,
+            "Top": 330
+          },
+          "line": 1,
+          "name": "WindowManForm",
+          "page": null,
+          "parent": null
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 65,
+            "Left": 111,
+            "Top": 24,
+            "Width": 304
+          },
+          "line": 21,
+          "name": "Lbl",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TButton",
+          "events": {},
+          "geometry": {
+            "Height": 41,
+            "Left": 16,
+            "Top": 127,
+            "Width": 129
+          },
+          "line": 32,
+          "name": "bYes",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TButton",
+          "events": {},
+          "geometry": {
+            "Height": 41,
+            "Left": 151,
+            "Top": 127,
+            "Width": 129
+          },
+          "line": 43,
+          "name": "bNo",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TButton",
+          "events": {},
+          "geometry": {
+            "Height": 41,
+            "Left": 286,
+            "Top": 127,
+            "Width": 129
+          },
+          "line": 53,
+          "name": "bCancel",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TButton",
+          "events": {},
+          "geometry": {
+            "Enabled": "False",
+            "Height": 80,
+            "Left": 16,
+            "Top": 16,
+            "Width": 80
+          },
+          "line": 63,
+          "name": "img",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bOkClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 151,
+            "Top": 127,
+            "Width": 129
+          },
+          "line": 77,
+          "name": "bOk",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TImageCollection",
+          "events": {},
+          "geometry": {
+            "Left": 272,
+            "Top": 80
+          },
+          "line": 89,
+          "name": "icAll",
+          "page": null,
+          "parent": "WindowManForm"
+        },
+        {
+          "class": "TVirtualImageList",
+          "events": {},
+          "geometry": {
+            "Height": 64,
+            "Left": 304,
+            "Top": 80,
+            "Width": 64
+          },
+          "line": 6190,
+          "name": "ilAll",
+          "page": null,
+          "parent": "WindowManForm"
+        }
+      ],
+      "declared_field_count": 8,
+      "declared_method_count": 3,
+      "declared_methods_unbound_in_dfm": [
+        "SetupButtons",
+        "SetupTitle"
+      ],
+      "distinct_event_handlers": 1,
+      "event_binding_count": 1,
+      "page_component_counts": {},
+      "source_file": "WindowManForm.dfm"
+    },
+    "mvkeditform.dfm": {
+      "bound_handler_addresses": {
+        "FormCreate": "00840630",
+        "FormShow": "00840650",
+        "bOkClick": "00840318",
+        "bRecalcClick": "008404E8"
+      },
+      "bound_handlers_missing_in_declared_class": [],
+      "class": "Tmvkeditform",
+      "code_unit": "_Unit128.pas",
+      "component_count": 8,
+      "controls": [
+        {
+          "class": "Tmvkeditform",
+          "events": {
+            "OnCreate": "FormCreate",
+            "OnShow": "FormShow"
+          },
+          "geometry": {
+            "ClientHeight": 445,
+            "ClientWidth": 357,
+            "Font.Height": -11,
+            "Font.Name": "Tahoma",
+            "Left": 0,
+            "PixelsPerInch": 96,
+            "Top": 0
+          },
+          "line": 1,
+          "name": "mvkeditform",
+          "page": null,
+          "parent": null
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 47,
+            "Left": 16,
+            "Top": 10,
+            "Width": 321
+          },
+          "line": 21,
+          "name": "lbVal",
+          "page": null,
+          "parent": "mvkeditform"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 31,
+            "Left": 284,
+            "Top": 66,
+            "Width": 65
+          },
+          "line": 30,
+          "name": "lbUnits",
+          "page": null,
+          "parent": "mvkeditform"
+        },
+        {
+          "class": "TEdit",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 16,
+            "Top": 63,
+            "Width": 245
+          },
+          "line": 39,
+          "name": "edVal",
+          "page": null,
+          "parent": "mvkeditform"
+        },
+        {
+          "class": "TButton",
+          "events": {},
+          "geometry": {
+            "Height": 37,
+            "Left": 147,
+            "Top": 300,
+            "Width": 114
+          },
+          "line": 47,
+          "name": "bCancel",
+          "page": null,
+          "parent": "mvkeditform"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bOkClick"
+          },
+          "geometry": {
+            "Height": 37,
+            "Left": 16,
+            "Top": 300,
+            "Width": 113
+          },
+          "line": 57,
+          "name": "bOk",
+          "page": null,
+          "parent": "mvkeditform"
+        },
+        {
+          "class": "TListBox",
+          "events": {
+            "OnDblClick": "bOkClick"
+          },
+          "geometry": {
+            "Height": 229,
+            "Left": 16,
+            "Top": 49,
+            "Width": 321
+          },
+          "line": 67,
+          "name": "cbVal",
+          "page": null,
+          "parent": "mvkeditform"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bRecalcClick"
+          },
+          "geometry": {
+            "Height": 33,
+            "Left": 16,
+            "Top": 104,
+            "Visible": "False",
+            "Width": 245
+          },
+          "line": 76,
+          "name": "bRecalc",
+          "page": null,
+          "parent": "mvkeditform"
+        }
+      ],
+      "declared_field_count": 10,
+      "declared_method_count": 4,
+      "declared_methods_unbound_in_dfm": [],
+      "distinct_event_handlers": 4,
+      "event_binding_count": 5,
+      "page_component_counts": {},
+      "source_file": "mvkeditform.dfm"
+    },
+    "mvkform.dfm": {
+      "bound_handler_addresses": {
+        "FormCreate": "008440F4",
+        "FormDestroy": "00844604",
+        "FormResize": "0084EB54",
+        "PagesChange": "0084ECF0",
+        "bAnyDropDownClick": "0084EAF4",
+        "bCalibAClick": "0084C9A4",
+        "bCalibClearClick": "0084CA58",
+        "bCalibGenerateClick": "0084D474",
+        "bCalibSaveClick": "0084D9D0",
+        "bCalibStartClick": "0084DD30",
+        "bConfigDownloadClick": "008495A8",
+        "bConfigLoadClick": "00849970",
+        "bConfigResetClick": "00849CE0",
+        "bConfigSaveClick": "0084A0F8",
+        "bConfigUploadClick": "0084A5A8",
+        "bFreezeUpdateClick": "0084DEA4",
+        "bSpecCopyValueClick": "0084BC28",
+        "bSpecSaveValueClick": "0084BD7C",
+        "bTaskConfigCalibClick": "00848D78",
+        "bTaskConfigChClick": "00848E60",
+        "bTaskConfigIPClick": "00848E6C",
+        "bTaskConnectClick": "00848E78",
+        "bTaskViewClick": "00848E84",
+        "bWriteAdcClick": "0084E914",
+        "bWriteTableClick": "0084E020",
+        "bWriteValuesClick": "0084E988",
+        "cbFileChannelsClick": "0084C954",
+        "cbFileFolderPrefixClick": "0084C95C",
+        "cbFileMvkNameClick": "0084C980",
+        "chResultMouseMove": "0084AA20",
+        "edLibraryPathAfterDialog": "00848E90",
+        "imLogoMouseDown": "00848EF0",
+        "mAdcType1Click": "0084B1E0",
+        "mSpecType1Click": "0084C514",
+        "pbAdcMouseMove": "0084B4AC",
+        "pbAdcPaint": "0084B4A4",
+        "pbSpectrumMouseMove": "0084C918",
+        "pbSpectrumPaint": "0084C910",
+        "sbSpecVScrollChange": "0084C768",
+        "stFormStorageRestorePlacement": "0084ED30",
+        "stFormStorageSavePlacement": "0084F238",
+        "tabConfigAlarmsDblClick": "00849038",
+        "tabConfigBasicDblClick": "008490A8",
+        "tabConfigChannelsDblClick": "008491C4",
+        "tabDrawCell": "0084F564",
+        "tabKeyPress": "0084F6DC",
+        "tbViewTimeChange": "0084EAD4",
+        "tcAnyChange": "0084F708",
+        "tmConfigResultTimer": "00849440",
+        "tmInterfaceUpdateTimer": "0084F7C8"
+      },
+      "bound_handlers_missing_in_declared_class": [],
+      "class": "Tmvkform",
+      "code_unit": "_Unit128.pas",
+      "component_count": 145,
+      "controls": [
+        {
+          "class": "Tmvkform",
+          "events": {
+            "OnCreate": "FormCreate",
+            "OnDestroy": "FormDestroy",
+            "OnResize": "FormResize"
+          },
+          "geometry": {
+            "ClientHeight": 929,
+            "ClientWidth": 1008,
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Left": 0,
+            "PixelsPerInch": 96,
+            "Top": 0
+          },
+          "line": 1,
+          "name": "mvkform",
+          "page": null,
+          "parent": null
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "BorderWidth": 4,
+            "Height": 828,
+            "Left": 0,
+            "Top": 0,
+            "Width": 1008
+          },
+          "line": 22,
+          "name": "pnMain",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPageControl",
+          "events": {
+            "OnChange": "PagesChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 820,
+            "Left": 4,
+            "Top": 4,
+            "Width": 1000
+          },
+          "line": 37,
+          "name": "Pages",
+          "page": null,
+          "parent": "pnMain"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {},
+          "line": 50,
+          "name": "PageStart",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TImage",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "Height": 766,
+            "Left": 0,
+            "Top": 0,
+            "Width": 735
+          },
+          "line": 55,
+          "name": "imBackL",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TImage",
+          "events": {},
+          "geometry": {
+            "Align": "alRight",
+            "Height": 766,
+            "Left": 735,
+            "Top": 0,
+            "Width": 257
+          },
+          "line": 118,
+          "name": "imBackR",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 29,
+            "Top": 211,
+            "Width": 212
+          },
+          "line": 152,
+          "name": "lbIpAddr",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 29,
+            "Top": 249,
+            "Width": 372
+          },
+          "line": 160,
+          "name": "lbLibraryPath",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TImage",
+          "events": {
+            "OnMouseDown": "imLogoMouseDown"
+          },
+          "geometry": {
+            "Height": 120,
+            "Left": 3,
+            "Top": 568,
+            "Width": 432
+          },
+          "line": 168,
+          "name": "imLogo",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TEdit",
+          "events": {},
+          "geometry": {
+            "Height": 24,
+            "Left": 157,
+            "Top": 208,
+            "Width": 173
+          },
+          "line": 465,
+          "name": "edIpAddr",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TJvDirectoryEdit",
+          "events": {
+            "OnAfterDialog": "edLibraryPathAfterDialog"
+          },
+          "geometry": {
+            "Height": 24,
+            "Left": 29,
+            "Top": 276,
+            "Width": 301
+          },
+          "line": 473,
+          "name": "edLibraryPath",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bTaskConnectClick"
+          },
+          "geometry": {
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Height": 86,
+            "Left": 29,
+            "Top": 19,
+            "Width": 301
+          },
+          "line": 491,
+          "name": "bTaskConnect",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bTaskConfigIPClick"
+          },
+          "geometry": {
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Height": 86,
+            "Left": 370,
+            "Top": 105,
+            "Width": 458
+          },
+          "line": 512,
+          "name": "bTaskConfigIP",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bTaskConfigCalibClick"
+          },
+          "geometry": {
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Height": 86,
+            "Left": 370,
+            "Top": 193,
+            "Visible": "False",
+            "Width": 458
+          },
+          "line": 534,
+          "name": "bTaskConfigCalib",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bTaskConfigChClick"
+          },
+          "geometry": {
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Height": 86,
+            "Left": 370,
+            "Top": 19,
+            "Width": 458
+          },
+          "line": 557,
+          "name": "bTaskConfigCh",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bTaskViewClick"
+          },
+          "geometry": {
+            "Font.Height": -13,
+            "Font.Name": "Tahoma",
+            "Height": 86,
+            "Left": 29,
+            "Top": 105,
+            "Width": 301
+          },
+          "line": 579,
+          "name": "bTaskView",
+          "page": "PageStart",
+          "parent": "PageStart"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {},
+          "line": 601,
+          "name": "PageConfig",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alTop",
+            "Height": 60,
+            "Left": 0,
+            "Top": 0,
+            "Width": 992
+          },
+          "line": 611,
+          "name": "pnConfig",
+          "page": "PageConfig",
+          "parent": "PageConfig"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "Height": 36,
+            "Left": 309,
+            "Top": 12,
+            "Visible": "False",
+            "Width": 680
+          },
+          "line": 621,
+          "name": "lbConfigResult",
+          "page": "PageConfig",
+          "parent": "pnConfig"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 60,
+            "Left": 0,
+            "Top": 0,
+            "Width": 297
+          },
+          "line": 640,
+          "name": "pnConfigButtons",
+          "page": "PageConfig",
+          "parent": "pnConfig"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bConfigLoadClick"
+          },
+          "geometry": {
+            "Height": 48,
+            "Left": 6,
+            "Top": 6,
+            "Width": 48
+          },
+          "line": 650,
+          "name": "bConfigLoad",
+          "page": "PageConfig",
+          "parent": "pnConfigButtons"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bConfigSaveClick"
+          },
+          "geometry": {
+            "Height": 48,
+            "Left": 60,
+            "Top": 6,
+            "Width": 48
+          },
+          "line": 667,
+          "name": "bConfigSave",
+          "page": "PageConfig",
+          "parent": "pnConfigButtons"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bConfigDownloadClick"
+          },
+          "geometry": {
+            "Height": 48,
+            "Left": 184,
+            "Top": 6,
+            "Width": 48
+          },
+          "line": 684,
+          "name": "bConfigDownload",
+          "page": "PageConfig",
+          "parent": "pnConfigButtons"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bConfigUploadClick"
+          },
+          "geometry": {
+            "Height": 48,
+            "Left": 238,
+            "Top": 6,
+            "Width": 48
+          },
+          "line": 701,
+          "name": "bConfigUpload",
+          "page": "PageConfig",
+          "parent": "pnConfigButtons"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bConfigResetClick"
+          },
+          "geometry": {
+            "Height": 48,
+            "Left": 122,
+            "Top": 6,
+            "Width": 48
+          },
+          "line": 718,
+          "name": "bConfigReset",
+          "page": "PageConfig",
+          "parent": "pnConfigButtons"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 706,
+            "Left": 0,
+            "Top": 60,
+            "Width": 992
+          },
+          "line": 737,
+          "name": "tcConfig",
+          "page": "PageConfig",
+          "parent": "PageConfig"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDblClick": "tabConfigChannelsDblClick",
+            "OnDrawCell": "tabDrawCell",
+            "OnKeyPress": "tabKeyPress"
+          },
+          "geometry": {
+            "Height": 423,
+            "Left": 90,
+            "Top": 88,
+            "Width": 1206
+          },
+          "line": 750,
+          "name": "tabConfigChannels",
+          "page": "PageConfig",
+          "parent": "tcConfig"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDblClick": "tabConfigAlarmsDblClick",
+            "OnDrawCell": "tabDrawCell",
+            "OnKeyPress": "tabKeyPress"
+          },
+          "geometry": {
+            "Height": 423,
+            "Left": 184,
+            "Top": 160,
+            "Width": 1206
+          },
+          "line": 771,
+          "name": "tabConfigAlarms",
+          "page": "PageConfig",
+          "parent": "tcConfig"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDblClick": "tabConfigBasicDblClick",
+            "OnDrawCell": "tabDrawCell",
+            "OnKeyPress": "tabKeyPress"
+          },
+          "geometry": {
+            "Height": 375,
+            "Left": 370,
+            "Top": 80,
+            "Width": 1102
+          },
+          "line": 793,
+          "name": "tabConfigBasic",
+          "page": "PageConfig",
+          "parent": "PageConfig"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {},
+          "line": 815,
+          "name": "PageStatus",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 766,
+            "Left": 0,
+            "Top": 0,
+            "Width": 992
+          },
+          "line": 825,
+          "name": "tcStatus",
+          "page": "PageStatus",
+          "parent": "PageStatus"
+        },
+        {
+          "class": "TSplitter",
+          "events": {
+            "OnMoved": "FormResize"
+          },
+          "geometry": {
+            "Height": 720,
+            "Left": 404,
+            "Top": 42,
+            "Width": 8
+          },
+          "line": 838,
+          "name": "splResult",
+          "page": "PageStatus",
+          "parent": "tcStatus"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDrawCell": "tabDrawCell"
+          },
+          "geometry": {
+            "Height": 753,
+            "Left": 624,
+            "Top": 64,
+            "Width": 718
+          },
+          "line": 851,
+          "name": "tabStatus",
+          "page": "PageStatus",
+          "parent": "tcStatus"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDrawCell": "tabDrawCell"
+          },
+          "geometry": {
+            "Height": 713,
+            "Left": 664,
+            "Top": 104,
+            "Width": 678
+          },
+          "line": 870,
+          "name": "tabResult",
+          "page": "PageStatus",
+          "parent": "tcStatus"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDrawCell": "tabDrawCell"
+          },
+          "geometry": {
+            "Height": 677,
+            "Left": 704,
+            "Top": 141,
+            "Width": 626
+          },
+          "line": 889,
+          "name": "tabAllResult",
+          "page": "PageStatus",
+          "parent": "tcStatus"
+        },
+        {
+          "class": "TChart",
+          "events": {
+            "OnMouseMove": "chResultMouseMove"
+          },
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 720,
+            "Left": 4,
+            "Top": 42,
+            "Width": 400
+          },
+          "line": 908,
+          "name": "chResult",
+          "page": "PageStatus",
+          "parent": "tcStatus"
+        },
+        {
+          "class": "TBarSeries",
+          "events": {},
+          "geometry": {},
+          "line": 939,
+          "name": "SpecSeries",
+          "page": "PageStatus",
+          "parent": "chResult"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDrawCell": "tabDrawCell"
+          },
+          "geometry": {
+            "Height": 677,
+            "Left": 744,
+            "Top": 172,
+            "Width": 626
+          },
+          "line": 960,
+          "name": "tabAlarmResult",
+          "page": "PageStatus",
+          "parent": "tcStatus"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {},
+          "line": 981,
+          "name": "PageAdc",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 766,
+            "Left": 0,
+            "Top": 0,
+            "Width": 992
+          },
+          "line": 991,
+          "name": "tcAdc",
+          "page": "PageAdc",
+          "parent": "PageAdc"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 756,
+            "Left": 4,
+            "Top": 6,
+            "Width": 177
+          },
+          "line": 1000,
+          "name": "pnAdcTools",
+          "page": "PageAdc",
+          "parent": "tcAdc"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 64,
+            "Left": 9,
+            "Top": 207,
+            "Width": 162
+          },
+          "line": 1008,
+          "name": "lbAdcHint",
+          "page": "PageAdc",
+          "parent": "pnAdcTools"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 164,
+            "Left": 9,
+            "Top": 277,
+            "Width": 162
+          },
+          "line": 1017,
+          "name": "lbMean",
+          "page": "PageAdc",
+          "parent": "pnAdcTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 103,
+            "Width": 162
+          },
+          "line": 1026,
+          "name": "bAdcHScale",
+          "page": "PageAdc",
+          "parent": "pnAdcTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 150,
+            "Width": 162
+          },
+          "line": 1044,
+          "name": "bAdcVScale",
+          "page": "PageAdc",
+          "parent": "pnAdcTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 56,
+            "Width": 162
+          },
+          "line": 1062,
+          "name": "bAdcType",
+          "page": "PageAdc",
+          "parent": "pnAdcTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 9,
+            "Width": 162
+          },
+          "line": 1080,
+          "name": "bAdcEnvelopeType",
+          "page": "PageAdc",
+          "parent": "pnAdcTools"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "BorderWidth": 8,
+            "Height": 756,
+            "Left": 181,
+            "Top": 6,
+            "Width": 807
+          },
+          "line": 1099,
+          "name": "pnAdcGraph",
+          "page": "PageAdc",
+          "parent": "tcAdc"
+        },
+        {
+          "class": "TPaintBox",
+          "events": {
+            "OnMouseMove": "pbAdcMouseMove",
+            "OnPaint": "pbAdcPaint"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 740,
+            "Left": 8,
+            "Top": 8,
+            "Width": 791
+          },
+          "line": 1108,
+          "name": "pbAdc",
+          "page": "PageAdc",
+          "parent": "pnAdcGraph"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {},
+          "line": 1123,
+          "name": "PageSpectrum",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 766,
+            "Left": 0,
+            "Top": 0,
+            "Width": 992
+          },
+          "line": 1131,
+          "name": "tcSpectrum",
+          "page": "PageSpectrum",
+          "parent": "PageSpectrum"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 756,
+            "Left": 4,
+            "Top": 6,
+            "Width": 177
+          },
+          "line": 1140,
+          "name": "pnSpecTools",
+          "page": "PageSpectrum",
+          "parent": "tcSpectrum"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 64,
+            "Left": 9,
+            "Top": 257,
+            "Width": 162
+          },
+          "line": 1148,
+          "name": "lbSpecHint",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 145,
+            "Left": 9,
+            "Top": 327,
+            "Width": 162
+          },
+          "line": 1157,
+          "name": "lbSpecMean",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 150,
+            "Width": 162
+          },
+          "line": 1166,
+          "name": "bSpecHScale",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 197,
+            "Width": 162
+          },
+          "line": 1184,
+          "name": "bSpecVScale",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 103,
+            "Width": 162
+          },
+          "line": 1202,
+          "name": "bSpecLines",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 56,
+            "Width": 162
+          },
+          "line": 1220,
+          "name": "bSpecType",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bSpecCopyValueClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 464,
+            "Width": 162
+          },
+          "line": 1238,
+          "name": "bSpecCopyValue",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bSpecSaveValueClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 511,
+            "Width": 162
+          },
+          "line": 1254,
+          "name": "bSpecSaveValue",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 9,
+            "Top": 9,
+            "Width": 162
+          },
+          "line": 1270,
+          "name": "bSpecEnvelopeType",
+          "page": "PageSpectrum",
+          "parent": "pnSpecTools"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "BorderWidth": 8,
+            "Height": 756,
+            "Left": 181,
+            "Top": 6,
+            "Width": 807
+          },
+          "line": 1289,
+          "name": "pnSpecGraph",
+          "page": "PageSpectrum",
+          "parent": "tcSpectrum"
+        },
+        {
+          "class": "TPaintBox",
+          "events": {
+            "OnMouseMove": "pbSpectrumMouseMove",
+            "OnPaint": "pbSpectrumPaint"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 716,
+            "Left": 8,
+            "Top": 32,
+            "Width": 767
+          },
+          "line": 1298,
+          "name": "pbSpectrum",
+          "page": "PageSpectrum",
+          "parent": "pnSpecGraph"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alTop",
+            "Height": 24,
+            "Left": 8,
+            "Top": 8,
+            "Width": 791
+          },
+          "line": 1311,
+          "name": "pnSpecGraphTop",
+          "page": "PageSpectrum",
+          "parent": "pnSpecGraph"
+        },
+        {
+          "class": "TScrollBar",
+          "events": {
+            "OnChange": "sbSpecVScrollChange"
+          },
+          "geometry": {
+            "Height": 24,
+            "Left": 24,
+            "Top": 0,
+            "Visible": "False",
+            "Width": 553
+          },
+          "line": 1319,
+          "name": "sbSpecHScroll",
+          "page": "PageSpectrum",
+          "parent": "pnSpecGraphTop"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alRight",
+            "Height": 716,
+            "Left": 775,
+            "Top": 32,
+            "Width": 24
+          },
+          "line": 1330,
+          "name": "pnSpecGraphRight",
+          "page": "PageSpectrum",
+          "parent": "pnSpecGraph"
+        },
+        {
+          "class": "TScrollBar",
+          "events": {
+            "OnChange": "sbSpecVScrollChange"
+          },
+          "geometry": {
+            "Height": 400,
+            "Left": 0,
+            "Top": 0,
+            "Visible": "False",
+            "Width": 24
+          },
+          "line": 1338,
+          "name": "sbSpecVScroll",
+          "page": "PageSpectrum",
+          "parent": "pnSpecGraphRight"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {},
+          "line": 1353,
+          "name": "PageFile",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TSplitter",
+          "events": {
+            "OnMoved": "FormResize"
+          },
+          "geometry": {
+            "Height": 766,
+            "Left": 369,
+            "Top": 0,
+            "Width": 8
+          },
+          "line": 1363,
+          "name": "splFile",
+          "page": "PageFile",
+          "parent": "PageFile"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 766,
+            "Left": 0,
+            "Top": 0,
+            "Width": 369
+          },
+          "line": 1373,
+          "name": "tcFileChannels",
+          "page": "PageFile",
+          "parent": "PageFile"
+        },
+        {
+          "class": "TJvCheckListBox",
+          "events": {
+            "OnClick": "cbFileChannelsClick"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 720,
+            "Left": 4,
+            "Top": 42,
+            "Width": 361
+          },
+          "line": 1385,
+          "name": "cbFileChannels",
+          "page": "PageFile",
+          "parent": "tcFileChannels"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 766,
+            "Left": 377,
+            "Top": 0,
+            "Width": 615
+          },
+          "line": 1402,
+          "name": "tcFileActions",
+          "page": "PageFile",
+          "parent": "PageFile"
+        },
+        {
+          "class": "TSplitter",
+          "events": {
+            "OnMoved": "FormResize"
+          },
+          "geometry": {
+            "Height": 513,
+            "Left": 260,
+            "Top": 249,
+            "Width": 8
+          },
+          "line": 1415,
+          "name": "splFileValues",
+          "page": "PageFile",
+          "parent": "tcFileActions"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alTop",
+            "Height": 207,
+            "Left": 4,
+            "Top": 42,
+            "Visible": "False",
+            "Width": 607
+          },
+          "line": 1426,
+          "name": "pnFileAdc",
+          "page": "PageFile",
+          "parent": "tcFileActions"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 16,
+            "Top": 176,
+            "Visible": "False",
+            "Width": 169
+          },
+          "line": 1435,
+          "name": "lbFilePrefix",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 16,
+            "Top": 82,
+            "Width": 169
+          },
+          "line": 1446,
+          "name": "lbFolderPrefix",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 16,
+            "Top": 146,
+            "Width": 169
+          },
+          "line": 1456,
+          "name": "lbFileMvkName",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TEdit",
+          "events": {},
+          "geometry": {
+            "Height": 24,
+            "Left": 176,
+            "Top": 173,
+            "Visible": "False",
+            "Width": 225
+          },
+          "line": 1466,
+          "name": "edFilePrefix",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TCheckBox",
+          "events": {},
+          "geometry": {
+            "Height": 17,
+            "Left": 16,
+            "Top": 16,
+            "Width": 577
+          },
+          "line": 1474,
+          "name": "cbFileWriteXml",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TEdit",
+          "events": {},
+          "geometry": {
+            "Height": 24,
+            "Left": 176,
+            "Top": 79,
+            "Width": 225
+          },
+          "line": 1484,
+          "name": "edFolderPrefix",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TCheckBox",
+          "events": {
+            "OnClick": "cbFileFolderPrefixClick"
+          },
+          "geometry": {
+            "Height": 17,
+            "Left": 16,
+            "Top": 56,
+            "Width": 577
+          },
+          "line": 1491,
+          "name": "cbFileFolderPrefix",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TCheckBox",
+          "events": {
+            "OnClick": "cbFileMvkNameClick"
+          },
+          "geometry": {
+            "Height": 17,
+            "Left": 16,
+            "Top": 120,
+            "Width": 577
+          },
+          "line": 1502,
+          "name": "cbFileMvkName",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TEdit",
+          "events": {},
+          "geometry": {
+            "Height": 24,
+            "Left": 176,
+            "Top": 143,
+            "Width": 225
+          },
+          "line": 1513,
+          "name": "edFileMvkName",
+          "page": "PageFile",
+          "parent": "pnFileAdc"
+        },
+        {
+          "class": "TJvCheckListBox",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "Height": 513,
+            "Left": 268,
+            "Top": 249,
+            "Width": 343
+          },
+          "line": 1521,
+          "name": "cbFileValues",
+          "page": "PageFile",
+          "parent": "tcFileActions"
+        },
+        {
+          "class": "TJvCheckListBox",
+          "events": {},
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 513,
+            "Left": 4,
+            "Top": 249,
+            "Width": 256
+          },
+          "line": 1536,
+          "name": "cbFileSpec",
+          "page": "PageFile",
+          "parent": "tcFileActions"
+        },
+        {
+          "class": "TTabSheet",
+          "events": {},
+          "geometry": {
+            "TabVisible": "False"
+          },
+          "line": 1553,
+          "name": "PageCalib",
+          "page": null,
+          "parent": "Pages"
+        },
+        {
+          "class": "TSplitter",
+          "events": {
+            "OnMoved": "FormResize"
+          },
+          "geometry": {
+            "Height": 766,
+            "Left": 369,
+            "Top": 0,
+            "Width": 8
+          },
+          "line": 1558,
+          "name": "splCalib",
+          "page": "PageCalib",
+          "parent": "PageCalib"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 766,
+            "Left": 377,
+            "Top": 0,
+            "Width": 615
+          },
+          "line": 1568,
+          "name": "tcCalibResult",
+          "page": "PageCalib",
+          "parent": "PageCalib"
+        },
+        {
+          "class": "TMemo",
+          "events": {},
+          "geometry": {
+            "Height": 552,
+            "Left": 72,
+            "Top": 150,
+            "Width": 561
+          },
+          "line": 1581,
+          "name": "logCalibResult",
+          "page": "PageCalib",
+          "parent": "tcCalibResult"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alTop",
+            "Height": 63,
+            "Left": 4,
+            "Top": 42,
+            "Width": 607
+          },
+          "line": 1590,
+          "name": "pnCalibResult",
+          "page": "PageCalib",
+          "parent": "tcCalibResult"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibSaveClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 6,
+            "Top": 8,
+            "Width": 155
+          },
+          "line": 1600,
+          "name": "bCalibSave",
+          "page": "PageCalib",
+          "parent": "pnCalibResult"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibClearClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 174,
+            "Top": 8,
+            "Width": 155
+          },
+          "line": 1615,
+          "name": "bCalibClear",
+          "page": "PageCalib",
+          "parent": "pnCalibResult"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibGenerateClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 342,
+            "Top": 8,
+            "Width": 155
+          },
+          "line": 1630,
+          "name": "bCalibGenerate",
+          "page": "PageCalib",
+          "parent": "pnCalibResult"
+        },
+        {
+          "class": "TStringGrid",
+          "events": {
+            "OnDrawCell": "tabDrawCell"
+          },
+          "geometry": {
+            "Height": 533,
+            "Left": 125,
+            "Top": 183,
+            "Visible": "False",
+            "Width": 523
+          },
+          "line": 1646,
+          "name": "tabCalibResult",
+          "page": "PageCalib",
+          "parent": "tcCalibResult"
+        },
+        {
+          "class": "TTabControl",
+          "events": {
+            "OnChange": "tcAnyChange"
+          },
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 766,
+            "Left": 0,
+            "Top": 0,
+            "Width": 369
+          },
+          "line": 1667,
+          "name": "tcCalibParam",
+          "page": "PageCalib",
+          "parent": "PageCalib"
+        },
+        {
+          "class": "TJvCheckListBox",
+          "events": {
+            "OnClick": "cbFileChannelsClick"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 606,
+            "Left": 4,
+            "Top": 105,
+            "Width": 361
+          },
+          "line": 1679,
+          "name": "cbCalibSteps",
+          "page": "PageCalib",
+          "parent": "tcCalibParam"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alTop",
+            "Height": 63,
+            "Left": 4,
+            "Top": 42,
+            "Width": 361
+          },
+          "line": 1695,
+          "name": "pnCalibTools",
+          "page": "PageCalib",
+          "parent": "tcCalibParam"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Height": 21,
+            "Left": 129,
+            "Top": 20,
+            "Width": 96
+          },
+          "line": 1705,
+          "name": "lbCalibGenPort",
+          "page": "PageCalib",
+          "parent": "pnCalibTools"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibStartClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 6,
+            "Top": 8,
+            "Width": 107
+          },
+          "line": 1713,
+          "name": "bCalibStart",
+          "page": "PageCalib",
+          "parent": "pnCalibTools"
+        },
+        {
+          "class": "TComboBox",
+          "events": {},
+          "geometry": {
+            "Height": 24,
+            "Left": 216,
+            "Top": 16,
+            "Width": 129
+          },
+          "line": 1728,
+          "name": "cbCalibGenPort",
+          "page": "PageCalib",
+          "parent": "pnCalibTools"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alBottom",
+            "Height": 51,
+            "Left": 4,
+            "Top": 711,
+            "Width": 361
+          },
+          "line": 1737,
+          "name": "pnCalibSelect",
+          "page": "PageCalib",
+          "parent": "tcCalibParam"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibAClick"
+          },
+          "geometry": {
+            "Height": 35,
+            "Left": 6,
+            "Top": 6,
+            "Width": 43
+          },
+          "line": 1747,
+          "name": "bCalibA",
+          "page": "PageCalib",
+          "parent": "pnCalibSelect"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibAClick"
+          },
+          "geometry": {
+            "Height": 35,
+            "Left": 55,
+            "Top": 6,
+            "Width": 43
+          },
+          "line": 1759,
+          "name": "bCalibV",
+          "page": "PageCalib",
+          "parent": "pnCalibSelect"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibAClick"
+          },
+          "geometry": {
+            "Height": 35,
+            "Left": 104,
+            "Top": 6,
+            "Width": 43
+          },
+          "line": 1771,
+          "name": "bCalibD",
+          "page": "PageCalib",
+          "parent": "pnCalibSelect"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibAClick"
+          },
+          "geometry": {
+            "Height": 35,
+            "Left": 153,
+            "Top": 6,
+            "Width": 43
+          },
+          "line": 1783,
+          "name": "bCalibDR",
+          "page": "PageCalib",
+          "parent": "pnCalibSelect"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bCalibAClick"
+          },
+          "geometry": {
+            "Height": 35,
+            "Left": 202,
+            "Top": 6,
+            "Width": 43
+          },
+          "line": 1795,
+          "name": "bCalibT",
+          "page": "PageCalib",
+          "parent": "pnCalibSelect"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alBottom",
+            "BorderWidth": 6,
+            "Height": 53,
+            "Left": 0,
+            "Top": 828,
+            "Visible": "False",
+            "Width": 1008
+          },
+          "line": 1812,
+          "name": "pnMeasure",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Align": "alClient",
+            "Height": 29,
+            "Left": 855,
+            "Top": 12,
+            "Width": 73
+          },
+          "line": 1824,
+          "name": "lbStatus",
+          "page": null,
+          "parent": "pnMeasure"
+        },
+        {
+          "class": "TImage",
+          "events": {},
+          "geometry": {
+            "Align": "alRight",
+            "Height": 41,
+            "Left": 969,
+            "Top": 6,
+            "Width": 33
+          },
+          "line": 1844,
+          "name": "imStatusGood",
+          "page": null,
+          "parent": "pnMeasure"
+        },
+        {
+          "class": "TImage",
+          "events": {},
+          "geometry": {
+            "Align": "alRight",
+            "Height": 41,
+            "Left": 936,
+            "Top": 6,
+            "Width": 33
+          },
+          "line": 1991,
+          "name": "imStatusBad",
+          "page": null,
+          "parent": "pnMeasure"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 41,
+            "Left": 6,
+            "Top": 6,
+            "Width": 843
+          },
+          "line": 2137,
+          "name": "pnMeasureControls",
+          "page": null,
+          "parent": "pnMeasure"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bFreezeUpdateClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 6,
+            "Top": 0,
+            "Width": 160
+          },
+          "line": 2145,
+          "name": "bFreezeUpdate",
+          "page": null,
+          "parent": "pnMeasureControls"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bWriteTableClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 338,
+            "Top": 0,
+            "Width": 160
+          },
+          "line": 2160,
+          "name": "bWriteTable",
+          "page": null,
+          "parent": "pnMeasureControls"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bWriteAdcClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 504,
+            "Top": 0,
+            "Width": 160
+          },
+          "line": 2175,
+          "name": "bWriteAdc",
+          "page": null,
+          "parent": "pnMeasureControls"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bAnyDropDownClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 172,
+            "Top": 0,
+            "Width": 160
+          },
+          "line": 2191,
+          "name": "bSampleRate",
+          "page": null,
+          "parent": "pnMeasureControls"
+        },
+        {
+          "class": "TButton",
+          "events": {
+            "OnClick": "bWriteValuesClick"
+          },
+          "geometry": {
+            "Height": 41,
+            "Left": 670,
+            "Top": 0,
+            "Width": 160
+          },
+          "line": 2209,
+          "name": "bWriteValues",
+          "page": null,
+          "parent": "pnMeasureControls"
+        },
+        {
+          "class": "TPanel",
+          "events": {},
+          "geometry": {
+            "Align": "alBottom",
+            "BorderWidth": 6,
+            "Height": 48,
+            "Left": 0,
+            "Top": 881,
+            "Visible": "False",
+            "Width": 1008
+          },
+          "line": 2227,
+          "name": "pnView",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TLabel",
+          "events": {},
+          "geometry": {
+            "Align": "alLeft",
+            "Height": 25,
+            "Left": 9,
+            "Top": 14,
+            "Width": 104
+          },
+          "line": 2239,
+          "name": "lbViewTime",
+          "page": null,
+          "parent": "pnView"
+        },
+        {
+          "class": "TTrackBar",
+          "events": {
+            "OnChange": "tbViewTimeChange"
+          },
+          "geometry": {
+            "Align": "alClient",
+            "Height": 36,
+            "Left": 121,
+            "Top": 6,
+            "Width": 881
+          },
+          "line": 2253,
+          "name": "tbViewTime",
+          "page": null,
+          "parent": "pnView"
+        },
+        {
+          "class": "TSaveDialog",
+          "events": {},
+          "geometry": {
+            "Left": 416,
+            "Top": 384
+          },
+          "line": 2267,
+          "name": "dConfigSave",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TOpenDialog",
+          "events": {},
+          "geometry": {
+            "Left": 416,
+            "Top": 328
+          },
+          "line": 2276,
+          "name": "dConfigLoad",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TJvAppXMLFileStorage",
+          "events": {},
+          "geometry": {
+            "Left": 280,
+            "Top": 440
+          },
+          "line": 2283,
+          "name": "stXmlStorage",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TJvFormStorage",
+          "events": {
+            "OnRestorePlacement": "stFormStorageRestorePlacement",
+            "OnSavePlacement": "stFormStorageSavePlacement"
+          },
+          "geometry": {
+            "Left": 280,
+            "Top": 496
+          },
+          "line": 2293,
+          "name": "stFormStorage",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TJvTimer",
+          "events": {
+            "OnTimer": "tmInterfaceUpdateTimer"
+          },
+          "geometry": {
+            "Enabled": "False",
+            "Left": 280,
+            "Top": 382
+          },
+          "line": 2302,
+          "name": "tmInterfaceUpdate",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TJvTimer",
+          "events": {
+            "OnTimer": "tmConfigResultTimer"
+          },
+          "geometry": {
+            "Enabled": "False",
+            "Left": 280,
+            "Top": 326
+          },
+          "line": 2309,
+          "name": "tmConfigResult",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 334
+          },
+          "line": 2316,
+          "name": "popSampleRate",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TImageCollection",
+          "events": {},
+          "geometry": {
+            "Left": 600,
+            "Top": 334
+          },
+          "line": 2320,
+          "name": "icAllImages",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TVirtualImageList",
+          "events": {},
+          "geometry": {
+            "Height": 32,
+            "Left": 600,
+            "Top": 390,
+            "Width": 32
+          },
+          "line": 11697,
+          "name": "ilButtons",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TVirtualImageList",
+          "events": {},
+          "geometry": {
+            "Height": 64,
+            "Left": 600,
+            "Top": 446,
+            "Width": 64
+          },
+          "line": 11737,
+          "name": "ilTasks",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TVirtualImageList",
+          "events": {},
+          "geometry": {
+            "Height": 24,
+            "Left": 600,
+            "Top": 502,
+            "Width": 24
+          },
+          "line": 11795,
+          "name": "ilPages",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 390
+          },
+          "line": 11955,
+          "name": "popGraphHScale",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 438
+          },
+          "line": 11959,
+          "name": "popGraphVScale",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 494
+          },
+          "line": 11963,
+          "name": "popSpecLines",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 550
+          },
+          "line": 11967,
+          "name": "popAdcType",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TMenuItem",
+          "events": {
+            "OnClick": "mAdcType1Click"
+          },
+          "geometry": {},
+          "line": 11970,
+          "name": "mAdcType1",
+          "page": null,
+          "parent": "popAdcType"
+        },
+        {
+          "class": "TMenuItem",
+          "events": {
+            "OnClick": "mAdcType1Click"
+          },
+          "geometry": {},
+          "line": 11976,
+          "name": "mAdcType2",
+          "page": null,
+          "parent": "popAdcType"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 606
+          },
+          "line": 11983,
+          "name": "popSpecType",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TMenuItem",
+          "events": {
+            "OnClick": "mSpecType1Click"
+          },
+          "geometry": {},
+          "line": 11986,
+          "name": "mSpecType1",
+          "page": null,
+          "parent": "popSpecType"
+        },
+        {
+          "class": "TMenuItem",
+          "events": {
+            "OnClick": "mSpecType1Click"
+          },
+          "geometry": {},
+          "line": 11992,
+          "name": "mSpecType2",
+          "page": null,
+          "parent": "popSpecType"
+        },
+        {
+          "class": "TMenuItem",
+          "events": {
+            "OnClick": "mSpecType1Click"
+          },
+          "geometry": {},
+          "line": 11998,
+          "name": "mSpecType3",
+          "page": null,
+          "parent": "popSpecType"
+        },
+        {
+          "class": "TMenuItem",
+          "events": {
+            "OnClick": "mSpecType1Click"
+          },
+          "geometry": {},
+          "line": 12004,
+          "name": "mSpecType4",
+          "page": null,
+          "parent": "popSpecType"
+        },
+        {
+          "class": "TOpenDialog",
+          "events": {},
+          "geometry": {
+            "Left": 416,
+            "Top": 448
+          },
+          "line": 12011,
+          "name": "dViewedFileLoad",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TPopupMenu",
+          "events": {},
+          "geometry": {
+            "Left": 780,
+            "Top": 662
+          },
+          "line": 12018,
+          "name": "popEnvelopeType",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TLanguage",
+          "events": {},
+          "geometry": {
+            "Left": 277,
+            "Top": 560
+          },
+          "line": 12022,
+          "name": "Txt",
+          "page": null,
+          "parent": "mvkform"
+        },
+        {
+          "class": "TLanguage",
+          "events": {},
+          "geometry": {
+            "Left": 333,
+            "Top": 560
+          },
+          "line": 12026,
+          "name": "ExTxt",
+          "page": null,
+          "parent": "mvkform"
+        }
+      ],
+      "declared_field_count": 166,
+      "declared_method_count": 57,
+      "declared_methods_unbound_in_dfm": [
+        "mAdcHScale1Click",
+        "mAdcVScale1Click",
+        "mEnvelopeType1Click",
+        "mRate1Click",
+        "mSpecHScale1Click",
+        "mSpecLines1Click",
+        "mSpecVScale1Click"
+      ],
+      "distinct_event_handlers": 50,
+      "event_binding_count": 89,
+      "page_component_counts": {
+        "PageAdc": 10,
+        "PageCalib": 20,
+        "PageConfig": 12,
+        "PageFile": 17,
+        "PageSpectrum": 17,
+        "PageStart": 12,
+        "PageStatus": 8
+      },
+      "source_file": "mvkform.dfm"
+    }
+  },
+  "idr_generated_unit_files_count": 86,
+  "original_live_runtime_verified": false,
+  "pas_files_count": 129,
+  "pascal_decompiler_identified": "IDR v.01.04.2017",
+  "private_idp_header_valid": true,
+  "private_idp_sha256": "77e59f98febdd7df94e71cb538a2df69ea4de4624f15b088a81c86e61bb5a438",
+  "private_idp_size_bytes": 42094126,
+  "schema": "MVKVIEW_ORIGINAL_STRUCTURAL_INVENTORY_V1",
+  "source_code_or_original_resources_embedded": false,
+  "source_kind": "private_IDR_decompilation_and_DFM_NOT_original_compileable_delphi_sources"
+}
