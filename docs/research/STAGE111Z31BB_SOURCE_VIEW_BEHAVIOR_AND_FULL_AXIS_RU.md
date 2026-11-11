@@ -56,4 +56,9 @@
 
 Цель BB — структурно и функционально корректное поведение безопасных source действий + исправленная ось спектра; НЕ полная MVKView 1:1.
 
-CI Stage111Z31BB и номер нового EXE: PENDING до реальной проверки GitHub Actions. Предыдущая полностью принятая версия: BA source SHA 342c47280e899be38296f74590ba309f1962b99f, #42960626061.
+CI Stage111Z31BB: **SUCCESS**, source `fe5707972f872f47eb21b453d245585a2e04ae7a`, [GitHub Actions #42964108279](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42964108279). Linux Core, Windows Core/Qt, Qt DPI 150%, verified autonomous EXE + Native R6.1 — все три задания PASS. [Windows artifact #13830154606](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42964108279/artifacts/13830154606), 68 634 846 байт, expires 2026-11-25. Исходный runtime Delphi не запускался; исходные синтетические и Qt тесты не доказывают полной графической/аппаратной 1:1 совместимости. Предыдущая полностью принятая версия: BA source SHA 342c47280e899be38296f74590ba309f1962b99f, #42960626061.
+
+
+## 6. Завершённая приёмка исходного меню и регрессии
+
+Предыдущий CI #42963349145 был отменён при замене старого теста, который вызывал неоригинальный main-button click-cycle: после source-accurate изменения основной HScale click теперь открывает popup. В принятом source `fe5707972f872f47eb21b453d245585a2e04ae7a` тесты явно выбирают соответствующее source Menu QAction (Tag1=12800) и проверяют те же scroll page/max/step, поэтому проверки не ослаблены. Windows Core+Qt и DPI150 прошли, приватных оригинальных файлов в CI нет. Пакеты полного исходного функционала 3 форм/всех 62 handlers остаются открыты.
