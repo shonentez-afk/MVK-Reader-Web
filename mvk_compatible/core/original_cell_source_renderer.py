@@ -13,6 +13,7 @@ register image. It does not read devices or issue config writes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import math
 import struct
 
@@ -77,6 +78,7 @@ def render_source_cell(
     image: LocalRegisterImage, address: int, cell_type: int, *,
     key: str = "", advanced: str | None = None,
     bits: int = 0, bit_start: int = 0, sensitive: bool = False,
+    windows_total_timezone_bias_minutes: int | None = None,
 ) -> RenderedSourceCell:
     """Read exactly original type width; no conversion from arbitrary BIN.
 
@@ -97,6 +99,12 @@ def render_source_cell(
         raise ValueError("Source cell extends beyond bounded local image")
     if type(sensitive) is not bool:
         raise ValueError("Sensitive marker must be explicit Boolean")
+    # Explicit total Windows Bias+StandardBias/DaylightBias for THIS
+    # original runtime; never infer it from the CI runner or host OS.
+    if windows_total_timezone_bias_minutes is not None and (
+            type(windows_total_timezone_bias_minutes) is not int or
+            not -1440 <= windows_total_timezone_bias_minutes <= 1440):
+        raise ValueError("A bounded explicit original Windows timezone bias is required")
     # Always validate bit parameters, even for non-advanced cells.
     if (type(bits) is not int or type(bit_start) is not int
             or not 0 <= bits <= 32 or not 0 <= bit_start <= 31
@@ -138,8 +146,19 @@ def render_source_cell(
     elif case == 3:
         kind, display = "uint32", str(value)
     elif case == 4:
-        kind = "datetime-delphi-source-unresolved"
-        branch_supported = False  # missing original DateTime helpers
+        # _Unit94:0072F050 = 25569 + UnixSeconds / 86400 (Delphi
+        # TDateTime); 0072EFB4 subtracts total Windows time-zone bias
+        # minutes/1440, selected by GetTimeZoneInformation return state.
+        kind = "datetime-win32-source"
+        if windows_total_timezone_bias_minutes is None:
+            display = UNKNOWN
+            branch_supported = False
+        else:
+            stamp = (datetime(1970, 1, 1, tzinfo=timezone.utc)
+                     + timedelta(seconds=value)
+                     - timedelta(minutes=windows_total_timezone_bias_minutes))
+            display = stamp.strftime("%Y-%m-%d %H:%M:%S")
+            branch_supported = True  # arithmetic source, NOT live parity
     elif case == 5:
         kind = "hms-from-uint32-seconds"
         display = f"{value // 3600:02d}:{(value // 60) % 60:02d}:{value % 60:02d}"
