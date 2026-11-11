@@ -64,11 +64,11 @@ def test_float32_raw_bits_not_recomputed_and_unknown_type_not_guessed():
 
 def test_source_wifi_password_never_leaks_from_local_register_blob():
     raw=bytearray(512)
-    raw[0x60*2:0x60*2+16]=b"ultra-private-key"
+    raw[0x60*2:0x60*2+16]=b"super-secret-key"
     img=LocalRegisterImage.from_bytes(bytes(raw))
     result=img.preview_source_field("ip",14)
     assert result["raw_value"]=="REDACTED"
-    assert "private" not in repr(result)
+    assert "secret" not in repr(result)
     assert "raw_u32" not in result
     ssid=img.preview_source_field("ip",13)
     assert ssid["raw_value"]=="NOT_DECODED"
