@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from .original_task_ui import install_source_task_buttons
+from .original_config_readonly_ui import OriginalConfigReadOnlyPanel
 from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
@@ -112,9 +113,11 @@ def _config_page(parent: QWidget) -> QWidget:
     lay.addWidget(pages, 1)
     basic = _readonly_grid("tabConfigBasic", page)
     basic.hide()  # Offline no verified original basic-grid dispatch.
-    lay.addWidget(_text(page,
-        "Настройка: два исходных режима tcConfig, команды прибора отключены. "
-        "Оригинальные bitmap-иконки заменены безопасными системными символами."))
+    note=_text(page,
+        "Настройка: два исходных режима tcConfig. Нет загруженной "
+        "проверенной локальной конфигурации; команды прибору отключены.")
+    note.setObjectName("sourceConfigEvidence")
+    lay.addWidget(note)
     return page
 
 
@@ -311,6 +314,9 @@ class OriginalRootShell:
         layout.removeWidget(window.tabs)
         self.stack.addWidget(window.tabs)  # index 0, existing work preserved
         self.stack.addWidget(_config_page(window))          # index 1
+        self.config_page=self.stack.widget(1)
+        self.config_panel=OriginalConfigReadOnlyPanel(self.config_page)
+        window.original_config_panel=self.config_panel
         self.stack.addWidget(_file_page(window, window.choose_archive))  # 2
         self.stack.addWidget(_calib_page(window))           # index 3
         self.stack.addWidget(_status_page(window))          # index 4

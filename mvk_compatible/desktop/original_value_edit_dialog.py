@@ -20,12 +20,13 @@ class OriginalValueEditDialog(QDialog):
 
     def __init__(self, *, prompt: str = "", value: str = "",
                  units: str = "", choices: list[str] | None = None,
-                 parent=None):
+                 parent=None, read_only: bool = False):
         super().__init__(parent)
         self.setObjectName("mvkeditform")
         self.setWindowTitle(ORIGINAL_DIALOG_CAPTION)
         self.setFixedSize(*ORIGINAL_DIALOG_CLIENT_SIZE)
         self.setModal(True)
+        self._source_inspection_only = bool(read_only)
 
         label = QLabel(prompt or "Значение", self)
         label.setObjectName("lbVal")
@@ -65,6 +66,15 @@ class OriginalValueEditDialog(QDialog):
         self.bRecalc.setObjectName("bRecalc")
         self.bRecalc.setGeometry(16, 104, 245, 33)
         self.bRecalc.setVisible(False)  # explicitly original DFM Visible=False
+        if self._source_inspection_only:
+            # Only the original dialog's DFM structure is reused here.
+            # Source TMvkCellList.InputValue commits a LOCAL register image,
+            # but there is no validated writable current config or upload.
+            self.edVal.setReadOnly(True)
+            self.cbVal.setEnabled(False)
+            self.bOk.setEnabled(False)
+            self.bCancel.setText("Закрыть")
+            self.setWindowTitle("Исходное поле · просмотр без изменения")
 
     def selected_value(self) -> str:
         """Return edited value without applying it to any instrument."""
@@ -74,6 +84,8 @@ class OriginalValueEditDialog(QDialog):
         return self.edVal.text()
 
     def _accept_selected(self, *_):
+        if self._source_inspection_only:
+            return  # No local commit, no device/call-site action
         if self.cbVal.isVisible() and self.cbVal.currentItem() is None:
             return
         self.accept()
