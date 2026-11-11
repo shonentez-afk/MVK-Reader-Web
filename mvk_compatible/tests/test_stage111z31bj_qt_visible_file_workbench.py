@@ -60,6 +60,9 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert ui.file_action_buttons["fileGoSignal"].isEnabled()
         assert ui.file_action_buttons["fileGoSpectrum"].isEnabled()
         assert ui.file_action_buttons["fileGoStatus"].isEnabled()
+        assert ui.file_tick.isEnabled()
+        assert ui.file_tick.maximum()==win.session.updates
+        assert ui.file_tick.value()==win.tick.value()
         assert any("SHA256" in ui.file_metadata.item(i,0).text()
                    for i in range(ui.file_metadata.rowCount()))
         capture_synthetic_ui_if_requested(win,qt_app,"01_file_data")
@@ -98,8 +101,10 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert win._full_spectrum["channel"]==7
         assert ui.file_values.count()==24 and ui.file_spec.count()==43
 
-        win.tick.setValue(1)
+        ui.file_tick.setValue(1)
         qt_app.processEvents()
+        assert win.tick.value()==1
+        assert win._current_offline_flow().tick_index==0
         assert "обновление 1/" in ui.file_summary.text()
         assert ui.file_spec.count()==43
         assert ui.file_values.count()==24
@@ -138,6 +143,8 @@ def test_zip_to_direct_bin_clears_24_and_43_original_values(
         assert "Нет подтверждённых" in ui.file_values.item(0).text()
         assert "не подтверждён" in ui.file_spec.item(0).text()
         assert "АЦП4" in ui.file_summary.text()
+        assert not ui.file_tick.isEnabled()
+        assert ui.file_tick.value()==1
         assert "нет аппаратных VALUES/AUX" in ui.file_summary.text()
         win.original_root_tabs.setCurrentIndex(5)
         capture_synthetic_ui_if_requested(win,qt_app,"06_bin_no_fake_dsp")
