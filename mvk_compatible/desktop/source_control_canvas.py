@@ -18,7 +18,7 @@ def source_control_canvas(
     bindings: Mapping[str, QWidget],
     *,
     name: str,
-    panel_width: int = 177,
+    panel_width: int = 171,
 ) -> QWidget:
     """Lay out original controls with exact *logical* DFM coordinates.
 
@@ -33,6 +33,9 @@ def source_control_canvas(
             f"Source controls mismatch for {name}: "
             f"missing={sorted(actual-set(bindings))}, "
             f"extra={sorted(set(bindings)-actual)}")
+    # Source pn*Tools remains 177 logical px; controls end at x=171.
+    # Use their true painted extent here, leaving room for a narrow
+    # vertical Qt scroll rail at short minimum-height windows.
     height = max(top + h for _, _, _, top, _, h in control_spec) + 4
     canvas = QWidget(parent)
     canvas.setObjectName(name)
