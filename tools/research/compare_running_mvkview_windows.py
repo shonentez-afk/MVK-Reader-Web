@@ -16,6 +16,8 @@ import ctypes
 from ctypes import wintypes
 from datetime import datetime, timezone
 import json
+import hashlib
+import re
 from pathlib import Path
 import secrets
 import sys
@@ -219,9 +221,19 @@ def run(argv=None)->int:
     p.add_argument("--original-pid",type=int,required=True)
     p.add_argument("--compatible-pid",type=int,required=True)
     p.add_argument("--private-output-directory",type=Path,required=True)
+    p.add_argument("--scenario-id",default="manual_uncorroborated")
+    p.add_argument("--rois-json",type=Path,default=None,
+                   help="Optional local JSON list of native-pixel ROI rectangles")
+    p.add_argument("--operator-data-sha256",default=None,
+                   help="Provenance declaration only; original session not authenticated")
     a=p.parse_args(argv)
     if a.original_pid==a.compatible_pid:
         p.error("Original and compatible windows must have DIFFERENT PIDs")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",a.scenario_id):
+        p.error("--scenario-id must be a short safe identifier")
+    if a.operator_data_sha256 is not None and not re.fullmatch(
+            r"[a-fA-F0-9]{64}",a.operator_data_sha256):
+        p.error("--operator-data-sha256 must be 64 hexadecimal digits")
     checkout=Path(__file__).resolve().parents[2]
     target=a.private_output_directory.resolve()
     if checkout==target or checkout in target.parents or not target.is_dir():
@@ -233,7 +245,22 @@ def run(argv=None)->int:
     o=_capture_existing_client(orig[0],user32,gdi,bind)
     c=_capture_existing_client(clone[0],user32,gdi,bind)
     report=image_comparison_summary(o,c)
+    if a.rois_json is not None:
+        # Optional manual ROI set. No auto region detection or resize.
+        path=a.rois_json
+        if path.is_symlink() or not path.is_file() or path.stat().st_size>16384:
+            p.error("Expected a small ordinary ROI JSON file")
+        resolved=path.resolve()
+        if resolved==checkout or checkout in resolved.parents:
+            p.error("ROI evidence must stay outside Git checkout")
+        from mvk_compatible.core.original_parity_regions import compare_source_regions
+        rois=json.loads(path.read_text(encoding="utf-8"))
+        report["selected_regions"]=compare_source_regions(o,c,rois)
     report.update({
+        "scenario_id_operator_declared":a.scenario_id,
+        "operator_data_sha256_unverified":a.operator_data_sha256,
+        "same_snapshot_original_and_candidate_source_verified":False,
+        "original_window_input_automated":False,
         "dpi_per_monitor_v2_observer_set":dpi_v2,
         "original_window_pid":a.original_pid,
         "compatible_window_pid":a.compatible_pid,
@@ -250,6 +277,9 @@ def run(argv=None)->int:
     folder.mkdir(mode=0o700)
     _save_png(folder/"original_client.png",o)
     _save_png(folder/"compatible_client.png",c)
+    for name,key in (("original_client.png","original_png_sha256"),
+                     ("compatible_client.png","compatible_png_sha256")):
+        report[key]=hashlib.sha256((folder/name).read_bytes()).hexdigest()
     with (folder/"comparison.json").open("x",encoding="utf-8") as out:
         json.dump(report,out,ensure_ascii=False,sort_keys=True,indent=2)
         out.write("\n")
