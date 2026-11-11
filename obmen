@@ -1,7 +1,11 @@
-$cfg = (Get-Content "$env:LOCALAPPDATA\AIStoryRPG-QA\gigacode-desktop-mcp.json" -Raw | ConvertFrom-Json).mcpServers.'ai-story-rpg-windows-qa'
+Проверь фактическое подключение MCP-сервера `ai-story-rpg-windows-qa` к GigaCode Desktop.
 
-Write-Host "COMMAND:" $cfg.command
-Write-Host "ARGS:" ($cfg.args -join " ")
-Write-Host "CWD:" $cfg.cwd
-Write-Host "ENV:"
-$cfg.env | Format-List
+Не запускай сервер вручную через терминал и не анализируй исходный код вместо MCP-вызовов.
+
+1. Получи список действительно подключённых MCP-серверов.
+2. Найди `ai-story-rpg-windows-qa`.
+3. Вызови его инструмент `qa_status`.
+4. Покажи полный ответ инструмента.
+5. Если инструмент недоступен, сообщи статус сервера и точную ошибку подключения.
+
+Не переходи к тестированию игры, пока `qa_status` не заработает.
