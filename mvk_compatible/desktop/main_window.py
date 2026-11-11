@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
         self._spec_source_raster_item=None  # Private-reference research view only.
         self._spec_source_raster_data=None
         self._spec_source_cursor_raster_data=None  # Visible XOR frame; pristine base kept separate.
+        self._spec_source_last_pointer_local_x=None  # Reproject after Qt viewport resize.
         self._spec_source_series_raw_item=None  # Original PlotDataItem; never mutated.
         self._spec_source_series_item=None  # Research stroke overlay only.
         self._spec_source_series_model=None
@@ -2583,6 +2584,7 @@ class MainWindow(QMainWindow):
         self._spec_source_raster_item=None
         self._spec_source_raster_data=None
         self._spec_source_cursor_raster_data=None
+        self._spec_source_last_pointer_local_x=None
         self._spec_mouse_pixel=None
         self._spec_last_cursor=None
         if getattr(self,'spec_xor_crosshair',None):
@@ -2687,8 +2689,16 @@ class MainWindow(QMainWindow):
                 self._spec_source_grid_model.get('combined_preview_active',False)==combined and
                 self._spec_source_grid_model.get('bitmap_viewport_signature')==signature):
                 return
-            # A new image invalidates previously XORed pixels and the native
-            # integer mouse X cache: same X can now address a DIFFERENT bin.
+            # A new image invalidates XOR and source affine transforms.
+            # Preserve only the SCENE-LOCAL mouse X, not the old FFT bin
+            # or bitmap X/Y. It will be reprojected after rebuilding this
+            # new source PixelRect, including Qt deferred resize events.
+            carry_source_mouse_x=(
+                self._spec_source_last_pointer_local_x
+                if combined and self._spec_source_grid_model is not None
+                and self._spec_source_grid_model.get(
+                    'combined_preview_active',False) else None)
+            self._spec_source_last_pointer_local_x=None
             self._spec_source_cursor_raster_data=None
             self._spec_mouse_pixel=None
             self._spec_last_cursor=None
@@ -2833,6 +2843,15 @@ class MainWindow(QMainWindow):
                         self._spec_source_grid_lines.append(line)
             self._spec_source_grid_applied=True
             self._spec_source_grid_model=model
+            # A Qt ImageItem/axis layout change can deliver another
+            # sigResized AFTER MouseMove. Re-select under the new canvas
+            # rather than dropping an already valid cursor (or retaining
+            # stale old-pixel XOR). This is a fresh source lookup.
+            if combined and carry_source_mouse_x is not None:
+                source_rect=vb.sceneBoundingRect()
+                self._spec_at_scene_pos(
+                    QPointF(source_rect.left()+carry_source_mouse_x,
+                            source_rect.center().y()),force=True)
             self.spec_source_grid_info.setText(
                 f'ИССЛЕДОВАНИЕ TQGrapher: X через '
                 f"{model['source_v_line_spacing_x_single']:.7g} Гц, "
@@ -3514,6 +3533,7 @@ class MainWindow(QMainWindow):
                 if getattr(self,'spec_xor_crosshair',None):
                     self.spec_xor_crosshair.clear_cursor()
                 self._paint_source_bitmap_cursor(None)
+                self._spec_source_last_pointer_local_x=None
                 self._spec_last_cursor=None
                 self.spec_hint.setText(
                     'CursorString: — (курсор вне области графика; original IDR candidate)')
@@ -3538,6 +3558,7 @@ class MainWindow(QMainWindow):
                     if getattr(self,'spec_xor_crosshair',None):
                         self.spec_xor_crosshair.clear_cursor()
                     self._paint_source_bitmap_cursor(None)
+                    self._spec_source_last_pointer_local_x=None
                     self._spec_last_cursor=None
                     self.spec_hint.setText('CursorString: — (вне source PixelRect)')
                     self.spec_cursor_primary.setText('Курсор: —')
@@ -3587,7 +3608,9 @@ class MainWindow(QMainWindow):
                 self.spec_xor_crosshair.clear_cursor()
                 self._paint_source_bitmap_cursor((
                     overlay['bitmap_pixel_x'],overlay['bitmap_pixel_y']))
+                self._spec_source_last_pointer_local_x=float(pixel_native)
             else:
+                self._spec_source_last_pointer_local_x=None
                 self.spec_line.setVisible(True)
                 self.spec_hline.setVisible(True)
                 self.spec_xor_crosshair.set_cursor(cursor_x,cursor_y)

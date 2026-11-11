@@ -52,6 +52,11 @@ def test_source_raster_cursor_is_one_bitmap_not_qt_overlay(
         f'status_after={win.statusBar().currentMessage()}; '
         f'viewport_changed={pre_signature != win._spec_source_grid_model.get("bitmap_viewport_signature")}; '
         f'mouse_pixel={win._spec_mouse_pixel}')
+    # Qt can asynchronously resize the ViewBox after ImageItem.setImage.
+    # Compare against the FINAL canvas/bitmap, not the pre-event snapshot.
+    model = win._spec_source_grid_model
+    canvas = model['combined_canvas']
+    base = win._spec_source_raster_data.copy()
     pixel_xy = (
         selected['source_bitmap_cursor_pixel_x'],
         selected['source_bitmap_cursor_pixel_y'])
@@ -115,9 +120,21 @@ def test_zoom_after_bitmap_cursor_invalidates_native_mouse_and_bitmap(
     qt_app.processEvents()
     assert win._spec_source_raster_item is not old_image
     assert old_image.scene() is None
-    assert win._spec_source_cursor_raster_data is None
-    assert win._spec_last_cursor is None
-    assert win._spec_mouse_pixel is None
+    # The same local mouse X is REPROJECTED onto the new source PixelRect.
+    # Never retain old bin / old XOR pixel after horizontal scale changes.
+    assert win._spec_source_cursor_raster_data is not None
+    assert win._spec_last_cursor is not None
+    assert win._spec_mouse_pixel is not None
+    assert win._spec_source_last_pointer_local_x is not None
     assert win.spec_xor_crosshair.cursor is None
+    new_canvas=win._spec_source_grid_model['combined_canvas']
+    new_pixel=(
+        win._spec_last_cursor['source_bitmap_cursor_pixel_x'],
+        win._spec_last_cursor['source_bitmap_cursor_pixel_y'])
+    np.testing.assert_array_equal(
+        win._spec_source_cursor_raster_data,
+        source_bitmap_xor_cursor(
+            win._spec_source_raster_data,
+            canvas=new_canvas,cursor_pixel=new_pixel))
     win.close()
     qt_app.processEvents()
