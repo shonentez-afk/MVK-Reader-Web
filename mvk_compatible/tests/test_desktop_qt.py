@@ -1100,7 +1100,12 @@ def test_stage111z18_small_window_keeps_all_spectrum_actions(tmp_path,qt_app):
     # At minimum window size, preserve access to source bottom buttons via
     # vertical scroll rather than compressing the original 41px controls.
     win.spec_tools.ensureWidgetVisible(win.spec_save_button)
+    # Source sidebar is still 177 logical pixels. Its control canvas adapts
+    # horizontally to native 14px Windows vertical scrollbars at short height.
     assert win.spec_tools.horizontalScrollBar().maximum()==0
+    assert win.spec_source_canvas.width() <= win.spec_tools.viewport().width()
+    for widget in (win.spec_copy_button, win.spec_save_button):
+        assert widget.geometry().right() < win.spec_source_canvas.width()
     assert win.spec_copy_button.isVisible()
     assert win.spec_save_button.isVisible()
     win.close()

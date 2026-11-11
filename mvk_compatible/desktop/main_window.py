@@ -706,10 +706,6 @@ class MainWindow(QMainWindow):
         # without horizontal scrolling or clipped diagnostics.
         self.spec_tools.setFixedWidth(177)
         self.spec_tools.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # Original Delphi pnSpecTools has no horizontal scrolling.
-        # Keep a narrow vertical rail at minimum-height Qt windows so the
-        # 162px source buttons at logical x=9 remain fully visible.
-        self.spec_tools.verticalScrollBar().setFixedWidth(4)
         self.spec_tools.setWidgetResizable(True)
         self.spec_tools.setFrameShape(QFrame.NoFrame)
         tools=QWidget()
