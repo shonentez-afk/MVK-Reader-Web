@@ -1,3 +1,8 @@
+
+## Проверенная финальная CI-приёмка
+
+Source `0c5a2fe2bd4f33dd50439757083629f5f44f2bb3`; [CI #42949383047](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42949383047) SUCCESS, все 3 задания PASS. [Windows EXE artifact #13824976041](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42949383047/artifacts/13824976041), срок 2026-11-25. Проверена Qt 150%, но не оригинальный Delphi GDI пиксельный эталон.
+
 # Stage111Z31AX — синхронизация растрового TQGrapher, прокрутки и курсора по источнику
 
 Дата: 11.11.2026. Рабочая ветка: \`research/stage111-mvkview-desktop-20261029\`.
