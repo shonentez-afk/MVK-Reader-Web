@@ -46,10 +46,15 @@ test_stage111z31bd_qt_config_and_editor.py: настоящий Qt PageConfig, д
 
 Численные FIR/FFT/LOG, доказанный Code20/LOG0 0 ULP на одном физическом окне, Native R6.1 и ранее принятый Flow File→ADC→Spectrum→Status не изменялись.
 
-**Новый CI Stage111Z31BD: PENDING, нельзя объявлять PASS до всех заданий GitHub Actions.**
+**Stage111Z31BD ACCEPTED:** source 1e33e08e2fd8be1fbead31702df68824b839a3ea, [GitHub Actions #42972196643](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42972196643) — SUCCESS; Linux Core + Windows Core/Qt @DPI150 + verified autonomous EXE with Native R6.1, все три jobs PASS. [Artifact #13834206442](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42972196643/artifacts/13834206442) 68 668 023 bytes, expires 2026-11-25T06:29:40Z. Это source/Qt synthetic regression, НЕ runtime 1:1 оригинала.
 
 Это НЕ полное восстановление Config IP/Calibration, не настоящий живой статус порогов, не подтверждённый текст original TLanguage и не общая 1:1 приёмка трёх форм. Оригинальная MVKView и x32dbg/F9 не запускались, Upload/Reset/Calib не исполнялись.
 
 ## 5. Следующий крупный этап
 
 Исходные конструкторы и точная семантика ConfigIP/ConfigCalib/ConfigADC, проверка типов TMvkCellList/AdvancedCell и безопасный отображающий Core без прибора; локальные TLanguage-переводы только при получении подлинного источника; затем прямой read-only Windows parity harness с двумя установленными приложениями и выверенными GUI сценариями.
+
+
+## 6. Финальная приёмка исходного Config
+
+Проверенный SHA: 1e33e08e2fd8be1fbead31702df68824b839a3ea. Тестами отдельно подтверждены: исходные hex адреса и безопасный @include, чтение конфигурационного файла без изменения EEPROM/Flash, карта 8×8×8, все 191 source TLanguage keys, только две вкладки, исключительно локальный бConfigLoad, read-only Tmvkeditform, невозможность Save/Reset/Download/Upload/Calib, отсутствие устаревшей конфигурации после ошибочного импорта. В предыдущих AO/AW тестах обновлено одно старое ожидание: bConfigLoad теперь разрешена **лишь для чтения локального файла**, остальные четыре кнопки и приборный обмен остаются запрещены. Важно: значения подтверждены файлом, НЕ текущим состоянием реального прибора. Native R6.1 / FIR / FFT / LOG и Code20/LOG0 0 ULP на одном оригинальном окне не изменены.
