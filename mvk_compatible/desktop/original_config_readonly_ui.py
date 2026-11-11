@@ -10,13 +10,14 @@ live device semantics are inferred from a passive text file.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QLabel, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QFileDialog, QLabel, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget
 
 from ..core.original_config_readonly import (
     FIELDS, UNKNOWN, empty_original_config_inspection,
     inspect_original_local_config, alarm_config_register,
 )
 from ..core.original_language_source import source_localize
+from ..core.original_config_semantics import source_section_rows
 from .original_value_edit_dialog import OriginalValueEditDialog
 
 
@@ -28,10 +29,12 @@ class OriginalConfigReadOnlyPanel:
         self.basic_table=page.findChild(QTableWidget,"tabConfigBasic")
         self.source_note=page.findChild(QLabel,"sourceConfigEvidence")
         self.load_button=page.findChild(QPushButton,"bConfigLoad")
+        self.page_tabs=page.findChild(QTabWidget,"tcConfig")
+        self.source_mode=6
         self.document=empty_original_config_inspection()
         if any(x is None for x in (self.channel_table,self.alarm_table,
                                    self.basic_table,self.source_note,
-                                   self.load_button)):
+                                   self.load_button,self.page_tabs)):
             raise ValueError("Missing source PageConfig DFM control")
         self.load_button.setEnabled(True)
         self.load_button.setToolTip(
@@ -39,6 +42,7 @@ class OriginalConfigReadOnlyPanel:
             "файл для чтения. Не загружает в прибор и не редактирует регистры.")
         self.load_button.clicked.connect(self.choose_file)
         self.alarm_table.cellDoubleClicked.connect(self.show_alarm_details)
+        self.basic_table.cellDoubleClicked.connect(self.show_basic_details)
         self.refresh()
 
     @staticmethod
@@ -89,18 +93,74 @@ class OriginalConfigReadOnlyPanel:
                 info=entry["fields"][key]
                 self._cell(a,r,col,info["raw_value"],detail=info)
 
-        # Source sibling tabConfigBasic is only active in Delphi Mode4/5;
-        # keep it hidden here. Do not add a third, invented tcConfig tab.
-        self.basic_table.hide()
+        self._refresh_basic()
+        self._set_mode_visibility()
         total=report["parsed_cells"]
         count=report["alarm_registers_present"]
+        if self.source_mode==6:
+            summary=f"Из них {count}/512 в полях контроля."
+        else:
+            rows=source_section_rows(
+                doc,"ip" if self.source_mode==4 else "calib")
+            known=sum(r["observed_in_local_file"] for r in rows)
+            summary=(f"Исходный Mode{self.source_mode}: "
+                     f"{known}/{len(rows)} полей локального источника.")
         self.source_note.setText(
-            "Исходный IDR: 8 АЦП × 8 контрольных слотов × 8 полей "
-            f"(0x0100..0x08FF). Локально прочитано {total} значений, "
-            f"из них {count}/512 совпали с адресами контрольных зон. "
+            f"Локально прочитано {total} RAW значений. {summary} "
             "Текущая конфигурация прибора НЕ подтверждена. "
-            "Статус, пороги и единицы не расшифрованы автоматически; "
-            "сохранение, Upload, Reset и калибровка отключены.")
+            "Save/Reset/Download/Upload/Calib отключены.")
+
+    def _set_mode_visibility(self):
+        basic=self.source_mode in (4,5)
+        self.page_tabs.setVisible(not basic)
+        self.basic_table.setVisible(basic)
+
+    def _refresh_basic(self):
+        table=self.basic_table
+        if self.source_mode not in (4,5):
+            table.setRowCount(0)
+            return
+        rows=source_section_rows(
+            self.document,"ip" if self.source_mode==4 else "calib")
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(
+            ("Исходное поле","Адрес","IDR тип","Локальный RAW",
+             "Исходные пределы / список"))
+        table.setRowCount(len(rows))
+        for index,info in enumerate(rows):
+            name=source_localize(info["source_key"]).display+info["source_suffix"]
+            bounds=(f'{info["source_min"]}..{info["source_max"]}'
+                    if info["source_min"] is not None else "")
+            values=(name,info["address"],str(info["cell_type_code"]),
+                    info["raw_value"],bounds or info["advanced_kind"] or UNKNOWN)
+            detail={"source_translation_key":info["source_key"],
+                    "address":info["address"]}
+            for col,value in enumerate(values):
+                self._cell(table,index,col,value,
+                           detail=detail if col==3 else None)
+
+    def set_source_mode(self,mode):
+        if type(mode) is not int or mode not in (4,5,6):
+            raise ValueError("Only source Config Mode4/5/6 supported")
+        self.source_mode=mode
+        self.refresh()
+
+    def basic_detail_dialog(self,row,column):
+        if (self.source_mode not in (4,5) or
+                type(row) is not int or type(column) is not int or
+                not 0<=row<self.basic_table.rowCount() or column!=3):
+            raise ValueError("Only local raw source field may be viewed")
+        info=source_section_rows(
+            self.document,"ip" if self.source_mode==4 else "calib")[row]
+        hint=source_localize(info["source_key"])
+        return OriginalValueEditDialog(
+            prompt=f'{hint.display}{info["source_suffix"]} ({hint.key})',
+            value=info["raw_value"],units=info["address"],
+            parent=self.page,read_only=True)
+
+    def show_basic_details(self,row,column):
+        if column==3:
+            self.basic_detail_dialog(row,column).exec()
 
     def load_local_file(self,path):
         """Fail-closed: a bad/new file never preserves old config evidence."""
