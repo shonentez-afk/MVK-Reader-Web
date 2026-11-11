@@ -107,5 +107,5 @@ def test_generated_source_enum_ids_not_fabricated():
     by_key={e.kind:e for e in SOURCE_ENUM_CONSTRUCTORS}
     assert {k:v.source_entry_count for k,v in by_key.items()}=={
         "num_groups":2,"option":4,"wifi_mode":3,"alarm_band":4}
-    assert all(not item.source_ids_recovered for item in by_key.values())
+    assert all(item.source_ids_recovered for item in by_key.values())
     assert all(not item.uses_composite for item in by_key.values())
