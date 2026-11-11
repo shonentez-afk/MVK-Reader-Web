@@ -12,6 +12,8 @@ BG: исходный пакет отправлен, CI и оригинальна
 
 ## 2. GetValueText original 30-type switch
 
+Независимое локальное извлечение из приватного _Unit115.pas: **30/30 записей switch в точности совпали** с SOURCE_DISPATCH_CASES, SHA256 30 байт кодов ветвей = d5f5b263736995b4a581557ea0d58b4c5eec3a0a311a7726b0b3f0c5edc9216f. Это source-data parity, не original runtime comparison.
+
 Из _Unit115:007CE6E4 (таблица переходов) и _Unit114:007B2224/22E4/2390/2428/27CC/28F8/29D4/2D98 подтверждены:
 - Type0: Single. _Unit114:007B1CC0/2090: NaN = NAN, +0/-0 = 0, остальные числа требуют оригинального FormatFloat/FormatSettings; кандидатное представление не заявляется оригинальным текстом.
 - Type1 Int32; type2 UInt32 (Int64 overload); type3 Unix seconds -> Delphi DateTime (25569 + seconds/86400) -> вычитание bias/1440 по Windows GetTimeZoneInformation (_Unit94:0072F050/0072EFB4). Без явно заданного total Windows bias исходного процесса время UNKNOWN, не брать смещение ПК/CI.
