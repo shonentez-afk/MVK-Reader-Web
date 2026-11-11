@@ -63,6 +63,9 @@ from ..core.original_spectrum_x32dbg_reference import (
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
 from ..core.envelope_spectrum_idr_candidate import required_original_history
 from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
+from ..core.tqgrapher_viewport_sync_source import (
+    bitmap_viewport_signature, bitmap_cursor_geometry,
+    bitmap_cursor_overlay_coordinates)
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .original_shell import install_original_shell
@@ -2635,6 +2638,10 @@ class MainWindow(QMainWindow):
                 scr_left=float(xr[0]),scr_width=float(xr[1]-xr[0]),
                 scr_bottom=float(yr[0]),scr_height=float(yr[1]-yr[0]))
             model['tco2draw_source_style']=source_tco2draw_grid_contract()
+            signature=bitmap_viewport_signature(
+                view_x=xr,view_y=yr,width=size[0],height=size[1],
+                raster=raster,composite=combined)
+            model['bitmap_viewport_signature']=signature
             if (self._spec_source_grid_model is not None and all(
                 self._spec_source_grid_model[key]==model[key]
                 for key in ('x_grid_ticks','y_grid_ticks',
@@ -2642,8 +2649,7 @@ class MainWindow(QMainWindow):
                             'y_tick_labels_candidate')) and
                 self._spec_source_grid_model.get('raster_preview_enabled')==raster and
                 self._spec_source_grid_model.get('combined_preview_active',False)==combined and
-                (not raster or
-                 self._spec_source_grid_model.get('qt_raster_size')==size)):
+                self._spec_source_grid_model.get('bitmap_viewport_signature')==signature):
                 return
             axes=self.spec_plot.getPlotItem()
             if not self._spec_source_grid_applied:
@@ -2729,6 +2735,7 @@ class MainWindow(QMainWindow):
                     model['source_textout_placements']=composite[
                         'source_textout_layout']
                     model['combined_source']=composite['source']
+                    model['combined_canvas']=composite['canvas']
                     model['combined_paintbox_rect']=(
                         composite['canvas']['pixel_left'],
                         composite['canvas']['pixel_top'],
@@ -3467,6 +3474,27 @@ class MainWindow(QMainWindow):
                 return
             width=float(rect.width())
             pixel=float(pixel_native)
+            source_cursor_canvas=None
+            combined=(self._spec_source_grid_model is not None
+                      and self._spec_source_grid_model.get('combined_preview_active')
+                      and self._spec_source_raster_item is not None)
+            if combined:
+                source_cursor_canvas=self._spec_source_grid_model.get('combined_canvas')
+                if source_cursor_canvas is None:
+                    raise ValueError('Combined source bitmap has no cursor canvas')
+                registered=bitmap_cursor_geometry(
+                    canvas=source_cursor_canvas,scene_local_x=pixel,
+                    scene_width=width)
+                if registered is None:
+                    if self.spec_line:self.spec_line.setVisible(False)
+                    if self.spec_hline:self.spec_hline.setVisible(False)
+                    if getattr(self,'spec_xor_crosshair',None):
+                        self.spec_xor_crosshair.clear_cursor()
+                    self._spec_last_cursor=None
+                    self.spec_hint.setText('CursorString: — (вне source PixelRect)')
+                    self.spec_cursor_primary.setText('Курсор: —')
+                    return
+                pixel,geom=registered
             mid=rect.center().y()
             f_left=float(vb.mapSceneToView(QPointF(rect.left(),mid)).x())
             f_right=float(vb.mapSceneToView(QPointF(rect.right(),mid)).x())
@@ -3474,29 +3502,39 @@ class MainWindow(QMainWindow):
             x_start=float(self._full_spectrum['frequency_hz'][0])
             # Qt view has its own pixel origin. Convert to original source
             # pixel-to-bin affine map, then let the IDR cursor pick the peak.
-            geom=CursorGeometry(
-                pixel_left=0.,pixel_right=width,
-                stoi_m=(f_right-f_left)/(width*df),
-                stoi_c=(f_left-x_start)/df,
-                x_start=x_start,x_scale=df,y_scale=1.,
-                # Native 007CAB94 uses independent itosM/itosC; these
-                # numbers are inferred from Qt's view and are NOT the real
-                # Delphi pixel rectangle.
-                itos_m=width*df/(f_right-f_left),
-                itos_c=(x_start-f_left)*width/(f_right-f_left))
+            if source_cursor_canvas is None:
+                # Standard Qt plot is a separate approximate coordinate path.
+                geom=CursorGeometry(
+                    pixel_left=0.,pixel_right=width,
+                    stoi_m=(f_right-f_left)/(width*df),
+                    stoi_c=(f_left-x_start)/df,
+                    x_start=x_start,x_scale=df,y_scale=1.,
+                    itos_m=width*df/(f_right-f_left),
+                    itos_c=(x_start-f_left)*width/(f_right-f_left))
             found=cursor_from_spectrum(
                 self._full_spectrum,pixel,geom,
                 precise=self.spec_precise.isChecked(),
                 averaging=(1 if self.spec_avg.currentIndex()==0 else 3))
-            self.spec_line.setPos(found['frequency_hz'])
-            self.spec_line.setVisible(True)
             raw_y=float(self._full_spectrum['amplitude'][found['selected_bin']])
+            if source_cursor_canvas is not None:
+                overlay=bitmap_cursor_overlay_coordinates(
+                    canvas=source_cursor_canvas,
+                    bin_index=found['selected_bin'],raw_y=raw_y,
+                    view_x=tuple(vb.viewRange()[0]),
+                    view_y=tuple(vb.viewRange()[1]))
+                cursor_x,cursor_y=overlay['qt_x'],overlay['qt_y']
+                found['source_bitmap_cursor_pixel_x']=overlay['bitmap_pixel_x']
+                found['source_bitmap_cursor_pixel_y']=overlay['bitmap_pixel_y']
+            else:
+                cursor_x,cursor_y=found['frequency_hz'],raw_y
+            self.spec_line.setPos(cursor_x)
+            self.spec_line.setVisible(True)
             # 007CA9BA..9D3 uses the signed selected raw Y for the drawn line.
             # 007CA9F3..AAE5 computes a DIFFERENT numeric label for averaging=3.
             # Plot uses Qt view coordinates; exact original Delphi pixel parity unknown.
-            self.spec_hline.setPos(raw_y)
+            self.spec_hline.setPos(cursor_y)
             self.spec_hline.setVisible(True)
-            self.spec_xor_crosshair.set_cursor(found['frequency_hz'],raw_y)
+            self.spec_xor_crosshair.set_cursor(cursor_x,cursor_y)
             self._spec_last_cursor=found
             y_name=('дБ' if found['mode']==0 else
                     ('усл. ед.' if isinstance(self.session,DirectBinSession)
