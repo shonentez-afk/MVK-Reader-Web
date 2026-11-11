@@ -118,6 +118,9 @@ def test_direct_bin_switch_clears_all_old_zip_status_without_fake_dsp(
         assert w.wave_channel_tabs.currentIndex()==3
         assert w.spec_channel_tabs.currentIndex()==3
         assert w._full_spectrum["channel"]==4
+        assert w.source_view_state.channel==4
+        assert w.original_shell.file_channels.currentItem().data(
+            Qt.UserRole)==4
 
         w._close_session()
         qt_app.processEvents()

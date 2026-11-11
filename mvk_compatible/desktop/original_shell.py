@@ -451,6 +451,10 @@ class OriginalRootShell:
         if self._file_flow is not None and self.window.session is not None:
             flow=self.window._current_offline_flow()
             self._file_flow=flow
+            # A late Qt signal may still carry an old, disabled ADC index.
+            # The verified Core selection wins over that stale callback
+            # argument for both PageFile and source view-state.
+            index=flow.channel-1
             self.update_file_evidence(flow)
         self._remember_view_action('select_channel',index+1)
         for row in range(self.file_channels.count()):
