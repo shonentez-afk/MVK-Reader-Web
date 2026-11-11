@@ -66,6 +66,7 @@ from ..core.tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectr
 from ..core.tqgrapher_viewport_sync_source import (
     bitmap_viewport_signature, bitmap_cursor_geometry,
     bitmap_cursor_overlay_coordinates)
+from ..core.tqgrapher_bitmap_xor_cursor import source_bitmap_xor_cursor
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .original_shell import install_original_shell
@@ -103,6 +104,7 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_lines=[]  # Owned 10x10 research-only Qt overlay items.
         self._spec_source_raster_item=None  # Private-reference research view only.
         self._spec_source_raster_data=None
+        self._spec_source_cursor_raster_data=None  # Visible XOR frame; pristine base kept separate.
         self._spec_source_series_raw_item=None  # Original PlotDataItem; never mutated.
         self._spec_source_series_item=None  # Research stroke overlay only.
         self._spec_source_series_model=None
@@ -2539,6 +2541,35 @@ class MainWindow(QMainWindow):
         finally:
             self._spec_source_series_busy=False
 
+    def _paint_source_bitmap_cursor(self, source_pixel=None):
+        """Render source 1px clGreen/pmXor in original TCo2Draw bitmap.
+
+        The initial bitmap never changes. The image is recomposed from that
+        immutable base for each integer X, so previous XOR cannot leave a
+        ghost if a mode change, zoom or DPI resize replaces the TPaintBox.
+        No separate Qt XOR painter is used in combined bitmap mode.
+        """
+        model=self._spec_source_grid_model
+        if (model is None or not model.get('combined_preview_active',False)
+                or self._spec_source_raster_item is None
+                or self._spec_source_raster_data is None):
+            self._spec_source_cursor_raster_data=None
+            return
+        if source_pixel is None:
+            if self._spec_source_cursor_raster_data is None:
+                return
+            frame=self._spec_source_raster_data
+            self._spec_source_cursor_raster_data=None
+        else:
+            frame=source_bitmap_xor_cursor(
+                self._spec_source_raster_data,
+                canvas=model['combined_canvas'],
+                cursor_pixel=source_pixel)
+            self._spec_source_cursor_raster_data=frame
+        # Source bitmap row 0 is TOP; Qt ImageItem has Y increasing upward.
+        self._spec_source_raster_item.setImage(
+            np.ascontiguousarray(frame[::-1]),autoLevels=False)
+
     def _restore_default_spec_axis_grid(self):
         """Restore standard pyqtgraph; no source raster must leak to archive."""
         applied=(self._spec_source_grid_applied or
@@ -2551,6 +2582,11 @@ class MainWindow(QMainWindow):
             self.spec_plot.removeItem(self._spec_source_raster_item)
         self._spec_source_raster_item=None
         self._spec_source_raster_data=None
+        self._spec_source_cursor_raster_data=None
+        self._spec_mouse_pixel=None
+        self._spec_last_cursor=None
+        if getattr(self,'spec_xor_crosshair',None):
+            self.spec_xor_crosshair.clear_cursor()
         if applied:
             self.spec_plot.showGrid(x=True,y=True,alpha=.2)
         if self._spec_source_grid_applied:
@@ -2651,6 +2687,15 @@ class MainWindow(QMainWindow):
                 self._spec_source_grid_model.get('combined_preview_active',False)==combined and
                 self._spec_source_grid_model.get('bitmap_viewport_signature')==signature):
                 return
+            # A new image invalidates previously XORed pixels and the native
+            # integer mouse X cache: same X can now address a DIFFERENT bin.
+            self._spec_source_cursor_raster_data=None
+            self._spec_mouse_pixel=None
+            self._spec_last_cursor=None
+            if self.spec_line:self.spec_line.setVisible(False)
+            if self.spec_hline:self.spec_hline.setVisible(False)
+            if getattr(self,'spec_xor_crosshair',None):
+                self.spec_xor_crosshair.clear_cursor()
             axes=self.spec_plot.getPlotItem()
             if not self._spec_source_grid_applied:
                 self._spec_source_grid_axis_label_fonts={
@@ -2764,6 +2809,7 @@ class MainWindow(QMainWindow):
                 self.spec_plot.addItem(picture,ignoreBounds=True)
                 self._spec_source_raster_item=picture
                 self._spec_source_raster_data=pixels
+                self._spec_source_cursor_raster_data=None
                 if self._spec_source_series_item is not None:
                     self._spec_source_series_item.setVisible(not combined)
                 if combined and self._spec_source_series_raw_item is not None:
@@ -3467,6 +3513,7 @@ class MainWindow(QMainWindow):
                 if self.spec_hline:self.spec_hline.setVisible(False)
                 if getattr(self,'spec_xor_crosshair',None):
                     self.spec_xor_crosshair.clear_cursor()
+                self._paint_source_bitmap_cursor(None)
                 self._spec_last_cursor=None
                 self.spec_hint.setText(
                     'CursorString: — (курсор вне области графика; original IDR candidate)')
@@ -3490,6 +3537,7 @@ class MainWindow(QMainWindow):
                     if self.spec_hline:self.spec_hline.setVisible(False)
                     if getattr(self,'spec_xor_crosshair',None):
                         self.spec_xor_crosshair.clear_cursor()
+                    self._paint_source_bitmap_cursor(None)
                     self._spec_last_cursor=None
                     self.spec_hint.setText('CursorString: — (вне source PixelRect)')
                     self.spec_cursor_primary.setText('Курсор: —')
@@ -3528,13 +3576,21 @@ class MainWindow(QMainWindow):
             else:
                 cursor_x,cursor_y=found['frequency_hz'],raw_y
             self.spec_line.setPos(cursor_x)
-            self.spec_line.setVisible(True)
             # 007CA9BA..9D3 uses the signed selected raw Y for the drawn line.
             # 007CA9F3..AAE5 computes a DIFFERENT numeric label for averaging=3.
-            # Plot uses Qt view coordinates; exact original Delphi pixel parity unknown.
             self.spec_hline.setPos(cursor_y)
-            self.spec_hline.setVisible(True)
-            self.spec_xor_crosshair.set_cursor(cursor_x,cursor_y)
+            if source_cursor_canvas is not None:
+                # Native logical bitmap XOR, before Qt device DPR scaling.
+                # Do not DOUBLE-DRAW with pyqtgraph or QPainter RasterOp.
+                self.spec_line.setVisible(False)
+                self.spec_hline.setVisible(False)
+                self.spec_xor_crosshair.clear_cursor()
+                self._paint_source_bitmap_cursor((
+                    overlay['bitmap_pixel_x'],overlay['bitmap_pixel_y']))
+            else:
+                self.spec_line.setVisible(True)
+                self.spec_hline.setVisible(True)
+                self.spec_xor_crosshair.set_cursor(cursor_x,cursor_y)
             self._spec_last_cursor=found
             y_name=('дБ' if found['mode']==0 else
                     ('усл. ед.' if isinstance(self.session,DirectBinSession)
