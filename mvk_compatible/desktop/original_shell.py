@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
+    QHeaderView,
     QTableWidgetItem, QListWidgetItem, QStyle, QVBoxLayout, QWidget,
 )
 
@@ -23,6 +24,7 @@ from .original_windowman_form import OriginalWindowMan
 from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
+from ..core.original_file_workbench import source_file_workbench
 
 from ..core.original_ui_form_contract import (
     ORIGINAL_ROOT_PAGES, ORIGINAL_ROOT_TAB_HEIGHT,
@@ -128,6 +130,30 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     page.setObjectName("PageFile")
     lay = QVBoxLayout(page)
     lay.setContentsMargins(4, 4, 4, 4)
+    # Visible offline navigation is an additional safe action bar.
+    # Original PageFile split/tabs/list controls remain untouched.
+    shortcuts = QWidget(page)
+    shortcuts.setObjectName("sourceFileActionBar")
+    route = QHBoxLayout(shortcuts)
+    route.setContentsMargins(2, 2, 2, 4)
+    for name, title in (
+        ("fileGoSignal", "Временной сигнал"),
+        ("fileGoSpectrum", "Спектр"),
+        ("fileGoStatus", "Расчётные данные"),
+    ):
+        button = QPushButton(title, shortcuts)
+        button.setObjectName(name)
+        button.setEnabled(False)
+        button.setToolTip("Открыть страницу текущего проверенного файла; без приборных команд")
+        route.addWidget(button)
+    route.addStretch(1)
+    lay.addWidget(shortcuts)
+    source_summary = QLabel(
+        "Измерение ещё не выбрано. Откройте локальный ZIP, BIN или TSXML.", page)
+    source_summary.setObjectName("sourceFileSummary")
+    source_summary.setWordWrap(True)
+    source_summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    lay.addWidget(source_summary)
     split = QSplitter(Qt.Horizontal, page)
     split.setObjectName("splFile")
     left = QTabWidget(split)
@@ -171,6 +197,24 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     groups.setSizes([256, 343])
     contents.addWidget(groups, 1)
     right.addTab(content, "Данные")
+    # Original tcFileActions has exactly TWO tab strings. The second is an
+    # offline source audit, not a claim to have recovered a device command.
+    details = QWidget(right)
+    detail_layout = QVBoxLayout(details)
+    detail_hint = QLabel(
+        "Проверенные сведения текущей записи. SHA относится к исходному BIN; "
+        "параметры без AUX/VALUES не подменяются вычисленным FFT.", details)
+    detail_hint.setWordWrap(True)
+    detail_layout.addWidget(detail_hint)
+    metadata = QTableWidget(0, 2, details)
+    metadata.setObjectName("fileSourceMetadata")
+    metadata.setHorizontalHeaderLabels(("Источник", "Проверенное значение"))
+    metadata.setEditTriggers(QTableWidget.NoEditTriggers)
+    metadata.horizontalHeader().setSectionResizeMode(
+        0, QHeaderView.ResizeToContents)
+    metadata.horizontalHeader().setStretchLastSection(True)
+    detail_layout.addWidget(metadata, 1)
+    right.addTab(details, "Источник (офлайн)")
     split.addWidget(left)
     split.addWidget(right)
     split.setChildrenCollapsible(False)
@@ -335,6 +379,21 @@ class OriginalRootShell:
         self.file_values = self.file_page.findChild(QListWidget, "cbFileValues")
         self.file_source_evidence = self.file_page.findChild(
             QLabel, "sourceFileEvidence")
+        self.file_summary = self.file_page.findChild(
+            QLabel, "sourceFileSummary")
+        self.file_metadata = self.file_page.findChild(
+            QTableWidget, "fileSourceMetadata")
+        self.file_action_buttons = {
+            name:self.file_page.findChild(QPushButton,name)
+            for name in ("fileGoSignal","fileGoSpectrum","fileGoStatus")}
+        if (self.file_summary is None or self.file_metadata is None
+                or any(b is None for b in self.file_action_buttons.values())):
+            raise ValueError("Source File workbench controls not constructed")
+        for name,index in (("fileGoSignal",3),("fileGoSpectrum",4),
+                           ("fileGoStatus",2)):
+            self.file_action_buttons[name].clicked.connect(
+                lambda _checked=False,target=index:
+                    self.navigation.setCurrentIndex(target))
         self._file_flow = None
         self.status_tabs.currentChanged.connect(
             window.original_status_mode.setCurrentIndex)
@@ -500,6 +559,56 @@ class OriginalRootShell:
                 "ИСТОЧНИК ОТКЛОНЁН; данные файла изменены/недоступны: "
                 + str(exc))
 
+    def refresh_file_workbench(self, *, verified_status=None) -> None:
+        """Render real selected Single/DSP in the ORIGINAL PageFile controls.
+
+        Any stale/missing original source clears the old visible file rows.
+        A standalone BIN never receives invented instrument AUX or third
+        octaves. Signal/spectrum actions route to existing real graphs.
+        """
+        table=self.file_metadata
+        table.clearContents()
+        self.file_spec.clear()
+        self.file_values.clear()
+        if self._file_flow is None or self.window.session is None:
+            self.file_summary.setText(
+                "Нет выбранного измерения; откройте локальный ZIP/BIN/TSXML.")
+            table.setRowCount(0)
+            for button in self.file_action_buttons.values():
+                button.setEnabled(False)
+            return
+        try:
+            flow=self.window._current_offline_flow()
+            flow.require_session(self.window.session)
+            self._file_flow=flow
+            view=source_file_workbench(flow,verified_status=verified_status)
+            self.file_summary.setText(
+                f"АЦП{view.selected_channel} · {view.source_basename} · "
+                f"{view.sample_count} Single · {view.sample_rate_hz:g} Гц. "
+                + view.source_note)
+            table.setRowCount(len(view.metadata))
+            for row,(name,value) in enumerate(view.metadata):
+                for col,text in enumerate((name,value)):
+                    item=QTableWidgetItem(text)
+                    item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                    table.setItem(row,col,item)
+            for line in view.spectrum_rows:
+                self.file_spec.addItem(line)
+            for line in view.value_rows:
+                self.file_values.addItem(line)
+            for name,button in self.file_action_buttons.items():
+                root_index={"fileGoSignal":3,"fileGoSpectrum":4,
+                            "fileGoStatus":2}[name]
+                button.setEnabled(self.navigation.isTabEnabled(root_index))
+        except (ValueError,KeyError,OSError) as exc:
+            table.setRowCount(0)
+            self.file_summary.setText(
+                "Данные текущего файла отклонены: " + str(exc))
+            self.file_spec.addItem("Нет подтверждённого текущего спектра")
+            self.file_values.addItem("Нет подтверждённых текущих показателей")
+            for button in self.file_action_buttons.values():
+                button.setEnabled(False)
+
     def sync_file_session(self, session, channels, *, flow=None) -> None:
         """Populate original PageFile strictly from the shared Core source."""
         self._file_flow = flow
@@ -508,6 +617,7 @@ class OriginalRootShell:
         self.file_values.clear()
         if session is None:
             self.update_file_evidence(None)
+            self.refresh_file_workbench()
             return
         if flow is not None:
             flow.require_session(session)
@@ -525,19 +635,9 @@ class OriginalRootShell:
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, int(adc))
             self.file_channels.addItem(item)
-        if sources:
-            self.file_spec.addItem(
-                "Спектр рассчитывается локально; приборный SPEC не предоставлен")
-            self.file_values.addItem(
-                "BIN/TSXML: исходные AUX/VALUES отсутствуют")
-        else:
-            self.file_spec.addItem(
-                "Просмотр спектра — на странице «Спектр»")
-            self.file_values.addItem(
-                f"Native R6.1 VALUES: {session.updates} проверенных тиков; "
-                "пиковые AUX — только при наличии связанной проверки")
         self._sync_file_selection(self.window.adc.currentIndex())
         self.update_file_evidence(flow)
+        self.refresh_file_workbench()
 
     def sync_availability(self) -> None:
         self.navigation.setTabEnabled(
