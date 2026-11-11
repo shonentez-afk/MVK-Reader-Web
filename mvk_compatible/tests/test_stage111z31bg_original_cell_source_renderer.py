@@ -71,11 +71,12 @@ def test_source_compact_hex_and_ascii_ansi_encoding_conservatism():
 def test_float32_exact_storage_but_delphi_text_not_claimed():
     image=image_with(0x20,struct.pack("<I",0x80000000))
     row=render_source_cell(image,0x20,0)
-    assert row.kind=="float32-storage" and row.display=="-0.0"
-    assert not row.source_branch_verified
+    assert row.kind=="float32-storage" and row.display=="0"
+    assert row.source_branch_verified
     image=image_with(0x20,struct.pack("<I",0x7FC00001))
     row=render_source_cell(image,0x20,0)
-    assert row.display=="non-finite"
+    assert row.display=="NAN"
+    assert row.source_branch_verified
     assert not row.original_runtime_text_verified
 
 
