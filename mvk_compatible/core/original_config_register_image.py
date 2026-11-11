@@ -17,12 +17,12 @@ import math
 import struct
 
 from .original_config_semantics import (
-    AdvancedCell, MODBUS_ENDIAN, HF_MODE, section_fields,
+    AdvancedCell, MODBUS_ENDIAN, HF_MODE, SOURCE_ADVANCED_OPTIONS, section_fields,
 )
 
 SOURCE = "IDR_TMvkCellList_REGISTERS_BF"
 MAX_LOCAL_REGISTER_IMAGE_BYTES = 131072
-KNOWN_ADVANCED = {"modbus_endian": MODBUS_ENDIAN, "hf_mode": HF_MODE}
+KNOWN_ADVANCED = SOURCE_ADVANCED_OPTIONS
 
 
 @dataclass(frozen=True)
@@ -35,13 +35,13 @@ class SourceEnumConstructor:
 
 # _Unit125:00802EB7, 00802EEC, 00802F21, 00803FDB.
 # The helper 0080250C builds labels PREFIX + "Cell" + IntToStr(ID)
-# and consumes a private ID table. Only counts/key construction are
-# independently proven; we do not guess table values from 0..N.
+# and consumes a private ID table. Both counts and numeric IDs are now recovered from the IDP data memory;
+# translated locale label values remain unverified.
 SOURCE_ENUM_CONSTRUCTORS = (
-    SourceEnumConstructor("num_groups", "ConfigNumGroups", 2, False, False),
-    SourceEnumConstructor("option", "Option", 4, False, False),
-    SourceEnumConstructor("wifi_mode", "WifiMode", 3, False, False),
-    SourceEnumConstructor("alarm_band", "AlarmBand", 4, False, False),
+    SourceEnumConstructor("num_groups", "ConfigNumGroups", 2, False, True),
+    SourceEnumConstructor("option", "Option", 4, False, True),
+    SourceEnumConstructor("wifi_mode", "WifiMode", 3, False, True),
+    SourceEnumConstructor("alarm_band", "AlarmBand", 4, False, True),
 )
 
 
