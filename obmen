@@ -1,5 +1,9 @@
-Проверь список реально подключённых MCP-инструментов. Найди сервер `ai-story-rpg-windows-qa` и вызови `qa_status`.
+git pull --ff-only
 
-Не запускай Python через терминал и не анализируй исходники. Мне нужен именно результат вызова MCP-инструмента.
+.\tools\windows_qa_mcp\setup_gigacode_desktop.ps1 -AppExe 'C:\Games\AI-Story-RPG-Windows\ai_story_reader.exe' -EnableInput
 
-Если `qa_status` недоступен, покажи ошибку подключения сервера из настроек GigaCode Desktop.
+
+$cfg = (Get-Content "$env:LOCALAPPDATA\AIStoryRPG-QA\gigacode-desktop-mcp.json" -Raw | ConvertFrom-Json).mcpServers.'ai-story-rpg-windows-qa'
+
+$cfg.command
+$cfg.args -join ' '
