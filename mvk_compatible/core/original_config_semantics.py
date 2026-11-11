@@ -5,6 +5,10 @@ _Unit125.pas 00802D4C/00803580/0080380C.
 No device reads/writes, config editor, or synthetic translated strings.
 """
 from dataclasses import dataclass
+from .original_config_idp_tables import (
+    SOURCE_SELECTOR_IDS, source_octave_frequencies_float32,
+    source_type_description,
+)
 
 UNKNOWN="—"
 SOURCE="IDR_UNIT115_125_STAGE111Z31BE"
@@ -52,6 +56,23 @@ MODBUS_ENDIAN=AdvancedCell(tuple(AdvancedValue(i,t) for i,t in (
     (0,"EndianCell0"),(0x99999999,"EndianCell9"),(0x66666666,"EndianCell6"))))
 HF_MODE=AdvancedCell(tuple(AdvancedValue(i,t) for i,t in enumerate(
     ("Off","6.4 кГц","10 кГц","15 кГц"))))
+SOURCE_ADVANCED_OPTIONS={
+    "modbus_endian":MODBUS_ENDIAN,
+    "hf_mode":HF_MODE,
+}
+for _kind,_prefix in (
+        ("num_groups","ConfigNumGroups"),
+        ("option","Option"),("wifi_mode","WifiMode")):
+    SOURCE_ADVANCED_OPTIONS[_kind]=AdvancedCell(tuple(
+        AdvancedValue(value,f"{_prefix}Cell{value}")
+        for value in SOURCE_SELECTOR_IDS[_kind]))
+SOURCE_ADVANCED_OPTIONS["octave_band"]=AdvancedCell((
+    AdvancedValue(0,"Off"),
+)+tuple(AdvancedValue(index+1,f"{hz:.6g} Гц")
+        for index,hz in enumerate(source_octave_frequencies_float32())))
+# Source enum IDs and octave scalar values are recovered from original IDP.
+# Dynamic locale titles like 'WifiModeCell1' remain unverified translations.
+
 
 @dataclass(frozen=True)
 class ConfigField:
@@ -102,6 +123,8 @@ CHANNEL_FIELDS=(
     ConfigField("ConfigMaxVoltage",0x50,0,("0","100")),
 )
 UNRESOLVED_ADVANCED=frozenset(("num_groups","option","wifi_mode","octave_band"))
+# Backward-compatibility name: only original runtime translated strings
+# remain unresolved. The numeric IDs are now source-verified in BF.
 
 def section_fields(section:str,*,adc:int|None=None):
     if section=="ip" and adc is None:
@@ -119,8 +142,15 @@ def source_section_rows(document,section:str,*,adc:int|None=None):
         address=base+field.offset
         value=document.value(address)
         sensitive=field.key=="ConfigWifiPassword" and value is not None
+        fmt=source_type_description(field.cell_type)
         result.append({
             "source_key":field.key,
+            "source_format_char":fmt["format_char"],
+            "source_storage_bytes":fmt["source_storage_bytes"],
+            "local_fmtchar_matches_source":(
+                value.format_char==fmt["format_char"]
+                if value is not None and hasattr(value,"format_char")
+                else None),
             "source_suffix":field.suffix,
             "address":f"0x{address:04X}",
             "cell_type_code":field.cell_type,
@@ -128,6 +158,7 @@ def source_section_rows(document,section:str,*,adc:int|None=None):
             "source_max":field.bounds[1] if field.bounds else None,
             "advanced_kind":field.advanced,
             "advanced_title_verified":field.advanced in ("modbus_endian","hf_mode"),
+            "advanced_numeric_ids_recovered":field.advanced in SOURCE_ADVANCED_OPTIONS,
             "raw_value":("•••••••• (скрыто)" if sensitive else
                          value.formatted if value is not None else UNKNOWN),
             "sensitive_value_masked":sensitive,
