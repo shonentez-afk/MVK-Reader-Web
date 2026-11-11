@@ -220,6 +220,10 @@ def test_raw_text_input_source_gates_sensitive_and_bad_format(image):
     for addr in (0x60,0x62,0x7E):
         assert_reject("ctProtectedValue",lambda a=addr:
                       draft.preview_raw_format(a,"h:0x1"))
+    # A string beginning BEFORE the password may still OVERLAP it.
+    assert_reject("ctProtectedValue",lambda:
+                  draft.preview_raw_format(0x5E,"q:cross-boundary"))
+    assert draft.preview_raw_format(0x50,"q:before-secret").patches[0].address==0x50
     assert_reject("ctInvalidAddress",lambda:
                   draft.preview_raw_format(1,"f:1"))
     assert_reject("ctInvalidAddress",lambda:
