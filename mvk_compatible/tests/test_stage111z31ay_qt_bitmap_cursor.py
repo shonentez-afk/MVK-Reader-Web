@@ -41,10 +41,17 @@ def test_source_raster_cursor_is_one_bitmap_not_qt_overlay(
     mouse_x = (canvas['pixel_left'] + 30.25) / canvas['canvas_width'] * rect.width()
     win._spec_at_scene_pos(
         QPointF(rect.left() + mouse_x, rect.center().y()), force=True)
+    pre_cursor = win._spec_last_cursor
+    pre_status = win.statusBar().currentMessage()
+    pre_signature = win._spec_source_grid_model['bitmap_viewport_signature']
     qt_app.processEvents()
 
     selected = win._spec_last_cursor
-    assert selected is not None
+    assert selected is not None, (
+        f'immediate={pre_cursor is not None}; status_before={pre_status}; '
+        f'status_after={win.statusBar().currentMessage()}; '
+        f'viewport_changed={pre_signature != win._spec_source_grid_model.get("bitmap_viewport_signature")}; '
+        f'mouse_pixel={win._spec_mouse_pixel}')
     pixel_xy = (
         selected['source_bitmap_cursor_pixel_x'],
         selected['source_bitmap_cursor_pixel_y'])
