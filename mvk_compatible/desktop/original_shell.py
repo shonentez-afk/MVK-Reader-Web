@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from .original_task_ui import install_source_task_buttons
+from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 
@@ -283,6 +284,11 @@ class OriginalRootShell:
     def __init__(self, window, layout):
         self.window = window
         self._routing = False
+        # Portable controller/client-independent source view contract.
+        # This observes safe UI state only; it never controls original or
+        # attached instrument, and cannot re-enable blocked device controls.
+        self.view_state=OriginalOfflineView.initial()
+        window.source_view_state=self.view_state
         self.navigation = QTabBar(window)
         self.navigation.setObjectName("Pages")
         self.navigation.setExpanding(True)
@@ -330,6 +336,29 @@ class OriginalRootShell:
         window.tabs.currentChanged.connect(self._legacy_changed)
         self._selected(0)
 
+    def _remember_view_action(self,action,selection):
+        self.view_state=self.view_state.transition(action,selection)
+        self.window.source_view_state=self.view_state
+
+    def record_source_spectrum_hscale(self,mode,hz,position):
+        """Mirror original menu state into autonomous Core, not DSP data."""
+        if hz not in HORIZONTAL_HZ:
+            raise ValueError('Unknown original source horizontal menu')
+        if self.view_state.spectrum_mode!=mode:
+            self._remember_view_action('select_spectrum_mode',mode)
+        self._remember_view_action(
+            'select_spectrum_hscale',HORIZONTAL_HZ.index(hz))
+        self._remember_view_action(
+            'scroll_spectrum_horizontal',int(position))
+
+    def record_source_spectrum_vscale(self,mode,tag,position):
+        """Mirror verified source menu index+absolute V scroll into Core."""
+        if self.view_state.spectrum_mode!=mode:
+            self._remember_view_action('select_spectrum_mode',mode)
+        if self.view_state.vscale_tag!=tag:
+            self._remember_view_action('select_spectrum_vscale',tag)
+        self._remember_view_action('scroll_spectrum_vertical',int(position))
+
     def _selected(self, root_index: int) -> None:
         if self._routing or root_index < 0:
             return
@@ -350,6 +379,8 @@ class OriginalRootShell:
                 self.stack.setCurrentIndex({1: 1, 5: 2, 6: 3}[root_index])
         finally:
             self._routing = False
+        if 0 <= root_index < len(PAGES):
+            self._remember_view_action('select_page',PAGES[root_index])
 
     def _legacy_changed(self, index: int) -> None:
         if self._routing or index not in (0, 1, 2):
@@ -362,10 +393,13 @@ class OriginalRootShell:
             self.navigation.setCurrentIndex(expected)
         finally:
             self._routing = False
+        self._remember_view_action('select_page',PAGES[expected])
 
     def refresh_status(self) -> None:
         """Render an original-source StatusTable without inventing device DSP."""
         index = self.window.original_status_mode.currentIndex()
+        if index >= 0:
+            self._remember_view_action('select_status_tab',index)
         self.status_tabs.blockSignals(True)
         try:
             self.status_tabs.setCurrentIndex(index)
@@ -407,6 +441,7 @@ class OriginalRootShell:
     def _sync_file_selection(self, index: int) -> None:
         if index < 0:
             return
+        self._remember_view_action('select_channel',index+1)
         for row in range(self.file_channels.count()):
             item = self.file_channels.item(row)
             if item.data(Qt.UserRole) == index + 1:

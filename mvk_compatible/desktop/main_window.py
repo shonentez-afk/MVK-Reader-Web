@@ -45,6 +45,7 @@ from .win32_gdi_source_candidate import (
     Win32SourceTextCanvas, native_gdi_supported)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
     source_spectrum_h_scr,NativeScrollContract,rescale_scroll)
+from ..core.original_offline_view_state import original_reference_axis_contract
 from ..core.mvk_original_scale_tables_idr_candidate import (
     HORIZONTAL_HZ, FFT_WINDOW_SAMPLES, original_h_scale_options,
     original_v_scale_options,original_fft_size_options,validate_source_h_scale)
@@ -833,7 +834,11 @@ class MainWindow(QMainWindow):
                 lambda checked=False,hz=entry['hz']:self._select_original_hscale(hz))
             self._spec_hscale_actions.append(a)
         self.spec_hscale_button.setMenu(self.spec_hscale_menu)
-        self.spec_hscale_button.clicked.connect(self._cycle_original_hscale)
+        # Original _Unit128:0084EAF4 bAnyDropDownClick only pops up the
+        # FDropDownMenu. Clicking the main half must NOT silently cycle
+        # scales; a menu selection is the sole source change action.
+        self.spec_hscale_button.clicked.connect(
+            lambda checked=False: self.spec_hscale_button.showMenu())
         stack.addWidget(self.spec_hscale_button)
 
         self.spec_vscale_button=QToolButton()
@@ -1369,6 +1374,9 @@ class MainWindow(QMainWindow):
         self._spec_original_vscale_mode=mode
         self._spec_original_vscale_tag=tag
         self._apply_original_vscale_candidate(choice)
+        if hasattr(self,'original_shell'):
+            self.original_shell.record_source_spectrum_vscale(
+                mode,tag,choice['delphi_position'])
         name=original_v_scale_options(mode)[tag]['caption']
         self.spec_vscale_button.setText(name)
         for action in self._spec_vscale_actions:
@@ -1564,6 +1572,9 @@ class MainWindow(QMainWindow):
         for action in self._spec_hscale_actions:
             action.setChecked(action.data()==hz)
         self._sync_spec_scroll()
+        if hasattr(self,'original_shell'):
+            self.original_shell.record_source_spectrum_hscale(
+                self.spec_mode.currentIndex(),hz,pos)
         self.statusBar().showMessage(
             f'Исходный H-пресет {hz} Гц; численная FFT/Canvas '
             'идентичность с Delphi ещё НЕ подтверждена')
@@ -1577,6 +1588,9 @@ class MainWindow(QMainWindow):
             choice=source_vertical_selection(
                 mode,tag,old_tag=tag,old_position=int(value))
             self._apply_original_vscale_candidate(choice)
+            if hasattr(self,'original_shell'):
+                self.original_shell.record_source_spectrum_vscale(
+                    mode,tag,choice['delphi_position'])
             return
         vb=self.spec_plot.getViewBox()
         bounds=vb.viewRange()[axis]
@@ -1599,6 +1613,11 @@ class MainWindow(QMainWindow):
             lower=min(limits[1]-visible,
                       max(limits[0],limits[0]+source['scr_left_single']))
             vb.setXRange(lower,lower+visible,padding=0)
+            if (self._spec_original_hscale_selected in HORIZONTAL_HZ
+                    and hasattr(self,'original_shell')):
+                self.original_shell.record_source_spectrum_hscale(
+                    self.spec_mode.currentIndex(),
+                    self._spec_original_hscale_selected,native_pos)
         else:
             # Vertical Qt 0..1000 slider remains an explicit research candidate.
             lower=limits[0]+(value/1000.)*available
@@ -3056,6 +3075,12 @@ class MainWindow(QMainWindow):
         self.spec_reference_restore_button.setEnabled(True)
         d=ref.to_spectrum_record(channel=self._ch())
         contract=spectrum_display_contract(ref.n_fft,ref.fs_hz)
+        # Source TQGrapher DataSize truncates the actual plotted curve at
+        # right (~12800 Hz for captured Code20/LOG0); it does NOT set the
+        # full original 10-item H-scale menu axis to that value.  Original
+        # _Unit128:0084C3CD uses gvar_008D3428=0x6400 (25600) even when
+        # the series is shorter. Preserve both domains independently.
+        axis=original_reference_axis_contract(ref.n_fft,ref.fs_hz)
         visible_bins=contract['grapher_series_bins']
         right=contract['grapher_axis_end_frequency_hz']
         xx=np.asarray(d['frequency_hz'],dtype=np.float64)
@@ -3063,7 +3088,7 @@ class MainWindow(QMainWindow):
         self._full_spectrum=d
         self._spectrum_summary=d['spectrum_summary']
         self._spec_display_contract=contract
-        self._spec_visible_max_hz=float(right)
+        self._spec_visible_max_hz=float(axis['full_horizontal_menu_axis_end_hz'])
         self._spec_original_vscale_mode=None
         self._spec_original_vscale_tag=None
         self._spec_vertical_model=None
@@ -3102,10 +3127,11 @@ class MainWindow(QMainWindow):
                 original_v_scale_options(0)[0]['caption'])
         else:
             self.spec_vscale_button.setText('Y · эталонные значения')
-        vb.setLimits(xMin=0.,xMax=float(right))
-        vb.setXRange(0.,float(right),padding=0.)
-        self.spec_hscale_button.setText(f'{right:g} Гц')
-        self._sync_spec_scroll()
+        vb.setLimits(xMin=0.,xMax=float(axis['full_horizontal_menu_axis_end_hz']))
+        vb.setXRange(0.,float(axis['full_horizontal_menu_axis_end_hz']),padding=0.)
+        # Also apply Delphi Tag0 H-scroll rules and checked original menu.
+        # No FFT power, Y bins, original reference SHA or source samples change.
+        self._select_original_hscale(axis['full_horizontal_menu_axis_end_hz'])
         # Original mSpecType1Click resets default V menu Tag: 0 (dB) or 3
         # (linear). Under a reference, apply source absolute scroll with
         # the explicit user-supplied original FRange word, not a Qt data
