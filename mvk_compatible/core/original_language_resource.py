@@ -19,6 +19,13 @@ from pathlib import Path
 from .original_language_source import SOURCE_KEY_SET, source_localize
 
 SOURCE = "IDR_TLanguage_TResourceStream_UTF8_JSON_ARRAY_STAGE111Z31BG"
+# _Unit128:0084411D..00844152 and _Unit115:007C8D23..007C8D37.
+# Names are RCDATA (RT_RCDATA=10) resource identifiers; data absent.
+SOURCE_RESOURCE_NAMES = (
+    "Localization", "ExtLocalization", "WindowManLocalization",
+)
+SOURCE_DEFAULT_LANGUAGE_ID = "ru-ru"
+SOURCE_RESOURCE_TYPE = 10
 MAX_LANGUAGE_JSON = 1024 * 1024
 MAX_TRANSLATIONS = 8192
 MAX_ITEMS = 2048
