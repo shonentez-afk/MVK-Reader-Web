@@ -2109,6 +2109,9 @@ class MainWindow(QMainWindow):
         self._leave_original_spectrum_reference()
         self.session=s
         self._offline_flow=flow
+        # Accepted new file must not inherit a former ZIP VALUES/AUX bank.
+        # File/Signal/Spectrum/Status are updated together after rebinding.
+        self._pagestatus_snapshot=None
         # Source data, selected combo ADC and both DFM tab bars move as
         # ONE transaction. A BIN-only ADC4 never selects stale ADC1/2.
         self._bind_only_verified_channels(channels)
@@ -2344,6 +2347,7 @@ class MainWindow(QMainWindow):
                 widget.setText(label+': нет оригинального AUX/VALUES')
             self.sensor_bit_details.setText('BIN/TSXML: нет подтверждённых исходных битов AUX')
             self._reset_dsp_tach_panel('BIN/TSXML: нет проверенных DSP/TACH регистрационных тиков')
+            self.original_shell.refresh_file_workbench()
             self.note.setText(
                 'LOCAL BIN/TSXML Single: физическая калибровка не подтверждена; '
                 'приборные показатели DSP/третьоктавы НЕ вычисляются')
@@ -2352,6 +2356,9 @@ class MainWindow(QMainWindow):
             d=flow.status_snapshot()
             self._pagestatus_snapshot=d
             self._refresh_source_pagestatus()
+            # One validated DSP tick feeds the visible original PageFile
+            # 24 result rows, 43 octave rows AND PageStatus, no fake BIN DSP.
+            self.original_shell.refresh_file_workbench(verified_status=d)
             channel=d['channels'][self._ch()-1]
             self.calc_source.setText('Приборный DSP: '+d['precision']+' · время '+d['timestamp'])
             self.calc_status.setText('Состояние датчика: '+channel['sensor_status']+' · '+channel['health'])
@@ -2392,6 +2399,7 @@ class MainWindow(QMainWindow):
             # belonged to the current (now rejected or modified) archive.
             self._pagestatus_snapshot=None
             self._refresh_source_pagestatus()
+            self.original_shell.refresh_file_workbench()
             self.calc_source.setText('VALUES/AUX: текущий источник отклонён')
             self.calc_status.setText('DSP недоступен: '+str(e))
             self.calc_status.setStyleSheet('color:#ad2424')
