@@ -69,6 +69,7 @@ from ..core.tqgrapher_viewport_sync_source import (
 from ..core.tqgrapher_bitmap_xor_cursor import source_bitmap_xor_cursor
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
+from .source_pixel_audit_io import save_source_graph_pixel_audit
 from .original_shell import install_original_shell
 from .original_task_ui import make_original_channel_tabs
 from .source_control_canvas import source_control_canvas
@@ -902,6 +903,17 @@ class MainWindow(QMainWindow):
         self.spec_canvas_geometry_button.setEnabled(False)
         self.spec_canvas_geometry_button.clicked.connect(self._show_canvas_geometry_candidate)
         stack.addWidget(self.spec_canvas_geometry_button)
+        self.spec_pixel_audit_export_button=QPushButton(
+            'Сохранить график для локальной 1:1 проверки…')
+        self.spec_pixel_audit_export_button.setToolTip(
+            'Явно сохранить в выбранную локальную папку ТОЛЬКО чистый '
+            'исследовательский source TCo2Draw PNG и JSON-метрики. '
+            'Без курсора, без исходных BIN/IDP и без отправки в GitHub. '
+            'Нужен локальный PNG оригинала с ТОЧНО таким же PaintBox и окном.')
+        self.spec_pixel_audit_export_button.setEnabled(False)
+        self.spec_pixel_audit_export_button.clicked.connect(
+            self._export_source_graph_pixel_audit)
+        stack.addWidget(self.spec_pixel_audit_export_button)
 
         separator=QFrame()
         separator.setFrameShape(QFrame.HLine)
@@ -2603,6 +2615,8 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_applied=False
         self._spec_source_grid_model=None
         self._spec_source_grid_axis_label_fonts=None
+        if hasattr(self,'spec_pixel_audit_export_button'):
+            self.spec_pixel_audit_export_button.setEnabled(False)
         if self._spec_source_series_item is not None:
             self._spec_source_series_item.setVisible(True)
         blocked=self.spec_source_raster_checkbox.blockSignals(True)
@@ -2843,6 +2857,8 @@ class MainWindow(QMainWindow):
                         self._spec_source_grid_lines.append(line)
             self._spec_source_grid_applied=True
             self._spec_source_grid_model=model
+            self.spec_pixel_audit_export_button.setEnabled(
+                bool(combined and self._spec_source_raster_data is not None))
             # A Qt ImageItem/axis layout change can deliver another
             # sigResized AFTER MouseMove. Re-select under the new canvas
             # rather than dropping an already valid cursor (or retaining
@@ -3663,6 +3679,52 @@ class MainWindow(QMainWindow):
             self.narrow_result.setText('Узкополосный расчёт отклонён: '+str(exc))
             self.statusBar().showMessage('Отклонено: '+str(exc))
 
+    def _export_source_graph_pixel_audit(self):
+        """Explicit local-only source bitmap export for operator pixel QA.
+
+        No implicit screenshots, original-process calls or source-bin export.
+        A GUI action and existing directory selection are both required.
+        """
+        if not (self._spectrum_reference is not None
+                and self._source_software_composite_selected()):
+            self.statusBar().showMessage(
+                'Сначала загрузите локальный оригинальный Power/Y '
+                'и включите сетку + растр + кривую TCo2Draw')
+            return
+        directory=QFileDialog.getExistingDirectory(
+            self,'ЛОКАЛЬНАЯ папка для PNG кандидата — не папка GitHub','')
+        if not directory:return
+        try:
+            self._sync_source_tqgrapher_grid_candidate()
+            model=self._spec_source_grid_model
+            if (model is None or not model.get('combined_preview_active')
+                    or self._spec_source_raster_data is None
+                    or self._full_spectrum is None):
+                raise ValueError('Source composite unavailable for export')
+            xr,yr=self.spec_plot.getViewBox().viewRange()
+            folder=save_source_graph_pixel_audit(
+                directory,
+                bitmap=self._spec_source_raster_data,
+                canvas=model['combined_canvas'],
+                spectrum=self._full_spectrum,
+                view_x=tuple(xr),view_y=tuple(yr),
+                qt_device_pixel_ratio=float(
+                    self.spec_plot.viewport().devicePixelRatioF()),
+                textout_diagnostics=model.get(
+                    'spectrum_textout_native_metrics'))
+            QMessageBox.information(
+                self,'Локальный TQGrapher bitmap сохранён',
+                'Сохранены candidate_source_bitmap.png и '
+                'candidate_manifest.json в новой локальной папке:\n'
+                +str(folder)+'\n\n'
+                'Исходный оригинальный PNG нужно отдельно снять с '
+                'ТОГО ЖЕ спектра, той же шкалы/размера PaintBox, '
+                'с убранным курсором. Данные не отправлены в сеть. '
+                'Это НЕ доказательство 1:1 Delphi.')
+        except (OSError,ValueError,TypeError,KeyError,RuntimeError) as exc:
+            QMessageBox.warning(
+                self,'Локальный пакет TQGrapher отклонён',str(exc))
+
     def _collect_canvas_geometry_candidate(self):
         """Measure actual Qt ViewBox coordinates; model Delphi separately."""
         if self._full_spectrum is None:
@@ -3707,6 +3769,27 @@ class MainWindow(QMainWindow):
         d['dfm_design_pixels_per_inch']=DFM_DESIGN_PIXELS_PER_INCH
         d['dfm_design_spectrum_paintbox_size']=PAINTBOX_DIMENSIONS['spectrum']
         d['original_dfm_runtime_canvas_font_verified']=False
+        source_model=self._spec_source_grid_model
+        if (source_model is not None and
+                source_model.get('combined_preview_active') and
+                source_model.get('combined_canvas')):
+            actual=source_model['combined_canvas']
+            d['currently_rendered_bitmap_candidate']={
+                'paintbox_wh':[
+                    int(actual['canvas_width']),int(actual['canvas_height'])],
+                'source_pixel_rect_ltrb':[
+                    int(actual['pixel_left']),int(actual['pixel_top']),
+                    int(actual['pixel_right']),int(actual['pixel_bottom'])],
+                'margin':int(actual['margin']),
+                'itos_m':float(actual['itos_m']),
+                'itos_c':float(actual['itos_c']),
+                'stoi_m':float(actual['stoi_m']),
+                'stoi_c':float(actual['stoi_c']),
+                'textout_engine':source_model.get('spectrum_textout_engine'),
+                'font_metrics_candidate':source_model.get(
+                    'spectrum_textout_native_metrics'),
+                'original_runtime_tcanvas_verified':False,
+            }
         # This source-derived affine is kept ONLY as a candidate.
         bridge=QtPaintBoxBridge(
             source_canvas=d,
@@ -3764,11 +3847,21 @@ class MainWindow(QMainWindow):
                 f" PPI={d['dfm_design_pixels_per_inch']},"
                 f" pbSpectrum={d['dfm_design_spectrum_paintbox_size']}"
                 " (НЕ текущий исходный Canvas)\n"
-                "Qt→TPaintBox affine-кандидат: "
+                + (
+                    'ТЕКУЩИЙ software TCo2Draw bitmap: '
+                    +str(d['currently_rendered_bitmap_candidate']['paintbox_wh'])
+                    +' / PixelRect '
+                    +str(d['currently_rendered_bitmap_candidate']['source_pixel_rect_ltrb'])
+                    +' / '+str(d['currently_rendered_bitmap_candidate']['textout_engine'])
+                    +' (кандидат, не GDI оригинала)\n'
+                    if 'currently_rendered_bitmap_candidate' in d else '')
+                + "Qt→TPaintBox affine-кандидат: "
                 f"scaleX={d['qt_to_tpaintbox_bridge_candidate']['qt_scene_x_to_native_x_scale']:.9g}, "
                 f"scaleY={d['qt_to_tpaintbox_bridge_candidate']['qt_scene_y_to_native_y_scale']:.9g}; "
                 "DPR не применяется к исходным пикселям без измерения.\n"
-                "ВНИМАНИЕ: размеры текста получены из Qt, не оригинального TPaintBox.Canvas. "
+                "ВНИМАНИЕ: Qt-геометрия использует Qt-шрифт, а отдельный "
+                "TCo2Draw bitmap на Windows использует GDI-кандидат Tahoma -13. "
+                "Шрифт и DPI оригинального TPaintBox.Canvas не измерены. "
                 "Это НЕ фактический прямоугольник оригинальной MVKView.\n"
                 "Для pixel-to-pixel приёмки требуются метрики Delphi TCanvas "
                 "и одинаковый размер окна.")
