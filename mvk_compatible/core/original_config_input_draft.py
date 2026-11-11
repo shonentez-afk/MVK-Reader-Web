@@ -18,7 +18,7 @@ import math
 import re
 import struct
 
-from .original_config_idp_tables import source_type_description
+from .original_config_idp_tables import source_type_description, SOURCE_FMT_CHARS
 from .original_config_semantics import (
     SOURCE_ADVANCED_OPTIONS, check_uint32, section_fields,
 )
@@ -73,6 +73,22 @@ class SourceInputPatch:
             "original_runtime_parity_verified": False,
             "device_write_allowed": False,
         }
+
+
+def source_type_for_raw_format(character: str) -> int:
+    """Original 007CF040 scans source FmtChar from index zero.
+
+    'b' and 'h' have repeated type entries: original selects FIRST
+    match, never the visually indicated later display-type.
+    """
+    if not isinstance(character,str) or len(character)!=1:
+        raise SourceInputRejected("ctInvalidFormat")
+    if character=="!":
+        raise SourceInputRejected("ctInvalidFormat")
+    try:
+        return SOURCE_FMT_CHARS.index(character)
+    except ValueError as exc:
+        raise SourceInputRejected("ctInvalidFormat") from exc
 
 
 def _parse_int32(text: str) -> int:
@@ -249,6 +265,11 @@ class LocalConfigDraft:
         # Reject aliased ranges from separate cells, including adjacent
         # long ASCII fields. Editing same address replaces old local patch.
         for previous in self.patches:
+            if previous.address==address and (
+                previous.type_id!=f.cell_type or
+                previous.source_key!=f.key
+            ):
+                raise SourceInputRejected("ctInvalidCellType")
             prev_first = previous.address * 2
             prev_last = prev_first + len(previous.payload)
             if previous.address != address and (
@@ -288,6 +309,32 @@ class LocalConfigDraft:
             raise SourceInputRejected("ctInvalidFormat") from exc
         return self._record(
             address, f, struct.pack("<I", selected_id), "advanced-id")
+
+    def preview_raw_format(self, address: int, value_with_format: str):
+        """Original InputValueRaw 'x:VALUE' source converter, local only.
+
+        The original loader deliberately bypasses protection/bounds.
+        This preview *still* denies the known password word range and
+        contains no writing to an original file or hardware.
+        """
+        if (type(address) is not int or address<0 or address>0xFFFE
+                or address%2):
+            raise SourceInputRejected("ctInvalidAddress")
+        if not isinstance(value_with_format,str) or (
+                len(value_with_format)<2 or
+                value_with_format[1]!=":"):
+            raise SourceInputRejected("ctInvalidFormat")
+        if address*2+4>len(self.original.data):
+            raise SourceInputRejected("ctInvalidAddress")
+        # Password 0x0060..0x007F is the original 64-byte IP field.
+        # Do not allow a raw bypass of this sensitive cell in a QA tool.
+        if 0x60<=address<0x80:
+            raise SourceInputRejected("ctProtectedValue")
+        type_id=source_type_for_raw_format(value_with_format[0])
+        encoded=encode_source_text(type_id,value_with_format[2:])
+        from .original_config_semantics import ConfigField
+        field_def=ConfigField("InputValueRaw",address,type_id)
+        return self._record(address,field_def,encoded,"raw-format")
 
     def as_local_image(self) -> LocalRegisterImage:
         copy = bytearray(self.original.data)
