@@ -149,5 +149,76 @@ def test_stage111z31av_original_title_research_and_config_readable(source_window
     ):
         control = page.findChild(QPushButton, button_name)
         assert control is not None
-        assert control.minimumWidth() >= 112
+        # Delphi pnConfigButtons contains picture-only 48x48 buttons.
+        assert control.width() == 48 and control.height() == 48
+        assert control.text() == ""
+        assert control.accessibleName()
+        assert not control.icon().isNull()
         assert not control.isEnabled()
+
+
+def test_stage111z31aw_source_control_rectangles_and_mode_menu(source_window):
+    from mvk_compatible.core.original_ui_form_contract import (
+        ORIGINAL_WAVE_CONTROLS, ORIGINAL_SPECTRUM_CONTROLS)
+    win = source_window
+    assert win.wave_source_canvas.objectName() == "DFMPageAdcSourceCanvas"
+    assert win.spec_source_canvas.objectName() == "DFMPageSpectrumSourceCanvas"
+    assert win.spec_type_button.objectName() == "bSpecTypePresenter"
+    assert [a.data() for a in win._spec_type_actions] == [0,1,2,3]
+    for spec, panel in (
+        (ORIGINAL_WAVE_CONTROLS, win.wave_source_canvas),
+        (ORIGINAL_SPECTRUM_CONTROLS, win.spec_source_canvas),
+    ):
+        actual={}
+        for widget in panel.findChildren(QPushButton) + panel.findChildren(
+                __import__("PySide6.QtWidgets", fromlist=["QToolButton"]).QToolButton) + panel.findChildren(
+                __import__("PySide6.QtWidgets", fromlist=["QLabel"]).QLabel):
+            source_name=widget.property("originalDfmControlName")
+            if source_name:
+                actual[source_name]=widget.geometry().getRect()
+        # spec_lines and wave_type are split-button presenters, not hidden FFT/mode models.
+        assert actual == {
+            name: (x,y,w,h) for name,_,x,y,w,h in spec
+        }
+    win._spec_type_actions[2].trigger()
+    assert win.spec_mode.currentIndex() == 2
+    assert win.spec_type_button.text() == "Линейный ВС"
+    assert win._spec_type_actions[2].isChecked()
+    assert win.spec_mode.parentWidget() is not win.spec_source_canvas
+    assert win.spec_n.parentWidget() is not win.spec_source_canvas
+
+
+def test_stage111z31aw_page_status_source_chart_and_config_icons(
+        source_window, tmp_path):
+    import pyqtgraph as pg
+    from .test_offline_core import fixture_zip
+    from mvk_compatible.core.original_ui_form_contract import (
+        ORIGINAL_CONFIG_TOOLBAR, ORIGINAL_CONFIG_TABS_DESIGN_TIME,
+        ORIGINAL_STATUS_CHART, ORIGINAL_STATUS_SPLITTER)
+    win=source_window
+    page=win.original_root_stack.widget(1)
+    tabs=page.findChild(QTabWidget, "tcConfig")
+    assert tabs.count() == ORIGINAL_CONFIG_TABS_DESIGN_TIME == 2
+    assert page.findChild(QTabWidget, "tcConfig") is tabs
+    for name,x,y,w,h,image in ORIGINAL_CONFIG_TOOLBAR:
+        button=page.findChild(QPushButton,name)
+        assert button.geometry().getRect()==(x,y,w,h)
+        assert button.property("originalDfmImageName")==image
+        assert not button.isEnabled()
+    win.open_archive(fixture_zip(tmp_path))
+    win.original_root_tabs.setCurrentIndex(2)
+    plot=win.original_shell.status_plot
+    assert plot.objectName()=="chResult"
+    assert win.original_shell.status_splitter.handleWidth()==ORIGINAL_STATUS_SPLITTER[2]
+    assert ORIGINAL_STATUS_CHART[2]==400
+    # In system mode there is no verified 43-bar plot.
+    win.original_shell.status_tabs.setCurrentIndex(0)
+    assert plot.isHidden()
+    # Original tcStatus mode 5 is 43 third-octave bars of ADC1.
+    win.original_shell.status_tabs.setCurrentIndex(5)
+    assert not plot.isHidden()
+    assert any(isinstance(item,pg.BarGraphItem)
+               for item in plot.getPlotItem().items)
+    assert win.original_shell.status_table.rowCount()==43
+    win._close_session()
+    assert plot.isHidden()

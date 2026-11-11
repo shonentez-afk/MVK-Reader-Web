@@ -101,6 +101,20 @@ ORIGINAL_WAVE_CONTROLS = (
     ("lbMean", "TLabel", 9, 277, 162, 164),
 )
 
+# SOURCE-DFM: five 48x48 IMAGE-ONLY pnConfigButtons; labels come from
+# translated runtime tooltips, not from the original control text.
+# Fallback Qt icons must NOT be mistaken for the original bitmaps.
+ORIGINAL_CONFIG_TOOLBAR = (
+    ("bConfigLoad", 6, 6, 48, 48, "Open"),
+    ("bConfigSave", 60, 6, 48, 48, "Save"),
+    ("bConfigReset", 122, 6, 48, 48, "Zap"),
+    ("bConfigDownload", 184, 6, 48, 48, "DevUpload"),
+    ("bConfigUpload", 238, 6, 48, 48, "DevDownload"),
+)
+ORIGINAL_CONFIG_TABS_DESIGN_TIME = 2
+ORIGINAL_STATUS_CHART = (4, 42, 400, 720)
+ORIGINAL_STATUS_SPLITTER = (404, 42, 8, 720)
+
 ORIGINAL_TASK_BUTTONS = (
     ("bTaskConnect", 29, 19, 301, 86, "Gears"),
     ("bTaskConfigCh", 370, 19, 458, 86, "EditGear"),
@@ -149,6 +163,10 @@ def source_layout_inventory() -> dict:
         "spectrum_controls": [list(x) for x in ORIGINAL_SPECTRUM_CONTROLS],
         "wave_controls": [list(x) for x in ORIGINAL_WAVE_CONTROLS],
         "task_buttons": [list(x) for x in ORIGINAL_TASK_BUTTONS],
+        "config_image_buttons": [list(x) for x in ORIGINAL_CONFIG_TOOLBAR],
+        "config_tabs_design_time": ORIGINAL_CONFIG_TABS_DESIGN_TIME,
+        "status_chart_rect": list(ORIGINAL_STATUS_CHART),
+        "status_splitter_rect": list(ORIGINAL_STATUS_SPLITTER),
         "event_names": dict(ORIGINAL_PAGE_EVENTS),
         "caption_provenance": "DFM_CAPTION_DOLLAR_RUNTIME_TRANSLATION_NOT_YET_RECOVERED",
         "safety": "NO_PRIVATE_DFM_IMAGES_IDP_OR_ORIGINAL_EXECUTABLE_EMBEDDED",

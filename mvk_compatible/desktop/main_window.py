@@ -67,6 +67,9 @@ from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .original_shell import install_original_shell
 from .original_task_ui import make_original_channel_tabs
+from .source_control_canvas import source_control_canvas
+from ..core.original_ui_form_contract import (
+    ORIGINAL_WAVE_CONTROLS, ORIGINAL_SPECTRUM_CONTROLS)
 
 
 class MainWindow(QMainWindow):
@@ -540,12 +543,23 @@ class MainWindow(QMainWindow):
         self.wave_advanced_button.clicked.connect(
             lambda:self.wave_inspector.setVisible(not self.wave_inspector.isVisible()))
         left.addWidget(self.wave_advanced_button)
-        for widget in (
-            self.wave_filter_button,self.wave_type_button,
-            self.wave_hscale_button,self.wave_vscale_button,
-        ):
-            widget.setFixedHeight(37)
-            widget.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
+        # Exact source DFM six controls (logical pixels), not VBox spacings.
+        while left.count():
+            left.takeAt(0)
+        left.setContentsMargins(0,0,0,0)
+        left.setSpacing(0)
+        self.wave_source_canvas=source_control_canvas(
+            panel, ORIGINAL_WAVE_CONTROLS, {
+                "bAdcEnvelopeType": self.wave_filter_button,
+                "bAdcType": self.wave_type_button,
+                "bAdcHScale": self.wave_hscale_button,
+                "bAdcVScale": self.wave_vscale_button,
+                "lbAdcHint": self.wave_cursor_primary,
+                "lbMean": self.wave_mean_primary,
+            }, name="DFMPageAdcSourceCanvas")
+        left.addWidget(self.wave_source_canvas)
+        self.wave_advanced_button.setFixedHeight(28)
+        left.addWidget(self.wave_advanced_button)
         left.addStretch()
         root.addWidget(panel,0)
 
@@ -722,6 +736,25 @@ class MainWindow(QMainWindow):
                                  'Линейный ВС','Линейный ВП'])
         self.spec_mode.setFixedHeight(41)
         stack.addWidget(self.spec_mode)
+        # DFM bSpecType is a split-button, not a permanent QComboBox.
+        # The existing spec_mode model remains the source of calculation state.
+        self.spec_type_button=QToolButton()
+        self.spec_type_button.setObjectName("bSpecTypePresenter")
+        self.spec_type_button.setPopupMode(QToolButton.InstantPopup)
+        self.spec_type_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.spec_type_menu=QMenu(self.spec_type_button)
+        self._spec_type_actions=[]
+        for i in range(self.spec_mode.count()):
+            action=self.spec_type_menu.addAction(self.spec_mode.itemText(i))
+            action.setData(i)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda checked=False, index=i:self.spec_mode.setCurrentIndex(index))
+            self._spec_type_actions.append(action)
+        self.spec_type_button.setMenu(self.spec_type_menu)
+        self.spec_type_button.setToolTip(
+            "DFM bSpecType: source split button, 4 Tag modes. "
+            "Original Caption is a runtime translation placeholder.")
 
         self.spec_n=QComboBox()
         self.spec_n.setObjectName('bSpecLines')
@@ -1091,7 +1124,7 @@ class MainWindow(QMainWindow):
             if item.widget() is not None:
                 legacy.append(item.widget())
         primary=[
-            self.spec_envelope_button,self.spec_mode,self.spec_lines_button,
+            self.spec_envelope_button,self.spec_type_button,self.spec_lines_button,
             self.spec_hscale_button,self.spec_vscale_button,
             self.spec_cursor_primary,self.spec_mean_primary,
             self.spec_copy_button,self.spec_save_button,
@@ -1111,17 +1144,28 @@ class MainWindow(QMainWindow):
             lambda visible:self.spec_advanced_button.setText(
                 'Исследование ◂' if visible else 'Исследование ▸'))
         self._spectrum_primary_order=tuple(w.objectName() for w in primary)
-        for widget in primary:
-            widget.setMinimumWidth(0)
-            widget.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
-            if widget in (
-                self.spec_envelope_button,self.spec_mode,
-                self.spec_hscale_button,self.spec_vscale_button,
-                self.spec_copy_button,self.spec_save_button):
-                widget.setFixedHeight(37)
-            stack.addWidget(widget)
+        # DFM positions include intentional overlaps: lbSpecMean ends
+        # at y472 while bSpecCopyValue starts at y464. A Qt VBox would
+        # silently change original paint geometry.
+        self.spec_source_canvas=source_control_canvas(
+            tools, ORIGINAL_SPECTRUM_CONTROLS, {
+                "bSpecEnvelopeType": self.spec_envelope_button,
+                "bSpecType": self.spec_type_button,
+                "bSpecLines": self.spec_lines_button,
+                "bSpecHScale": self.spec_hscale_button,
+                "bSpecVScale": self.spec_vscale_button,
+                "lbSpecHint": self.spec_cursor_primary,
+                "lbSpecMean": self.spec_mean_primary,
+                "bSpecCopyValue": self.spec_copy_button,
+                "bSpecSaveValue": self.spec_save_button,
+            }, name="DFMPageSpectrumSourceCanvas")
+        stack.setContentsMargins(0,0,0,0)
+        stack.setSpacing(0)
+        stack.addWidget(self.spec_source_canvas)
+        self.spec_advanced_button.setFixedHeight(26)
         stack.addWidget(self.spec_advanced_button)
         stack.addStretch()
+        self._sync_spec_type_presenter()
         self._sync_spec_lines_presentation()
         # QScrollArea expands child minSizeHint from long Russian strings.
         # Explicitly permit wrapping/shrinking to the actual sidebar width,
@@ -1199,6 +1243,7 @@ class MainWindow(QMainWindow):
             self._sync_archive_source_projection)
 
         self.spec_mode.currentIndexChanged.connect(self._change_spectrum_mode)
+        self.spec_mode.currentIndexChanged.connect(self._sync_spec_type_presenter)
         self._spec_last_valid_fft_n=None
         self.spec_n.currentIndexChanged.connect(self._spec_n_changed)
         self.spec_backend.currentIndexChanged.connect(self.refresh_spec)
@@ -1208,6 +1253,13 @@ class MainWindow(QMainWindow):
         self.spec_input_domain.currentIndexChanged.connect(self.refresh_spec)
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
+
+    def _sync_spec_type_presenter(self,*_):
+        """Mirror source mSpecType1..4 Tag into the primary split button."""
+        index=self.spec_mode.currentIndex()
+        self.spec_type_button.setText(self.spec_mode.itemText(index))
+        for action in self._spec_type_actions:
+            action.setChecked(action.data()==index)
 
     def _sync_spec_lines_presentation(self, fs=None):
         """Single FFT-size model, original Hz-per-line presentation."""

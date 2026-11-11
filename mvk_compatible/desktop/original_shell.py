@@ -10,19 +10,22 @@ calculation, callback and automated test interfaces.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
-    QTableWidgetItem, QListWidgetItem, QVBoxLayout, QWidget,
+    QTableWidgetItem, QListWidgetItem, QStyle, QVBoxLayout, QWidget,
 )
 
 from .original_task_ui import install_source_task_buttons
+import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 
 from ..core.original_ui_form_contract import (
     ORIGINAL_ROOT_PAGES, ORIGINAL_ROOT_TAB_HEIGHT,
     ORIGINAL_FILE_SPLITTER_LEFT, ORIGINAL_CALIB_SPLITTER_LEFT,
+    ORIGINAL_CONFIG_TOOLBAR, ORIGINAL_CONFIG_TABS_DESIGN_TIME,
+    ORIGINAL_STATUS_CHART, ORIGINAL_STATUS_SPLITTER,
 )
 
 
@@ -50,6 +53,13 @@ def _readonly_grid(name: str, parent: QWidget) -> QTableWidget:
 
 
 def _config_page(parent: QWidget) -> QWidget:
+    """Original DFM pnConfig: five IMAGE-ONLY 48x48 buttons, two tab modes.
+
+    User screenshots exposed a Qt regression: forcing translated text inside
+    original picture buttons clips labels. Keep the exact DFM geometry and
+    show a system-standard icon, with accessible Russian hints. Source
+    private ilButtons bitmap data is deliberately not redistributed.
+    """
     page = QWidget(parent)
     page.setObjectName("PageConfig")
     lay = QVBoxLayout(page)
@@ -57,35 +67,53 @@ def _config_page(parent: QWidget) -> QWidget:
     top = QWidget(page)
     top.setObjectName("pnConfig")
     top.setFixedHeight(60)
-    actions = QHBoxLayout(top)
-    actions.setContentsMargins(6, 6, 0, 6)
-    for obj, caption in (
-        ("bConfigLoad", "Загрузить"),
-        ("bConfigSave", "Сохранить"),
-        ("bConfigReset", "Сброс"),
-        ("bConfigDownload", "Получить"),
-        ("bConfigUpload", "Передать"),
-    ):
-        b = _disabled(obj, caption, top)
-        # DFM pictogram was 48px; fallback text needs a readable width.
-        b.setFixedHeight(48)
-        b.setMinimumWidth(112)
-        b.setToolTip(b.toolTip() + " Используй «Открыть измерение» для офлайн-записей.")
-        actions.addWidget(b)
-    actions.addStretch()
+    top.setStyleSheet("QWidget#pnConfig {background: palette(base);}")
+    buttons = QWidget(top)
+    buttons.setObjectName("pnConfigButtons")
+    buttons.setGeometry(0, 0, 297, 60)
+    captions = {
+        "bConfigLoad": ("Загрузить конфигурацию", QStyle.SP_DialogOpenButton),
+        "bConfigSave": ("Сохранить конфигурацию", QStyle.SP_DialogSaveButton),
+        "bConfigReset": ("Сбросить настройки", QStyle.SP_BrowserReload),
+        "bConfigDownload": ("Получить конфигурацию из прибора", QStyle.SP_ArrowDown),
+        "bConfigUpload": ("Передать конфигурацию в прибор", QStyle.SP_ArrowUp),
+    }
+    for source_name, left, top_px, width, height, image in ORIGINAL_CONFIG_TOOLBAR:
+        description, standard_icon = captions[source_name]
+        control = _disabled(source_name, "", buttons)
+        control.setText("")  # The original renders bitmap-only in 48x48.
+        control.setFixedSize(width, height)
+        control.move(left, top_px)
+        control.setIcon(control.style().standardIcon(standard_icon))
+        control.setIconSize(QSize(24, 24))
+        control.setAccessibleName(description)
+        control.setToolTip(
+            f"{description}. Оригинал: ilButtons/{image}; "
+            "безопасный офлайн-режим, команды прибору отключены.")
+        control.setProperty("originalDfmLogicalRect",
+                            (left, top_px, width, height))
+        control.setProperty("originalDfmImageName", image)
+    result_label = _text(top, "Config-Result")
+    result_label.setObjectName("lbConfigResult")
+    result_label.setGeometry(309, 12, 400, 36)
+    result_label.hide()  # Original lbConfigResult.Visible=False
     lay.addWidget(top)
     pages = QTabWidget(page)
     pages.setObjectName("tcConfig")
-    for name, title in (
-        ("tabConfigBasic", "Основные"),
+    # Source tcConfig has exactly TWO TabStrings '$'; tabConfigBasic is
+    # a sibling TStringGrid, not an invented third tab control mode.
+    for name, fallback in (
         ("tabConfigChannels", "Каналы"),
         ("tabConfigAlarms", "Тревоги"),
     ):
-        pages.addTab(_readonly_grid(name, pages), title)
+        pages.addTab(_readonly_grid(name, pages), fallback)
+    assert pages.count() == ORIGINAL_CONFIG_TABS_DESIGN_TIME
     lay.addWidget(pages, 1)
+    basic = _readonly_grid("tabConfigBasic", page)
+    basic.hide()  # Offline no verified original basic-grid dispatch.
     lay.addWidget(_text(page,
-        "Схема конфигурации и названия исходных компонентов восстановлены "
-        "из DFM. Команды настройки/передачи в прибор не включены."))
+        "Настройка: два исходных режима tcConfig, команды прибора отключены. "
+        "Оригинальные bitmap-иконки заменены безопасными системными символами."))
     return page
 
 
@@ -150,10 +178,11 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
 
 
 def _status_page(parent: QWidget) -> QWidget:
-    """Independent PageStatus body reusing the proven Stage28B IDR model.
+    """Independent DFM PageStatus: chResult 400 px, splitter 8 px, table.
 
-    The earlier research table remains available for legacy calculations,
-    but is not embedded inside the original top-level Status page.
+    Runtime dispatch retains all fifteen audited tcStatus source modes.
+    Chart bars are drawn ONLY when the proven source data supplies all
+    43 bands. A BIN+TSXML archive never receives invented AUX/DSP values.
     """
     page = QWidget(parent)
     page.setObjectName("PageStatus")
@@ -165,14 +194,31 @@ def _status_page(parent: QWidget) -> QWidget:
     tabs.setUsesScrollButtons(True)
     for caption in MODE_NAMES:
         tabs.addTab(caption)
+    tabs.setFixedHeight(36)
     layout.addWidget(tabs)
-    table = _readonly_grid("sgStatus", page)
-    layout.addWidget(table, 1)
+    split = QSplitter(Qt.Horizontal, page)
+    split.setObjectName("splResult")
+    split.setHandleWidth(ORIGINAL_STATUS_SPLITTER[2])
+    plot = pg.PlotWidget(split)
+    plot.setObjectName("chResult")
+    plot.setMinimumWidth(320)  # Original splResult.MinSize=320
+    plot.setBackground("w")
+    plot.setMenuEnabled(False)
+    plot.getPlotItem().setLabel("bottom", "Полоса, индекс")
+    plot.getPlotItem().setLabel("left", "СКЗ")
+    table = _readonly_grid("tabStatus", split)
+    split.addWidget(plot)
+    split.addWidget(table)
+    split.setChildrenCollapsible(False)
+    split.setSizes([ORIGINAL_STATUS_CHART[2], 580])
+    layout.addWidget(split, 1)
     note = _text(page, "")
     note.setObjectName("sourceStatusNote")
     layout.addWidget(note)
     page.mode_tabs = tabs
     page.source_grid = table
+    page.source_plot = plot
+    page.source_splitter = split
     page.source_note = note
     return page
 
@@ -261,6 +307,8 @@ class OriginalRootShell:
         self.status_page = self.stack.widget(4)
         self.status_tabs = self.status_page.mode_tabs
         self.status_table = self.status_page.source_grid
+        self.status_plot = self.status_page.source_plot
+        self.status_splitter = self.status_page.source_splitter
         self.status_note = self.status_page.source_note
         self.file_page = self.stack.widget(2)
         self.file_channels = self.file_page.findChild(QListWidget, "cbFileChannels")
@@ -334,6 +382,19 @@ class OriginalRootShell:
             for col, value in enumerate(values):
                 table.setItem(row, col, QTableWidgetItem(str(value)))
         self.status_note.setText(model.note)
+        self.status_plot.clear()
+        # Delphi chResult TBarSeries is source-backed only for original
+        # 43-band modes. Never display synthetic bars for BIN/TSXML.
+        if model.bands_for_plot is not None:
+            values = list(model.bands_for_plot)
+            self.status_plot.addItem(pg.BarGraphItem(
+                x=list(range(43)), height=values,
+                width=1.0, brush="#147b91"))
+            self.status_plot.setXRange(-0.5, 42.5, padding=0)
+            self.status_plot.enableAutoRange(axis="y")
+            self.status_plot.setVisible(True)
+        else:
+            self.status_plot.setVisible(False)
 
     def _file_channel_chosen(self, item, previous=None) -> None:
         if item is None:

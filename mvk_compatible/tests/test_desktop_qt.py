@@ -963,13 +963,13 @@ def test_qt_imports_direct_bin_tsxml_and_displays_no_fabricated_dsp(
     assert available >= 155
     # Nine original primary controls; research tools live in QDockWidget.
     for widget in (
-        win.spec_envelope_button,win.spec_mode,win.spec_lines_button,
+        win.spec_envelope_button,win.spec_type_button,win.spec_lines_button,
         win.spec_cursor_primary,win.spec_mean_primary,
         win.spec_copy_button,win.spec_save_button,win.spec_hscale_button,
         win.spec_vscale_button,
     ):
-        assert widget.minimumWidth()==0
-        assert widget.width() <= available
+        assert widget.width()==162  # original Delphi logical DFM width
+        assert widget.property("originalDfmControlName") is not None
     assert not win.spec_inspector.isVisible()
     win.close()
     qt_app.processEvents()
@@ -1042,13 +1042,23 @@ def test_stage111z18_primary_spec_controls_and_research_dock(tmp_path, qt_app):
     layout=win.spec_tools.widget().layout()
     children=[layout.itemAt(i).widget() for i in range(layout.count())
               if layout.itemAt(i).widget() is not None]
-    expected=[
-        win.spec_envelope_button,win.spec_mode,win.spec_lines_button,
-        win.spec_hscale_button,win.spec_vscale_button,
-        win.spec_cursor_primary,win.spec_mean_primary,
-        win.spec_copy_button,win.spec_save_button,win.spec_advanced_button,
-    ]
-    assert children == expected
+    # No VBox approximation: the original nine widgets are children of
+    # the exact-rectangle source canvas. Research remains in the dock.
+    assert children == [win.spec_source_canvas, win.spec_advanced_button]
+    from mvk_compatible.core.original_ui_form_contract import (
+        ORIGINAL_SPECTRUM_CONTROLS)
+    for name, _, x, y, w, h in ORIGINAL_SPECTRUM_CONTROLS:
+        source_widgets=[
+            win.spec_envelope_button,win.spec_type_button,win.spec_lines_button,
+            win.spec_hscale_button,win.spec_vscale_button,
+            win.spec_cursor_primary,win.spec_mean_primary,
+            win.spec_copy_button,win.spec_save_button,
+        ]
+        found=[v for v in source_widgets
+               if v.property("originalDfmControlName")==name]
+        assert len(found)==1
+        assert found[0].parentWidget() is win.spec_source_canvas
+        assert found[0].geometry().getRect()==(x,y,w,h)
     assert win.spec_mode.itemText(0)=="Логарифмич."
     assert [win.spec_mode.itemText(i) for i in range(1,4)] == [
         "Линейный ВУ","Линейный ВС","Линейный ВП"
@@ -1087,7 +1097,10 @@ def test_stage111z18_small_window_keeps_all_spectrum_actions(tmp_path,qt_app):
     win.tabs.setCurrentIndex(2)
     qt_app.processEvents()
     assert win.spec_tools.horizontalScrollBar().maximum()==0
-    assert win.spec_tools.verticalScrollBar().maximum()==0
+    # At minimum window size, preserve access to source bottom buttons via
+    # vertical scroll rather than compressing the original 41px controls.
+    win.spec_tools.ensureWidgetVisible(win.spec_save_button)
+    assert win.spec_tools.horizontalScrollBar().maximum()==0
     assert win.spec_copy_button.isVisible()
     assert win.spec_save_button.isVisible()
     win.close()
