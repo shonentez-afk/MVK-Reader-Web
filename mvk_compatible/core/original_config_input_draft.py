@@ -326,12 +326,14 @@ class LocalConfigDraft:
             raise SourceInputRejected("ctInvalidFormat")
         if address*2+4>len(self.original.data):
             raise SourceInputRejected("ctInvalidAddress")
-        # Password 0x0060..0x007F is the original 64-byte IP field.
-        # Do not allow a raw bypass of this sensitive cell in a QA tool.
-        if 0x60<=address<0x80:
-            raise SourceInputRejected("ctProtectedValue")
         type_id=source_type_for_raw_format(value_with_format[0])
         encoded=encode_source_text(type_id,value_with_format[2:])
+        # Password 0x0060..0x007F is the original 64-byte IP cell.
+        # An earlier/longer raw field could CROSS this region even when
+        # its start address itself is outside it. Block ALL overlaps.
+        first,last=address*2,address*2+len(encoded)
+        if max(first,0x60*2)<min(last,0x80*2):
+            raise SourceInputRejected("ctProtectedValue")
         from .original_config_semantics import ConfigField
         field_def=ConfigField("InputValueRaw",address,type_id)
         return self._record(address,field_def,encoded,"raw-format")
