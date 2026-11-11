@@ -1,13 +1,4 @@
-ChatGPT проверил Stage111Z31AT.
+$exe = Get-ChildItem "$HOME\Downloads" -Recurse -File -Filter "ai_story_reader.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+$exe
 
-Патч не принят: все шесть фрагментов относятся к старому коммиту 7d83148 и ни один не подходит к проверенной рабочей версии 4e2d5bf.
-
-Новое задание Stage111Z31AU опубликовано в Exchange.
-
-Сделай git pull, прочитай TASKS/CURRENT_TASK.md и REVIEW/CHATGPT_REVIEW.md.
-
-Подготовь исправления на точной базе 4e2d5bf, проверь git apply --check и реальные тесты. Передай применимый патч и подробный отчёт только через RESULTS.
-
-Основной репозиторий не изменяй. Скриншоты, GUI и x32dbg не используй.
-
-Не объявляй этап завершённым, пока патч не проходит проверку на правильной базе.
+.\tools\windows_qa_mcp\setup_gigacode_desktop.ps1 -AppExe $exe -EnableInput
