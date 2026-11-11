@@ -1,9 +1,1 @@
-Add-Type -AssemblyName System.Windows.Forms
-
-$pick = New-Object System.Windows.Forms.OpenFileDialog
-$pick.Title = "Выбери ai_story_reader.exe из распакованной игры"
-$pick.Filter = "AI Story RPG|ai_story_reader.exe"
-
-if ($pick.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    .\tools\windows_qa_mcp\setup_gigacode_desktop.ps1 -AppExe $pick.FileName -EnableInput
-}
+.\tools\windows_qa_mcp\setup_gigacode_desktop.ps1 -AppExe $pick.FileName -EnableInput
