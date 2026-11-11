@@ -112,6 +112,7 @@ def _config_page(parent: QWidget) -> QWidget:
     assert pages.count() == ORIGINAL_CONFIG_TABS_DESIGN_TIME
     lay.addWidget(pages, 1)
     basic = _readonly_grid("tabConfigBasic", page)
+    lay.addWidget(basic, 1)  # original sibling, not a tcConfig tab
     basic.hide()  # Offline no verified original basic-grid dispatch.
     note=_text(page,
         "Настройка: два исходных режима tcConfig. Нет загруженной "
