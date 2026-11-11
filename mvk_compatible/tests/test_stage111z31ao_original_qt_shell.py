@@ -91,3 +91,62 @@ def test_original_source_task_launcher_and_channel_tabs(source_window):
     assert win.adc.currentIndex() == 2
     assert win.wave_channel_tabs.currentIndex() == 2
     assert win.compat_toolbar.isHidden()
+
+
+def test_stage111z31av_source_independent_status_page(source_window):
+    win = source_window
+    win.original_root_tabs.setCurrentIndex(2)
+    assert win.original_root_stack.currentWidget().objectName() == "PageStatus"
+    assert win.original_shell.status_tabs.objectName() == "tcStatus"
+    assert win.original_shell.status_tabs.count() == 15
+    assert win.original_shell.status_table.rowCount() >= 1
+    assert "AUX/VALUES" in win.original_shell.status_note.text()
+    # MODE_NAMES and calculated data continue to come from existing Stage28B.
+    win.original_shell.status_tabs.setCurrentIndex(13)
+    assert win.original_status_mode.currentIndex() == 13
+    assert win.original_shell.status_table.rowCount() == 6
+    assert win.original_shell.status_table.item(0, 0).text() == "ResultTacho"
+
+
+def test_stage111z31av_pagefile_follows_real_archive_and_close(
+        source_window, tmp_path):
+    from .test_offline_core import fixture_zip
+    win = source_window
+    assert win.original_shell.file_channels.count() == 0
+    win.open_archive(fixture_zip(tmp_path))
+    assert win.session is not None
+    assert win.original_shell.file_channels.count() == 8
+    assert win.original_shell.file_channels.item(0).data(
+        __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.UserRole) == 1
+    assert win.original_shell.file_values.count() == 1
+    win.original_root_tabs.setCurrentIndex(5)
+    assert win.original_root_stack.currentWidget().objectName() == "PageFile"
+    # The source channel list is operational, not decorative.
+    win.original_shell.file_channels.setCurrentRow(3)
+    assert win.adc.currentIndex() == 3
+    win._close_session()
+    assert win.session is None
+    assert win.original_shell.file_channels.count() == 0
+    assert win.original_shell.file_spec.count() == 0
+    assert win.original_shell.file_values.count() == 0
+    assert win.original_shell.status_note.text().startswith(
+        "Нет подтверждённого AUX/VALUES")
+
+
+def test_stage111z31av_original_title_research_and_config_readable(source_window):
+    win = source_window
+    assert win.windowTitle() == "ТПО МВК"
+    assert win.task_subpages.tabBar().isHidden()
+    win.research_tabs_action.setChecked(True)
+    assert not win.task_subpages.tabBar().isHidden()
+    win.research_tabs_action.setChecked(False)
+    assert win.task_subpages.tabBar().isHidden()
+    page = win.original_root_stack.widget(1)
+    for button_name in (
+        "bConfigLoad", "bConfigSave", "bConfigReset",
+        "bConfigDownload", "bConfigUpload",
+    ):
+        control = page.findChild(QPushButton, button_name)
+        assert control is not None
+        assert control.minimumWidth() >= 112
+        assert not control.isEnabled()
