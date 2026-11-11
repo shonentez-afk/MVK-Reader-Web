@@ -1,1 +1,1 @@
-.\tools\windows_qa_mcp\setup_gigacode_desktop.ps1 -AppExe $pick.FileName -EnableInput
+py -m venv "$env:LOCALAPPDATA\AIStoryRPG-QA\python"
