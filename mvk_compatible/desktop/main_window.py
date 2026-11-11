@@ -1789,8 +1789,7 @@ class MainWindow(QMainWindow):
         # File page is tied to the previous verified ZIP: hide it as soon
         # as this separate, not-yet-accepted live source is entered.
         self.original_shell.sync_file_session(None,())
-        for i in range(8):
-            self.adc.model().item(i).setEnabled(True)
+        self._bind_only_verified_channels(tuple(range(1,9)))
         self._set_active(True)
         self.tick.setEnabled(False)
         self.task_metrics_button.setEnabled(False)
@@ -2042,6 +2041,43 @@ class MainWindow(QMainWindow):
             'BIN с парным TSXML (*.bin *.tsxml)')
         if path:self.open_archive(path)
 
+    def _bind_only_verified_channels(self,channels):
+        """Atomic Qt ADC + two original DFM channel tab selectors.
+
+        A switched eight-channel ZIP -> one-channel BIN must NOT let
+        old QTabBar indices push ADC2 (or a guessed ADC1) over the source's
+        verified selected ADC4.  Qt signals are held until all three source
+        selectors have the same available channels and the same index.
+        """
+        channels=tuple(channels)
+        if (not channels or channels!=tuple(sorted(set(channels)))
+                or any(type(ch) is not int or not 1<=ch<=8
+                       for ch in channels)):
+            raise ValueError('Источник не предоставляет допустимый набор АЦП')
+        wanted=channels[0]-1
+        combo_blocked=self.adc.blockSignals(True)
+        try:
+            for i in range(self.adc.count()):
+                self.adc.model().item(i).setEnabled(i+1 in channels)
+            self.adc.setCurrentIndex(wanted)
+            for tabs in (self.wave_channel_tabs,self.spec_channel_tabs):
+                was=tabs.blockSignals(True)
+                try:
+                    for i in range(tabs.count()):
+                        tabs.setTabEnabled(i,i+1 in channels)
+                    tabs.setCurrentIndex(wanted)
+                finally:
+                    tabs.blockSignals(was)
+            # Reassert the only valid selection after Qt disabled-item
+            # normalization. No ADC currentChanged can fire mid-transition.
+            self.adc.setCurrentIndex(wanted)
+        finally:
+            self.adc.blockSignals(combo_blocked)
+        if (self.adc.currentIndex()!=wanted
+                or self.wave_channel_tabs.currentIndex()!=wanted
+                or self.spec_channel_tabs.currentIndex()!=wanted):
+            raise ValueError('Qt не смог синхронизировать исходный номер АЦП')
+
     def open_archive(self,path):
         if self._live_active:
             self.statusBar().showMessage('Архив не заменяется во время активной записи Native.')
@@ -2070,15 +2106,9 @@ class MainWindow(QMainWindow):
         self._leave_original_spectrum_reference()
         self.session=s
         self._offline_flow=flow
-        # A direct BIN may supply only ADC4: do not silently read ADC1
-        # or mix unrelated files to fill absent channels.
-        self.adc.blockSignals(True)
-        try:
-            for number in range(1,9):
-                self.adc.model().item(number-1).setEnabled(number in channels)
-            self.adc.setCurrentIndex(channels[0]-1)
-        finally:
-            self.adc.blockSignals(False)
+        # Source data, selected combo ADC and both DFM tab bars move as
+        # ONE transaction. A BIN-only ADC4 never selects stale ADC1/2.
+        self._bind_only_verified_channels(channels)
         self._spec_last_valid_fft_n=None
         self._spec_original_vscale_tag=None
         self._spec_original_vscale_mode=None
@@ -2135,13 +2165,7 @@ class MainWindow(QMainWindow):
         self._pagestatus_snapshot=None
         self.wave_plot.clear()
         self.spec_plot.clear()
-        self.adc.blockSignals(True)
-        try:
-            for i in range(self.adc.count()):
-                self.adc.model().item(i).setEnabled(True)
-            self.adc.setCurrentIndex(0)
-        finally:
-            self.adc.blockSignals(False)
+        self._bind_only_verified_channels(tuple(range(1,9)))
         self.tick.blockSignals(True)
         try:
             self.tick.setRange(1,1)

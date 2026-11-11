@@ -90,6 +90,12 @@ def test_direct_bin_switch_clears_all_old_zip_status_without_fake_dsp(
         assert w._current_offline_flow().direct_bin
         assert w._current_offline_flow().channel==4
         assert w._current_offline_flow().available_channels==(4,)
+        assert w.adc.currentIndex()==3
+        assert w.wave_channel_tabs.currentIndex()==3
+        assert w.spec_channel_tabs.currentIndex()==3
+        for tab in (w.wave_channel_tabs,w.spec_channel_tabs):
+            assert tab.isTabEnabled(3)
+            assert sum(tab.isTabEnabled(i) for i in range(tab.count()))==1
         assert w._current_offline_flow().session is w.session
         assert w._pagestatus_snapshot is None
         assert w.original_shell.file_channels.count()==1
