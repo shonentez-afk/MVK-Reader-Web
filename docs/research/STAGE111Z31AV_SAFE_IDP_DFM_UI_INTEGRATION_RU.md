@@ -1,3 +1,5 @@
+**Stage111Z31AV окончательная CI-приёмка (2026-11-11):** [GitHub Actions #42941474687](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42941474687) — `SUCCESS` для Linux core, Windows core/Qt (включая Windows 150% scaling) и verified standalone Windows EXE. Проверенный source SHA: `6de0fd367d4a9c92b14b318139755e35c08298c9`; новый artifact `MVKViewCompatible_Stage111_Windows_Preview` **#13820637823** (68 584 192 bytes archive). Этот artifact — новая сборка; старый локальный EXE оператора `C:\mvk_log\mvkview_exe\` автоматически не заменён. Автоматический CI не означает полного исходного pixel parity всех экранов.
+
 # Stage111Z31AV — безопасная интеграция исходного UI по IDP/DFM
 
 **Дата:** 2026-11-11  
