@@ -14,10 +14,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
-    QVBoxLayout, QWidget,
+    QTableWidgetItem, QListWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .original_task_ui import install_source_task_buttons
+from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 
 from ..core.original_ui_form_contract import (
     ORIGINAL_ROOT_PAGES, ORIGINAL_ROOT_TAB_HEIGHT,
@@ -66,7 +67,9 @@ def _config_page(parent: QWidget) -> QWidget:
         ("bConfigUpload", "Передать"),
     ):
         b = _disabled(obj, caption, top)
-        b.setFixedSize(48, 48)
+        # DFM pictogram was 48px; fallback text needs a readable width.
+        b.setFixedHeight(48)
+        b.setMinimumWidth(112)
         b.setToolTip(b.toolTip() + " Используй «Открыть измерение» для офлайн-записей.")
         actions.addWidget(b)
     actions.addStretch()
@@ -143,6 +146,34 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
         "Оригинальная структура PageFile — каналы слева, параметры экспорта "
         "справа. Сбор исходных файлов на приборе пока отключён; "
         "кнопка открытия работает только с локальными записями."))
+    return page
+
+
+def _status_page(parent: QWidget) -> QWidget:
+    """Independent PageStatus body reusing the proven Stage28B IDR model.
+
+    The earlier research table remains available for legacy calculations,
+    but is not embedded inside the original top-level Status page.
+    """
+    page = QWidget(parent)
+    page.setObjectName("PageStatus")
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(4, 4, 4, 4)
+    tabs = QTabBar(page)
+    tabs.setObjectName("tcStatus")
+    tabs.setExpanding(False)
+    tabs.setUsesScrollButtons(True)
+    for caption in MODE_NAMES:
+        tabs.addTab(caption)
+    layout.addWidget(tabs)
+    table = _readonly_grid("sgStatus", page)
+    layout.addWidget(table, 1)
+    note = _text(page, "")
+    note.setObjectName("sourceStatusNote")
+    layout.addWidget(note)
+    page.mode_tabs = tabs
+    page.source_grid = table
+    page.source_note = note
     return page
 
 
@@ -226,10 +257,27 @@ class OriginalRootShell:
         self.stack.addWidget(_config_page(window))          # index 1
         self.stack.addWidget(_file_page(window, window.choose_archive))  # 2
         self.stack.addWidget(_calib_page(window))           # index 3
+        self.stack.addWidget(_status_page(window))          # index 4
+        self.status_page = self.stack.widget(4)
+        self.status_tabs = self.status_page.mode_tabs
+        self.status_table = self.status_page.source_grid
+        self.status_note = self.status_page.source_note
+        self.file_page = self.stack.widget(2)
+        self.file_channels = self.file_page.findChild(QListWidget, "cbFileChannels")
+        self.file_spec = self.file_page.findChild(QListWidget, "cbFileSpec")
+        self.file_values = self.file_page.findChild(QListWidget, "cbFileValues")
+        self.status_tabs.currentChanged.connect(
+            window.original_status_mode.setCurrentIndex)
+        self.file_channels.currentItemChanged.connect(self._file_channel_chosen)
+        window.adc.currentIndexChanged.connect(self._sync_file_selection)
         layout.insertWidget(1, self.navigation)
         layout.insertWidget(2, self.stack, 1)
         window.tabs.tabBar().hide()  # 3 internal tabs no longer 3 top-level pages
         window.original_start_launcher = install_source_task_buttons(window, self.navigation)
+        # DFM PageStart is a task launcher, not six research subpages.
+        window.task_subpages.tabBar().hide()
+        self.sync_file_session(None, ())
+        self.refresh_status()
         self.navigation.currentChanged.connect(self._selected)
         window.tabs.currentChanged.connect(self._legacy_changed)
         self._selected(0)
@@ -240,15 +288,16 @@ class OriginalRootShell:
         self._routing = True
         try:
             if root_index in (0, 2, 3, 4):
-                self.stack.setCurrentIndex(0)
+                self.stack.setCurrentIndex(4 if root_index == 2 else 0)
                 old_index = {0: 0, 2: 0, 3: 1, 4: 2}[root_index]
                 self.window.tabs.setCurrentIndex(old_index)
                 if root_index == 0:
                     self.window.task_subpages.setCurrentIndex(0)
                 elif root_index == 2:
-                    # Original PageStatus table reconstructed as existing
-                    # source-driven status mode inside the task pages.
+                    # Legacy research state remains available, while the
+                    # user sees a genuinely separate source PageStatus.
                     self.window.task_subpages.setCurrentIndex(5)
+                    self.refresh_status()
             else:
                 self.stack.setCurrentIndex({1: 1, 5: 2, 6: 3}[root_index])
         finally:
@@ -265,6 +314,78 @@ class OriginalRootShell:
             self.navigation.setCurrentIndex(expected)
         finally:
             self._routing = False
+
+    def refresh_status(self) -> None:
+        """Render an original-source StatusTable without inventing device DSP."""
+        index = self.window.original_status_mode.currentIndex()
+        self.status_tabs.blockSignals(True)
+        try:
+            self.status_tabs.setCurrentIndex(index)
+        finally:
+            self.status_tabs.blockSignals(False)
+        model = source_pagestatus_table(
+            index, getattr(self.window, "_pagestatus_snapshot", None))
+        table = self.status_table
+        table.clearContents()
+        table.setRowCount(len(model.rows))
+        table.setColumnCount(len(model.headers))
+        table.setHorizontalHeaderLabels(list(model.headers))
+        for row, values in enumerate(model.rows):
+            for col, value in enumerate(values):
+                table.setItem(row, col, QTableWidgetItem(str(value)))
+        self.status_note.setText(model.note)
+
+    def _file_channel_chosen(self, item, previous=None) -> None:
+        if item is None:
+            return
+        channel = item.data(Qt.UserRole)
+        if isinstance(channel, int) and 1 <= channel <= self.window.adc.count():
+            if self.window.adc.currentIndex() != channel - 1:
+                self.window.adc.setCurrentIndex(channel - 1)
+
+    def _sync_file_selection(self, index: int) -> None:
+        if index < 0:
+            return
+        for row in range(self.file_channels.count()):
+            item = self.file_channels.item(row)
+            if item.data(Qt.UserRole) == index + 1:
+                self.file_channels.blockSignals(True)
+                try:
+                    self.file_channels.setCurrentRow(row)
+                finally:
+                    self.file_channels.blockSignals(False)
+                return
+
+    def sync_file_session(self, session, channels) -> None:
+        """Populate the original PageFile panes only from opened local data."""
+        self.file_channels.clear()
+        self.file_spec.clear()
+        self.file_values.clear()
+        if session is None:
+            return
+        sources = {ch.adc: ch for ch in getattr(session, "channel_files", ())}
+        for adc in channels:
+            entry = sources.get(adc)
+            if entry is not None:
+                label = (
+                    f"АЦП{adc}: {entry.bin_path.name} "
+                    f"({entry.sample_rate_hz} Гц)")
+            else:
+                label = f"АЦП{adc}: {session.serial}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, int(adc))
+            self.file_channels.addItem(item)
+        if sources:
+            self.file_spec.addItem(
+                "Спектр рассчитывается локально; приборный SPEC не предоставлен")
+            self.file_values.addItem(
+                "BIN/TSXML: исходные AUX/VALUES отсутствуют")
+        else:
+            self.file_spec.addItem(
+                "Просмотр спектра — на странице «Спектр»")
+            self.file_values.addItem(
+                f"Архив {session.serial}: VALUES/AUX доступны через расчётные данные")
+        self._sync_file_selection(self.window.adc.currentIndex())
 
     def sync_availability(self) -> None:
         self.navigation.setTabEnabled(
