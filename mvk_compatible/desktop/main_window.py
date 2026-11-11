@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         self._spectrum_envelope_dirty=False
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
-        self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
+        self.setWindowTitle('ТПО МВК')
         self.resize(1360,850)
         self.setMinimumSize(960,580)
         pg.setConfigOptions(antialias=False,useOpenGL=False)
@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         action.setShortcut('Ctrl+O')
         action.triggered.connect(self.choose_archive)
         file_menu.addAction(action)
+        file_menu.addAction('Закрыть измерение',self._close_session)
         capture_action=QAction('Запись с прибора · Native R6.1…',self)
         capture_action.triggered.connect(self.open_native_capture)
         file_menu.addAction(capture_action)
@@ -207,10 +208,17 @@ class MainWindow(QMainWindow):
         self._spectrum_tab()
         self.tabs.currentChanged.connect(self._active_tab_changed)
         view_menu=self.menuBar().addMenu('Вид')
-        details=QAction('Исследование / дополнительные настройки',self)
+        research_menu=view_menu.addMenu('Исследование')
+        details=QAction('Дополнительные настройки графиков',self)
         details.setShortcut('Ctrl+D')
         details.triggered.connect(self._toggle_current_research)
-        view_menu.addAction(details)
+        research_menu.addAction(details)
+        research_tabs=QAction('Вкладки технического анализа',self)
+        research_tabs.setCheckable(True)
+        research_tabs.setChecked(False)
+        research_tabs.toggled.connect(self.task_subpages.tabBar().setVisible)
+        research_menu.addAction(research_tabs)
+        self.research_tabs_action=research_tabs
         aux=QAction('Служебная панель Qt',self)
         aux.setCheckable(True)
         aux.setChecked(False)
@@ -2003,6 +2011,7 @@ class MainWindow(QMainWindow):
             + ('Источник BIN/TSXML Single. Калибровка/приборные DSP '
                'не подтверждены.' if direct else
                'Экспорт Native R6.1. Приборные VALUES/AUX отдельно проверены.'))
+        self.original_shell.sync_file_session(s,channels)
         self.refresh_all()
         self.statusBar().showMessage(
             ('Открыт локальный BIN/TSXML Single; калибровка и приборный DSP НЕ подтверждены · '
@@ -2012,6 +2021,42 @@ class MainWindow(QMainWindow):
 
     def _ch(self):
         return self.adc.currentIndex()+1
+
+    def _close_session(self):
+        """Close only the offline viewer session; never touch a live recorder."""
+        if self._live_active:
+            self.statusBar().showMessage(
+                'Нельзя закрывать просмотр во время активной записи Native R6.1')
+            return
+        self._leave_original_spectrum_reference()
+        self._clear_archive_source_projection()
+        self.session=None
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self._pagestatus_snapshot=None
+        self.wave_plot.clear()
+        self.spec_plot.clear()
+        self.adc.blockSignals(True)
+        try:
+            for i in range(self.adc.count()):
+                self.adc.model().item(i).setEnabled(True)
+            self.adc.setCurrentIndex(0)
+        finally:
+            self.adc.blockSignals(False)
+        self.tick.blockSignals(True)
+        try:
+            self.tick.setRange(1,1)
+            self.tick.setValue(1)
+        finally:
+            self.tick.blockSignals(False)
+        self._set_active(False)
+        self.title.setText('Сеанс не выбран')
+        self.task_session_summary.setText(
+            'Измерение не открыто. Выберите локальный ZIP, BIN или TSXML.')
+        self.original_shell.sync_file_session(None,())
+        self._refresh_source_pagestatus()
+        self._reset_dsp_tach_panel('Сеанс закрыт')
+        self.statusBar().showMessage('Локальное измерение закрыто')
 
     def _update_original_gain_inspector(self):
         if not isinstance(self.session,DirectBinSession):
@@ -2107,6 +2152,8 @@ class MainWindow(QMainWindow):
             self.original_status_plot.setVisible(True)
         else:
             self.original_status_plot.setVisible(False)
+        if getattr(self,'original_shell',None) is not None:
+            self.original_shell.refresh_status()
 
     def refresh_calc(self,*_):
         if self._live_active:
@@ -3674,7 +3721,7 @@ class MainWindow(QMainWindow):
 
 def run():
     app=QApplication.instance() or QApplication([])
-    app.setApplicationName('MVKView Compatible — Stage111')
+    app.setApplicationName('ТПО МВК')
     win=MainWindow()
     win.show()
     return app.exec()
