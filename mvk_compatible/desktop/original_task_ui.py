@@ -4,7 +4,8 @@ The original DFM has a runtime-translated ('$') caption, so all Russian
 captions here are semantic fallbacks and not verified original text.
 """
 from __future__ import annotations
-from PySide6.QtWidgets import QTabBar, QWidget, QGridLayout, QPushButton
+from PySide6.QtCore import QSize
+from PySide6.QtWidgets import QTabBar, QWidget, QGridLayout, QPushButton, QStyle
 from ..core.original_ui_form_contract import (
     ORIGINAL_CHANNEL_TAB_HEIGHT, ORIGINAL_TASK_BUTTONS,
 )
@@ -69,12 +70,29 @@ def install_source_task_buttons(window, navigation: QTabBar) -> QWidget:
         b = QPushButton(labels[name], host)
         b.setObjectName(name)
         b.setFixedHeight(height)
-        b.setMinimumWidth(180)
+        b.setMinimumWidth(width)
+        # The DFM uses 86px VCL command-links with source ilTasks images.
+        # Use a clearly marked platform icon until the private bitmaps have
+        # been independently extracted/accepted (never invent vendor art).
+        icon={
+            "bTaskConnect":QStyle.SP_DriveNetIcon,
+            "bTaskConfigCh":QStyle.SP_FileDialogDetailedView,
+            "bTaskView":QStyle.SP_DialogOpenButton,
+            "bTaskConfigIP":QStyle.SP_ComputerIcon,
+            "bTaskConfigCalib":QStyle.SP_FileDialogContentsView,
+        }[name]
+        b.setIcon(b.style().standardIcon(icon))
+        b.setIconSize(QSize(32,32))
+        b.setProperty("originalDfmLogicalRect",(left,top,width,height))
+        b.setProperty("originalDfmImageName",image)
         b.setToolTip(
             f"DFM {name} ({left},{top},{width},{height}); "
             f"ImageName={image}; original Caption='$' is runtime-translated.")
         if name == "bTaskView":
-            b.clicked.connect(window.choose_archive)
+            # Original PageStart task opens the File workspace, not a
+            # disconnected research dialog. Loading is available there.
+            b.clicked.connect(lambda _checked=False:
+                              navigation.setCurrentIndex(5))
         elif name == "bTaskConnect":
             b.clicked.connect(window.open_native_capture)
         elif name == "bTaskConfigCh":
