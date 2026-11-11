@@ -10,7 +10,7 @@ live device semantics are inferred from a passive text file.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QLabel, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget
+from PySide6.QtWidgets import QFileDialog, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget
 
 from ..core.original_config_readonly import (
     FIELDS, UNKNOWN, empty_original_config_inspection,
@@ -181,8 +181,10 @@ class OriginalConfigReadOnlyPanel:
         try:
             self.load_local_file(file)
         except (OSError,ValueError,UnicodeError) as exc:
-            QMessageBox.warning(self.page,"Локальная конфигурация отклонена",
-                                str(exc))
+            # The original TWindowMan.SpawnError shows its own nonmodal
+            # third form. This local validation error does not operate a device.
+            self.page.window().original_window_man.spawn_error(
+                "Локальная конфигурация отклонена: "+str(exc))
 
     def alarm_detail_dialog(self,row:int,column:int):
         if (type(row) is not int or type(column) is not int
