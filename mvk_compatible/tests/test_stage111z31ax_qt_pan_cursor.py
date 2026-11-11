@@ -1,5 +1,7 @@
 """Stage111Z31AX source bitmap pan/cursor Qt regression, synthetic data only."""
 import numpy as np
+import pytest
+pytest.importorskip('PySide6')
 from PySide6.QtCore import QPointF
 from .test_desktop_qt import qt_app
 from .test_stage111z31a_x32dbg_visual_reference import create_reference_fixture
