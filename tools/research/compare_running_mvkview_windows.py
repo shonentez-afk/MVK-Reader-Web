@@ -253,6 +253,8 @@ def run(argv=None)->int:
         resolved=path.resolve()
         if resolved==checkout or checkout in resolved.parents:
             p.error("ROI evidence must stay outside Git checkout")
+        if str(checkout) not in sys.path:
+            sys.path.insert(0,str(checkout))  # support direct local script execution
         from mvk_compatible.core.original_parity_regions import compare_source_regions
         rois=json.loads(path.read_text(encoding="utf-8"))
         report["selected_regions"]=compare_source_regions(o,c,rois)
