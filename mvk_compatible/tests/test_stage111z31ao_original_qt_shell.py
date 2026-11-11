@@ -78,7 +78,8 @@ def test_original_source_task_launcher_and_channel_tabs(source_window):
     assert win.original_start_launcher.findChild(QPushButton, "bTaskConnect") is not None
     assert win.original_start_launcher.findChild(QPushButton, "bTaskConfigCh") is not None
     btn_ip = win.original_start_launcher.findChild(QPushButton, "bTaskConfigIP")
-    assert btn_ip is not None and not btn_ip.isEnabled()
+    assert btn_ip is not None and btn_ip.isEnabled()
+    assert "без прибора" in btn_ip.toolTip()
     assert win.wave_channel_tabs.objectName() == "tcAdc"
     assert win.spec_channel_tabs.objectName() == "tcSpectrum"
     assert win.wave_channel_tabs.height() == 36
