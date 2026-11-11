@@ -3,7 +3,7 @@
 Дата: **11.11.2026**. Ветка: `research/stage111-mvkview-desktop-20261029`.
 Исходная база: **Stage111Z31BE** — [CI #42992104138](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42992104138), Linux/Windows Qt/standalone EXE **SUCCESS** для source `4fe9ddd87e0d81574871f9b7f2085d63d844e327`. Последующие BE docs-only коммиты не меняли эту сборку.
 
-**BF:** новый крупный пакет source reconstruction + автоматизированный пассивный Windows QA. До завершения новой CI НЕ считать FULL CI PASS. Оригинальная runtime 1:1 совместимость **НЕ доказана**, аппаратные операции/калибровка **НЕ проверены и заблокированы**.
+**BF принят по CI**: source 10319ca736e2fd1aedf28b292a2bb6b45815c4f7 / [Actions #42995021324](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42995021324) SUCCESS во всех 3 заданиях. Оригинальная runtime 1:1 совместимость **НЕ доказана**, аппаратные операции/калибровка **НЕ проверены и заблокированы**.
 
 ## 1. Прямо проверенный private IDP, не догадки
 
@@ -49,7 +49,7 @@ python tools\research\summarize_private_mvkview_parity.py --private-captures C:\
 
 ## 4. Что всё ещё открыто (приоритет)
 
-1. Новая приёмка CI Linux Core/Windows Qt150/verified standalone EXE для BF.
+1. **CI BF принят:** Linux Core / Windows Qt150 / verified standalone EXE PASS; сохранить exact source SHA и [артефакт #13843333202](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42995021324/artifacts/13843333202).
 2. Реальный операторский paired Windows original↔compatible на одном файле, 7 страниц, PageConfig Mode4/5/6, Tmvkeditform, третья форма; переносить только подтверждённые расхождения в следующую реализацию, не «чинить на глаз».
 3. Расшифровка всех остающихся типов `TMvkCellList` (мы восстановили **символ, размер и адресацию**, но для 30 типов не доказаны все правила парсинга/форматирования), полные runtime locale strings и безопасный source config/device protocol.
 4. Физическая калибровка с генератором, весь UI/62 обработчика, настоящие device parity и полное закрытие спектров/временного сигнала по всем режимам. **Никаких записей или калибровочных действий без отдельного разрешения/стенда**.
