@@ -11,6 +11,7 @@ import pytest
 from mvk_compatible.core.original_config_input_draft import (
     SOURCE, SOURCE_INPUT_CASES, SOURCE_BOUND_TYPES, SOURCE_DISPATCH_SHA256,
     SourceInputRejected, LocalConfigDraft, encode_source_text,
+    source_type_for_raw_format,
 )
 from mvk_compatible.core.original_config_register_image import LocalRegisterImage
 
@@ -179,3 +180,57 @@ def test_addressing_and_untrusted_input_fail_closed():
             draft.preview_text(section,row,"1",adc=adc)
     assert_reject("ctIndexOutOfBounds",lambda:
                   draft.preview_text("ip",True,"1"))
+
+
+def test_raw_format_source_uses_first_matching_type_and_colon():
+    assert source_type_for_raw_format("f")==0
+    assert source_type_for_raw_format("v")==6
+    assert source_type_for_raw_format("h")==10  # 28/29 are later aliases
+    assert source_type_for_raw_format("b")==16  # 17..23 are later aliases
+    assert source_type_for_raw_format("p")==14
+    for letter in ("F","D","!","?", "", "ff"):
+        assert_reject("ctInvalidFormat",lambda c=letter:
+                      source_type_for_raw_format(c))
+
+
+def test_raw_loader_preview_reuses_source_converter_without_bounds(image):
+    draft=LocalConfigDraft.from_local_image(image)
+    f32=draft.preview_raw_format(0x20,"f:2.5")
+    assert f32.as_local_image().read_f32(0x20)==2.5
+    assert f32.patches[0].mode=="raw-format"
+    # Original InputValueRaw intentionally bypasses SetBounds and cell
+    # protection. Unlike original, this PREVIEW has no write capability.
+    raw=draft.preview_raw_format(0x0A,"w:0")
+    assert raw.as_local_image().read_u32(0x0A)==0
+    assert raw.summary()["device_write_allowed"] is False
+    assert raw.summary()["disk_write_performed"] is False
+    ip=draft.preview_raw_format(4,"v:10.20.30.40")
+    assert ip.as_local_image().read_u32(4)==0x0A141E28
+    hx=draft.preview_raw_format(0x20,"h:0xFEAABBCC")
+    assert hx.as_local_image().read_u32(0x20)==0xFEAABBCC
+    bits=draft.preview_raw_format(0x20,"b:1001")
+    assert bits.as_local_image().read_u32(0x20)==9
+
+
+def test_raw_text_input_source_gates_sensitive_and_bad_format(image):
+    draft=LocalConfigDraft.from_local_image(image)
+    for text in ("f", "f 1.5", "F:1.5", "D:44", "!:test", "x:5"):
+        assert_reject("ctInvalidFormat",lambda v=text:
+                      draft.preview_raw_format(0x20,v))
+    for addr in (0x60,0x62,0x7E):
+        assert_reject("ctProtectedValue",lambda a=addr:
+                      draft.preview_raw_format(a,"h:0x1"))
+    assert_reject("ctInvalidAddress",lambda:
+                  draft.preview_raw_format(1,"f:1"))
+    assert_reject("ctInvalidAddress",lambda:
+                  draft.preview_raw_format(0xFFFE,"f:1"))
+
+
+def test_original_raw_and_typed_field_alias_is_rejected(image):
+    draft=LocalConfigDraft.from_local_image(image)
+    typed=draft.preview_text("ip",3,"502")
+    assert_reject("ctInvalidCellType",lambda:
+                  typed.preview_raw_format(0x0A,"w:100"))
+    raw=draft.preview_raw_format(0x0A,"w:123")
+    assert_reject("ctInvalidCellType",lambda:
+                  raw.preview_text("ip",3,"502"))
