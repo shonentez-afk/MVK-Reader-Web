@@ -80,4 +80,26 @@
 
 ## 5. Статус
 
-На данном этапе BA даёт фактический глобальный DFM/IDR инвентарь, инструмент повторного локального построения карты и безопасный первый прямой snapshot harness. **Это НЕ конец полного восстановления приложения**; пакеты B–E остаются открыты. CI status BA указывать только после фактической проверки нового source SHA. Последний подтверждённый релиз до BA: Stage111Z31AZ, [CI #42953922189](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42953922189).
+На данном этапе BA даёт фактический глобальный DFM/IDR инвентарь, инструмент повторного локального построения карты и безопасный первый прямой snapshot harness. **Это НЕ конец полного восстановления приложения**; пакеты B–E остаются открыты. CI Stage111Z31BA подтверждён [#42960626061](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42960626061) SUCCESS для source `342c47280e899be38296f74590ba309f1962b99f`, но полной оригинальной runtime 1:1 приёмки нет. Последний подтверждённый релиз до BA: Stage111Z31AZ, [CI #42953922189](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42953922189).
+
+## 6. Дополнительно подтверждённые динамические привязки меню
+
+Семь обработчиков, отсутствующих в свойствах событий DFM, не пропущены: IDR-asm `_Unit128.pas` содержит конкретные присваивания `TMenuItem.FOnClick` этим адресам. Это **статическое подтверждение привязок**, а НЕ runtime исполнение.
+
+| Метод | ВА присваивания FOnClick | ВА обработчика |
+|---|---|---|
+| `mAdcHScale1Click` | `0084AC4F` | `0084B194` |
+| `mAdcVScale1Click` | `0084AFA0` | `0084B22C` |
+| `mEnvelopeType1Click` | `008458D6` | `0084B2C8` |
+| `mRate1Click` | `00845849` | `0084DEC4` |
+| `mSpecHScale1Click` | `0084B57D` | `0084C3AC` |
+| `mSpecLines1Click` | `0084BA6C` | `0084C4C8` |
+| `mSpecVScale1Click` | `0084B963` | `0084C5AC` |
+
+Для `mSpecHScale1Click` обнаружена source-константа `0x6400 = 25600` в логике горизонтального масштаба. Это основание восстановить шкалу 25 600 Гц по исходным правилам меню/scrollbar, не просить оператора подбирать её на скриншотах. Полный переход и границы должны быть проверены отдельно по control flow.
+
+Адресные классы Core в оригинальном IDR: `TCo2Draw` (MoveTo/LineTo/Fill), `TQGrapher` (Draw/UpdateCursor), `TMvkChannelStorage` (GetSignal/GetSpectrum/GetNarrowbandValue/ProcessBufferChunk), `TMvkCellList` (config Load/Save), `TMVKThread` (QueueCommand/SetRate), `TLanguage` (localize), `TCalibGenerator`, `TCalibSwitch`, `TMVKCalibThread`. Восстанавливать эти **сквозные цепочки**, не только экранные кнопки. Адреса UI не доказывают правильность аппаратных команд без испытаний.
+
+## 7. GitHub Actions BA: официальная приёмка инфраструктурного пакета
+
+Проверенный source `342c47280e899be38296f74590ba309f1962b99f`, [CI #42960626061](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42960626061) **SUCCESS**: Linux Core; Windows Core и Qt при 150%; verified автономный EXE со встроенным Native R6.1. [Artifact #13828669898](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42960626061/artifacts/13828669898), 68 625 663 байта, срок 2026-11-25. Новый Win32-скрипт приёмки **не выполнялся против оригинального Win32 окна** в CI (оригинала нет в runner); протестирован лишь безопасный source/synthetic contract. Нельзя писать «полная параллельная QA готова» до реального операторского прогона и сценарного управления. Original 1:1 не заявляется.

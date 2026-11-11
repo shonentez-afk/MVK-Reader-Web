@@ -2559,7 +2559,52 @@
         "PageStart": 12,
         "PageStatus": 8
       },
-      "source_file": "mvkform.dfm"
+      "source_file": "mvkform.dfm",
+      "dynamic_menu_handlers_source_derived": {
+        "mAdcHScale1Click": {
+          "binding_instruction_va": "0084AC4F",
+          "method_va": "0084B194",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        },
+        "mAdcVScale1Click": {
+          "binding_instruction_va": "0084AFA0",
+          "method_va": "0084B22C",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        },
+        "mEnvelopeType1Click": {
+          "binding_instruction_va": "008458D6",
+          "method_va": "0084B2C8",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        },
+        "mRate1Click": {
+          "binding_instruction_va": "00845849",
+          "method_va": "0084DEC4",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        },
+        "mSpecHScale1Click": {
+          "binding_instruction_va": "0084B57D",
+          "method_va": "0084C3AC",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        },
+        "mSpecLines1Click": {
+          "binding_instruction_va": "0084BA6C",
+          "method_va": "0084C4C8",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        },
+        "mSpecVScale1Click": {
+          "binding_instruction_va": "0084B963",
+          "method_va": "0084C5AC",
+          "evidence": "IDR_static_TMenuItem_FOnClick_assignment",
+          "original_runtime_invocation_verified": false
+        }
+      },
+      "all_seven_declared_non_dfm_methods_statically_wired_in_original_idr": true
     }
   },
   "idr_generated_unit_files_count": 86,
