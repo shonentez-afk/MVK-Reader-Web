@@ -109,6 +109,16 @@ def test_direct_bin_switch_clears_all_old_zip_status_without_fake_dsp(
         assert w._full_spectrum["physical_units_verified"] is False
         assert w._offline_flow.status_snapshot() is None
 
+        # Simulate a late stale index from another QTabBar. The UI must
+        # reject it and restore the real ADC4, not fabricate ADC2 data.
+        w.adc.setCurrentIndex(1)
+        qt_app.processEvents()
+        assert w._current_offline_flow().channel==4
+        assert w.adc.currentIndex()==3
+        assert w.wave_channel_tabs.currentIndex()==3
+        assert w.spec_channel_tabs.currentIndex()==3
+        assert w._full_spectrum["channel"]==4
+
         w._close_session()
         qt_app.processEvents()
         assert w.session is None and w._offline_flow is None

@@ -2041,7 +2041,7 @@ class MainWindow(QMainWindow):
             'BIN с парным TSXML (*.bin *.tsxml)')
         if path:self.open_archive(path)
 
-    def _bind_only_verified_channels(self,channels):
+    def _bind_only_verified_channels(self,channels,*,selected_channel=None):
         """Atomic Qt ADC + two original DFM channel tab selectors.
 
         A switched eight-channel ZIP -> one-channel BIN must NOT let
@@ -2054,7 +2054,10 @@ class MainWindow(QMainWindow):
                 or any(type(ch) is not int or not 1<=ch<=8
                        for ch in channels)):
             raise ValueError('Источник не предоставляет допустимый набор АЦП')
-        wanted=channels[0]-1
+        selected=channels[0] if selected_channel is None else selected_channel
+        if type(selected) is not int or selected not in channels:
+            raise ValueError('Нельзя назначить отсутствующий в источнике АЦП')
+        wanted=selected-1
         combo_blocked=self.adc.blockSignals(True)
         try:
             for i in range(self.adc.count()):
@@ -2223,6 +2226,19 @@ class MainWindow(QMainWindow):
         flow=self._offline_flow
         flow.require_session(self.session)
         ch=self._ch()
+        if ch not in flow.available_channels:
+            # A stale Qt tab or model notification may arrive AFTER an
+            # accepted source change (ZIP 8 ADC -> BIN ADC4). Never pass
+            # that nonexistent ADC to GetSignal/GetSpectrum/PageStatus;
+            # restore the last verified Core selection atomically.
+            self._bind_only_verified_channels(
+                flow.available_channels,selected_channel=flow.channel)
+            ch=self._ch()
+            if ch not in flow.available_channels:
+                raise ValueError('Qt запрашивает отсутствующий АЦП')
+            self.statusBar().showMessage(
+                'Отклонён устаревший выбор АЦП; восстановлен '
+                f'реальный АЦП{ch} текущего локального источника')
         tick=0 if flow.direct_bin else self.tick.value()-1
         if flow.channel!=ch or flow.tick_index!=tick:
             flow=flow.select(channel=ch,tick_index=tick)
