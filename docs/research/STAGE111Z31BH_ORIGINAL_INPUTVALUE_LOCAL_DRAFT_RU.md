@@ -1,6 +1,6 @@
 # Stage111Z31BH — оригинальные InputValue, SetBounds, InputValueRaw и локальный черновик
 
-Дата: 11 ноября 2026 года. Ветка: research/stage111-mvkview-desktop-20261029. Принятая исходная база: Stage111Z31BG, source e297e3627bf5c2893e4013583dd6603abfa2b490, [CI #42998754355](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42998754355) — Linux Core, Windows Qt150 и standalone EXE PASS. Новый Stage BH до фактической проверки CI помечать PENDING. Original Windows runtime parity всё ещё отсутствует.
+Дата: 11 ноября 2026 года. Ветка: research/stage111-mvkview-desktop-20261029. Принятая исходная база: Stage111Z31BG, source e297e3627bf5c2893e4013583dd6603abfa2b490, [CI #42998754355](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42998754355) — Linux Core, Windows Qt150 и standalone EXE PASS. **Stage BH полностью принят по CI:** exact source 9d5f6b3ec5503d52753ed7e6041609ea33996278; [Actions #43002778865](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43002778865) SUCCESS 3/3. Original Windows runtime parity всё ещё отсутствует.
 
 ## Статическое подтверждение по пользовательским приватным исходникам
 
@@ -17,7 +17,7 @@
 
 Создан автономный модуль mvk_compatible/core/original_config_input_draft.py. SourceInputRejected возвращает ключ локализации без печати пользовательских паролей. LocalConfigDraft.from_local_image работает ТОЛЬКО с явным LocalRegisterImage и создаёт immutable preview; оригинальные байты остаются неизменными. Методы preview_text, preview_advanced_id и preview_raw_format используют отдельные источниковые цепочки; as_local_image возвращает новую копию, summary сообщает длины и хеши, но никаких device writes или сохранения в файл.
 
-Реализованы source-constrained текстовые конверсии Float32, Int32, signed-to-DWORD, IP, проверка netmask, HEX, ограниченный печатный ASCII как безопасное подмножество ANSI, битовые строки и source AdvancedID. Неизвестный исходный Windows codepage, исходные Delphi FormatSettings/StrToFloat в полном объёме и физические protection bits НЕ выдумываются. Для InputValueRaw исходный bypass НЕ открывает доступ к прибору и намеренно блокирует password range 0x0060..0x007F в диагностическом черновике.
+Реализованы source-constrained текстовые конверсии Float32, Int32, signed-to-DWORD, IP, проверка netmask, HEX, ограниченный печатный ASCII как безопасное подмножество ANSI, битовые строки и source AdvancedID. Неизвестный исходный Windows codepage, исходные Delphi FormatSettings/StrToFloat в полном объёме и физические protection bits НЕ выдумываются. Для InputValueRaw исходный bypass НЕ открывает доступ к прибору и намеренно блокирует ЛЮБОЕ байтовое пересечение с password range 0x0060..0x007F (в том числе raw-поля, начинающиеся ранее) в диагностическом черновике.
 
 В Qt original_config_readonly_ui.py добавлен отдельный контекстный пункт на колонке RAW Mode4/5: «Проверить значение локально (без изменения)». Это дополнительный проверочный путь, не оригинальная DFM-кнопка, и никак не изменяет текущую конфигурацию. Результат отображает локальная TWindowManForm. Оригинальный mvkeditform по двойному щелчку остаётся read-only, bConfigSave/Upload/Download/Reset и Calib отключены.
 
@@ -28,3 +28,8 @@
 SOURCE-TESTS и Windows CI — не оригинальная Win32 runtime 1:1 приёмка. На исходном Type12 отображение и input используют разные helpers: подменять оригинал «логичным» алгоритмом нельзя. Не подтверждены все локализованные строки, полные Delphi Float32 formatter, исходный код сохранения конфигурации, физическая калибровка, аппаратный TCP/EEPROM upload и все 62 исходных обработчика. Оригинал/x32dbg/F9/приборные записи не запускались.
 
 Следующий пакет: законченный LoadValuesFromFile → InputValueRaw → SaveValuesToFile в Core, по source-вызовам, с сохранением includes/offset/comments и строгим тестом на приватных данных; затем парная read-only автоматическая Win32 приёмка «один файл, одинаковый канал/режим». Аппаратные команды — только после отдельной безопасной стендовой приёмки.
+
+
+## Приёмка по реальному CI
+
+Проверенный source SHA: 9d5f6b3ec5503d52753ed7e6041609ea33996278. [GitHub Actions #43002778865](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43002778865): **SUCCESS** (Linux Core, Windows Core/Qt DPI150, verified standalone Windows EXE + Native R6.1). [Артефакт #13847052402](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43002778865/artifacts/13847052402) 68 706 042 байта, expires 2026-11-25T10:26:02Z. Новые тесты перепроверяют, что raw-патч, начинающийся до пароля, не пересекает его область, и не блокируют соседнее поле SSID. **Нет оригинальной running-MVKView same-window приёмки, нет аппаратной записи и нет подтверждённой полной копии 1:1.** Docs-only commits не входят в проверенный исходный SHA.
