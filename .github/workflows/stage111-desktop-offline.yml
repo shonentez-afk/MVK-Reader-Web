@@ -1,6 +1,8 @@
 # MVKView Compatible Stage111: standalone Windows desktop, NO web or device.
-# Original EXE/IDP/PAS/DFM, measurement BIN/RAW/PCAPNG and screenshots
-# must NEVER be committed to this repository or uploaded to CI.
+# Private original EXE/IDP/PAS/DFM, measurement BIN/RAW/PCAPNG and
+# operator reference screenshots must NEVER enter GitHub/CI.
+# The synthetic Qt preview PNGs below are generated inside CI from
+# deterministic fake test fixtures; no user-owned source bytes are uploaded.
 # Manual dispatch: choose research/stage111-mvkview-desktop-20261029,
 # NOT the default main branch. Push builds run on the research branch only.
 name: MVKView Compatible - Windows EXE
