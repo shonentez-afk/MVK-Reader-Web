@@ -75,8 +75,10 @@ def test_source_raster_cursor_is_one_bitmap_not_qt_overlay(
     assert not win.spec_hline.isVisible()
     np.testing.assert_array_equal(win._spec_source_raster_data, base)
 
-    # The cursor leaves source PixelRect: original background bitmap restored
-    # with no leftover XOR or stale line from last mouse position.
+    # The cursor leaves the CURRENT source PixelRect. The Qt ViewBox
+    # may have moved after image relayout; old sceneBoundingRect is stale.
+    # Use current coordinates so this really tests exit, not another hover.
+    rect = win.spec_plot.getViewBox().sceneBoundingRect()
     win._spec_at_scene_pos(
         QPointF(rect.left() + 2., rect.center().y()), force=True)
     qt_app.processEvents()
