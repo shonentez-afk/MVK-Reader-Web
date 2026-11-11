@@ -131,7 +131,9 @@ class OriginalConfigReadOnlyPanel:
             name=source_localize(info["source_key"]).display+info["source_suffix"]
             bounds=(f'{info["source_min"]}..{info["source_max"]}'
                     if info["source_min"] is not None else "")
-            values=(name,info["address"],str(info["cell_type_code"]),
+            values=(name,info["address"],
+                    f'{info["cell_type_code"]} ({info["source_format_char"]}, '
+                    f'{info["source_storage_bytes"]} байт)',
                     info["raw_value"],bounds or info["advanced_kind"] or UNKNOWN)
             detail={"source_translation_key":info["source_key"],
                     "address":info["address"]}
