@@ -9,15 +9,20 @@ live device semantics are inferred from a passive text file.
 """
 from __future__ import annotations
 
+import hashlib
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget
+from PySide6.QtWidgets import QFileDialog, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QMenu, QInputDialog, QLineEdit
 
 from ..core.original_config_readonly import (
     FIELDS, UNKNOWN, empty_original_config_inspection,
     inspect_original_local_config, alarm_config_register,
 )
 from ..core.original_language_source import source_localize
-from ..core.original_config_semantics import source_section_rows
+from ..core.original_config_semantics import source_section_rows, section_fields
+from ..core.original_config_input_draft import (
+    SourceInputRejected, encode_source_text,
+)
 from .original_value_edit_dialog import OriginalValueEditDialog
 
 
@@ -43,6 +48,11 @@ class OriginalConfigReadOnlyPanel:
         self.load_button.clicked.connect(self.choose_file)
         self.alarm_table.cellDoubleClicked.connect(self.show_alarm_details)
         self.basic_table.cellDoubleClicked.connect(self.show_basic_details)
+        # Extra source-audit action is a context menu, not an invented
+        # original DFM button. It validates an ephemeral candidate only.
+        self.basic_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.basic_table.customContextMenuRequested.connect(
+            self._source_validation_context_menu)
         self.refresh()
 
     @staticmethod
@@ -163,6 +173,77 @@ class OriginalConfigReadOnlyPanel:
     def show_basic_details(self,row,column):
         if column==3:
             self.basic_detail_dialog(row,column).exec()
+
+    def preview_local_value_input(self,row:int,text:str)->dict:
+        """Non-mutating original InputValue *syntax* preview for Mode4/5.
+
+        This deliberately does not claim that the currently connected
+        instrument has no protection flags, correct locale settings,
+        or the supplied local file actually contains live config.
+        """
+        if self.source_mode not in (4,5) or type(row) is not int:
+            raise ValueError("Source Mode4/5 local validation only")
+        section="ip" if self.source_mode==4 else "calib"
+        fields,_=section_fields(section)
+        if not 0<=row<len(fields):
+            raise ValueError("Source row outside the original list")
+        f=fields[row]
+        info={
+            "source_field":f.key,
+            "source_type":f.cell_type,
+            "source_mode":self.source_mode,
+            "local_text_file_mutated":False,
+            "original_runtime_acceptance_verified":False,
+            "device_config_write_allowed":False,
+            "source_protection_state_known":False,
+        }
+        try:
+            payload=encode_source_text(
+                f.cell_type,text,bounds=f.bounds,
+                sensitive=f.key=="ConfigWifiPassword")
+            info["source_subset_syntax_valid"]=True
+            info["payload_bytes"]=len(payload)
+            info["payload_sha256"]=hashlib.sha256(payload).hexdigest()
+        except SourceInputRejected as err:
+            info["source_subset_syntax_valid"]=False
+            info["reason_source_key"]=err.source_key
+        return info
+
+    def _source_validation_context_menu(self,at):
+        selected=self.basic_table.indexAt(at)
+        if not selected.isValid() or selected.column()!=3:
+            return
+        menu=QMenu(self.basic_table)
+        command=menu.addAction(
+            "Проверить значение локально (без изменения)")
+        chosen=menu.exec(self.basic_table.viewport().mapToGlobal(at))
+        if chosen is command:
+            self._prompt_source_validation(selected.row())
+
+    def _prompt_source_validation(self,row):
+        section="ip" if self.source_mode==4 else "calib"
+        fields,_=section_fields(section)
+        if not 0<=row<len(fields):
+            return
+        if fields[row].key=="ConfigWifiPassword":
+            self.page.window().original_window_man.spawn_error(
+                "Пароль запрещено вводить в диагностический просмотр.")
+            return
+        text,ok=QInputDialog.getText(
+            self.page,"Локальный анализ исходного InputValue",
+            "Ввод для проверки формата (не сохраняется):",
+            QLineEdit.Normal,"")
+        if not ok:
+            return
+        report=self.preview_local_value_input(row,text)
+        note=("Проверка исходного формата прошла; запись не выполняется."
+              if report["source_subset_syntax_valid"]
+              else "Исходная проверка отклонила ввод: "
+                   + report["reason_source_key"])
+        if report["source_subset_syntax_valid"]:
+            self.page.window().original_window_man.spawn_information(note)
+        else:
+            self.page.window().original_window_man.spawn_error(note)
 
     def load_local_file(self,path):
         """Fail-closed: a bad/new file never preserves old config evidence."""
