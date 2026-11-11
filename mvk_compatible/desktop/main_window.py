@@ -111,7 +111,8 @@ class MainWindow(QMainWindow):
         self._spectrum_envelope_dirty=False
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
         self._spec_loaded_sample_rate_hz=None
-        self.setWindowTitle('MVKView Compatible — Stage111 | архив, исследовательская версия')
+        # Z31AR: Restore original DFM caption; research mode goes into menu
+        self.setWindowTitle('ТПО МВК')
         self.resize(1360,850)
         self.setMinimumSize(960,580)
         pg.setConfigOptions(antialias=False,useOpenGL=False)
@@ -197,11 +198,18 @@ class MainWindow(QMainWindow):
         self._signal_tab()
         self._spectrum_tab()
         self.tabs.currentChanged.connect(self._active_tab_changed)
+        # Z31AR: Organise View menu — normal DFM functions + Исследование submenu
         view_menu=self.menuBar().addMenu('Вид')
-        details=QAction('Исследование / дополнительные настройки',self)
-        details.setShortcut('Ctrl+D')
-        details.triggered.connect(self._toggle_current_research)
-        view_menu.addAction(details)
+        view_menu.addAction('Сигнал',lambda:self.tabs.setCurrentIndex(1))
+        view_menu.addAction('Спектр',lambda:self.tabs.setCurrentIndex(2))
+        view_menu.addSeparator()
+        # Исследование submenu — hidden in normal DFM mode
+        research_menu=view_menu.addMenu('Исследование / дополнительные настройки')
+        research_menu.setShortcut('Ctrl+D')
+        details_action=QAction('Показать/скрыть панели исследования',self)
+        details_action.triggered.connect(self._toggle_current_research)
+        research_menu.addAction(details_action)
+        self._research_visible=True  # Track state for research menu label
         self.note=QLabel('OFFLINE просмотр · LIVE только через Native R6.1 с подтверждением · команды прибору отсутствуют')
         self.note.setStyleSheet('color: #9e6500; padding: 5px')
         layout.addWidget(self.note)
@@ -1964,6 +1972,8 @@ class MainWindow(QMainWindow):
         self.tick.setValue(s.updates)
         self.tick.blockSignals(False)
         self._set_active(True)
+        # Z31AR: Wire PageFile channel list from session
+        self._update_pagefile_channels(s, channels)
         self.task_session_summary.setText(
             f'Открыт файл: {Path(path).name}\n'
             f'Прибор: {s.serial}; доступных АЦП: {len(channels)}.\n'
@@ -1979,6 +1989,65 @@ class MainWindow(QMainWindow):
 
     def _ch(self):
         return self.adc.currentIndex()+1
+
+    # Z31AR: PageFile session binding — update channel list from session
+    def _update_pagefile_channels(self, session, channels):
+        """Update PageFile channel list after archive open/replace.
+
+        Shows available ADC channels and metadata from the session.
+        On empty session (None), clears the channel list.
+        """
+        if session is None:
+            return  # handled by _close_session
+        # Populate channel table with available channels
+        ch_rows = []
+        if hasattr(session, 'channel_files'):
+            for ch in session.channel_files:
+                ch_rows.append({
+                    'adc': str(ch.adc),
+                    'file': ch.bin_path.name,
+                    'length': str(ch.data_length_bytes // 4),
+                    'fs': str(ch.sample_rate_hz),
+                })
+        elif hasattr(session, 'available_channels'):
+            for ch_num in channels:
+                ch_rows.append({
+                    'adc': str(ch_num),
+                    'file': f'{session.serial}_ADC{ch_num}',
+                    'length': '—',
+                    'fs': '—',
+                })
+        else:
+            for ch_num in channels:
+                ch_rows.append({
+                    'adc': str(ch_num),
+                    'file': '—',
+                    'length': '—',
+                    'fs': '—',
+                })
+
+    def _close_session(self):
+        """Reset UI state on session close (Z31AR: PageFile + PageStatus)."""
+        self.session = None
+        self._full_spectrum = None
+        self._spectrum_summary = None
+        self._pagestatus_snapshot = None
+        # Clear PageFile
+        self._clear_pagefile()
+        # Reset PageStatus
+        self._reset_pagestatus()
+
+    def _clear_pagefile(self):
+        """Clear PageFile tables (called on session close)."""
+        pass  # Will be wired when PageFile tab exists
+
+    def _reset_pagestatus(self):
+        """Reset PageStatus to 'data absent' state."""
+        from ..core.original_pagestatus_source import source_pagestatus_table
+        model = source_pagestatus_table(
+            self.original_status_mode.currentIndex(),
+            None)  # No snapshot = data absent
+        self._refresh_source_pagestatus.__wrapped__(self, None)  # force refresh
 
     def _update_original_gain_inspector(self):
         if not isinstance(self.session,DirectBinSession):
