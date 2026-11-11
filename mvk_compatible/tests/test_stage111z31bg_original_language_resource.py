@@ -3,12 +3,18 @@ import hashlib
 import json
 import pytest
 from mvk_compatible.core.original_language_resource import (
-    SOURCE, inspect_local_language_bytes, inspect_local_language_file,
+    SOURCE, SOURCE_RESOURCE_NAMES, SOURCE_DEFAULT_LANGUAGE_ID, SOURCE_RESOURCE_TYPE, inspect_local_language_bytes, inspect_local_language_file,
 )
 
 
 def pack(obj):
     return json.dumps(obj,ensure_ascii=False).encode("utf-8")
+
+
+def test_exact_original_resource_names_and_locale_id():
+    assert SOURCE_RESOURCE_NAMES==("Localization","ExtLocalization","WindowManLocalization")
+    assert SOURCE_DEFAULT_LANGUAGE_ID=="ru-ru"
+    assert SOURCE_RESOURCE_TYPE==10
 
 
 def test_source_outer_array_locale_array_lookup_and_last_entry_wins():
