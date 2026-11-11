@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
-    QHeaderView,
+    QHeaderView, QSpinBox,
     QTableWidgetItem, QListWidgetItem, QStyle, QVBoxLayout, QWidget,
 )
 
@@ -147,6 +147,15 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
         button.setToolTip("Открыть страницу текущего проверенного файла; без приборных команд")
         route.addWidget(button)
     route.addStretch(1)
+    route.addWidget(QLabel("Обновление VALUES:",shortcuts))
+    file_tick=QSpinBox(shortcuts)
+    file_tick.setObjectName("fileValuesTick")
+    file_tick.setRange(1,1)
+    file_tick.setEnabled(False)
+    file_tick.setToolTip(
+        "Только проверенные тики текущего Native R6.1 ZIP. "
+        "BIN/TSXML не имеет исходных VALUES.")
+    route.addWidget(file_tick)
     lay.addWidget(shortcuts)
     source_summary = QLabel(
         "Измерение ещё не выбрано. Откройте локальный ZIP, BIN или TSXML.", page)
@@ -383,10 +392,12 @@ class OriginalRootShell:
             QLabel, "sourceFileSummary")
         self.file_metadata = self.file_page.findChild(
             QTableWidget, "fileSourceMetadata")
+        self.file_tick=self.file_page.findChild(QSpinBox,"fileValuesTick")
         self.file_action_buttons = {
             name:self.file_page.findChild(QPushButton,name)
             for name in ("fileGoSignal","fileGoSpectrum","fileGoStatus")}
         if (self.file_summary is None or self.file_metadata is None
+                or self.file_tick is None
                 or any(b is None for b in self.file_action_buttons.values())):
             raise ValueError("Source File workbench controls not constructed")
         for name,index in (("fileGoSignal",3),("fileGoSpectrum",4),
@@ -395,6 +406,8 @@ class OriginalRootShell:
                 lambda _checked=False,target=index:
                     self.navigation.setCurrentIndex(target))
         self._file_flow = None
+        self.file_tick.valueChanged.connect(self._file_tick_chosen)
+        window.tick.valueChanged.connect(self._sync_file_tick_from_model)
         self.status_tabs.currentChanged.connect(
             window.original_status_mode.setCurrentIndex)
         self.file_channels.currentItemChanged.connect(self._file_channel_chosen)
@@ -559,6 +572,29 @@ class OriginalRootShell:
                 "ИСТОЧНИК ОТКЛОНЁН; данные файла изменены/недоступны: "
                 + str(exc))
 
+    def _sync_file_tick_from_model(self, value: int) -> None:
+        """The hidden legacy selector and visible File tick have ONE owner."""
+        active=(self._file_flow is not None
+                and self.window.session is not None
+                and not self.window._live_active
+                and not self._file_flow.direct_bin)
+        previous=self.file_tick.blockSignals(True)
+        try:
+            maximum=(self._file_flow.session.updates if active else 1)
+            self.file_tick.setRange(1,maximum)
+            self.file_tick.setValue(int(value) if active else 1)
+            self.file_tick.setEnabled(active)
+        finally:
+            self.file_tick.blockSignals(previous)
+
+    def _file_tick_chosen(self, tick: int) -> None:
+        if (self._file_flow is None or self.window.session is None
+                or self.window._live_active or self._file_flow.direct_bin):
+            return
+        self._file_flow.require_session(self.window.session)
+        if self.window.tick.value()!=tick:
+            self.window.tick.setValue(tick)  # one authoritative Core refresh
+
     def refresh_file_workbench(self, *, verified_status=None) -> None:
         """Render real selected Single/DSP in the ORIGINAL PageFile controls.
 
@@ -571,6 +607,7 @@ class OriginalRootShell:
         self.file_spec.clear()
         self.file_values.clear()
         if self._file_flow is None or self.window.session is None:
+            self._sync_file_tick_from_model(1)
             self.file_summary.setText(
                 "Нет выбранного измерения; откройте локальный ZIP/BIN/TSXML.")
             table.setRowCount(0)
@@ -581,6 +618,7 @@ class OriginalRootShell:
             flow=self.window._current_offline_flow()
             flow.require_session(self.window.session)
             self._file_flow=flow
+            self._sync_file_tick_from_model(self.window.tick.value())
             view=source_file_workbench(flow,verified_status=verified_status)
             self.file_summary.setText(
                 f"АЦП{view.selected_channel} · {view.source_basename} · "
@@ -601,6 +639,8 @@ class OriginalRootShell:
                             "fileGoStatus":2}[name]
                 button.setEnabled(self.navigation.isTabEnabled(root_index))
         except (ValueError,KeyError,OSError) as exc:
+            self._sync_file_tick_from_model(1)
+            self.file_tick.setEnabled(False)
             table.setRowCount(0)
             self.file_summary.setText(
                 "Данные текущего файла отклонены: " + str(exc))
