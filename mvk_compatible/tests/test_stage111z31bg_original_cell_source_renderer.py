@@ -80,12 +80,27 @@ def test_float32_exact_storage_but_delphi_text_not_claimed():
     assert not row.original_runtime_text_verified
 
 
-def test_datetime_source_branch_is_not_speculative():
+def test_datetime_uses_source_unix_formula_with_explicit_original_bias():
     image=image_with(0x20,b"\x00"*4)
     row=render_source_cell(image,0x20,3)
-    assert row.kind=="datetime-delphi-source-unresolved"
+    assert row.kind=="datetime-win32-source"
     assert row.display=="—"
     assert not row.source_branch_verified
+    utc=render_source_cell(
+        image,0x20,3,windows_total_timezone_bias_minutes=0)
+    east=render_source_cell(
+        image,0x20,3,windows_total_timezone_bias_minutes=-180)
+    west=render_source_cell(
+        image,0x20,3,windows_total_timezone_bias_minutes=300)
+    assert utc.display=="1970-01-01 00:00:00"
+    assert east.display=="1970-01-01 03:00:00"
+    assert west.display=="1969-12-31 19:00:00"
+    assert utc.source_branch_verified
+    assert not utc.original_runtime_text_verified
+    for bad in (-1441,1441,True,"180",1.5):
+        with pytest.raises(ValueError):
+            render_source_cell(
+                image,0x20,3,windows_total_timezone_bias_minutes=bad)
 
 
 def test_advanced_bitmask_and_missing_runtime_localization():
