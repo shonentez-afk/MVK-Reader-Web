@@ -2,7 +2,7 @@
 
 Дата: 11.11.2026. Ветка: research/stage111-mvkview-desktop-20261029.
 База BF: source SHA 10319ca736e2fd1aedf28b292a2bb6b45815c4f7; GitHub Actions #42995021324 SUCCESS (Linux Core, Windows Core/Qt DPI150, standalone Windows EXE + Native R6.1).
-BG: исходный пакет отправлен, CI и оригинальная Win32 paired validation проверяются отдельно.
+BG: **FULL CI PASS** для source e297e3627bf5c2893e4013583dd6603abfa2b490, GitHub Actions #42998754355 (Linux Core, Windows Core+Qt DPI150, autonomous EXE с Native R6.1). Только original Win32 paired/runtime/device parity остаётся открытым.
 
 ## 1. Приватные доказательства
 
@@ -44,3 +44,8 @@ _Unit115:007C8B50/8B7C/8C90/8E1C/8EE4/8FB8/90E0/91C0: original SetupButtons, Set
 Оригинальный FormatFloat и точные Win32 TFormatSettings для Float32, исходный ANSI codepage и время через GetTimeZoneInformation исходной сессии; оригинальные UTF-8 JSON/иконки; проверка всех сценариев 7 страниц/3 форм и 62 handlers; полноценные форматы файлов, калибровка/генератор, реальные device-config записи и физическая верификация. Только статическое совпадение не означает функциональный Win32 parity.
 
 Главный следующий шаг: безопасная paired original-vs-compatible Windows приёмка на одном файле с existing tools/research/compare_running_mvkview_windows.py и summarize_private_mvkview_parity.py. Пользовательский original процесс/x32dbg/F9/приборные Write/Upload/Calib НЕ запускать без согласованного испытания. Не помещать приватные исходные данные в GitHub.
+
+
+## Окончательная автоматическая приёмка Stage BG
+
+[GitHub Actions #42998754355](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42998754355) SUCCESS: все три задания. Проверенный исходный SHA: e297e3627bf5c2893e4013583dd6603abfa2b490. [Windows EXE artifact #13845742015](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/42998754355/artifacts/13845742015) 68 686 785 bytes, expires 2026-11-25T09:59:40Z. Последующие docs-only commits не являются частью проверенного исходного SHA. Оригинальный MVKView/x32dbg/F9, настоящая аппаратная запись и калибровка не запускались; исходные Win32 PNG/JSON full 1:1 пока НЕ представлены.
