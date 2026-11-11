@@ -3,6 +3,8 @@
 Each interaction operates against an already validated offline session;
 no live device, original executable, x32dbg or private original data.
 """
+import os
+from pathlib import Path
 import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
@@ -12,6 +14,19 @@ from .test_desktop_qt import qt_app
 from .test_offline_core import fixture_zip
 from .test_stage111z16_direct_bin_tsxml import _make_pair
 from mvk_compatible.core.direct_bin_session import DirectBinSession
+
+
+def capture_synthetic_ui_if_requested(window, app, name: str) -> None:
+    """Optional CI visual QA. Synthetic fixture only; NOT original parity."""
+    target=os.environ.get("MVK_SYNTHETIC_UI_PREVIEW_DIR")
+    if not target:
+        return
+    folder=Path(target)
+    folder.mkdir(parents=True,exist_ok=True)
+    app.processEvents()
+    shot=window.grab()
+    assert not shot.isNull() and shot.width()>=960 and shot.height()>=580
+    assert shot.save(str(folder/f"synthetic_stage111bj_{name}.png"),"PNG")
 
 
 def test_source_file_workspace_real_values_and_actual_graph_navigation(
@@ -47,6 +62,11 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert ui.file_action_buttons["fileGoStatus"].isEnabled()
         assert any("SHA256" in ui.file_metadata.item(i,0).text()
                    for i in range(ui.file_metadata.rowCount()))
+        capture_synthetic_ui_if_requested(win,qt_app,"01_file_data")
+        file_tabs=ui.file_page.findChild(QTabWidget,"tcFileActions")
+        file_tabs.setCurrentIndex(1)
+        capture_synthetic_ui_if_requested(win,qt_app,"02_file_source")
+        file_tabs.setCurrentIndex(0)
         # Source PageFile actions route to the same EXISTING working graph,
         # without opening a second data session or replacing FFT samples.
         saved=win._full_spectrum
@@ -55,18 +75,21 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert win.original_root_tabs.currentIndex()==3
         assert win.tabs.currentIndex()==1
         assert win.wave_plot.listDataItems()
+        capture_synthetic_ui_if_requested(win,qt_app,"03_signal")
         win.original_root_tabs.setCurrentIndex(5)
         ui.file_action_buttons["fileGoSpectrum"].click()
         qt_app.processEvents()
         assert win.original_root_tabs.currentIndex()==4
         assert win.tabs.currentIndex()==2
         assert win.spec_plot.listDataItems()
+        capture_synthetic_ui_if_requested(win,qt_app,"04_spectrum")
         assert win._full_spectrum is saved
         win.original_root_tabs.setCurrentIndex(5)
         ui.file_action_buttons["fileGoStatus"].click()
         qt_app.processEvents()
         assert win.original_root_tabs.currentIndex()==2
         assert ui.status_table.rowCount()>1
+        capture_synthetic_ui_if_requested(win,qt_app,"05_status")
 
         win.adc.setCurrentIndex(6)
         qt_app.processEvents()
@@ -116,6 +139,8 @@ def test_zip_to_direct_bin_clears_24_and_43_original_values(
         assert "не подтверждён" in ui.file_spec.item(0).text()
         assert "АЦП4" in ui.file_summary.text()
         assert "нет аппаратных VALUES/AUX" in ui.file_summary.text()
+        win.original_root_tabs.setCurrentIndex(5)
+        capture_synthetic_ui_if_requested(win,qt_app,"06_bin_no_fake_dsp")
         assert ui.file_action_buttons["fileGoSignal"].isEnabled()
         assert ui.file_action_buttons["fileGoSpectrum"].isEnabled()
         assert ui.status_table.rowCount()==1
