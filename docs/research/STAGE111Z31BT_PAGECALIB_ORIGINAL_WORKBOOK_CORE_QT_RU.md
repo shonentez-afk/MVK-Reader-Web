@@ -1,5 +1,7 @@
 # Stage111Z31BT — функциональное восстановление исходной PageCalib (Core + Qt)
 
+**Приёмка (12.11.2026):** source SHA `d1bf625cf9d852039969bac87ffa931757c89f7a`, [GitHub Actions #43191371595](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43191371595) — **3/3 SUCCESS**, включая Windows Core, Qt/DPI150 и автономный EXE Native R6.1. [Windows EXE #13930419251](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43191371595/artifacts/13930419251) (68 853 305 байт, до 26.11.2026); [синтетические Qt 150% screenshots #13930917362](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43191371595/artifacts/13930917362) (552 689 байт, до 19.11.2026). Это source+Qt E2E, не физическая приборная или 1:1 Delphi runtime приёмка.
+
 ## Приоритет и первоисточники
 
 Цель: восстанавливать все функции исходной MVKView, а не ещё один цикл экранных сравнений. Из приватного операторского Projects.7z прочитаны Projects/mvkform.dfm и Projects/_Unit128.pas; исходники, оригинальные BIN/IDP и снимки оригинала не помещаются в GitHub и тестовые артефакты.
