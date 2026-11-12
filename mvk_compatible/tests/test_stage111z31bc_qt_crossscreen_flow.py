@@ -32,14 +32,16 @@ def test_four_original_pages_share_same_zip_session_channel_and_values(
         assert flow.channel==1
         assert flow.tick_index==w.tick.value()-1
         assert flow.source_record()["measurement_kind"]==SOURCE_ZIP
-        assert w.original_shell.file_channels.count()==8
+        assert w.original_shell.file_channels.count()==100
         assert "VALUES tick" in w.original_shell.file_source_evidence.text()
         assert w._pagestatus_snapshot is not None
         assert w._pagestatus_snapshot["tick"]==flow.tick_index
         assert w._full_spectrum["channel"]==1
+        # BR restores original 10 ADC/TACH flags and 24+43+6 VALUES
+        # slots while keeping unverified original TACH entries disabled.
         # Stage BJ exposes all actual source-backed native results instead
         # of a single old informational placeholder. The source is unchanged.
-        assert w.original_shell.file_values.count()==24
+        assert w.original_shell.file_values.count()==73
         assert w.original_shell.file_spec.count()==43
         first=w._pagestatus_snapshot['channels'][0]['parameters_24'][0]
         assert first['name'] in w.original_shell.file_values.item(0).text()
@@ -86,7 +88,7 @@ def test_direct_bin_switch_clears_all_old_zip_status_without_fake_dsp(
     w.open_archive(zip_path)
     qt_app.processEvents()
     assert w._pagestatus_snapshot is not None
-    assert w.original_shell.file_channels.count()==8
+    assert w.original_shell.file_channels.count()==100
     w.open_archive(p)
     qt_app.processEvents()
     try:
@@ -102,7 +104,7 @@ def test_direct_bin_switch_clears_all_old_zip_status_without_fake_dsp(
             assert sum(tab.isTabEnabled(i) for i in range(tab.count()))==1
         assert w._current_offline_flow().session is w.session
         assert w._pagestatus_snapshot is None
-        assert w.original_shell.file_channels.count()==1
+        assert w.original_shell.file_channels.count()==10
         assert w.original_shell.file_channels.currentItem().data(
             Qt.UserRole)==4
         assert "DSP НЕТ" in w.original_shell.file_source_evidence.text()

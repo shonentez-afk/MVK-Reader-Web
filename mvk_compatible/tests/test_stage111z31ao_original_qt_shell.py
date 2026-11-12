@@ -118,11 +118,13 @@ def test_stage111z31av_pagefile_follows_real_archive_and_close(
     assert win.original_shell.file_channels.count() == 0
     win.open_archive(fixture_zip(tmp_path))
     assert win.session is not None
-    assert win.original_shell.file_channels.count() == 8
+    assert win.original_shell.file_channels.count() == 10
     assert win.original_shell.file_channels.item(0).data(Qt.UserRole) == 1
+    # BR restores all 10 original ADC/TACH selection flags and 73 VALUES
+    # slots. Only 24+43 ADC/BAND values have trusted current readings.
     # Stage BJ replaced the former one-line placeholder with the real
     # selected native VALUES/AUX 24 parameters and 43 octave bands.
-    assert win.original_shell.file_values.count() == 24
+    assert win.original_shell.file_values.count() == 73
     assert win.original_shell.file_spec.count() == 43
     assert win.original_shell.file_metadata.rowCount() >= 10
     win.original_root_tabs.setCurrentIndex(5)
