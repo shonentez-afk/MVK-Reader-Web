@@ -1,6 +1,6 @@
 # Stage111Z31BN — вертикальная шкала FRange + переключение режима + курсор: Core и Qt вместе
 
-**Приёмка:** код, синтетические Core/Qt тесты и Windows workflow созданы как единый пакет. Указывать SUCCESS только после фактического GitHub Actions по source SHA.
+**ПРИЁМКА 12.11.2026:** проверенный исходный SHA `76ca0ed2218b5a102e2ead2ebc3aeb2f99287416`, [GitHub Actions #43160418107](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43160418107) — **3/3 SUCCESS**: Linux Core, Windows Core/Qt DPI150, Windows EXE Native R6.1. [EXE #13918500333](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43160418107/artifacts/13918500333) до 26.11.2026, [synthetic UI #13917344062](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43160418107/artifacts/13917344062) до 19.11.2026. Это не running-original 1:1.
 
 ## Исходный дефект и прямое основание в приватном оригинале
 
