@@ -54,7 +54,7 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert ui.file_page.findChild(QTabWidget,"tcFileActions").count()==2
         assert ui.file_metadata.rowCount()>=10
         assert ui.file_spec.count()==43
-        assert ui.file_values.count()==24
+        assert ui.file_values.count()==73
         assert "АЦП1" in ui.file_summary.text()
         assert "VALUES/AUX" in ui.file_summary.text()
         assert ui.file_action_buttons["fileGoSignal"].isEnabled()
@@ -68,7 +68,7 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         capture_synthetic_ui_if_requested(win,qt_app,"01_file_data")
         file_tabs=ui.file_page.findChild(QTabWidget,"tcFileActions")
         file_tabs.setCurrentIndex(1)
-        capture_synthetic_ui_if_requested(win,qt_app,"02_file_source")
+        capture_synthetic_ui_if_requested(win,qt_app,"02_file_adc_settings")
         file_tabs.setCurrentIndex(0)
         # Source PageFile actions route to the same EXISTING working graph,
         # without opening a second data session or replacing FFT samples.
@@ -99,7 +99,7 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert "АЦП7" in ui.file_summary.text()
         assert ui.file_channels.currentItem().data(Qt.UserRole)==7
         assert win._full_spectrum["channel"]==7
-        assert ui.file_values.count()==24 and ui.file_spec.count()==43
+        assert ui.file_values.count()==73 and ui.file_spec.count()==43
 
         ui.file_tick.setValue(1)
         qt_app.processEvents()
@@ -107,7 +107,7 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert win._current_offline_flow().tick_index==0
         assert "обновление 1/" in ui.file_summary.text()
         assert ui.file_spec.count()==43
-        assert ui.file_values.count()==24
+        assert ui.file_values.count()==73
 
         win._close_session()
         qt_app.processEvents()
@@ -131,13 +131,13 @@ def test_zip_to_direct_bin_clears_24_and_43_original_values(
     try:
         ui=win.original_shell
         win.open_archive(fixture_zip(tmp_path,sample_count=4096))
-        assert ui.file_values.count()==24
+        assert ui.file_values.count()==73
         assert ui.file_spec.count()==43
 
         win.open_archive(bin_path)
         qt_app.processEvents()
         assert isinstance(win.session,DirectBinSession)
-        assert ui.file_channels.count()==1
+        assert ui.file_channels.count()==10
         assert ui.file_values.count()==1
         assert ui.file_spec.count()==1
         assert "Нет подтверждённых" in ui.file_values.item(0).text()

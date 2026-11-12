@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
-    QHeaderView, QSpinBox, QSlider,
+    QHeaderView, QSpinBox, QSlider, QLineEdit, QFileDialog,
     QTableWidgetItem, QListWidgetItem, QStyle, QVBoxLayout, QWidget,
 )
 
@@ -25,6 +25,13 @@ from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_file_workbench import source_file_workbench
+from ..core.original_pagefile_recording import (
+    OriginalPageFileSelection,OriginalFileNameOptions,
+    export_selected_original_pagefile,ORIGINAL_SOURCE_DEFAULT_FOLDER_TEMPLATE,
+    CHANNEL_COUNT,SPEC_COUNT,VALUE_COUNT,ADC_VALUE_COUNT,BAND_VALUE_COUNT,
+    TACH_RESULT_COUNT,ORIGINAL_DFM_FILE_ADC_HEIGHT,
+)
+from ..core.original_pagestatus_source import TACH_FIELDS
 from ..core.original_view_time_source import source_view_time, source_linked_caption
 
 from ..core.original_ui_form_contract import (
@@ -128,119 +135,181 @@ def _config_page(parent: QWidget) -> QWidget:
 
 
 def _file_page(parent: QWidget, open_offline) -> QWidget:
-    page = QWidget(parent)
+    """Source DFM PageFile: 369/8/615 split, ten checks, TWO action modes.
+
+    _Unit128:0084845C, original tcFileActions index0 = 43 SPEC /
+    24+43+6 VALUES checklists; index1 = pnFileAdc 207px with three
+    checked source checkboxes and two conditional text fields.
+    Extra offline controls live OUTSIDE the original DFM widgets.
+    """
+    page=QWidget(parent)
     page.setObjectName("PageFile")
-    lay = QVBoxLayout(page)
-    lay.setContentsMargins(4, 4, 4, 4)
-    # Visible offline navigation is an additional safe action bar.
-    # Original PageFile split/tabs/list controls remain untouched.
-    shortcuts = QWidget(page)
+    lay=QVBoxLayout(page)
+    lay.setContentsMargins(4,4,4,4)
+    shortcuts=QWidget(page)
     shortcuts.setObjectName("sourceFileActionBar")
-    route = QHBoxLayout(shortcuts)
-    route.setContentsMargins(2, 2, 2, 4)
-    for name, title in (
-        ("fileGoSignal", "Временной сигнал"),
-        ("fileGoSpectrum", "Спектр"),
-        ("fileGoStatus", "Расчётные данные"),
-    ):
-        button = QPushButton(title, shortcuts)
+    route=QHBoxLayout(shortcuts)
+    route.setContentsMargins(2,2,2,4)
+    for name,title in (
+        ("fileGoSignal","Временной сигнал"),
+        ("fileGoSpectrum","Спектр"),
+        ("fileGoStatus","Расчётные данные")):
+        button=QPushButton(title,shortcuts)
         button.setObjectName(name)
         button.setEnabled(False)
-        button.setToolTip("Открыть страницу текущего проверенного файла; без приборных команд")
+        button.setToolTip("Связанный исходный канал из той же проверенной записи")
         route.addWidget(button)
+    export=QPushButton("Сохранить выбранное локально…",shortcuts)
+    export.setObjectName("pageFileExportSelectedSource")
+    export.setEnabled(False)
+    export.setToolTip(
+        "Исходные чек-листы PageFile: настоящий отбор проверенных BIN/TSXML "
+        "и измеренных VALUES/SPEC в НОВУЮ папку. НЕ команда прибору.")
+    route.addWidget(export)
     route.addStretch(1)
-    route.addWidget(QLabel("Обновление VALUES:",shortcuts))
-    file_tick=QSpinBox(shortcuts)
-    file_tick.setObjectName("fileValuesTick")
-    file_tick.setRange(1,1)
-    file_tick.setEnabled(False)
-    file_tick.setToolTip(
-        "Только проверенные тики текущего Native R6.1 ZIP. "
-        "BIN/TSXML не имеет исходных VALUES.")
-    route.addWidget(file_tick)
+    route.addWidget(QLabel("VALUES:",shortcuts))
+    tick=QSpinBox(shortcuts)
+    tick.setObjectName("fileValuesTick")
+    tick.setRange(1,1)
+    tick.setEnabled(False)
+    tick.setToolTip("Выбранный проверенный тик Native R6.1, без выдуманных AUX")
+    route.addWidget(tick)
     lay.addWidget(shortcuts)
-    source_summary = QLabel(
-        "Измерение ещё не выбрано. Откройте локальный ZIP, BIN или TSXML.", page)
-    source_summary.setObjectName("sourceFileSummary")
-    source_summary.setWordWrap(True)
-    source_summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
-    lay.addWidget(source_summary)
-    split = QSplitter(Qt.Horizontal, page)
+    summary=QLabel("Измерение не выбрано. Откройте проверенный ZIP/BIN.",page)
+    summary.setObjectName("sourceFileSummary")
+    summary.setWordWrap(True)
+    summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    lay.addWidget(summary)
+    split=QSplitter(Qt.Horizontal,page)
     split.setObjectName("splFile")
-    left = QTabWidget(split)
+    split.setHandleWidth(8)
+    left=QTabWidget(split)
     left.setObjectName("tcFileChannels")
-    channel_host = QWidget(left)
-    left_lay = QVBoxLayout(channel_host)
-    channels = QListWidget(channel_host)
+    left.tabBar().setFixedHeight(36)
+    channel_host=QWidget(left)
+    left_lay=QVBoxLayout(channel_host)
+    channels=QListWidget(channel_host)
     channels.setObjectName("cbFileChannels")
-    left_lay.addWidget(channels, 1)
-    source_open = QPushButton("Открыть локальную запись…", channel_host)
-    source_open.setObjectName("openOfflineMeasurement")
-    source_open.clicked.connect(open_offline)
-    left_lay.addWidget(source_open)
-    left.addTab(channel_host, "Каналы")
+    channels.setUniformItemSizes(True)
+    left_lay.addWidget(channels,1)
+    open_button=QPushButton("Открыть локальную запись…",channel_host)
+    open_button.setObjectName("openOfflineMeasurement")
+    open_button.clicked.connect(open_offline)
+    left_lay.addWidget(open_button)
+    left.addTab(channel_host,"Каналы · 8 АЦП + 2 TACH")
+    assert left.count()==1
 
-    right = QTabWidget(split)
+    right=QTabWidget(split)
     right.setObjectName("tcFileActions")
-    content = QWidget(right)
-    contents = QVBoxLayout(content)
-    panel = QWidget(content)
-    panel.setObjectName("pnFileAdc")
-    panel_lay = QVBoxLayout(panel)
-    for name, text in (
-        ("cbFileWriteXml", "Дополнительно XML"),
-        ("cbFileFolderPrefix", "Префикс каталога"),
-        ("cbFileMvkName", "Имя прибора"),
-    ):
-        check = QCheckBox(text, panel)
-        check.setObjectName(name)
-        check.setEnabled(False)
-        panel_lay.addWidget(check)
-    panel.setVisible(False)  # DFM pnFileAdc.Visible=False
-    contents.addWidget(panel)
-    groups = QSplitter(Qt.Horizontal, content)
-    spec_list = QListWidget(groups)
+    right.tabBar().setFixedHeight(36)
+    source_result=QWidget(right)
+    results_lay=QVBoxLayout(source_result)
+    results_lay.setContentsMargins(4,4,4,4)
+    groups=QSplitter(Qt.Horizontal,source_result)
+    groups.setObjectName("splFileValues")
+    groups.setHandleWidth(8)
+    spec_list=QListWidget(groups)
     spec_list.setObjectName("cbFileSpec")
-    values_list = QListWidget(groups)
+    spec_list.setUniformItemSizes(True)
+    values_list=QListWidget(groups)
     values_list.setObjectName("cbFileValues")
+    values_list.setUniformItemSizes(True)
     groups.addWidget(spec_list)
     groups.addWidget(values_list)
-    groups.setSizes([256, 343])
-    contents.addWidget(groups, 1)
-    right.addTab(content, "Данные")
-    # Original tcFileActions has exactly TWO tab strings. The second is an
-    # offline source audit, not a claim to have recovered a device command.
-    details = QWidget(right)
-    detail_layout = QVBoxLayout(details)
-    detail_hint = QLabel(
-        "Проверенные сведения текущей записи. SHA относится к исходному BIN; "
-        "параметры без AUX/VALUES не подменяются вычисленным FFT.", details)
-    detail_hint.setWordWrap(True)
-    detail_layout.addWidget(detail_hint)
-    metadata = QTableWidget(0, 2, details)
-    metadata.setObjectName("fileSourceMetadata")
-    metadata.setHorizontalHeaderLabels(("Источник", "Проверенное значение"))
-    metadata.setEditTriggers(QTableWidget.NoEditTriggers)
-    metadata.horizontalHeader().setSectionResizeMode(
-        0, QHeaderView.ResizeToContents)
-    metadata.horizontalHeader().setStretchLastSection(True)
-    detail_layout.addWidget(metadata, 1)
-    right.addTab(details, "Источник (офлайн)")
+    groups.setSizes([256,343])
+    results_lay.addWidget(groups,1)
+    right.addTab(source_result,"Выбор SPEC / VALUES")
+
+    source_adc=QWidget(right)
+    adc_lay=QVBoxLayout(source_adc)
+    adc_lay.setContentsMargins(4,4,4,4)
+    panel=QWidget(source_adc)
+    panel.setObjectName("pnFileAdc")
+    panel.setFixedHeight(ORIGINAL_DFM_FILE_ADC_HEIGHT)
+    def _check(name,label,x,y,w=577):
+        b=QCheckBox(label,panel)
+        b.setObjectName(name)
+        b.setGeometry(x,y,w,17)
+        b.setChecked(True)  # DFM Checked=True
+        return b
+    def _text_field(name,x,y,w=225):
+        ed=QLineEdit(panel)
+        ed.setObjectName(name)
+        ed.setGeometry(x,y,w,24)
+        return ed
+    write_xml=_check("cbFileWriteXml","Дополнительно TSXML",16,16)
+    folder_prefix=_check("cbFileFolderPrefix","Префикс каталога",16,56)
+    folder_label=QLabel("Префикс каталога:",panel)
+    folder_label.setObjectName("lbFolderPrefix")
+    folder_label.setGeometry(16,82,169,21)
+    folder_edit=_text_field("edFolderPrefix",176,79)
+    folder_edit.setText(ORIGINAL_SOURCE_DEFAULT_FOLDER_TEMPLATE)
+    folder_edit.setToolTip(
+        'Исходная строка из _Unit128: "RunUp"dd-mm-yyyy hh-nn-ss. '
+        'В локальном экспорте подставляется время операции сохранения '
+        '(не прибора). Можно ввести безопасный явный префикс.')
+    device_name=_check("cbFileMvkName","Указать имя прибора",16,120)
+    device_label=QLabel("Имя прибора:",panel)
+    device_label.setObjectName("lbFileMvkName")
+    device_label.setGeometry(16,146,169,21)
+    device_edit=_text_field("edFileMvkName",176,143)
+    device_edit.setToolTip("Локальное имя папки, не команда смены имени прибора")
+    file_prefix_label=QLabel("Префикс файла:",panel)
+    file_prefix_label.setObjectName("lbFilePrefix")
+    file_prefix_label.setGeometry(16,176,169,21)
+    file_prefix_label.hide()
+    file_prefix_edit=_text_field("edFilePrefix",176,173)
+    file_prefix_edit.hide()  # DFM Visible=False for BOTH controls
+    folder_prefix.toggled.connect(folder_edit.setEnabled)
+    device_name.toggled.connect(device_edit.setEnabled)
+    adc_lay.addWidget(panel)
+    note=QLabel(
+        "Параметры исходной панели записи АЦП. Сохраняют выбранные "
+        "данные уже существующего файла. bWriteAdc/bWriteValues исходного "
+        "TMVKThread пока НЕ управляют Native R6.1.",source_adc)
+    note.setWordWrap(True)
+    note.setObjectName("sourceFileOfflineCaptureNote")
+    adc_lay.addWidget(note)
+    adc_lay.addStretch(1)
+    right.addTab(source_adc,"Параметры записи АЦП")
+    assert right.count()==2
     split.addWidget(left)
     split.addWidget(right)
+    split.setSizes([ORIGINAL_FILE_SPLITTER_LEFT,615])
     split.setChildrenCollapsible(False)
-    split.setSizes([ORIGINAL_FILE_SPLITTER_LEFT, 615])
-    lay.addWidget(split, 1)
-    lay.addWidget(_text(page,
-        "Оригинальная структура PageFile — каналы слева, параметры экспорта "
-        "справа. Сбор исходных файлов на приборе пока отключён; "
-        "кнопка открытия работает только с локальными записями."))
-    evidence = _text(page, "Источник: измерение не выбрано")
+    lay.addWidget(split,1)
+
+    # Extra compatible offline view, not a fabricated third tcFileActions tab.
+    show_meta=QPushButton("Показать сведения об источнике",page)
+    show_meta.setObjectName("pageFileToggleSourceDetails")
+    show_meta.setCheckable(True)
+    lay.addWidget(show_meta)
+    metadata=QTableWidget(0,2,page)
+    metadata.setObjectName("fileSourceMetadata")
+    metadata.setHorizontalHeaderLabels(("Источник","Проверенное значение"))
+    metadata.setEditTriggers(QTableWidget.NoEditTriggers)
+    metadata.horizontalHeader().setSectionResizeMode(
+        0,QHeaderView.ResizeToContents)
+    metadata.horizontalHeader().setStretchLastSection(True)
+    metadata.setMaximumHeight(175)
+    metadata.setVisible(False)
+    show_meta.toggled.connect(metadata.setVisible)
+    show_meta.toggled.connect(
+        lambda checked:show_meta.setText(
+            "Скрыть сведения об источнике" if checked else
+            "Показать сведения об источнике"))
+    lay.addWidget(metadata)
+    selection_status=QLabel(
+        "Чек-листы записи: загрузите проверенное измерение",page)
+    selection_status.setObjectName("sourcePageFileSelectionState")
+    selection_status.setWordWrap(True)
+    lay.addWidget(selection_status)
+    evidence=QLabel("Источник: измерение не выбрано",page)
     evidence.setObjectName("sourceFileEvidence")
     evidence.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    evidence.setWordWrap(True)
     lay.addWidget(evidence)
     return page
-
 
 def _status_page(parent: QWidget) -> QWidget:
     """Independent DFM PageStatus: chResult 400 px, splitter 8 px, table.
@@ -395,13 +464,39 @@ class OriginalRootShell:
         self.file_metadata = self.file_page.findChild(
             QTableWidget, "fileSourceMetadata")
         self.file_tick=self.file_page.findChild(QSpinBox,"fileValuesTick")
+        self.file_record_selection=None
+        self.file_export_button=self.file_page.findChild(
+            QPushButton,"pageFileExportSelectedSource")
+        self.file_action_tabs=self.file_page.findChild(
+            QTabWidget,"tcFileActions")
+        self.file_selection_status=self.file_page.findChild(
+            QLabel,"sourcePageFileSelectionState")
+        self.file_capture_panel=self.file_page.findChild(
+            QWidget,"pnFileAdc")
+        self.file_record_flags={
+            name:self.file_page.findChild(QCheckBox,name)
+            for name in ("cbFileWriteXml","cbFileFolderPrefix","cbFileMvkName")}
+        self.file_record_names={
+            name:self.file_page.findChild(QLineEdit,name)
+            for name in ("edFolderPrefix","edFileMvkName","edFilePrefix")}
         self.file_action_buttons = {
             name:self.file_page.findChild(QPushButton,name)
             for name in ("fileGoSignal","fileGoSpectrum","fileGoStatus")}
         if (self.file_summary is None or self.file_metadata is None
-                or self.file_tick is None
+                or self.file_tick is None or self.file_export_button is None
+                or self.file_action_tabs is None or self.file_capture_panel is None
+                or any(b is None for b in self.file_record_flags.values())
+                or any(t is None for t in self.file_record_names.values())
                 or any(b is None for b in self.file_action_buttons.values())):
-            raise ValueError("Source File workbench controls not constructed")
+            raise ValueError("Source PageFile DFM controls not fully constructed")
+        assert self.file_action_tabs.count()==2
+        assert self.file_capture_panel.height()==ORIGINAL_DFM_FILE_ADC_HEIGHT
+        self.file_export_button.clicked.connect(self._export_selected_file_source)
+        for control in (self.file_channels,self.file_spec,self.file_values):
+            control.itemChanged.connect(
+                lambda item,widget=control:
+                    self._file_checked_changed(widget,item))
+
         for name,index in (("fileGoSignal",3),("fileGoSpectrum",4),
                            ("fileGoStatus",2)):
             self.file_action_buttons[name].clicked.connect(
@@ -697,89 +792,238 @@ class OriginalRootShell:
         if self.window.tick.value()!=tick:
             self.window.tick.setValue(tick)  # one authoritative Core refresh
 
-    def refresh_file_workbench(self, *, verified_status=None) -> None:
-        """Render real selected Single/DSP in the ORIGINAL PageFile controls.
+    def _file_selection_status(self):
+        if self.file_record_selection is None:
+            return "Чек-листы записи: загрузите проверенное измерение"
+        chosen=self.file_record_selection.report()
+        return (
+            "Исходный cbFileChannels: 10 флагов (8 АЦП + 2 TACH); "
+            "cbFileSpec: 43; cbFileValues: 24+43+6. "
+            f"Выбрано ADC {len(chosen['selected_adcs'])}, "
+            f"SPEC {len(chosen['selected_spec_indices'])}, "
+            f"VALUES {len(chosen['selected_value_indices'])}. "
+            "Сохранение локальное, исходный TMVKThread НЕ запускается.")
 
-        Any stale/missing original source clears the old visible file rows.
-        A standalone BIN never receives invented instrument AUX or third
-        octaves. Signal/spectrum actions route to existing real graphs.
-        """
-        table=self.file_metadata
-        table.clearContents()
-        self.file_spec.clear()
-        self.file_values.clear()
-        if self._file_flow is None or self.window.session is None:
-            self._sync_file_tick_from_model(1)
-            self.file_summary.setText(
-                "Нет выбранного измерения; откройте локальный ZIP/BIN/TSXML.")
-            table.setRowCount(0)
-            for button in self.file_action_buttons.values():
-                button.setEnabled(False)
+    def _file_checked_changed(self,widget,item):
+        """A real user toggles the ORIGINAL source check-list by its index."""
+        if (self.file_record_selection is None or self._file_flow is None
+                or self.window.session is None or
+                self.window._live_active or item is None):
             return
+        group=("channels" if widget is self.file_channels else
+               "spec" if widget is self.file_spec else
+               "values" if widget is self.file_values else None)
+        if group is None:return
+        index=item.data(Qt.UserRole+1)
+        if type(index) is not int:return
+        try:
+            flow=self.window._current_offline_flow()
+            result=self.file_record_selection.set_checked(
+                group,index,item.checkState()==Qt.Checked,flow=flow)
+            self.file_record_selection=result
+            self.file_export_button.setEnabled(
+                bool(result.checked("channels")))
+        except (ValueError,OSError,KeyError):
+            flags=getattr(self.file_record_selection,group)
+            blocked=widget.blockSignals(True)
+            try:
+                item.setCheckState(
+                    Qt.Checked if flags[index] else Qt.Unchecked)
+            finally:
+                widget.blockSignals(blocked)
+        self.file_selection_status.setText(self._file_selection_status())
+
+    @staticmethod
+    def _checked_item(text,index,checked,enabled=True):
+        item=QListWidgetItem(str(text))
+        item.setData(Qt.UserRole+1,index)
+        flags=Qt.ItemIsSelectable|Qt.ItemIsUserCheckable
+        if enabled:flags|=Qt.ItemIsEnabled
+        item.setFlags(flags)
+        item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+        item.setSizeHint(QSize(190,20))
+        return item
+
+    def _file_names_option_state(self):
+        return OriginalFileNameOptions(
+            write_tsxml=self.file_record_flags["cbFileWriteXml"].isChecked(),
+            use_folder_prefix=self.file_record_flags[
+                "cbFileFolderPrefix"].isChecked(),
+            use_custom_name=self.file_record_flags[
+                "cbFileMvkName"].isChecked(),
+            folder_prefix=self.file_record_names["edFolderPrefix"].text(),
+            custom_name=self.file_record_names["edFileMvkName"].text(),
+        )
+
+    def _export_selected_file_source(self):
+        """Real offline save. No device commands, no presumed vendor ZIP."""
+        if (self.file_record_selection is None or self._file_flow is None
+                or self.window.session is None or self.window._live_active):
+            return
+        folder=QFileDialog.getExistingDirectory(
+            self.file_page,"Куда сохранить выбранные RAW/TSXML и показатели?",
+            "")
+        if not folder:return
         try:
             flow=self.window._current_offline_flow()
             flow.require_session(self.window.session)
-            self._file_flow=flow
-            self._sync_file_tick_from_model(self.window.tick.value())
-            view=source_file_workbench(flow,verified_status=verified_status)
-            self.file_summary.setText(
-                f"АЦП{view.selected_channel} · {view.source_basename} · "
-                f"{view.sample_count} Single · {view.sample_rate_hz:g} Гц. "
-                + view.source_note)
-            table.setRowCount(len(view.metadata))
-            for row,(name,value) in enumerate(view.metadata):
-                for col,text in enumerate((name,value)):
-                    item=QTableWidgetItem(text)
-                    item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                    table.setItem(row,col,item)
-            for line in view.spectrum_rows:
-                self.file_spec.addItem(line)
-            for line in view.value_rows:
-                self.file_values.addItem(line)
-            for name,button in self.file_action_buttons.items():
-                root_index={"fileGoSignal":3,"fileGoSpectrum":4,
-                            "fileGoStatus":2}[name]
-                button.setEnabled(self.navigation.isTabEnabled(root_index))
-        except (ValueError,KeyError,OSError) as exc:
-            self._sync_file_tick_from_model(1)
-            self.file_tick.setEnabled(False)
-            table.setRowCount(0)
-            self.file_summary.setText(
-                "Данные текущего файла отклонены: " + str(exc))
-            self.file_spec.addItem("Нет подтверждённого текущего спектра")
-            self.file_values.addItem("Нет подтверждённых текущих показателей")
-            for button in self.file_action_buttons.values():
-                button.setEnabled(False)
+            result=export_selected_original_pagefile(
+                flow,self.file_record_selection,
+                self._file_names_option_state(),folder)
+        except (OSError,ValueError,KeyError,UnicodeError) as exc:
+            self.window.original_window_man.spawn_error(
+                "Локальный экспорт PageFile отклонён: "+str(exc))
+            return
+        self.file_source_evidence.setText(
+            f"Экспортировано {result['files_written']} файла(ов), "
+            f"{result['selected_result_rows']} проверенных строк в "
+            f"{result['output_folder']}; исходные BIN/TSXML НЕ изменены. "
+            "Никаких команд устройству.")
+        self.file_selection_status.setText(
+            "Локальный экспорт завершён. "+self._file_selection_status())
+        return result
+
+    def refresh_file_workbench(self, *, verified_status=None) -> None:
+        """Source 43 SPEC, 24+43+6 VALUES with real per-tick provenance.
+
+        Original check-list selections are immutable Core flags and must
+        SURVIVE changes of active ADC, tick and visible graph, but must be
+        destroyed on file change / fail-closed source rejection.
+        """
+        table=self.file_metadata
+        table.clearContents()
+        blocked_spec=self.file_spec.blockSignals(True)
+        blocked_values=self.file_values.blockSignals(True)
+        try:
+            self.file_spec.clear()
+            self.file_values.clear()
+            if self._file_flow is None or self.window.session is None:
+                self._sync_file_tick_from_model(1)
+                self.file_summary.setText(
+                    "Нет выбранного измерения; откройте ZIP/BIN/TSXML.")
+                table.setRowCount(0)
+                for button in self.file_action_buttons.values():
+                    button.setEnabled(False)
+                self.file_export_button.setEnabled(False)
+                self.file_selection_status.setText(
+                    self._file_selection_status())
+                return
+            try:
+                flow=self.window._current_offline_flow()
+                flow.require_session(self.window.session)
+                self._file_flow=flow
+                self._sync_file_tick_from_model(self.window.tick.value())
+                view=source_file_workbench(flow,verified_status=verified_status)
+                self.file_summary.setText(
+                    f"АЦП{view.selected_channel} · {view.source_basename} · "
+                    f"{view.sample_count} Single · {view.sample_rate_hz:g} Гц. "
+                    + view.source_note)
+                table.setRowCount(len(view.metadata))
+                for row,(name,value) in enumerate(view.metadata):
+                    for col,txt in enumerate((name,value)):
+                        cell=QTableWidgetItem(txt)
+                        cell.setFlags(Qt.ItemIsEnabled|Qt.ItemIsSelectable)
+                        table.setItem(row,col,cell)
+                selection=self.file_record_selection
+                if selection is not None:
+                    selection.validate(flow)
+                if view.dsp_verified_for_selection:
+                    if (len(view.spectrum_rows)!=SPEC_COUNT
+                            or len(view.value_rows)!=ADC_VALUE_COUNT):
+                        raise ValueError("Source result counts changed")
+                    for i,line in enumerate(view.spectrum_rows):
+                        checked=bool(selection and selection.spec[i])
+                        self.file_spec.addItem(
+                            self._checked_item(line,i,checked))
+                    # _Unit128 bWriteValues: first ADC24, then band43,
+                    # then source TACH list of 6 (not two synthetic RAW bins).
+                    rows=(
+                        list(view.value_rows)+
+                        [f"SPEC {line}" for line in view.spectrum_rows]+
+                        [f"{field[0]} · TACH: запись не восстановлена"
+                         for field in TACH_FIELDS]
+                    )
+                    assert len(rows)==VALUE_COUNT
+                    for i,line in enumerate(rows):
+                        enabled=i<ADC_VALUE_COUNT+BAND_VALUE_COUNT
+                        checked=bool(selection and selection.values[i])
+                        self.file_values.addItem(
+                            self._checked_item(line,i,checked,enabled))
+                else:
+                    self.file_spec.addItem(
+                        "Приборный SPEC не подтверждён; список не выбирается")
+                    self.file_values.addItem(
+                        "Нет подтверждённых приборных VALUES/AUX для этого файла")
+                for name,button in self.file_action_buttons.items():
+                    root_index={"fileGoSignal":3,"fileGoSpectrum":4,
+                                "fileGoStatus":2}[name]
+                    button.setEnabled(
+                        self.navigation.isTabEnabled(root_index))
+                self.file_export_button.setEnabled(
+                    bool(selection and selection.checked("channels")))
+                self.file_selection_status.setText(
+                    self._file_selection_status())
+            except (ValueError,KeyError,OSError) as exc:
+                self._sync_file_tick_from_model(1)
+                self.file_tick.setEnabled(False)
+                table.setRowCount(0)
+                self.file_summary.setText(
+                    "Данные текущего файла отклонены: "+str(exc))
+                self.file_spec.addItem("Нет подтверждённого текущего спектра")
+                self.file_values.addItem(
+                    "Нет подтверждённых текущих показателей")
+                self.file_export_button.setEnabled(False)
+                for button in self.file_action_buttons.values():
+                    button.setEnabled(False)
+        finally:
+            self.file_spec.blockSignals(blocked_spec)
+            self.file_values.blockSignals(blocked_values)
 
     def sync_file_session(self, session, channels, *, flow=None) -> None:
-        """Populate original PageFile strictly from the shared Core source."""
-        self._file_flow = flow
-        self.file_channels.clear()
-        self.file_spec.clear()
-        self.file_values.clear()
-        if session is None:
-            self.update_file_evidence(None)
-            self.refresh_file_workbench()
-            return
-        if flow is not None:
+        """Populate ORIGINAL ten check flags, verified ADC only, never TACH fake."""
+        self._file_flow=flow
+        self.file_record_selection=None
+        blocked=self.file_channels.blockSignals(True)
+        try:
+            self.file_channels.clear()
+            if session is None:
+                self.update_file_evidence(None)
+                self.refresh_file_workbench()
+                return
+            if flow is None:
+                raise ValueError("A checked Core flow is mandatory for PageFile")
             flow.require_session(session)
-            if tuple(channels) != flow.available_channels:
-                raise ValueError("File page channels differ from source Core")
-        sources = {ch.adc: ch for ch in getattr(session, "channel_files", ())}
-        for adc in channels:
-            entry = sources.get(adc)
-            if entry is not None:
-                label = (
-                    f"АЦП{adc}: {entry.bin_path.name} "
-                    f"({entry.sample_rate_hz} Гц)")
-            else:
-                label = f"АЦП{adc}: {session.serial}"
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, int(adc))
-            self.file_channels.addItem(item)
-        self._sync_file_selection(self.window.adc.currentIndex())
-        self.update_file_evidence(flow)
-        self.refresh_file_workbench()
+            if tuple(channels)!=flow.available_channels:
+                raise ValueError("PageFile ADC options differ from bound Core")
+            self.file_record_selection=OriginalPageFileSelection.for_flow(flow)
+            source_by_adc={ch.adc:ch for ch in getattr(session,
+                                                       "channel_files",())}
+            for i in range(CHANNEL_COUNT):
+                adc=i+1
+                if i>=8:
+                    name=f"TACH{i-7} · исходный канал без проверенного RAW"
+                    enabled=False
+                elif adc not in channels:
+                    name=f"АЦП{adc} · в исходной записи отсутствует"
+                    enabled=False
+                else:
+                    source=source_by_adc.get(adc)
+                    name=(f"АЦП{adc}: {source.bin_path.name}"
+                          if source is not None else
+                          f"АЦП{adc}: {session.serial}")
+                    enabled=True
+                item=self._checked_item(
+                    name,i,self.file_record_selection.channels[i],enabled)
+                item.setData(Qt.UserRole,adc)
+                self.file_channels.addItem(item)
+            self.file_record_names["edFileMvkName"].setText(
+                session.serial if session.serial else "")
+            self._sync_file_selection(self.window.adc.currentIndex())
+            self.update_file_evidence(flow)
+            self.refresh_file_workbench()
+        finally:
+            self.file_channels.blockSignals(blocked)
+
 
     def sync_availability(self) -> None:
         self.navigation.setTabEnabled(
