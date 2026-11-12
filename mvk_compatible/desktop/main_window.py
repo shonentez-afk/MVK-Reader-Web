@@ -3836,9 +3836,12 @@ class MainWindow(QMainWindow):
             self._spec_source_h_view=None
             self._spec_original_hscale_selected=None
             self._sync_visible_source_f_range()
-            if self._source_view_time is not None:
-                self.original_shell.refresh_source_time_context(
-                    flow,verified_status=self._pagestatus_snapshot)
+            # The source may have changed on disk (SHA mismatch).  Never
+            # re-enter source_linked_caption here: it re-reads that same
+            # rejected BIN and would escape this error handler.  Invalidate
+            # the old time, provenance caption and any source zoom instead.
+            self._source_view_time=None
+            self.original_shell.clear_source_view_time()
             self.spec_core_triplet.setText(
                 'Спектр не рассчитан: '+str(e))
             self._spec_display_contract=None
