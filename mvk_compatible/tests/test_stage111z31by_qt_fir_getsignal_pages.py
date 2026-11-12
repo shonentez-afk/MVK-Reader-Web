@@ -38,7 +38,11 @@ def test_filtered_source_adc_horizontal_time_and_cursor_from_full_fir(
         assert isinstance(full,OriginalEnvelopeCursor)
         assert full.code==20
         assert axis["series_samples"]==len(full.full_values)
-        assert axis["series_samples"]>len(w._source_wave_trace["amplitude"])
+        # This 20 ms window produces 680 filtered samples, below Qt's
+        # 4000-point visual LOD budget. In that case the graph is not
+        # decimated. The pure Core test forces 12 display points and
+        # independently proves that the cursor reads the FULL FIR series.
+        assert axis["series_samples"]>=len(w._source_wave_trace["amplitude"])
         assert axis["output_sample_rate_hz"]==32768
         assert axis["required_input_samples"]==1412
         assert axis["series_xscale_single"]==pytest.approx(1000/32768,rel=1e-6)
