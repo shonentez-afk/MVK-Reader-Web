@@ -1574,10 +1574,12 @@ class MainWindow(QMainWindow):
         self.refresh_spec()
 
     def _idle_spectrum_cursor_label(self) -> str:
-        """Display measured gain provenance in the ORIGINAL cursor label."""
-        evidence=self._source_spectrum_gain
-        return ("Курсор: —\n"+evidence.label
-                if evidence is not None else "Курсор: —")
+        """Preserve the exact original empty-cursor label.
+
+        FRange provenance belongs to the shared pnView source context, not
+        to lbSpecHint: mouse-exit must clear ALL cursor-specific content.
+        """
+        return "Курсор: —"
 
     def _sync_visible_source_f_range(self) -> None:
         """One source-derived FRange is visible, but NOT reapplied to BIN."""
@@ -1585,6 +1587,8 @@ class MainWindow(QMainWindow):
         if evidence is None:
             self.spec_vscale_button.setToolTip(
                 "Шкала Y: текущего оригинального FRange нет")
+            self.spec_hscale_button.setToolTip(
+                "Исходный горизонтальный диапазон; нет выбранного FFT")
             return
         candidate=evidence.graph_default_vscale_candidate
         tooltip=evidence.label+(
@@ -3666,6 +3670,11 @@ class MainWindow(QMainWindow):
             self._source_spectrum_gain=source_spectrum_gain(
                 flow,d,mode=self.spec_mode.currentIndex())
             self._sync_visible_source_f_range()
+            # Show selected TSXML FRange on existing global source panel,
+            # never on original lbSpecHint or as a tenth DFM source widget.
+            if self._source_view_time is not None:
+                self.original_shell.refresh_source_time_context(
+                    flow,verified_status=self._pagestatus_snapshot)
             valid_summary=(isinstance(self._spectrum_summary,dict) and
                 self._spectrum_summary.get('source')==
                 'APP_DERIVED_GETSPECTRUM_PEAK_SUMMARY_IDR_CANDIDATE')
@@ -3827,6 +3836,9 @@ class MainWindow(QMainWindow):
             self._spec_source_h_view=None
             self._spec_original_hscale_selected=None
             self._sync_visible_source_f_range()
+            if self._source_view_time is not None:
+                self.original_shell.refresh_source_time_context(
+                    flow,verified_status=self._pagestatus_snapshot)
             self.spec_core_triplet.setText(
                 'Спектр не рассчитан: '+str(e))
             self._spec_display_contract=None
