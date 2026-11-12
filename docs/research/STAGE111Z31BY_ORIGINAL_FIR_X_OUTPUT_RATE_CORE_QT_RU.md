@@ -1,6 +1,6 @@
 # STAGE111Z31BY — исходная ось X FIR GetSignal + совместные обработчики PageAdc/PageSpectrum
 
-Дата: 2026-11-12. Поставка Core + рабочий Qt + Windows DPI150 E2E и сборка автономного EXE; **результаты CI фиксировать по исходному SHA, не по этому тексту**.
+**ПРИЁМКА 12.11.2026:** проверенный ИСПОЛНЯЕМЫЙ SHA `730227151b2c5141ec5b9141e06f57b4393d1647`, [GitHub Actions #43237131866](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43237131866) — **SUCCESS 3/3**: Linux Core 1801 PASS (91 SKIP), Windows Core 1933 PASS (7 SKIP), Windows Qt smoke 49 PASS, Qt DPI150 103 PASS; автономный Windows EXE с Go Native R6.1. [EXE artifact #13953252819](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43237131866/artifacts/13953252819) — ZIP 68 914 194 байта до 26.11.2026, [Synthetic Qt screenshot artifact #13954250774](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43237131866/artifacts/13954250774) до 19.11.2026. В процессе исправлены два обнаруженных дефекта приёмки: модальная ошибка при недоступной FIR-истории (теперь автоматический Tag switch fail-closed/nonmodal) и неверное предположение, что короткое окно 680 выходных FIR отсчётов обязано прореживаться при лимите LOD 4000. Непосредственно исходный измерительный Win32-процесс и прибор не использовались. Приватные источники не опубликованы. Документационный commit после этого SHA НЕ новый EXE.
 
 ## Доказанные правила по предоставленным оператором закрытым исходникам
 
