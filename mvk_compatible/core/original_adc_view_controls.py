@@ -21,6 +21,10 @@ import math
 import numpy as np
 
 from .offline_measurement_flow import OfflineMeasurementFlow
+from .direct_bin_session import DirectBinSession
+from .spectrum_graph_default_vscale_idr_candidate import (
+    spectrum_graph_default_vscale,
+)
 
 SOURCE="SOURCE_DERIVED_ADC_HV_GETSIGNAL_CORE_QT_STAGE111Z31BW"
 ADC_HORIZONTAL_MS=(20000,10000,5000,2000,1000,500,200,100,50,20,10,5,2,1)
@@ -145,6 +149,33 @@ def source_adc_vertical_view(flow:OfflineMeasurementFlow,trace:dict,tag:int,
             raise ValueError("No original GetSignal full-window peak")
         basis="GETSIGNAL_FULL_WINDOW_PEAK_NOT_PLOT_LOD"
     baseline=peak if peak>0 else 1.
+    baseline_origin="LOCAL_UNCALIBRATED_FULL_SIGNAL_PEAK"
+    frange=None
+    graph_default=None
+    x87_boundary_risk=False
+    # The original Single TMvkChannelStorage.FRange is set from a positive
+    # TSXML InternalChannelGain by the identified loader. Use this SAME
+    # channel-scoped static metadata as the spectrum Core. Do not apply it
+    # as physical calibration or infer it for a Native ZIP.
+    if type(flow.session) is DirectBinSession:
+        matches=[e for e in flow.session.channel_files if
+                 e.adc==flow.channel and
+                 e.bin_sha256==record["source_bin_sha256"]]
+        if len(matches)!=1:
+            raise ValueError("Source TSXML FRange from another BIN/ADC")
+        meta=matches[0].source_metadata
+        value=meta.original_f_range_single_candidate
+        if value is not None:
+            if (meta.data_type!="Single" or meta.gain_loader_branch!=
+                    "DECLARED_POSITIVE_NO_APPLY_RANGE_SOURCE_BRANCH"):
+                raise ValueError("Unsupported original loader FRange branch")
+            frange=float(value)
+            graph=spectrum_graph_default_vscale(frange,1)
+            baseline=float(graph["candidate_graph_default_vscale_single"])
+            graph_default=baseline
+            x87_boundary_risk=bool(
+                graph["original_x87_boundary_requires_runtime_reference"])
+            baseline_origin="TSXML_FRANGE_125_GRAPH_DEFAULT_STATIC_CANDIDATE"
     divisor=ADC_VERTICAL_DIVISORS[tag]
     half=float(np.float32(baseline/divisor))
     if not math.isfinite(half) or half<=0:
@@ -156,6 +187,11 @@ def source_adc_vertical_view(flow:OfflineMeasurementFlow,trace:dict,tag:int,
         "source_window_basis":basis,
         "window_peak_from_core":peak,
         "local_half_height":half,
+        "axis_baseline_origin":baseline_origin,
+        "source_f_range_single":frange,
+        "graph_default_vscale_candidate":graph_default,
+        "native_x87_boundary_risk":x87_boundary_risk,
+        "original_graph_default_vscale_numeric_runtime_verified":False,
         "y_min":-half,"y_max":half,
         "unit":"условн. ед. BIN" if flow.direct_bin else "расч. ед.",
         "original_graph_default_vscale_verified":False,

@@ -80,6 +80,10 @@ from ..core.original_adc_view_controls import (
     source_adc_horizontal_view,validate_source_adc_horizontal_trace,
     source_adc_vertical_view,
 )
+from ..core.original_adc_source_axes import (
+    source_adc_grapher_x,source_adc_grapher_cursor,
+    source_adc_spectrum_joint_receipt,
+)
 from ..core.original_spectrum_x32dbg_reference import (
     load_original_spectrum_reference, SOURCE as ORIGINAL_X32DBG_REF_SOURCE)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
@@ -127,6 +131,8 @@ class MainWindow(QMainWindow):
         self._source_wave_trace=None
         self._source_wave_trace_digest=None
         self._source_wave_scale_model=None
+        self._source_wave_xaxes_model=None
+        self._source_adc_spectrum_joint_receipt=None
         self._full_spectrum=None
         self._spectrum_summary=None
         self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
@@ -504,10 +510,14 @@ class MainWindow(QMainWindow):
         ])
         self.wave_order=QComboBox()
         self.wave_order.addItems([
-            'Архив: хронология BIN','Буфер GetSignal: обратный порядок',
+            'Исследование: хронология BIN',
+            'Исследование: обратный буфер GetSignal',
+            'Оригинальный TQGrapher · обратный буфер, X справа налево',
         ])
+        self.wave_order.setCurrentIndex(2)
         self.wave_order.setToolTip(
-            'GetSignal buffer reversed; original TQGrapher pixel parity TODO')
+            'Source _Unit128: ScrLeft=H, ScrWidth=-H, XScale 1000/Fs '
+            'или 1/Fs; GetSignal без FIR. Win32 GDI ещё не сверен.')
 
         self.wave_envelope_load=QPushButton(
             'Открыть локальный оригинальный IDP для огибающей…')
@@ -2437,6 +2447,8 @@ class MainWindow(QMainWindow):
         self._source_wave_trace_digest=None
         self._source_wave_scale_model=None
         self._source_wave_hscale_model=None
+        self._source_wave_xaxes_model=None
+        self._source_adc_spectrum_joint_receipt=None
         self._source_spectrum_readout=None
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
@@ -2524,6 +2536,12 @@ class MainWindow(QMainWindow):
         self._source_view_time=None
         self._source_wave_readout=None
         self._source_envelope_cursor=None
+        self._source_wave_trace=None
+        self._source_wave_trace_digest=None
+        self._source_wave_scale_model=None
+        self._source_wave_hscale_model=None
+        self._source_wave_xaxes_model=None
+        self._source_adc_spectrum_joint_receipt=None
         self._source_spectrum_readout=None
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
@@ -2895,6 +2913,8 @@ class MainWindow(QMainWindow):
             code=int(self.wave_envelope_code.currentData() or 0)
             duration=self.wave_seconds.value()
             self._source_wave_hscale_model=None
+            self._source_wave_xaxes_model=None
+            self._source_adc_spectrum_joint_receipt=None
             if (self._wave_hscale_tag is not None and
                     abs(duration-ADC_HORIZONTAL_MS[self._wave_hscale_tag]/1000.)<1e-8):
                 # Delphi _Unit128:00847F0D uses integer fs*menu_ms//1000,
@@ -2944,20 +2964,39 @@ class MainWindow(QMainWindow):
             if self._source_wave_hscale_model is not None and not code:
                 self._source_wave_hscale_model=validate_source_adc_horizontal_trace(
                     flow,d,self._source_wave_hscale_model)
+            if (self.wave_order.currentIndex()==2 and not code
+                    and self._wave_hscale_tag is not None
+                    and self._source_wave_hscale_model is not None):
+                self._source_wave_xaxes_model=source_adc_grapher_x(
+                    flow,d,self._wave_hscale_tag)
             self.wave_plot.clear()
             self.wave_plot.setLabel(
                 'left', 'Отсчёты BIN (калибровка не проверена)'
                 if isinstance(self.session,DirectBinSession)
                 else 'Ускорение, м/с²')
-            self.wave_plot.plot(d['time_s'],d['amplitude'],pen=pg.mkPen('#176c92'))
+            axes=self._source_wave_xaxes_model
+            self.wave_plot.getViewBox().invertX(axes is not None)
+            if axes is not None:
+                self.wave_plot.setLabel('bottom',axes['axis_unit'])
+                self.wave_plot.plot(axes['plot_x_single'],d['amplitude'],
+                                    pen=pg.mkPen('#000000'))
+            else:
+                self.wave_plot.plot(d['time_s'],d['amplitude'],
+                                    pen=pg.mkPen('#176c92'))
             self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
             self.wave_line.setVisible(False)  # Source cursor drawn only after mouse X changes
             self.wave_plot.addItem(self.wave_line)
             self._wave_hover_window=None
             self._wave_mouse_pixel=None
             self.wave_plot.enableAutoRange()
+            if self._source_wave_xaxes_model is not None:
+                self.wave_plot.setXRange(
+                    0.,self._source_wave_xaxes_model['axis_max'],padding=0)
             self._apply_original_wave_vscale()
-            self.wave_hint.setText(descr)
+            self.wave_hint.setText(
+                descr + (' · исходный ScrWidth<0, XScale Single; '
+                         'Win32 Canvas не аттестован'
+                         if self._source_wave_xaxes_model is not None else ''))
             source_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
                          else 'расч. ед.')
             self.wave_mean_primary.setText(
@@ -2977,6 +3016,15 @@ class MainWindow(QMainWindow):
                 self.wave_mean_primary.setToolTip(
                     "FIR огибающая — отдельный расчётный кандидат; "
                     "оригинальная временная шкала/численный паритет ещё не приняты.")
+            # One real BIN/ADC source drives both Core results after a
+            # change of ADC H/V, without rerunning or modifying the FFT.
+            if self._full_spectrum is not None:
+                try:
+                    self._source_adc_spectrum_joint_receipt=(
+                        source_adc_spectrum_joint_receipt(
+                            flow,d,self._full_spectrum))
+                except (ValueError,TypeError,KeyError):
+                    self._source_adc_spectrum_joint_receipt=None
             self._wave_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
             self._source_wave_readout=None
@@ -2985,6 +3033,8 @@ class MainWindow(QMainWindow):
             self._source_wave_trace_digest=None
             self._source_wave_scale_model=None
             self._source_wave_hscale_model=None
+            self._source_wave_xaxes_model=None
+            self._source_adc_spectrum_joint_receipt=None
             # Original invalidates both series when EnvelopeCode changes.
             self.wave_plot.clear()
             self.wave_line=None
@@ -4102,8 +4152,25 @@ class MainWindow(QMainWindow):
                     flow,d,n_fft,archive_end=self.spec_last.isChecked(),
                     view_time=clock)
                 self._source_spectrum_readout=readout
+                self._source_adc_spectrum_joint_receipt=None
+                if self._source_wave_trace is not None:
+                    try:
+                        self._source_adc_spectrum_joint_receipt=(
+                            source_adc_spectrum_joint_receipt(
+                                flow,self._source_wave_trace,d))
+                    except (ValueError,KeyError,TypeError):
+                        # A separately invalid wave must never blank a valid FFT.
+                        self._source_adc_spectrum_joint_receipt=None
                 frame=('Конец архива' if readout['archive_end_selected']
                        else 'Окно '+clock.label)
+                if self._source_adc_spectrum_joint_receipt is not None:
+                    pair=self._source_adc_spectrum_joint_receipt
+                    self.spec_core_triplet.setToolTip(
+                        f"PageAdc + PageSpectrum: один АЦП{pair['adc']}, "
+                        f"BIN SHA {pair['source_bin_sha256'][:12]}…, "
+                        f"N/2={pair['full_spectrum_bins']}; "
+                        "данные из Core (не графические пиксели). "
+                        "Разные окна допускаются. original Win32 runtime не сверен.")
                 self.spec_core_triplet.setText(
                     f"FFT {n_fft}, Δf={readout['df_hz']:.7g} Гц · "
                     f"СКЗ {readout['spectrum_rms_from_core']:.6g} · "
@@ -4344,12 +4411,23 @@ class MainWindow(QMainWindow):
                 # every mouse event; retain the exact existing sample candidate.
                 self._wave_hover_window=prepare_waveform_hover_window(
                     self.session,self._ch(),start_s=self._effective_source_start_seconds(),
-                    seconds=self.wave_seconds.value(),
+                    seconds=(self._source_wave_hscale_model['getsignal_seconds']
+                             if self._source_wave_hscale_model is not None
+                             else self.wave_seconds.value()),
                     mode=('ac' if self.wave_mode.currentIndex()==0 else 'acdc'),
                     display_order=self._signal_order())
             x=float(vb.mapSceneToView(pos).x())
-            p=self._wave_hover_window.pick(x)
-            self.wave_line.setPos(p['time_s'])
+            axes=self._source_wave_xaxes_model
+            if axes is not None:
+                original=source_adc_grapher_cursor(
+                    self._current_offline_flow(),self._source_wave_trace,axes,x)
+                p=self._wave_hover_window.pick(original['source_archive_time_s'])
+                if p['index']!=original['original_bin_sample_index']:
+                    raise ValueError('Source GetSignal mouse index differs from BIN')
+                self.wave_line.setPos(original['plot_x'])
+            else:
+                p=self._wave_hover_window.pick(x)
+                self.wave_line.setPos(p['time_s'])
             self.wave_line.setVisible(True)
             self.wave_cursor_primary.setText(
                 f"{p['original_sample_time_s']:.5g} с\n"
@@ -4361,7 +4439,9 @@ class MainWindow(QMainWindow):
                 f" · физическое время BIN {p['original_sample_time_s']:.8f} c"
                 f" · {p['value_m_s2']:.8g} "
                 f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'} · {p['mode']}"
-                ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены')
+                + (' · исходная обратная ось GetSignal; GDI пиксели не аттестованы'
+                   if self._source_wave_xaxes_model is not None else
+                   ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены'))
         except (OSError,KeyError,TypeError,ValueError,RuntimeError) as exc:
             self.statusBar().showMessage(str(exc))
 
