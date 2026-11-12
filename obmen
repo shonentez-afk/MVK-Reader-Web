@@ -1,16 +1,4 @@
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+node --version
+npm --version
 
-Invoke-WebRequest `
-  -Uri "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1" `
-  -OutFile "$env:TEMP\hermes-install.ps1"
-
-notepad "$env:TEMP\hermes-install.ps1"
-
-
-& "$env:TEMP\hermes-install.ps1"
-
-
-hermes --version
-
-
-Test-Path "$env:LOCALAPPDATA\hermes\bin\hermes.exe"
+npm install -g @qwen-code/qwen-code@latest
