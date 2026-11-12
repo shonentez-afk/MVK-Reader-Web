@@ -1032,6 +1032,10 @@ class MainWindow(QMainWindow):
         self.spec_mean_primary.setWordWrap(True)
         self.spec_mean_primary.setFixedHeight(106)
         self.spec_mean_primary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # One original lbSpecMean control shows both the proven Core values
+        # and their spectral window. Do NOT insert a tenth source widget,
+        # narrow the 162px buttons or change TQGrapher PaintBox pixels.
+        self.spec_core_triplet=self.spec_mean_primary
         self.spec_advanced_button=QPushButton('Исследование ▸')
         self.spec_advanced_button.setObjectName('openSpectrumResearch')
         self.spec_advanced_button.setFixedHeight(29)
@@ -1193,19 +1197,6 @@ class MainWindow(QMainWindow):
         stack.setContentsMargins(0,0,0,0)
         stack.setSpacing(0)
         stack.addWidget(self.spec_source_canvas)
-        # All displayed values come from the SAME complete Core spectrum
-        # as the visible plot. Keep it outside pnSpecGraph: changing the
-        # PaintBox height breaks original TCo2Draw raster/cursor geometry.
-        self.spec_core_triplet=QLabel(
-            'Нет подтверждённого расчётного спектра',tools)
-        self.spec_core_triplet.setObjectName('sourceSpecCoreTriplet')
-        self.spec_core_triplet.setFixedHeight(42)
-        self.spec_core_triplet.setWordWrap(True)
-        self.spec_core_triplet.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.spec_core_triplet.setToolTip(
-            'СКЗ/пик берутся из того же полного FFT N/2 в Core, '
-            'а не из нарисованной Qt-кривой. Delphi runtime не принят.')
-        stack.addWidget(self.spec_core_triplet)
         self.spec_advanced_button.setFixedHeight(26)
         stack.addWidget(self.spec_advanced_button)
         stack.addStretch()
@@ -1359,6 +1350,19 @@ class MainWindow(QMainWindow):
         else:
             unit='расч. ед.'
             calibration='Расчётный спектр · оригинал не аттестован'
+        linked=self._source_spectrum_readout
+        if linked is not None:
+            frame=('конец архива' if linked['archive_end_selected']
+                   else f"время {linked['view_time_start_s']:.4g} с")
+            self.spec_mean_primary.setText(
+                f"СКЗ: {linked['spectrum_rms_from_core']:.5g} {unit}\n"
+                f"Пик: {linked['peak_frequency_hz_from_core']:.5g} Гц\n"
+                f"Ампл.: {linked['peak_y_from_core']:.5g} {unit}\n"
+                f"FFT {linked['n_fft']}, Δf {linked['df_hz']:.5g} Гц")
+            self.spec_mean_primary.setToolTip(
+                f"{frame}; {calibration}; единственный Core-расчёт, "
+                "не из графических пикселей; Delphi parity не доказан.")
+            return
         self.spec_mean_primary.setText(
             f'СКЗ спектра: {fields[0]} {unit}\n'
             f'Пик спектра: {fields[1]} Гц\n'
