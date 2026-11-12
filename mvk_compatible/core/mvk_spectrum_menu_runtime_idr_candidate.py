@@ -64,6 +64,42 @@ def source_vertical_selection(mode:int,tag:int,*,
                 original_canvas_runtime_parity_verified=False)
 
 
+
+def source_vertical_mode_transition(mode:int, *,
+                                    former_tag:int=0,
+                                    former_position:int=0)->dict:
+    """Rebuild VCL Y scrollbar during original mSpecType1Click mode switch.
+
+    Original _Unit128 0084C514..C597 replaces the V menu for the new mode,
+    then invokes mSpecVScale1Click with default Tag 0 for dB or Tag 3 for
+    physical spectra. The *old* bSpecVScale Tag/scroll Position are captured,
+    but the old Tag is looked up in the NEW mode's DB/physical table.
+    _Unit128 0084C71A..C73A anchors the bottom:
+        min(full-newPage, oldPosition+oldPage-newPage).
+    On 0 dB/Tag0 -> physical/Tag3 this is 99900, NOT 0. At position=0
+    the original graph would show the very top of the physical axis.
+    Missing old Tag on first initialization is DFM default Tag=0, Pos=0.
+    """
+    selected_tag=source_default_vertical_tag(mode)
+    if (isinstance(former_tag,bool) or not isinstance(former_tag,numbers.Integral)
+            or isinstance(former_position,bool)
+            or not isinstance(former_position,numbers.Integral)
+            or not 0<=int(former_position)<=PHYSICAL_FULL):
+        raise ValueError('Original previous V Tag/Position must be bounded integers')
+    old=source_vertical_page(mode,int(former_tag))
+    chosen=source_vertical_page(mode,selected_tag)
+    maxpos=chosen["full"]-chosen["page"]
+    newpos=max(0,min(maxpos,
+        int(former_position)+old["page"]-chosen["page"]))
+    scroll=NativeScrollContract(
+        "vertical",chosen["full"],chosen["page"],newpos)
+    return dict(chosen,**scroll.view(),
+                source_menu_tag=selected_tag,
+                source_previous_menu_tag=int(former_tag),
+                source_previous_scroll_position=int(former_position),
+                source_mode_transition_bottom_anchored=True,
+                original_canvas_runtime_parity_verified=False)
+
 def fft_source_archive_gate(n_fft:int,total_samples:int,*,
                             end_sample:int|None=None,
                             required_input_samples:int|None=None)->dict:

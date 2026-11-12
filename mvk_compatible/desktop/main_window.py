@@ -31,6 +31,7 @@ from ..core.original_spectrum_view_binding import (
     source_spectrum_gain,source_spectrum_h_view,SOURCE_GAIN,
 )
 from ..core.original_visible_spectrum_pair import compare_visible_original_spectrum_pair
+from ..core.original_spectrum_vertical_view import source_spectrum_vertical_view
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
@@ -59,7 +60,8 @@ from ..core.mvk_original_scale_tables_idr_candidate import (
     original_v_scale_options,original_fft_size_options,validate_source_h_scale)
 from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
     RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
-    source_vertical_selection,fft_source_archive_gate)
+    source_vertical_selection,source_vertical_mode_transition,
+    fft_source_archive_gate)
 from ..core.tqgrapher_spectrum_scroll_idr_candidate import source_spectrum_v_scr
 from ..core.spectrum_graph_default_vscale_idr_candidate import (
     spectrum_graph_default_vscale)
@@ -1412,14 +1414,19 @@ class MainWindow(QMainWindow):
         next_tag=1 if old is None else min(5,old+1)
         self._select_original_vscale(next_tag)
 
-    def _select_original_vscale(self,tag:int):
-        """Actual source menu page and scroll position, Qt Y origin candidate."""
+    def _select_original_vscale(self,tag:int,*,source_choice=None):
+        """One source VCL Page/Position from Core to the real Qt Y-axis."""
         if self._full_spectrum is None:return
         mode=self.spec_mode.currentIndex()
         old=self._spec_vertical_model if self._spec_original_vscale_mode==mode else None
-        choice=source_vertical_selection(mode,tag,
-            old_tag=old['source_menu_tag'] if old else None,
-            old_position=old['delphi_position'] if old else 0)
+        choice=(source_choice if source_choice is not None else
+            source_vertical_selection(mode,tag,
+                old_tag=old['source_menu_tag'] if old else None,
+                old_position=old['delphi_position'] if old else 0))
+        if (choice['source_menu_tag']!=tag or choice['full']!=
+                source_vertical_page(mode,tag)['full'] or choice['page']!=
+                source_vertical_page(mode,tag)['page']):
+            raise ValueError('Неверный исходный Tag/Page вертикальной шкалы')
         self._spec_original_vscale_mode=mode
         self._spec_original_vscale_tag=tag
         self._apply_original_vscale_candidate(choice)
@@ -1436,7 +1443,7 @@ class MainWindow(QMainWindow):
             'Delphi Canvas/FFT численно не принят')
 
     def _apply_original_vscale_candidate(self,choice:dict):
-        """Source VCL range/position; Y baseline from Qt data, NOT Delphi."""
+        """Core source-window Y or explicitly labelled uncalibrated Qt fallback."""
         mode=self.spec_mode.currentIndex()
         db=mode==0
         default_scale=max(1e-8,self._spec_data_ymax-self._spec_data_ymin)
@@ -1452,7 +1459,19 @@ class MainWindow(QMainWindow):
         source_tsxml=(not exact_operator_frange
                       and source_evidence is not None
                       and source_evidence.frange_single is not None)
+        source_scope=None
+        if (not exact_operator_frange and self.session is not None
+                and not self._live_active and self._full_spectrum is not None):
+            # Same SHA-backed OfflineMeasurementFlow as GetSpectrum, not an
+            # independent UI guess. Source dB has fixed -Page..0 even without
+            # FRange. Linear V derives absolute Y from TSXML or paired Y only.
+            source_scope=source_spectrum_vertical_view(
+                self._current_offline_flow(),self._full_spectrum,choice,
+                source_gain=source_evidence,
+                visible_pair=self._visible_original_pair)
         f_range=(reference.f_range if exact_operator_frange else
+                 source_scope['f_range_single'] if (source_scope is not None and
+                     source_scope['f_range_single'] is not None) else
                  source_evidence.frange_single if source_tsxml else
                  self.spec_f_range.value())
         local_native=source_spectrum_v_scr(
@@ -1466,10 +1485,14 @@ class MainWindow(QMainWindow):
             graph_default_v_scale=source_scale['candidate_graph_default_vscale_single'],
             scale_divisor=divisor)
         self._spec_graph_default_vscale_candidate=source_scale
-        self._update_original_vscale_candidate_label(source_scale)
+        self._update_original_vscale_candidate_label(
+            source_scale,source_view=source_scope)
         if exact_operator_frange:
             native=native_with_source_frange_candidate
             offset=0.
+        elif source_scope is not None:
+            native=source_scope['native_scroll']
+            offset=0.  # Original ScrBottom is absolute, NEVER Qt local min/max.
         else:
             native=local_native
             # Original dB ScrBottom is relative to zero; for uncalibrated
@@ -1485,9 +1508,16 @@ class MainWindow(QMainWindow):
             'source_menu_values_verified':True,
             'source_graph_default_vscale_formula_candidate':source_scale,
             'source_y_scroll_using_manual_frange_candidate':native_with_source_frange_candidate,
+            'source_bound_vertical_view':source_scope,
+            'source_vertical_f_range_origin':(
+                source_scope['f_range_origin'] if source_scope else None),
+            'same_window_original_y_pair_used':bool(
+                source_scope and source_scope['operator_original_y_pair_matched']),
             'local_manual_frange_is_original_verified':False,
-            'qt_original_graph_default_vscale_estimated':not exact_operator_frange,
-            'qt_y_baseline_from_local_spectrum':not exact_operator_frange,
+            'qt_original_graph_default_vscale_estimated':not (
+                exact_operator_frange or source_scope is not None),
+            'qt_y_baseline_from_local_spectrum':not (
+                exact_operator_frange or source_scope is not None),
             'operator_reference_f_range_word_used':exact_operator_frange,
             'source_tsxml_f_range_static_candidate_used':source_tsxml,
             'original_physical_calibration_verified':False,
@@ -1502,14 +1532,27 @@ class MainWindow(QMainWindow):
         bar.blockSignals(False)
         self.spec_plot.getViewBox().setYRange(lower,upper,padding=0)
 
-    def _update_original_vscale_candidate_label(self,candidate:dict):
-        """Separate original initial CW from actual runtime CW and Qt Y."""
+    def _update_original_vscale_candidate_label(self,candidate:dict,*,source_view=None):
+        """Separate current bound Y-axis source from unknown Win32 Canvas/x87."""
         warning=(
             ' · На границе x87 результат Python требует аппаратной сверки'
             if candidate['original_x87_boundary_requires_runtime_reference']
             else '')
         evidence=self._source_spectrum_gain
         source_scope=(
+            ('Y: совпавший Power/Y с исходным SHA окна; '
+             'Win32 Canvas/x87 НЕ приняты')
+            if (source_view is not None and
+                source_view['operator_original_y_pair_matched']) else
+            ('Y: абсолютная шкала по текущему TSXML FRange; '
+             'калибровка и Win32 НЕ проверены')
+            if (source_view is not None and
+                source_view['source_tsxml_static_gain_used']) else
+            ('Y: исходные -Page..0 дБ без подстановки FRange; '
+             'Canvas и Delphi runtime не сверены')
+            if (source_view is not None and
+                source_view['f_range_origin'] ==
+                   'ORIGINAL_DB_FIXED_RANGE_INDEPENDENT_OF_FRANGE') else
             'Single FRange взят из проверенного x32dbg JSON; '
             'оригинальное x87/Canvas ЕЩЁ НЕ СВЕРЕНЫ'
             if self._spectrum_reference is not None
@@ -1849,6 +1892,15 @@ class MainWindow(QMainWindow):
             self._sync_fft_menu_availability()
 
     def _change_spectrum_mode(self,*_):
+        # _Unit128 0084C514 rebuilds the new-mode V menu, then applies the
+        # old Tag/Position to the NEW mode's page before selecting default.
+        former_tag=(self._spec_original_vscale_tag if
+                    self._spec_original_vscale_tag is not None else 0)
+        former_position=(self._spec_vertical_model['delphi_position'] if
+                         self._spec_vertical_model is not None else 0)
+        choice=source_vertical_mode_transition(
+            self.spec_mode.currentIndex(),former_tag=former_tag,
+            former_position=former_position)
         self.spec_avg.setCurrentIndex(0 if self.spec_mode.currentIndex()==0 else 1)
         self._spec_original_vscale_tag=None
         self._spec_original_vscale_mode=None
@@ -1857,9 +1909,8 @@ class MainWindow(QMainWindow):
         self._rebuild_original_vscale_menu()
         self.refresh_spec()
         if self._full_spectrum is not None:
-            # Original mSpecType1Click source Tag reset: 0 for dB, 3 for other.
             self._select_original_vscale(
-                source_default_vertical_tag(self.spec_mode.currentIndex()))
+                choice['source_menu_tag'],source_choice=choice)
 
     @staticmethod
     def _zoom_bar(layout,inc,dec):
@@ -2286,6 +2337,17 @@ class MainWindow(QMainWindow):
                'Экспорт Native R6.1. Приборные VALUES/AUX отдельно проверены.'))
         self.original_shell.sync_file_session(s,channels,flow=flow)
         self.refresh_all()
+        if (self._full_spectrum is not None
+                and self._spec_original_vscale_tag is None
+                and self._source_spectrum_gain is not None
+                and self._source_spectrum_gain.frange_single is not None):
+            # New offline source, original bSpecVScale starts at DFM Tag0.
+            # Use original mode-transition bottom anchor, not pos=0 for
+            # physical Tag3; no assumed physical calibration is applied.
+            choice=source_vertical_mode_transition(
+                self.spec_mode.currentIndex(),former_tag=0,former_position=0)
+            self._select_original_vscale(
+                choice['source_menu_tag'],source_choice=choice)
         self.statusBar().showMessage(
             ('Открыт локальный BIN/TSXML Single; калибровка и приборный DSP НЕ подтверждены · '
              if direct else 'Открыт проверенный ZIP Native R6.1 · ')
@@ -3295,6 +3357,16 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage('Исходная пара не принята; график не изменён')
             return None
         self._visible_original_pair=report
+        if report['paired_numeric_pass']:
+            # Same-window full Float32 Y now carries an original FRange word;
+            # project it into the REAL PageSpectrum Y-axis without rerun FFT.
+            current=self._spec_vertical_model
+            choice=(current if current is not None else
+                source_vertical_mode_transition(
+                    self.spec_mode.currentIndex(),former_tag=0,
+                    former_position=0))
+            self._select_original_vscale(
+                choice['source_menu_tag'],source_choice=choice)
         n=report['full_y_bins']
         caption=(
             f"Y экрана: {report['visible_y_matching_bins']}/{n} Float32, "
