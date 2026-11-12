@@ -30,6 +30,7 @@ from ..core.original_view_time_source import (
 from ..core.original_spectrum_view_binding import (
     source_spectrum_gain,source_spectrum_h_view,SOURCE_GAIN,
 )
+from ..core.original_visible_spectrum_pair import compare_visible_original_spectrum_pair
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
         self._full_spectrum=None
         self._spectrum_summary=None
         self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
+        self._visible_original_pair=None  # current SHA-bound visible Power/Y comparison
         self._spectrum_reference_saved=None
         self._spec_source_grid_applied=False
         self._spec_source_grid_apply_busy=False
@@ -1099,6 +1101,20 @@ class MainWindow(QMainWindow):
         self.spec_reference_restore_button.clicked.connect(
             self.restore_archive_spectrum_after_reference)
         research_stack.addWidget(self.spec_reference_restore_button)
+        # Comparison is in the research dock, never inside original DFM nine widgets.
+        self.spec_pair_button=QPushButton('Сверить этот спектр с оригиналом…')
+        self.spec_pair_button.setObjectName('compareCurrentVisibleSpectrumWithOriginal')
+        self.spec_pair_button.setToolTip(
+            'Сравнить именно текущий полный Y: BIN SHA, АЦП, окно, Tag, '
+            'FFT N, FRange Single и исходный x32dbg Power/Y. Без приборных команд.')
+        self.spec_pair_button.setEnabled(False)
+        self.spec_pair_button.clicked.connect(self.compare_visible_original_same_window)
+        research_stack.addWidget(self.spec_pair_button)
+        self.spec_pair_status=QLabel('Не проводилась: текущий спектр не сравнен с оригиналом')
+        self.spec_pair_status.setObjectName('currentVisibleSpectrumOriginalParityStatus')
+        self.spec_pair_status.setWordWrap(True)
+        self.spec_pair_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        research_stack.addWidget(self.spec_pair_status)
         self.spec_source_grid_checkbox=QCheckBox(
             'Сетка TQGrapher 10×10 · исследовательская')
         self.spec_source_grid_checkbox.setObjectName(
@@ -1875,6 +1891,7 @@ class MainWindow(QMainWindow):
             self.original_shell.sync_availability()
 
     def _begin_live_capture(self):
+        self._reset_visible_original_pair()
         """Preview is a separate, explicitly unverified mode, never a ZIP session."""
         if self._live_active:
             return
@@ -2208,6 +2225,7 @@ class MainWindow(QMainWindow):
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
+        self._reset_visible_original_pair()
         # Do not let a previous visual-only x32dbg snapshot leak into a newly
         # selected archive's data, cursor, Copy or Save.
         self._leave_original_spectrum_reference()
@@ -2284,6 +2302,7 @@ class MainWindow(QMainWindow):
                 'Нельзя закрывать просмотр во время активной записи Native R6.1')
             return
         self._leave_original_spectrum_reference()
+        self._reset_visible_original_pair()
         self._clear_archive_source_projection()
         self.session=None
         self._offline_flow=None
@@ -3234,6 +3253,64 @@ class MainWindow(QMainWindow):
             'Это не ручной FRange гипотезы архива ниже; '
             'Power/Y подтверждены по SHA и всем Float32.')
 
+    def _reset_visible_original_pair(self):
+        """Invalidate stale parity if BIN/ADC/Tag/FFT/window changes."""
+        self._visible_original_pair=None
+        self.spec_pair_status.setText(
+            'Не проводилась: текущий спектр не сравнен с оригиналом')
+        self.spec_pair_button.setEnabled(False)
+
+    def compare_visible_original_same_window(self):
+        """Read-only original Power/Y pairing of the ACTUAL spectrum on screen."""
+        if (self._live_active or self._spectrum_reference is not None
+                or self.session is None or self._full_spectrum is None):
+            self.statusBar().showMessage(
+                'Сверка доступна только для вычисленного offline спектра')
+            return None
+        if self._full_spectrum.get('fft_backend')!='idr_float32':
+            self.spec_pair_status.setText(
+                'ОТКАЗ: нужен исходный Float32 FFT вместо NumPy')
+            return None
+        manifest,_=QFileDialog.getOpenFileName(
+            self,'Оригинальный x32dbg Power/Y manifest','','JSON (*.json)')
+        if not manifest:return None
+        claim,_=QFileDialog.getOpenFileName(
+            self,'Свидетельство того же RAW Float32 окна','','JSON (*.json)')
+        if not claim:return None
+        code=(int(self.spec_envelope_code.currentData() or 0)
+              if self.spec_envelope_button.isChecked() else 0)
+        idp=None
+        if code:
+            idp,_=QFileDialog.getOpenFileName(
+                self,'Локальный исходный профиль FIR','','IDP (*.idp)')
+            if not idp:return None
+        try:
+            report=compare_visible_original_spectrum_pair(
+                self._current_offline_flow(),self._full_spectrum,
+                manifest,claim,envelope_code=code,original_idp=idp)
+        except (OSError,ValueError,KeyError,TypeError,OverflowError,RuntimeError) as exc:
+            self._reset_visible_original_pair()
+            self.spec_pair_button.setEnabled(True)
+            self.spec_pair_status.setText('ОТКАЗ: '+str(exc)[:220])
+            self.statusBar().showMessage('Исходная пара не принята; график не изменён')
+            return None
+        self._visible_original_pair=report
+        n=report['full_y_bins']
+        caption=(
+            f"Y экрана: {report['visible_y_matching_bins']}/{n} Float32, "
+            f"до {report['maximum_visible_float32_ulp_difference']} ULP; "
+            f"пересчёт: {report['recomputed_y_matching_bins']}/{n}. "
+            + ('ЧИСЛЕННАЯ ПАРА PASS' if report['paired_numeric_pass']
+               else 'НЕСОВПАДЕНИЕ — НЕ PASS')
+            + '; Win32/Canvas НЕ аттестованы')
+        self.spec_pair_status.setText(caption)
+        self.spec_pair_status.setToolTip(
+            'SHA окна '+report['source_window_sha256']+
+            '; FRange Single 0x'+report['original_f_range_float32_hex']+
+            '; original same-call provenance требует независимой проверки.')
+        self.statusBar().showMessage(caption)
+        return report
+
     def choose_original_spectrum_reference(self):
         """User explicitly selects local reference JSON; never open a device."""
         if self._live_active:
@@ -3602,6 +3679,7 @@ class MainWindow(QMainWindow):
         return 'idr_float32' if self.spec_backend.currentIndex()==0 else 'numpy'
 
     def refresh_spec(self,*_):
+        self._reset_visible_original_pair()
         # A normal refresh explicitly RETURNS from a visual-only original Y
         # snapshot to the selected local archive and its calculated FFT.
         self._leave_original_spectrum_reference()
@@ -3820,6 +3898,9 @@ class MainWindow(QMainWindow):
                     old_position=previous['delphi_position'] if previous else 0)
                 self._apply_original_vscale_candidate(restored)
             # Final source X/Y view has been applied.
+            self.spec_pair_button.setEnabled(
+                self._full_spectrum.get('fft_backend')=='idr_float32'
+                and self._spectrum_reference is None)
             self._sync_archive_source_projection()
             self._spectrum_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
