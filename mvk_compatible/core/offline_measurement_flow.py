@@ -193,10 +193,19 @@ class OfflineMeasurementFlow:
             points, display_order)
 
     def envelope(self, code: int, start_s: float, seconds: float,
-                 profile, *, display_order: str = "chronological") -> dict:
+                 profile, *, display_order: str = "chronological",
+                 points: int = 4000) -> dict:
+        """One verified FIR/ADC, with independent visual LOD size.
+
+        The user-visible plot may reduce to points samples but the
+        original ADCGrapher cursor consumes the same FULL post-FIR
+        float32 array, never the LOD. This parameter changes only the
+        display density, not filter calculations or source timing.
+        """
+        checked_points = _integer("FIR display points", points, 2, 100_000)
         return self.session.envelope(
             self.channel, code, start_s, seconds, profile,
-            display_order=display_order)
+            display_order=display_order, points=checked_points)
 
     def spectrum(self, n_fft: int = 65536, mode: int = 1,
                  start_s: float | None = None, max_hz: float = 10000.,
