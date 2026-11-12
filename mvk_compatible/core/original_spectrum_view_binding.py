@@ -118,10 +118,23 @@ def _checked_spectrum(flow: OfflineMeasurementFlow,spectrum: dict) -> tuple[dict
         raise ValueError("Source spectrum must preserve ALL N/2 FFT bins")
     df=float(spectrum.get("df_hz",float("nan")))
     fs=float(record["sample_rate_hz"])
+    # GetSpectrum after FIR uses the REAL decimated output sample rate.
+    # Checking it against raw BIN Fs falsely rejects an existing, valid
+    # envelope FFT and previously opened a modal error in the Qt form.
+    # The result still belongs to the same source BIN/ADC/selected flow.
+    if spectrum.get("source")=="APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE":
+        fs_fft=float(spectrum.get("output_sample_rate_hz",float("nan")))
+        if (not math.isfinite(fs_fft) or fs_fft<=0
+                or fs_fft>fs
+                or spectrum.get("pre_fir_unreversed_float32_sha256") is None
+                or not spectrum.get("full_fft_bins",False)):
+            raise ValueError("FIR spectrum requires validated output Fs/history")
+    else:
+        fs_fft=fs
     if not (math.isfinite(df) and df>0 and
-            math.isclose(df,fs/n,rel_tol=2e-6,abs_tol=1e-8)):
-        raise ValueError("FFT resolution differs from checked source Fs")
-    contract=spectrum_display_contract(n,fs)
+            math.isclose(df,fs_fft/n,rel_tol=2e-6,abs_tol=1e-8)):
+        raise ValueError("FFT resolution differs from its actual processing Fs")
+    contract=spectrum_display_contract(n,fs_fft)
     if contract["grapher_series_bins"] > n//2:
         raise ValueError("TQGRSeries exceeds full FFT")
     return record,n,fs,contract
