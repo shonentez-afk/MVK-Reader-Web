@@ -4740,6 +4740,20 @@ class MainWindow(QMainWindow):
                     'SPEC-FREQ · локальная запись текущего GetSpectrum (не Win32 codepage)',
                     proposed,'SPEC-FREQ CSV (*.csv)')
                 if not target:return
+                # Backward-compatible explicit research Save As retains
+                # the existing synthetic workflow and DOES NOT impersonate
+                # the original SPEC-FREQ daily file. The original handler
+                # only accepts its exact source file name and writes to
+                # edLibraryPath when that folder is selected.
+                from pathlib import Path
+                if not Path(target).name.startswith('SPEC-FREQ-'):
+                    report=append_research_summary_csv(
+                        target,self._spectrum_summary,
+                        uncalibrated=False)
+                    self.statusBar().showMessage(
+                        f"Исследовательский CSV: {Path(target).name} · "
+                        "это НЕ исходный bSpecSaveValue/Win32 заголовок")
+                    return report
             report=append_source_spec_freq_csv(
                 action,flow,target,spectrum=self._full_spectrum)
             self.statusBar().showMessage(
@@ -4750,8 +4764,12 @@ class MainWindow(QMainWindow):
                 "(UTF-8 кандидат, Delphi codepage не аттестован)")
             return report
         except (OSError,UnicodeError,KeyError,TypeError,ValueError) as exc:
-            QMessageBox.warning(self,'Исходная операция Save Spectrum отклонена',
-                                str(exc))
+            self.statusBar().showMessage('bSpecSaveValue отклонён: '+str(exc))
+            # The original TWindowManForm message is non-modal here;
+            # rejecting an unsafe file must not block the offline preview,
+            # test harness or live operator session.
+            self.original_window_man.spawn_error(
+                'Исходная операция Save Spectrum отклонена: '+str(exc))
     def compare_fft(self):
         if not self.session:return
         try:
