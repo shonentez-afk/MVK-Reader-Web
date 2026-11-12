@@ -127,3 +127,40 @@ def test_source_envelope_tag_switch_on_spectrum_refreshes_hidden_adc_and_fft(
     finally:
         w.close()
         qt_app.processEvents()
+
+
+def test_insufficient_fir_history_from_either_page_never_opens_modal(
+        qt_app,tmp_path,monkeypatch):
+    """Invalid Code/short archive invalidates Core UI, never deadlocks Qt."""
+    from ..desktop.main_window import MainWindow
+    source=fixture_zip(tmp_path,sample_count=4096)
+    w=MainWindow()
+    w.show()
+    qt_app.processEvents()
+    try:
+        w.open_archive(source)
+        w.set_envelope_profile(fake_profile(i=1.,q=.4))
+        # The user should not be forced to dismiss a modal dialog while
+        # another original page owns the focus; get the actual failed state.
+        def forbidden_modal(_):
+            raise AssertionError("Automatic EnvelopeCode refresh opened a modal")
+        monkeypatch.setattr(w,"_error",forbidden_modal)
+        w.original_root_tabs.setCurrentIndex(4) # visible PageSpectrum
+        w.spec_envelope_code.setCurrentIndex(31)
+        qt_app.processEvents()
+        assert w.wave_envelope_code.currentData()==31
+        assert w._source_wave_trace is None
+        assert w._source_envelope_cursor is None
+        assert w._source_wave_xaxes_model is None
+        assert "FIR/GetSignal недоступен" in w.statusBar().currentMessage()
+        assert w._full_spectrum is not None  # plain FFT is independent
+        # Changing source ADC code while PageSpectrum is in front uses
+        # the same nonmodal fail-closed state, but never mutates source BIN.
+        w.wave_envelope_code.setCurrentIndex(30)
+        qt_app.processEvents()
+        assert w.spec_envelope_code.currentData()==30
+        assert w._source_wave_trace is None
+        assert w._full_spectrum is not None
+    finally:
+        w.close()
+        qt_app.processEvents()

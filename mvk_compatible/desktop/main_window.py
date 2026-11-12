@@ -711,7 +711,9 @@ class MainWindow(QMainWindow):
         self._sync_original_envelope_menu_tag(self.wave_envelope_code)
         self._sync_wave_primary_labels()
         self._wave_envelope_dirty=True
-        self.refresh_wave()
+        # An unavailable FIR history invalidates the calculated view but
+        # must not display a modal QMessageBox from a Tag change.
+        self.refresh_wave(quiet=True)
         if self.spec_envelope_button.isChecked():
             self._spectrum_envelope_dirty=True
             if self.spec_envelope_code.currentData()==0:
@@ -1993,9 +1995,10 @@ class MainWindow(QMainWindow):
         self._sync_wave_primary_labels()
         self._wave_envelope_dirty=True
         if self.session is not None and not self._live_active:
-            # Original 0084B2C8 refreshes both TQGrapher pages, not merely
-            # the currently visible diagnostic tab.
-            self.refresh_wave()
+            # Source handler refreshes hidden PageAdc as well. The
+            # nonmodal path is essential when a newly selected FIR Code
+            # lacks history and an active PageSpectrum must fail closed.
+            self.refresh_wave(quiet=True)
         code=int(self.spec_envelope_code.currentData() or 0)
         if code==0 and self.spec_envelope_button.isChecked():
             # Original Tag=0 invalidates the active FIR immediately.
@@ -2913,7 +2916,7 @@ class MainWindow(QMainWindow):
     def _signal_order(self):
         return 'chronological' if self.wave_order.currentIndex()==0 else 'getsignal_buffer'
 
-    def refresh_wave(self,*_):
+    def refresh_wave(self,*_,quiet=False):
         if self._live_active:
             self._render_live_wave()
             return
@@ -3070,7 +3073,14 @@ class MainWindow(QMainWindow):
             self._wave_hover_window=None
             self.wave_hint.setText('Нет действительного сигнала: '+str(e))
             self.wave_mean_primary.setText('Сигнал не рассчитан')
-            self._error(e)
+            self.wave_cursor_primary.setText('Курсор: —')
+            if quiet:
+                # Never block the offscreen UI or user while changing
+                # source EnvelopeCode and recomputing hidden pages.
+                self.statusBar().showMessage(
+                    'FIR/GetSignal недоступен для выбранного окна: '+str(e))
+            else:
+                self._error(e)
 
 
 
