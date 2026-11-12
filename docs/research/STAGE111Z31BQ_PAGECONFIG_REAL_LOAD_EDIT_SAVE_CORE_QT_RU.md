@@ -1,5 +1,8 @@
 # Stage111Z31BQ — реальное восстановление PageConfig: Load / Edit / Save
 
+**ПРИЁМКА:** исходный SHA `1d07f18272ed74643c44e7949a31fb591a779859`, [GitHub Actions #43177032123](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43177032123) — **3/3 SUCCESS** (Linux Core, Windows Core+Qt/DPI150, one-file Windows EXE Native R6.1). [EXE #13924757748](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43177032123/artifacts/13924757748) до 26.11.2026, [synthetic Qt #13924309197](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43177032123/artifacts/13924309197) до 19.11.2026. Подтверждена локальная Load/Edit/Save/reload, не аппаратная запись и не исходная Delphi Win32 абсолютная совместимость. Тесты используют подлинные IDP FmtChar вместо старых условных D/F.
+
+
 ## Приоритет
 
 После Stage BM–BO пользователь потребовал прекратить отдельные сравнения и перейти к реальному восстановлению оригинальных окон и команд. Этот пакет расширяет рабочую функциональность PageConfig и второй оригинальной формы mvkeditform; ни одна новая функция сравнения спектра не добавляется.
