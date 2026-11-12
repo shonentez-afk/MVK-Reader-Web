@@ -1,14 +1,16 @@
-Get-Command hermes -All -ErrorAction SilentlyContinue
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-Test-Path "$env:USERPROFILE\.hermes"
+Invoke-WebRequest `
+  -Uri "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1" `
+  -OutFile "$env:TEMP\hermes-install.ps1"
 
-Get-ChildItem "$env:USERPROFILE\.local\bin" `
-    -ErrorAction SilentlyContinue
-
-
-
-irm https://hermes-agent.nousresearch.com/install.ps1 |
-    iex
+notepad "$env:TEMP\hermes-install.ps1"
 
 
+& "$env:TEMP\hermes-install.ps1"
 
+
+hermes --version
+
+
+Test-Path "$env:LOCALAPPDATA\hermes\bin\hermes.exe"
