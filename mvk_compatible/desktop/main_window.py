@@ -2579,7 +2579,11 @@ class MainWindow(QMainWindow):
                     f" · локальное СКЗ: {d['rms_m_s2']:.7g} {units}"
                     f" · удалённое DC: {d['removed_mean_m_s2']:.7g} {units}"
                     " · паритет TQGrapher НЕ доказан")
-            verified_wave=source_wave_readout(flow,d,time)
+            # Only plain GetSignal is covered by the source wave readout.
+            # Envelope FIR has a different output history/rate contract:
+            # never pretend its downsampled output is the source raw window.
+            verified_wave=(
+                None if code else source_wave_readout(flow,d,time))
             self._source_wave_readout=verified_wave
             self.wave_plot.clear()
             self.wave_plot.setLabel(
@@ -2597,17 +2601,22 @@ class MainWindow(QMainWindow):
             source_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
                          else 'расч. ед.')
             self.wave_mean_primary.setText(
-                f'СКЗ сигнала: {verified_wave["rms_from_core"]:.5g} {source_unit}\n'
+                f'СКЗ сигнала: {(verified_wave["rms_from_core"] if verified_wave is not None else d["rms_m_s2"]):.5g} {source_unit}\n'
                 + ('Калибровка НЕ подтверждена'
                    if isinstance(self.session,DirectBinSession)
                    else 'Локальный расчёт · оригинал не аттестован'))
             self.wave_cursor_primary.setText('Курсор: —')
             self._sync_wave_primary_labels()
-            self.wave_mean_primary.setToolTip(
-                f"GetSignal: {verified_wave['signal_samples']} исходных "
-                f"отсчётов, АЦП{verified_wave['adc']}, SHA "
-                f"{verified_wave['source_bin_sha256'][:12]}…; "
-                "данные взяты из Core, не из прореженного графика.")
+            if verified_wave is not None:
+                self.wave_mean_primary.setToolTip(
+                    f"GetSignal: {verified_wave['signal_samples']} исходных "
+                    f"отсчётов, АЦП{verified_wave['adc']}, SHA "
+                    f"{verified_wave['source_bin_sha256'][:12]}…; "
+                    "данные взяты из Core, не из прореженного графика.")
+            else:
+                self.wave_mean_primary.setToolTip(
+                    "FIR огибающая — отдельный расчётный кандидат; "
+                    "оригинальная временная шкала/численный паритет ещё не приняты.")
             self._wave_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
             self._source_wave_readout=None
