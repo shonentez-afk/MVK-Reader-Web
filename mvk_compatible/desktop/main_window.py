@@ -1355,12 +1355,13 @@ class MainWindow(QMainWindow):
             frame=('конец архива' if linked['archive_end_selected']
                    else f"время {linked['view_time_start_s']:.4g} с")
             self.spec_mean_primary.setText(
-                f"СКЗ: {linked['spectrum_rms_from_core']:.5g} {unit}\n"
-                f"Пик: {linked['peak_frequency_hz_from_core']:.5g} Гц\n"
-                f"Ампл.: {linked['peak_y_from_core']:.5g} {unit}\n"
-                f"FFT {linked['n_fft']}, Δf {linked['df_hz']:.5g} Гц")
+                f"СКЗ спектра: {linked['spectrum_rms_from_core']:.5g} {unit}\n"
+                f"Пик спектра: {linked['peak_frequency_hz_from_core']:.5g} Гц\n"
+                f"Амплитуда: {linked['peak_y_from_core']:.5g} {unit}\n"
+                + calibration)
             self.spec_mean_primary.setToolTip(
-                f"{frame}; {calibration}; единственный Core-расчёт, "
+                f"FFT N={linked['n_fft']}, Δf={linked['df_hz']:.7g} Гц; "
+                f"{frame}; значения из того же полного Core FFT, "
                 "не из графических пикселей; Delphi parity не доказан.")
             return
         self.spec_mean_primary.setText(
