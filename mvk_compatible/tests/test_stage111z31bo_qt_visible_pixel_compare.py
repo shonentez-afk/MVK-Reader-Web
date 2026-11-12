@@ -107,7 +107,9 @@ def test_compare_exact_current_original_bitmap_from_research_dock_and_invalidate
         win._sync_source_tqgrapher_grid_candidate()
         assert win._visible_original_pixel_report is None
         assert "ещё не сравнивался" in win.spec_original_pixel_status.text()
-        assert win.spec_original_pixel_diff_preview.pixmap() is None
+        # PySide6 returns a NULL QPixmap after QLabel.clear(), not None.
+        cleared=win.spec_original_pixel_diff_preview.pixmap()
+        assert cleared is None or cleared.isNull()
         win.spec_reference_restore_button.click()
         qt_app.processEvents()
         assert not win.spec_original_pixel_compare_button.isEnabled()
