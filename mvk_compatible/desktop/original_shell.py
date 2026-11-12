@@ -26,6 +26,9 @@ from .original_calibration_ui import build_original_calibration_page, OriginalCa
 from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
+from ..core.original_status_workbench import (
+    ORIGINAL_STATUS_GRIDS,source_status_projection,export_verified_status_csv,
+)
 from ..core.original_file_workbench import source_file_workbench
 from ..core.original_pagefile_recording import (
     OriginalPageFileSelection,OriginalFileNameOptions,
@@ -314,48 +317,81 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     return page
 
 def _status_page(parent: QWidget) -> QWidget:
-    """Independent DFM PageStatus: chResult 400 px, splitter 8 px, table.
+    """Original 15-mode PageStatus with FOUR real TStringGrid identities.
 
-    Runtime dispatch retains all fifteen audited tcStatus source modes.
-    Chart bars are drawn ONLY when the proven source data supplies all
-    43 bands. A BIN+TSXML archive never receives invented AUX/DSP values.
+    _Unit128:0084761A/008476B7/0084779C/008479FD/00847D58
+    maps modes to tabStatus/tabAlarmResult/tabAllResult/tabResult,
+    plus source chResult 43 bars only for ADC modes 5..12.
+    Runtime tcStatus 15 modes; DFM design-time tab count 2.
     """
-    page = QWidget(parent)
+    page=QWidget(parent)
     page.setObjectName("PageStatus")
-    layout = QVBoxLayout(page)
-    layout.setContentsMargins(4, 4, 4, 4)
-    tabs = QTabBar(page)
+    layout=QVBoxLayout(page)
+    layout.setContentsMargins(4,4,4,4)
+    tabs=QTabBar(page)
     tabs.setObjectName("tcStatus")
     tabs.setExpanding(False)
     tabs.setUsesScrollButtons(True)
+    tabs.setFixedHeight(36)
     for caption in MODE_NAMES:
         tabs.addTab(caption)
-    tabs.setFixedHeight(36)
     layout.addWidget(tabs)
-    split = QSplitter(Qt.Horizontal, page)
+    split=QSplitter(Qt.Horizontal,page)
     split.setObjectName("splResult")
     split.setHandleWidth(ORIGINAL_STATUS_SPLITTER[2])
-    plot = pg.PlotWidget(split)
+    plot=pg.PlotWidget(split)
     plot.setObjectName("chResult")
-    plot.setMinimumWidth(320)  # Original splResult.MinSize=320
+    plot.setMinimumWidth(320)
     plot.setBackground("w")
     plot.setMenuEnabled(False)
-    plot.getPlotItem().setLabel("bottom", "Полоса, индекс")
-    plot.getPlotItem().setLabel("left", "СКЗ")
-    table = _readonly_grid("tabStatus", split)
+    plot.setMouseEnabled(x=False,y=False)
+    plot.getPlotItem().setLabel("bottom","Полоса, индекс")
+    plot.getPlotItem().setLabel("left","СКЗ (только источник)")
+    plot.getPlotItem().setXRange(-0.5,42.5,padding=0)
+    table_host=QStackedWidget(split)
+    table_host.setObjectName("OriginalPageStatusGrids")
+    grids={}
+    for name in ORIGINAL_STATUS_GRIDS:
+        grid=_readonly_grid(name,table_host)
+        grid.verticalHeader().setDefaultSectionSize(20)
+        grid.setAlternatingRowColors(True)
+        grid.horizontalHeader().setStretchLastSection(True)
+        table_host.addWidget(grid)
+        grids[name]=grid
     split.addWidget(plot)
-    split.addWidget(table)
+    split.addWidget(table_host)
     split.setChildrenCollapsible(False)
-    split.setSizes([ORIGINAL_STATUS_CHART[2], 580])
-    layout.addWidget(split, 1)
-    note = _text(page, "")
+    split.setSizes([ORIGINAL_STATUS_CHART[2],580])
+    layout.addWidget(split,1)
+
+    readout=QLabel("Спектральный курсор: нет исходных полос",page)
+    readout.setObjectName("sourceStatusBandReadout")
+    readout.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    layout.addWidget(readout)
+    bottom=QHBoxLayout()
+    export=QPushButton("Локально сохранить исходную таблицу CSV…",page)
+    export.setObjectName("localPageStatusExportVerifiedCsv")
+    export.setEnabled(False)
+    export.setToolTip(
+        "Дополнительная офлайн-команда для проверенных Native VALUES/AUX. "
+        "В оригинальном DFM bStatusSave не существует; никаких команд прибору.")
+    bottom.addWidget(export)
+    bottom.addStretch(1)
+    note=QLabel("",page)
     note.setObjectName("sourceStatusNote")
-    layout.addWidget(note)
-    page.mode_tabs = tabs
-    page.source_grid = table
-    page.source_plot = plot
-    page.source_splitter = split
-    page.source_note = note
+    note.setWordWrap(True)
+    note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    bottom.addWidget(note,2)
+    layout.addLayout(bottom)
+    page.mode_tabs=tabs
+    page.source_grids=grids
+    page.source_grid=grids["tabStatus"]  # original mode0 compatibility
+    page.source_grid_stack=table_host
+    page.source_plot=plot
+    page.source_splitter=split
+    page.source_note=note
+    page.source_cursor=readout
+    page.source_export=export
     return page
 
 
@@ -406,6 +442,11 @@ class OriginalRootShell:
         self.status_page = self.stack.widget(4)
         self.status_tabs = self.status_page.mode_tabs
         self.status_table = self.status_page.source_grid
+        self.status_grids = self.status_page.source_grids
+        self.status_grid_stack = self.status_page.source_grid_stack
+        self.status_cursor = self.status_page.source_cursor
+        self.status_export = self.status_page.source_export
+        self._source_status_projection = None
         self.status_plot = self.status_page.source_plot
         self.status_splitter = self.status_page.source_splitter
         self.status_note = self.status_page.source_note
@@ -463,6 +504,9 @@ class OriginalRootShell:
         window.tick.valueChanged.connect(self._sync_file_tick_from_model)
         self.status_tabs.currentChanged.connect(
             window.original_status_mode.setCurrentIndex)
+        self.status_plot.scene().sigMouseMoved.connect(
+            self._status_chart_moved)
+        self.status_export.clicked.connect(self._export_selected_status)
         self.file_channels.currentItemChanged.connect(self._file_channel_chosen)
         window.adc.currentIndexChanged.connect(self._sync_file_selection)
         layout.insertWidget(1, self.navigation)
@@ -646,39 +690,119 @@ class OriginalRootShell:
         self._remember_view_action('select_page',PAGES[expected])
 
     def refresh_status(self) -> None:
-        """Render an original-source StatusTable without inventing device DSP."""
-        index = self.window.original_status_mode.currentIndex()
-        if index >= 0:
-            self._remember_view_action('select_status_tab',index)
+        """Four original source TStringGrid widgets, one selected view mode.
+
+        Current Native ZIP tick and ADC are revalidated through the SAME
+        OfflineMeasurementFlow as PageFile/ADC/Spectrum. Direct BIN shows
+        UNKNOWN, never an invented system status, alarm, RPM or power.
+        """
+        index=self.window.original_status_mode.currentIndex()
+        if index<0 or index>=len(MODE_NAMES):
+            index=0
+        self._remember_view_action("select_status_tab",index)
         self.status_tabs.blockSignals(True)
-        try:
-            self.status_tabs.setCurrentIndex(index)
-        finally:
-            self.status_tabs.blockSignals(False)
-        model = source_pagestatus_table(
-            index, getattr(self.window, "_pagestatus_snapshot", None))
-        table = self.status_table
-        table.clearContents()
-        table.setRowCount(len(model.rows))
-        table.setColumnCount(len(model.headers))
-        table.setHorizontalHeaderLabels(list(model.headers))
-        for row, values in enumerate(model.rows):
-            for col, value in enumerate(values):
-                table.setItem(row, col, QTableWidgetItem(str(value)))
-        self.status_note.setText(model.note)
-        self.status_plot.clear()
-        # Delphi chResult TBarSeries is source-backed only for original
-        # 43-band modes. Never display synthetic bars for BIN/TSXML.
-        if model.bands_for_plot is not None:
-            values = list(model.bands_for_plot)
-            self.status_plot.addItem(pg.BarGraphItem(
-                x=list(range(43)), height=values,
-                width=1.0, brush="#147b91"))
-            self.status_plot.setXRange(-0.5, 42.5, padding=0)
-            self.status_plot.enableAutoRange(axis="y")
-            self.status_plot.setVisible(True)
+        try:self.status_tabs.setCurrentIndex(index)
+        finally:self.status_tabs.blockSignals(False)
+        flow=None
+        error=None
+        if self.window.session is not None and not self.window._live_active:
+            try:
+                flow=self.window._current_offline_flow()
+                flow.require_session(self.window.session)
+                result=source_status_projection(index,flow)
+            except (ValueError,OSError,KeyError,RuntimeError) as exc:
+                error=str(exc)
+                result=source_status_projection(index,None)
         else:
-            self.status_plot.setVisible(False)
+            result=source_status_projection(index,None)
+        self._source_status_projection=result
+        name=result.table_name
+        # The original 4 TStringGrid objects have distinct identities and
+        # visibility. Keep inactive grids empty to block stale AUX/VALUES.
+        for key,grid in self.status_grids.items():
+            grid.clearContents()
+            if key!=name:grid.setRowCount(0)
+        grid=self.status_grids[name]
+        self.status_table=grid       # backwards-compatible current grid
+        grid.setRowCount(len(result.model.rows))
+        grid.setColumnCount(len(result.model.headers))
+        grid.setHorizontalHeaderLabels(list(result.model.headers))
+        for row,values in enumerate(result.model.rows):
+            for col,value in enumerate(values):
+                cell=QTableWidgetItem(str(value))
+                cell.setFlags(Qt.ItemIsEnabled|Qt.ItemIsSelectable)
+                grid.setItem(row,col,cell)
+        self.status_grid_stack.setCurrentWidget(grid)
+        self.status_note.setText(
+            ("Источник отклонён: "+error+" · " if error else "")+
+            result.model.note)
+        self.status_plot.clear()
+        verified_chart=result.chart_visible and error is None
+        if verified_chart:
+            values=list(result.model.bands_for_plot)
+            self.status_plot.addItem(pg.BarGraphItem(
+                x=list(range(43)),height=values,width=1.0,
+                brush="#147b91"))
+            self.status_plot.setXRange(-0.5,42.5,padding=0)
+            self.status_plot.enableAutoRange(axis="y")
+        self.status_plot.setVisible(bool(verified_chart))
+        self.status_splitter.setHandleWidth(
+            ORIGINAL_STATUS_SPLITTER[2] if verified_chart else 0)
+        if verified_chart:
+            self.status_splitter.setSizes([ORIGINAL_STATUS_CHART[2],580])
+        self.status_cursor.setText(
+            "Подведите курсор к исходной полосе (43 номинальных частоты)"
+            if verified_chart else
+            "Нет подтверждённого источника спектра для текущего режима")
+        self.status_export.setEnabled(
+            bool(error is None and flow is not None
+                 and not flow.direct_bin))
+
+    def _status_chart_moved(self,scene_pos) -> None:
+        """Source _Unit128:0084AA20 TChartAxis.CalcPosPoint → ROUND → 0..42."""
+        source=self._source_status_projection
+        if source is None or not source.chart_visible:
+            return
+        try:
+            box=self.status_plot.getPlotItem().vb
+            if not box.sceneBoundingRect().contains(scene_pos):
+                return
+            x=box.mapSceneToView(scene_pos).x()
+            index=int(round(x))
+            cursor=source.cursor(index)
+        except (ValueError,OverflowError,TypeError,AttributeError):
+            return
+        self.status_cursor.setText(
+            f"АЦП{cursor['adc']}: "
+            f"{cursor['nominal_hz_float32']:.6g} Гц · "
+            f"{cursor['verified_source_band_value']:.8g} м/с² "
+            "(по проверенному VALUES, без новых расчётов)")
+
+    def _export_selected_status(self) -> None:
+        if (self.window._live_active or self.window.session is None
+                or not self.status_export.isEnabled()):
+            return
+        destination,_=QFileDialog.getSaveFileName(
+            self.status_page,
+            "Локальный CSV текущей подтверждённой таблицы PageStatus",
+            f"MVK-status-mode{self.window.original_status_mode.currentIndex():02d}.csv",
+            "CSV (*.csv)")
+        if not destination:return
+        try:
+            flow=self.window._current_offline_flow()
+            flow.require_session(self.window.session)
+            record=export_verified_status_csv(
+                flow,self.window.original_status_mode.currentIndex(),destination)
+        except (ValueError,OSError,UnicodeError,KeyError,RuntimeError) as exc:
+            self.window.original_window_man.spawn_error(
+                "Экспорт PageStatus отклонён: "+str(exc))
+            return
+        self.status_note.setText(
+            f"Создан локальный CSV: {record['saved_rows']} строк, "
+            f"{record['saved_columns']} столбцов, "
+            f"SHA256 {record['sha256'][:16]}… · "
+            "не оригинальная команда прибора. "+self.status_note.text())
+        return record
 
     def _file_channel_chosen(self, item, previous=None) -> None:
         if item is None:
