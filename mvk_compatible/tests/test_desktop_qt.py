@@ -38,7 +38,10 @@ def test_desktop_three_tabs_without_server(qt_app):
     assert window.spec_precise.isChecked()
     assert window.spec_avg.count()==2
     assert window.spec_avg.currentIndex()==0
-    assert window.wave_order.count()==2
+    # Stage111Z31BX adds original reversed TQGrapher X beside two
+    # explicitly retained research presentations.
+    assert window.wave_order.count()==3
+    assert window.wave_order.currentIndex()==2
     assert window.wave_mode.itemText(0).startswith('AC ·')
     window.close()
     app.processEvents()
@@ -78,6 +81,10 @@ def test_qt_reads_synthetic_dsp_bin_fft_without_server(tmp_path,qt_app):
     assert window.spec_avg.currentIndex()==0
     assert window.wave_mode.currentIndex()==0
     assert 'GetSignal/IDR' in window.wave_hint.text()
+    # This legacy test validates RESEARCH chronology. The new original
+    # source mode is already checked independently in BX Qt E2E.
+    window.wave_order.setCurrentIndex(0)
+    window.refresh_wave()
     assert 'chronological' in window.wave_hint.text()
     window.wave_order.setCurrentIndex(1)
     window.refresh_wave()
@@ -600,6 +607,11 @@ def test_qt_stage111o_wave_mousemove_uses_cached_full_getsignal(tmp_path,qt_app)
     win.open_archive(fixture_zip(tmp_path))
     win.show()
     win.tabs.setCurrentIndex(1)
+    # The original source H=1s axis does NOT invent samples after a
+    # 4096/65536s recording. This historical arbitrary mid-screen pixel
+    # exercises the research auto-range, which remains independently usable.
+    win.wave_order.setCurrentIndex(0)
+    win.refresh_wave()
     qt_app.processEvents()
     rect=win.wave_plot.getViewBox().sceneBoundingRect()
     assert rect.width()>30
