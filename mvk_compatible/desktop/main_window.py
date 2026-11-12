@@ -1493,12 +1493,12 @@ class MainWindow(QMainWindow):
                 raise ValueError('Режим исходной огибающей требует целый sample rate')
             required=required_original_history(n_fft,int(fs),code)['input_samples']
             end=(total_samples if self.spec_last.isChecked() else
-                 round((self.wave_start.value()+self.wave_seconds.value())*fs))
+                 round((self._effective_source_start_seconds()+self.wave_seconds.value())*fs))
             return fft_source_archive_gate(
                 n_fft,total_samples,end_sample=end,
                 required_input_samples=required)
         remaining=(total_samples if self.spec_last.isChecked() else
-                   max(0,total_samples-round(self.wave_start.value()*fs)))
+                   max(0,total_samples-round(self._effective_source_start_seconds()*fs)))
         return fft_source_archive_gate(n_fft,remaining)
 
     def _sync_fft_menu_availability(self,*,samples_count=None,sample_rate=None):
@@ -2311,6 +2311,19 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 'Исходное время просмотра отклонено: '+str(exc))
 
+    def _effective_source_start_seconds(self) -> float:
+        """One sample-precise source time, not rounded legacy 3dp Qt input.
+
+        Delphi tbViewTime selects a sample index using the source Fs.
+        Rendering the visible float spinbox rounds that timestamp; using
+        the rounded version in FFT and hover would shift by one sample.
+        """
+        time=self._source_view_time
+        if (time is not None and self.session is not None
+                and not self._live_active and time.adc==self._ch()):
+            return float(time.selected_start_seconds)
+        return float(self.wave_start.value())
+
     def _sync_source_time_from_wave_start(self,flow):
         """Legacy research spinbox and visible original slider stay paired."""
         model=self.original_shell.sync_source_view_time(
@@ -2556,7 +2569,7 @@ class MainWindow(QMainWindow):
                 if self.envelope_profile is None:
                     raise ValueError('Требуются оригинальные локальные коэффициенты IDP')
                 d=flow.envelope(
-                    code,self.wave_start.value(),
+                    code,self._effective_source_start_seconds(),
                     self.wave_seconds.value(),self.envelope_profile,
                     display_order=order)
                 self.wave_plot.setLabel('bottom',
@@ -2568,7 +2581,7 @@ class MainWindow(QMainWindow):
                     f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'}"
                     " · оригинальный формат/время/курсор НЕ приняты")
             else:
-                d=flow.waveform(self.wave_start.value(),
+                d=flow.waveform(self._effective_source_start_seconds(),
                                         self.wave_seconds.value(),mode,
                                         display_order=order)
                 self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
@@ -3508,7 +3521,7 @@ class MainWindow(QMainWindow):
         for action in self._spec_hscale_actions:
             action.setChecked(False)
         try:
-            start=None if self.spec_last.isChecked() else self.wave_start.value()
+            start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
             n_fft=int(self.spec_n.currentText())
             samples,fs,_,_=flow.samples()
             self._sync_spec_lines_presentation(fs)
@@ -3527,7 +3540,7 @@ class MainWindow(QMainWindow):
                 code=int(self.spec_envelope_code.currentData() or 0)
                 # Explicit archive-end choice; original Delphi pointer parity unknown.
                 end_s=None if self.spec_last.isChecked() else (
-                    self.wave_start.value()+self.wave_seconds.value())
+                    self._effective_source_start_seconds()+self.wave_seconds.value())
                 d=flow.spectrum_envelope(code,n_fft,
                        self.envelope_profile,end_s=end_s,
                        mode=self.spec_mode.currentIndex(),
@@ -3758,7 +3771,7 @@ class MainWindow(QMainWindow):
                 # Do not re-read the complete ZIP and recompute GetSignal at
                 # every mouse event; retain the exact existing sample candidate.
                 self._wave_hover_window=prepare_waveform_hover_window(
-                    self.session,self._ch(),start_s=self.wave_start.value(),
+                    self.session,self._ch(),start_s=self._effective_source_start_seconds(),
                     seconds=self.wave_seconds.value(),
                     mode=('ac' if self.wave_mode.currentIndex()==0 else 'acdc'),
                     display_order=self._signal_order())
@@ -3918,7 +3931,7 @@ class MainWindow(QMainWindow):
         if not self.session:return
         try:
             n_fft=int(self.spec_n.currentText())
-            start=None if self.spec_last.isChecked() else self.wave_start.value()
+            start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
             result=self.session.narrowband(
                 self._ch(),self.narrow_frequency.value(),n_fft=n_fft,
                 start_s=start,get_noise_peak=self.narrow_noise.isChecked(),
@@ -4213,7 +4226,7 @@ class MainWindow(QMainWindow):
     def compare_fft(self):
         if not self.session:return
         try:
-            start=None if self.spec_last.isChecked() else self.wave_start.value()
+            start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
             d=self.session.compare_fft_backends(self._ch(),int(self.spec_n.currentText()),
                                                  self.spec_mode.currentIndex(),start,
                                                  f_range=self.spec_f_range.value())
