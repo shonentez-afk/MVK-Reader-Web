@@ -46,9 +46,12 @@ def test_visible_original_time_controls_drive_same_core_wave_and_fft(
         assert win._source_wave_readout is not None
         assert win._source_spectrum_readout is not None
         assert win._source_spectrum_readout["n_fft"]==int(win.spec_n.currentText())
-        assert "FFT" in win.spec_core_triplet.text()
-        assert "СКЗ" in win.spec_core_triplet.text()
-        assert "Пик" in win.spec_core_triplet.text()
+        assert "СКЗ спектра" in win.spec_core_triplet.text()
+        assert "Пик спектра" in win.spec_core_triplet.text()
+        assert "Амплитуда" in win.spec_core_triplet.text()
+        assert "FFT N=" in win.spec_mean_primary.toolTip()
+        assert "Δf=" in win.spec_mean_primary.toolTip()
+        assert win.spec_lines_button.text().endswith("Гц/лин")
         win.original_root_tabs.setCurrentIndex(3)
         capture_synthetic_ui_if_requested(win,qt_app,"07_linked_wave_start")
 
