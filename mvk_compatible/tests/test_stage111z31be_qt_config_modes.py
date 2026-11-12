@@ -54,8 +54,10 @@ def test_original_basic_modes_safely_render_local_file(qt_app,tmp_path):
         assert not panel.basic_table.isVisible()
         assert panel.alarm_table.rowCount()==64
         assert panel.alarm_table.item(0,3).text()==UNKNOWN
-        for name in ("bConfigSave","bConfigReset",
-                     "bConfigDownload","bConfigUpload"):
+        # Stage111Z31BQ restored the real source-shaped LOCAL bConfigSave
+        # button after a verified text load; instrument actions stay gated.
+        assert panel.page.findChild(QPushButton,"bConfigSave").isEnabled()
+        for name in ("bConfigReset","bConfigDownload","bConfigUpload"):
             assert not panel.page.findChild(QPushButton,name).isEnabled()
         with pytest.raises(ValueError):panel.set_source_mode(3)
     finally:

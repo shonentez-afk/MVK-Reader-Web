@@ -119,8 +119,9 @@ def _config_page(parent: QWidget) -> QWidget:
     lay.addWidget(basic, 1)  # original sibling, not a tcConfig tab
     basic.hide()  # Offline no verified original basic-grid dispatch.
     note=_text(page,
-        "Настройка: два исходных режима tcConfig. Нет загруженной "
-        "проверенной локальной конфигурации; команды прибору отключены.")
+        "Настройка: два оригинальных режима tcConfig и отдельный Basic. "
+        "Локальная конфигурация: Загрузить → mvkeditform → Сохранить в новый "
+        "текстовый файл. Передача/сброс прибора отключены.")
     note.setObjectName("sourceConfigEvidence")
     lay.addWidget(note)
     return page
