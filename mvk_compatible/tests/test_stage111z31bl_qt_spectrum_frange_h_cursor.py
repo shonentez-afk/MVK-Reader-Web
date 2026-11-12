@@ -52,8 +52,9 @@ def test_source_h_preset_and_real_frange_survive_fft_recompute_and_user_pan(
         assert evidence.channel==4
         assert evidence.source_bin_sha256==(
             win._current_offline_flow().source_record()["source_bin_sha256"])
-        assert "FRange TSXML 6.25" in win.spec_cursor_primary.text()
-        assert "не калибровка" in win.spec_cursor_primary.text()
+        assert "FRange TSXML 6.25" in win.original_shell.view_context.text()
+        assert "не калибровка" in win.original_shell.view_context.text()
+        assert win.spec_cursor_primary.text()=="Курсор: —"
         assert "6.25" in win.spec_vscale_button.toolTip()
         assert "НЕ подтверждена" in win.spec_mean_primary.text()
         assert not evidence.original_runtime_frange_verified
@@ -136,7 +137,7 @@ def test_source_h_preset_and_real_frange_survive_fft_recompute_and_user_pan(
         assert win._source_spectrum_gain.frange_single is None
         assert win._spec_original_hscale_selected is None
         assert win._spec_source_h_view is None
-        assert "FRange: не установлен" in win.spec_cursor_primary.text()
+        assert "FRange: не установлен" in win.original_shell.view_context.text()
         assert "6.25" not in win.spec_vscale_button.toolTip()
         win._close_session()
         qt_app.processEvents()
@@ -166,7 +167,7 @@ def test_source_gain_changes_with_selected_bin_adc_without_cross_talk(
         assert win._full_spectrum["channel"]==6
         assert win._source_spectrum_gain.channel==6
         assert win._source_spectrum_gain.frange_single==12.5
-        assert "FRange TSXML 12.5" in win.spec_cursor_primary.text()
+        assert "FRange TSXML 12.5" in win.original_shell.view_context.text()
         # Synthetic ADC4 and ADC6 contain the SAME raw sine words, thus
         # identical SHA is valid: channel identity must still be distinct.
         assert win._source_spectrum_gain.source_bin_sha256==hash4
