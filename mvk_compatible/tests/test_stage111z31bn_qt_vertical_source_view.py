@@ -59,7 +59,10 @@ def test_original_source_y_axis_uses_tsxml_gain_and_bottom_anchored_mode_switch(
         qt_app.processEvents()
         assert w._full_spectrum["mode"]==1
         assert w._spec_original_vscale_tag==3
-        assert w.spec_vscale_button.text()=="÷ 1000"
+        # Stage111Z31BZ: original _Unit128:0084B901 builds numerical
+        # captions from GraphDefaultVScale/divisor, not the literal divisor.
+        assert w.spec_vscale_button.text()=="0.01 усл."
+        assert "видимый Y" in w.spec_vscale_button.toolTip()
         assert w.spec_vscroll.value()==99900
         model=w._spec_vscroll_source_candidate
         assert model["source_tsxml_f_range_static_candidate_used"]

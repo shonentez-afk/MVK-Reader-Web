@@ -971,10 +971,16 @@ class MainWindow(QMainWindow):
         self.spec_vscale_button.setFixedHeight(41)
         self.spec_vscale_button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
         self.spec_vscale_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        self.spec_vscale_button.setPopupMode(QToolButton.MenuButtonPopup)
+        # Private mvkform.dfm: bSpecVScale Style=bsSplitButton;
+        # Unit128:0084EAF4 bAnyDropDownClick POPUPS the original
+        # popGraphVScale menu. The previous Qt main-button "cycle" silently
+        # changed Y even when no menu item had been selected.
+        # InstantPopup ensures BOTH button body and arrow open the menu.
+        self.spec_vscale_button.setPopupMode(QToolButton.InstantPopup)
         self.spec_vscale_button.setToolTip(
-            'Шесть исходных вертикальных масштабов dB/физических единиц. '
-            'Qt baseline из данных — исследовательский, реальный GraphDefaultVScale не измерен.')
+            'Открыть исходное меню вертикального масштаба. '
+            'Нажатие на саму кнопку не изменяет шкалу; только выбор '
+            'пункта меню задаёт Tag и PageSize.')
         self.spec_vscale_menu=QMenu(self.spec_vscale_button)
         self._spec_vscale_actions=[]
         self._spec_original_vscale_tag=None
@@ -983,7 +989,6 @@ class MainWindow(QMainWindow):
         self._spec_vscroll_source_candidate=None
         self._rebuild_original_vscale_menu()
         self.spec_vscale_button.setMenu(self.spec_vscale_menu)
-        self.spec_vscale_button.clicked.connect(self._cycle_original_vscale)
         stack.addWidget(self.spec_vscale_button)
 
         self.spec_hint=QLabel('Спектр ещё не открыт')
@@ -1564,11 +1569,13 @@ class MainWindow(QMainWindow):
                 lambda checked=False,tag=entry['tag']:self._select_original_vscale(tag))
             self._spec_vscale_actions.append(action)
 
-    def _cycle_original_vscale(self):
-        if self._full_spectrum is None:return
-        old=self._spec_original_vscale_tag
-        next_tag=1 if old is None else min(5,old+1)
-        self._select_original_vscale(next_tag)
+    def _show_original_vscale_menu(self):
+        """Manual popup compatibility with original bAnyDropDownClick.
+
+        The actual QToolButton InstantPopup already handles real clicks;
+        this method is only for explicit code-driven menu opening.
+        """
+        self.spec_vscale_button.showMenu()
 
     def _select_original_vscale(self,tag:int,*,source_choice=None):
         """One source VCL Page/Position from Core to the real Qt Y-axis."""
@@ -1589,23 +1596,36 @@ class MainWindow(QMainWindow):
         if hasattr(self,'original_shell'):
             self.original_shell.record_source_spectrum_vscale(
                 mode,tag,choice['delphi_position'])
-        name=original_v_scale_options(mode)[tag]['caption']
-        self.spec_vscale_button.setText(name)
-        for action in self._spec_vscale_actions:
-            action.setChecked(int(action.data())==tag)
+        # _apply_original_vscale_candidate already synchronizes the
+        # active caption and all six physical Y menu labels with the
+        # actual current SHA-bound source GraphDefaultVScale when known.
+        lo,hi=self._spec_y_visible_range
         self.statusBar().showMessage(
-            'Исходный V PageSize='+str(choice['page'])+
-            '; текущий Qt GraphDefaultVScale — исследовательский, '
-            'Delphi Canvas/FFT численно не принят')
+            f"Y {lo:.7g}…{hi:.7g} · Tag{tag}, "
+            f"делитель {choice['physical_divisor'] if mode else 'дБ'}, "
+            f"исходный PageSize={choice['page']}, "
+            f"Position={choice['delphi_position']}; "
+            "FFT не меняется, Win32 Canvas не аттестован")
 
     def _apply_original_vscale_candidate(self,choice:dict):
         """Core source-window Y or explicitly labelled uncalibrated Qt fallback."""
         mode=self.spec_mode.currentIndex()
         db=mode==0
-        default_scale=max(1e-8,self._spec_data_ymax-self._spec_data_ymin)
+        # Without source FRange the original absolute vertical scale is
+        # unknowable. The old Qt fallback used merely (maxY-minY), while
+        # original physical modes START at Tag3 (÷1000); that cropped
+        # 99.9% of the actual spectrum and made Y buttons look broken.
+        # Fit the same full-FFT peak under the original default Tag3 with
+        # a small headroom, then keep this basis STABLE for all six tags.
+        # This is explicitly research-only: never substitute for FRange.
+        local_peak=max(1e-12,abs(float(self._spec_data_ymin)),
+                       abs(float(self._spec_data_ymax)))
+        local_default_divisor=(1 if db else int(
+            source_vertical_page(
+                mode,source_default_vertical_tag(mode))['physical_divisor']))
+        default_scale=(max(1e-8,self._spec_data_ymax-self._spec_data_ymin)
+                       if db else local_peak*local_default_divisor*1.2)
         divisor=1 if db else int(choice['physical_divisor'])
-        # Archive candidate keeps its local-data baseline because its
-        # effective original FRange has NOT been independently established.
         # A separately imported operator x32dbg Power/Y reference *does*
         # carry an explicit FRange Single word, so it can use the original
         # source-derived absolute Y scroll model WITHOUT an invented offset.
@@ -1651,9 +1671,11 @@ class MainWindow(QMainWindow):
             offset=0.  # Original ScrBottom is absolute, NEVER Qt local min/max.
         else:
             native=local_native
-            # Original dB ScrBottom is relative to zero; for uncalibrated
-            # archives Qt retains an explicit data-derived research offset.
-            offset=(self._spec_data_ymax if db else self._spec_data_ymin)
+            # Unknown FRange: physical spectra are nonnegative magnitudes
+            # and the local default Tag3 should show the measured peak.
+            # Preserve the zero baseline while zooming 1->10->100.
+            # This is NOT an original physical-unit calibration.
+            offset=0.
         lower=offset+native['scr_bottom_single']
         upper=lower+native['scr_height_single']
         if not math.isfinite(lower) or not math.isfinite(upper) or upper<=lower:
@@ -1674,6 +1696,15 @@ class MainWindow(QMainWindow):
                 exact_operator_frange or source_scope is not None),
             'qt_y_baseline_from_local_spectrum':not (
                 exact_operator_frange or source_scope is not None),
+            'research_local_autofit_original_default_tag':(
+                source_default_vertical_tag(mode) if not db and
+                not exact_operator_frange and source_scope is None else None),
+            'research_local_full_peak':(
+                local_peak if not db and not exact_operator_frange
+                and source_scope is None else None),
+            'research_local_full_y_baseline':(
+                default_scale if not db and not exact_operator_frange
+                and source_scope is None else None),
             'operator_reference_f_range_word_used':exact_operator_frange,
             'source_tsxml_f_range_static_candidate_used':source_tsxml,
             'original_physical_calibration_verified':False,
@@ -1687,6 +1718,69 @@ class MainWindow(QMainWindow):
         bar.setVisible(choice['delphi_visible'])
         bar.blockSignals(False)
         self.spec_plot.getViewBox().setYRange(lower,upper,padding=0)
+        self._sync_original_spectrum_y_menu_presentation(
+            choice,lower=lower,upper=upper,
+            source_graph_default=source_scale['candidate_graph_default_vscale_single'],
+            source_bound=(exact_operator_frange or
+                (source_scope is not None and
+                 source_scope['graph_default_vscale_candidate'] is not None)))
+
+    def _sync_original_spectrum_y_menu_presentation(
+            self,choice:dict,*,lower:float,upper:float,
+            source_graph_default:float,source_bound:bool):
+        """Original menu caption is GraphDefaultVScale / divisor, not '÷1'.
+
+        _Unit128:0084B901..B958 builds the six actual localized Y
+        captions; here derived channel units are explicitly not claimed
+        without instrument calibration. dB uses the static original dB
+        values. The sixth-point control remains at its DFM geometry.
+        """
+        mode=self.spec_mode.currentIndex()
+        tag=choice['source_menu_tag']
+        labels=original_v_scale_options(mode)
+        if len(self._spec_vscale_actions)!=len(labels):
+            raise ValueError('Original VScale popup lost source menu tags')
+        source_kind=('x32dbg FRange' if self._spectrum_reference is not None else
+                     'TSXML FRange static candidate' if source_bound else
+                     'uncalibrated local fallback')
+        for opt,action in zip(labels,self._spec_vscale_actions):
+            current=int(opt['tag'])
+            if mode==0:
+                caption=opt['caption']
+            elif source_bound:
+                divisor=int(opt['physical_divisor'])
+                absolute=float(np.float32(source_graph_default/divisor))
+                if not math.isfinite(absolute) or absolute<=0:
+                    raise ValueError('Original physical Y caption overflows Single')
+                # Original uses GetDerivedUnits for this channel and mode;
+                # no physical unit is asserted for an uncalibrated BIN.
+                caption=f"{absolute:.6g} усл."
+            else:
+                caption=f"÷ {opt['physical_divisor']} (лок.)"
+            action.setText(caption)
+            action.setToolTip(
+                f"Delphi Tag{current}, "
+                + (f"диапазон {opt['db_range']} дБ" if mode==0
+                   else f"делитель {opt['physical_divisor']}, {source_kind}")
+                + "; источник не аттестован как физическая калибровка")
+            action.setChecked(current==tag)
+        self._spec_y_visible_range=(float(lower),float(upper))
+        self._spec_y_source_bound=bool(source_bound or mode==0)
+        title=self._spec_vscale_actions[tag].text()
+        self.spec_vscale_button.setText(title)
+        indicator=("дБ: исходный диапазон" if mode==0 else
+                   "Y по FRange: численная модель источника" if source_bound else
+                   "Y: локальный некалиброванный авто-масштаб; "
+                   "исходный Tag3 подгоняется под полный FFT-пик")
+        tip=(
+            f"{indicator}; видимый Y {lower:.8g}…{upper:.8g}. "
+            f"Пункт {tag+1}/6, VCL Position={choice['delphi_position']}, "
+            f"PageSize={choice['page']}, исходный scroll full={choice['full']}. "
+            "Кнопка только открывает меню; диапазон после выбора "
+            "сохраняет нижнюю границу по оригинальному VCL. "
+            "Численный Win32/GDI паритет не подтверждён.")
+        self.spec_vscale_button.setToolTip(tip)
+        self.spec_vscale_button.setStatusTip(tip)
 
     def _update_original_vscale_candidate_label(self,candidate:dict,*,source_view=None):
         """Separate current bound Y-axis source from unknown Win32 Canvas/x87."""
@@ -1896,6 +1990,11 @@ class MainWindow(QMainWindow):
             if hasattr(self,'original_shell'):
                 self.original_shell.record_source_spectrum_vscale(
                     mode,tag,choice['delphi_position'])
+            lo,hi=self._spec_y_visible_range
+            self.statusBar().showMessage(
+                f"Спектр Y {lo:.7g}…{hi:.7g}, "
+                f"VCL Position={choice['delphi_position']}; "
+                "FFT не пересчитывался")
             return
         vb=self.spec_plot.getViewBox()
         bounds=vb.viewRange()[axis]
