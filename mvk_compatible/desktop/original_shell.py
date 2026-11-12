@@ -495,7 +495,16 @@ class OriginalRootShell:
         self._source_view_time=model
         self.view_time_label.setText(model.label)
         self.view_panel.show()
-        self.refresh_source_time_context(flow)
+        # Preserve already verified VALUES provenance during source time
+        # changes. Calling with None here overwrote it with "unverified".
+        verified=getattr(self.window,"_pagestatus_snapshot",None)
+        if (verified is not None and (
+                verified.get("source")!="MVK_DSP" or
+                verified.get("serial")!=flow.session.serial or
+                verified.get("tick")!=flow.tick_index)):
+            verified=None
+        self.refresh_source_time_context(
+            flow,verified_status=verified)
         return model
 
     def refresh_source_time_context(self,flow,*,verified_status=None) -> None:
