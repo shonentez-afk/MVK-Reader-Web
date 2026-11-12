@@ -74,6 +74,12 @@ from ..core.original_adc_spectrum_actions import (
     OriginalSpectrumAction,OriginalEnvelopeCursor,
     append_source_spec_freq_csv,spectrum_source_daily_path,
 )
+from ..core.original_adc_view_controls import (
+    ADC_HORIZONTAL_MS,ADC_VERTICAL_DIVISORS,
+    original_adc_horizontal_options,original_adc_vertical_options,
+    source_adc_horizontal_view,validate_source_adc_horizontal_trace,
+    source_adc_vertical_view,
+)
 from ..core.original_spectrum_x32dbg_reference import (
     load_original_spectrum_reference, SOURCE as ORIGINAL_X32DBG_REF_SOURCE)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
@@ -118,6 +124,9 @@ class MainWindow(QMainWindow):
         self._wave_mouse_pixel=None
         self._wave_hover_window=None  # Lazy, one offline BIN read per displayed window
         self._source_envelope_cursor=None  # Original ADCGrapher full filtered series, not LOD
+        self._source_wave_trace=None
+        self._source_wave_trace_digest=None
+        self._source_wave_scale_model=None
         self._full_spectrum=None
         self._spectrum_summary=None
         self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
@@ -537,24 +546,33 @@ class MainWindow(QMainWindow):
         self.wave_hscale_button=QToolButton()
         self.wave_hscale_button.setObjectName('bAdcHScale')
         self.wave_hscale_button.setPopupMode(QToolButton.InstantPopup)
+        self._wave_hscale_tag=4  # Qt local 1s default; original Tag 0 is 20s.
+        self._source_wave_hscale_model=None
         self.wave_hscale_menu=QMenu(self.wave_hscale_button)
-        for duration in (.01,.025,.05,.1,.25,.5,1.,2.,5.,10.):
-            act=self.wave_hscale_menu.addAction(f'{duration:g} с')
-            act.setData(duration)
+        for option in original_adc_horizontal_options():
+            act=self.wave_hscale_menu.addAction(option['caption'])
+            act.setData(option['tag'])
+            act.setCheckable(True)
             act.triggered.connect(
-                lambda checked=False,seconds=duration:self._select_wave_window(seconds))
+                lambda checked=False,tag=option['tag']:
+                    self._select_original_wave_hscale(tag))
         self.wave_hscale_button.setMenu(self.wave_hscale_menu)
         left.addWidget(self.wave_hscale_button)
 
         self.wave_vscale_button=QToolButton()
         self.wave_vscale_button.setObjectName('bAdcVScale')
         self.wave_vscale_button.setPopupMode(QToolButton.InstantPopup)
-        vm=QMenu(self.wave_vscale_button)
-        vm.addAction('Авто',lambda:self.wave_plot.enableAutoRange())
-        vm.addAction('Приблизить Y',lambda:self._zoom_vertical_wave(.5))
-        vm.addAction('Отдалить Y',lambda:self._zoom_vertical_wave(2))
-        self.wave_vscale_button.setMenu(vm)
-        self.wave_vscale_button.setText('Шкала Y · авто')
+        self._wave_vscale_tag=0
+        self.wave_vscale_menu=QMenu(self.wave_vscale_button)
+        for option in original_adc_vertical_options():
+            act=self.wave_vscale_menu.addAction(option['caption'])
+            act.setData(option['tag'])
+            act.setCheckable(True)
+            act.triggered.connect(
+                lambda checked=False,tag=option['tag']:
+                    self._select_original_wave_vscale(tag))
+        self.wave_vscale_button.setMenu(self.wave_vscale_menu)
+        self.wave_vscale_button.setText('Шкала Y · 1/1 (лок.)')
         left.addWidget(self.wave_vscale_button)
 
         self.wave_cursor_primary=QLabel('Курсор: —')
@@ -691,7 +709,49 @@ class MainWindow(QMainWindow):
         self._sync_wave_primary_labels()
         self.refresh_wave()
 
+    def _select_original_wave_hscale(self,tag:int):
+        if type(tag) is not int or not 0<=tag<len(ADC_HORIZONTAL_MS):
+            raise ValueError('Source ADC H menu Tag 0..13 required')
+        self._wave_hscale_tag=tag
+        self.wave_seconds.setValue(ADC_HORIZONTAL_MS[tag]/1000.)
+        self._sync_wave_primary_labels()
+        self.refresh_wave()
+
+    def _select_original_wave_vscale(self,tag:int):
+        if type(tag) is not int or not 0<=tag<len(ADC_VERTICAL_DIVISORS):
+            raise ValueError('Source ADC V menu Tag 0..12 required')
+        self._wave_vscale_tag=tag
+        for action in self.wave_vscale_menu.actions():
+            action.setChecked(action.data()==tag)
+        if self._source_wave_trace is not None and not self._live_active:
+            self._apply_original_wave_vscale()
+        else:
+            self.wave_vscale_button.setText(f'Шкала Y · 1/{ADC_VERTICAL_DIVISORS[tag]} (лок.)')
+
+    def _apply_original_wave_vscale(self):
+        '''One SHA-bound post-GetSignal Y axis, without reading drawn LOD samples.'''
+        if (self.session is None or self._live_active
+                or self._source_wave_trace is None
+                or self._source_wave_trace_digest is None):
+            return
+        model=source_adc_vertical_view(
+            self._current_offline_flow(),self._source_wave_trace,
+            self._wave_vscale_tag,
+            bound_source_sha256=self._source_wave_trace_digest)
+        self.wave_plot.getViewBox().setYRange(
+            model['y_min'],model['y_max'],padding=0)
+        self._source_wave_scale_model=model
+        self.wave_vscale_button.setText(
+            f"Шкала Y · 1/{model['divisor']} (лок.)")
+        self.wave_vscale_button.setToolTip(
+            f"Исходный делитель V подтверждён IDP; диапазон ±"
+            f"{model['local_half_height']:.7g} {model['unit']} из полного "
+            "GetSignal/FIR, НЕ оригинальный GraphDefaultVScale и не "
+            "подтверждённая калибровка.")
+
     def _select_wave_window(self,seconds):
+        '''Retain research-window editing without claiming an original menu Tag.'''
+        self._wave_hscale_tag=None
         self.wave_seconds.setValue(float(seconds))
         self._sync_wave_primary_labels()
         self.refresh_wave()
@@ -700,7 +760,7 @@ class MainWindow(QMainWindow):
         if self.wave_line is None:
             return
         self.wave_plot.getViewBox().scaleBy((1,float(factor)))
-        self.wave_vscale_button.setText('Шкала Y · изменена')
+        self.wave_vscale_button.setText('Шкала Y · исследовательский zoom')
 
     def _sync_wave_primary_labels(self):
         code=int(self.wave_envelope_code.currentData() or 0)
@@ -708,7 +768,17 @@ class MainWindow(QMainWindow):
             'Без фильтра' if not code else f'Огибающая {code} (исслед.)')
         self.wave_type_button.setText(
             'AC · без DC' if self.wave_mode.currentIndex()==0 else 'AC+DC')
-        self.wave_hscale_button.setText(f'{self.wave_seconds.value():g} с')
+        self.wave_hscale_button.setText(
+            (original_adc_horizontal_options()[self._wave_hscale_tag]['caption']
+             if self._wave_hscale_tag is not None and
+                abs(self.wave_seconds.value()-
+                    ADC_HORIZONTAL_MS[self._wave_hscale_tag]/1000.)<1e-8
+             else f'{self.wave_seconds.value():g} с (исслед.)'))
+        for a in self.wave_hscale_menu.actions():
+            a.setChecked(self._wave_hscale_tag is not None and
+                         a.data()==self._wave_hscale_tag and
+                         abs(self.wave_seconds.value()-
+                             ADC_HORIZONTAL_MS[self._wave_hscale_tag]/1000.)<1e-8)
         for a in self.wave_type_menu.actions():
             a.setChecked(a.data()==self.wave_mode.currentIndex())
 
@@ -2363,6 +2433,10 @@ class MainWindow(QMainWindow):
         self._source_view_time=None
         self._source_wave_readout=None
         self._source_envelope_cursor=None
+        self._source_wave_trace=None
+        self._source_wave_trace_digest=None
+        self._source_wave_scale_model=None
+        self._source_wave_hscale_model=None
         self._source_spectrum_readout=None
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
@@ -2819,12 +2893,21 @@ class MainWindow(QMainWindow):
             mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
             order=self._signal_order()
             code=int(self.wave_envelope_code.currentData() or 0)
+            duration=self.wave_seconds.value()
+            self._source_wave_hscale_model=None
+            if (self._wave_hscale_tag is not None and
+                    abs(duration-ADC_HORIZONTAL_MS[self._wave_hscale_tag]/1000.)<1e-8):
+                # Delphi _Unit128:00847F0D uses integer fs*menu_ms//1000,
+                # not rounded QDoubleSpinBox seconds*fs. Keep exact N samples.
+                self._source_wave_hscale_model=source_adc_horizontal_view(
+                    flow,self._wave_hscale_tag)
+                duration=self._source_wave_hscale_model['getsignal_seconds']
             if code:
                 if self.envelope_profile is None:
                     raise ValueError('Требуются оригинальные локальные коэффициенты IDP')
                 d=flow.envelope(
                     code,self._effective_source_start_seconds(),
-                    self.wave_seconds.value(),self.envelope_profile,
+                    duration,self.envelope_profile,
                     display_order=order)
                 self.wave_plot.setLabel('bottom',
                     'Позиция буфера огибающей, с — НЕ время оригинальной MVKView')
@@ -2836,7 +2919,7 @@ class MainWindow(QMainWindow):
                     " · оригинальный формат/время/курсор НЕ приняты")
             else:
                 d=flow.waveform(self._effective_source_start_seconds(),
-                                        self.wave_seconds.value(),mode,
+                                        duration,mode,
                                         display_order=order)
                 self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
                     else 'Позиция буфера GetSignal, с (НЕ время BIN)')
@@ -2856,6 +2939,11 @@ class MainWindow(QMainWindow):
             self._source_envelope_cursor=(
                 OriginalEnvelopeCursor.from_trace(flow,d) if code else None)
             self._source_wave_readout=verified_wave
+            self._source_wave_trace=d
+            self._source_wave_trace_digest=flow.source_record()['source_bin_sha256']
+            if self._source_wave_hscale_model is not None and not code:
+                self._source_wave_hscale_model=validate_source_adc_horizontal_trace(
+                    flow,d,self._source_wave_hscale_model)
             self.wave_plot.clear()
             self.wave_plot.setLabel(
                 'left', 'Отсчёты BIN (калибровка не проверена)'
@@ -2868,6 +2956,7 @@ class MainWindow(QMainWindow):
             self._wave_hover_window=None
             self._wave_mouse_pixel=None
             self.wave_plot.enableAutoRange()
+            self._apply_original_wave_vscale()
             self.wave_hint.setText(descr)
             source_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
                          else 'расч. ед.')
@@ -2892,6 +2981,10 @@ class MainWindow(QMainWindow):
         except (OSError,KeyError,ValueError) as e:
             self._source_wave_readout=None
             self._source_envelope_cursor=None
+            self._source_wave_trace=None
+            self._source_wave_trace_digest=None
+            self._source_wave_scale_model=None
+            self._source_wave_hscale_model=None
             # Original invalidates both series when EnvelopeCode changes.
             self.wave_plot.clear()
             self.wave_line=None
