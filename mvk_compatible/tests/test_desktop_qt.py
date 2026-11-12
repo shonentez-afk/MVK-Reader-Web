@@ -1208,9 +1208,9 @@ def test_stage111z19_waveform_primary_and_advanced_are_not_mixed(
     qt_app.processEvents()
     assert win.wave_mode.currentIndex()==1
     assert win.wave_type_button.text()=="AC+DC"
-    # Stage111Z31BW: the original Delphi H menu has 14 source-order
-    # entries (20000..1 ms). 100 ms is Tag8, not the old Qt Tag3.
-    win.wave_hscale_menu.actions()[8].trigger()
+    # Stage111Z31BW: Delphi's descending 14-value menu has
+    # 100 ms at Tag7 (between 200 and 50 ms), not old Qt Tag3.
+    win.wave_hscale_menu.actions()[7].trigger()
     qt_app.processEvents()
     assert win.wave_seconds.value()==.1
     assert win.wave_hscale_button.text()=="100 мс"
