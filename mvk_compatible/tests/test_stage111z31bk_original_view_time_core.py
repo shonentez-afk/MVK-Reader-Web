@@ -106,7 +106,7 @@ def test_reject_mixed_source_adc_and_status_tick(tmp_path):
     wave=a.waveform(0,.05,"ac")
     with pytest.raises(ValueError,match="provenance mismatch"):
         source_wave_readout(a,wave,tb)
-    spec=a.spectrum(4096,1,0.,max_hz=10000.,max_points=2048)
+    spec=a.spectrum(4096,1,0.,max_hz=1e9,max_points=2048)
     with pytest.raises(ValueError,match="provenance mismatch"):
         source_spectrum_readout(
             a,spec,4096,archive_end=False,view_time=tb)
