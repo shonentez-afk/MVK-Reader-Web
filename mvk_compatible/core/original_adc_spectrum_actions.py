@@ -150,7 +150,7 @@ class OriginalSpectrumAction:
         triple=spectrum_triplet_text(
             summary,separator="\t",decimal_separator=decimal_separator)
         if self.direct_bin_uncalibrated:
-            return "НЕ КАЛИБРОВАНО · локальные значения FFT, не приборный DSP\n"+triple
+            return "НЕ КАЛИБРОВАНО · условные единицы · локальные значения FFT, не приборный DSP\n"+triple
         return triple
 
     def pipe_row(self,*,decimal_separator=","):
