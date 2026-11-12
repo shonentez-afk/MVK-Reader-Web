@@ -9,6 +9,7 @@ import numpy as np
 
 from .test_stage111z16_direct_bin_tsxml import _make_pair
 from .test_offline_core import fixture_zip
+from .test_envelope_idr_candidate import fake_profile
 from mvk_compatible.core.offline_export import OfflineSession
 from mvk_compatible.core.direct_bin_session import DirectBinSession
 from mvk_compatible.core.offline_measurement_flow import OfflineMeasurementFlow
@@ -124,3 +125,31 @@ def test_no_mixed_bin_adc_or_truncated_fft_used_to_draw_original_scope(
     context=source_spectrum_gain(zip_flow,zip_fft,mode=0)
     assert context.frange_single is None and context.origin==SOURCE_MISSING
     assert context.graph_default_vscale_candidate is None
+
+
+
+def test_existing_fir_spectrum_uses_processed_output_fs_not_raw_bin_fs(tmp_path):
+    """Regression: valid source FIR must not trigger an offscreen Qt warning."""
+    zip_path=fixture_zip(tmp_path,sample_count=8192)
+    flow=OfflineMeasurementFlow.bind(OfflineSession.open(zip_path))
+    profile=fake_profile(i=1.,q=.4)
+    candidate=flow.spectrum_envelope(
+        1,1024,profile,mode=1,backend="numpy",
+        input_domain="calibrated_bin")
+    assert candidate["full_fft_bins"]
+    assert candidate["pre_fft_envelope_float32_sha256"]
+    assert candidate["output_sample_rate_hz"]<=flow.source_record()["sample_rate_hz"]
+    assert candidate["df_hz"]==pytest.approx(
+        candidate["output_sample_rate_hz"]/candidate["n_fft"])
+    evidence=source_spectrum_gain(flow,candidate,mode=1)
+    scope=source_spectrum_h_view(
+        flow,candidate,selected_hz=6400,position_hz=0)
+    assert evidence.frange_single is None
+    assert scope.fft_bins==512
+    assert scope.n_fft==1024
+    assert scope.source_axis_end_hz<25600
+    assert not scope.fft_values_changed
+    corrupted={**candidate,"output_sample_rate_hz":
+               float(flow.source_record()["sample_rate_hz"])*2}
+    with pytest.raises(ValueError,match="FIR"):
+        source_spectrum_gain(flow,corrupted,mode=1)
