@@ -1524,10 +1524,18 @@ class MainWindow(QMainWindow):
                 f"Пик спектра: {linked['peak_frequency_hz_from_core']:.5g} Гц\n"
                 f"Амплитуда: {linked['peak_y_from_core']:.5g} {unit}\n"
                 + calibration)
+            joined=self._source_adc_spectrum_joint_receipt
+            pair_label=(
+                f" PageAdc + PageSpectrum: АЦП{joined['adc']}, "
+                f"BIN SHA {joined['source_bin_sha256'][:12]}…, "
+                f"N/2={joined['full_spectrum_bins']}; "
+                "original Win32 runtime не сверен."
+                if joined is not None else "")
             self.spec_mean_primary.setToolTip(
                 f"FFT N={linked['n_fft']}, Δf={linked['df_hz']:.7g} Гц; "
                 f"{frame}; значения из того же полного Core FFT, "
-                "не из графических пикселей; Delphi parity не доказан.")
+                "не из графических пикселей; Delphi parity не доказан."
+                +pair_label)
             return
         self.spec_mean_primary.setText(
             f'СКЗ спектра: {fields[0]} {unit}\n'

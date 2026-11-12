@@ -89,7 +89,7 @@ def test_same_source_bin_adc_wave_and_full_spectrum_not_decimated(tmp_path):
     p=fixture_zip(tmp_path,sample_count=8192)
     flow=OfflineMeasurementFlow.bind(OfflineSession.open(p),channel=1,tick_index=0)
     wave=flow.waveform(0.,.1,"ac",display_order="getsignal_buffer")
-    fft=flow.spectrum(1024,1,0.,max_hz=1e9,max_points=500,backend="numpy")
+    fft=flow.spectrum(1024,1,0.,max_hz=1e9,max_points=1024,backend="numpy")
     joined=source_adc_spectrum_joint_receipt(flow,wave,fft)
     assert joined["adc"]==1
     assert joined["source_bin_sha256"]==flow.source_record()["source_bin_sha256"]
