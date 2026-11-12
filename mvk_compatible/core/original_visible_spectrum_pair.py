@@ -23,6 +23,7 @@ from ..private_getspectrum_prefft_envelope_compare import _ordered_f32_words
 SCHEMA = "MVKVIEW_VISIBLE_ORIGINAL_SAME_WINDOW_PAIR_V1"
 SOURCE = "LOCAL_VISIBLE_FULL_Y_ORIGINAL_SAME_WINDOW_PAIR_STAGE111Z31BM"
 _PLAIN = "APP_DERIVED_FFT_MVKVIEW_CANDIDATE"
+_DIRECT_PLAIN = "APP_DERIVED_DIRECT_BIN_FFT_CANDIDATE"
 _FIR = "APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE"
 
 
@@ -69,7 +70,8 @@ def compare_visible_original_spectrum_pair(
             or claim["spectrum_mode"] != mode or ref.mode != mode
             or claim["envelope_code"] != envelope_code):
         raise ValueError("Visible and original ADC/N/Tag/EnvelopeCode differ")
-    if visible.get("source") != (_FIR if envelope_code else _PLAIN):
+    expected_sources = (_FIR,) if envelope_code else (_PLAIN, _DIRECT_PLAIN)
+    if visible.get("source") not in expected_sources:
         raise ValueError("Visible Y is not selected original-path FFT")
     if visible.get("fft_backend") != "idr_float32":
         raise ValueError("Source-IDR Float32 FFT backend required for pairing")
