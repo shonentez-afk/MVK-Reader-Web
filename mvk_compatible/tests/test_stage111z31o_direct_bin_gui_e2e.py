@@ -170,6 +170,12 @@ def test_changed_direct_bin_recalculation_never_leaves_stale_spectrum(
         assert "Спектр не рассчитан" in win.spec_mean.text()
         assert "Нет действительного спектра" in win.spec_hint.text()
         assert win.spec_cursor_primary.text() == "Курсор: —"
+        # Stage BL: no second read of a tampered source from pnView cleanup.
+        # Source FRange, absolute time and H pane must not outlive rejected BIN.
+        assert win._source_view_time is None
+        assert win._source_spectrum_gain is None
+        assert win._spec_source_h_view is None
+        assert not win.original_shell.view_panel.isVisible()
     finally:
         win.close()
         qt_app.processEvents()
