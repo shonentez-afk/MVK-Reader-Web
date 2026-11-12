@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import replace
 from hashlib import sha256
 import csv
+from zipfile import BadZipFile
 from pathlib import Path
 import pytest
 
@@ -195,7 +196,7 @@ def test_source_status_stale_zip_refused_before_export(tmp_path):
     flow=OfflineMeasurementFlow.bind(OfflineSession.open(source))
     before=sha256(source.read_bytes()).hexdigest()
     source.write_bytes(source.read_bytes()[:-20])
-    with pytest.raises((ValueError,OSError,KeyError,RuntimeError)):
+    with pytest.raises((ValueError,OSError,KeyError,RuntimeError,BadZipFile)):
         export_verified_status_csv(flow,3,tmp_path/"out.csv")
     assert not (tmp_path/"out.csv").exists()
     assert sha256(source.read_bytes()).hexdigest()!=before

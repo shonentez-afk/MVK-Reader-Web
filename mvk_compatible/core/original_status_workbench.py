@@ -37,12 +37,10 @@ SOURCE_FREQUENCIES=source_octave_frequencies_float32()
 MAX_CSV_BYTES=1_000_000
 MAX_CSV_ROWS=128
 MODE_GRID=(
-    ("tabStatus",),
-    ("tabAlarmResult",),
-    ("tabAllResult",)*3,
-    ("tabResult",)*10,
+    ("tabStatus","tabAlarmResult")
+    +("tabAllResult",)*3
+    +("tabResult",)*10
 )
-MODE_GRID=tuple(v[0] for group in MODE_GRID for v in group)
 
 
 @dataclass(frozen=True)
