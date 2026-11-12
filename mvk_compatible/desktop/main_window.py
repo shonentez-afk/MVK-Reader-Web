@@ -24,6 +24,9 @@ from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_tabl
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
+from ..core.original_view_time_source import (
+    source_view_time, source_wave_readout, source_spectrum_readout,
+)
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
@@ -90,6 +93,9 @@ class MainWindow(QMainWindow):
         self._live_prior_session=None
         self._live_control_states=[]
         self._pagestatus_snapshot=None
+        self._source_view_time=None
+        self._source_wave_readout=None
+        self._source_spectrum_readout=None
         self.wave_line=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
@@ -1247,6 +1253,15 @@ class MainWindow(QMainWindow):
         self.spec_vscroll.hide()
         chart.addWidget(self.spec_vscroll)
         grid.addLayout(chart,1)
+        # Visible results are lifted from the same Core FFT record used to
+        # draw the entire plot.  No recomputation from downsampled Qt points.
+        self.spec_core_triplet=QLabel(
+            'Нет подтверждённого расчётного спектра',graph)
+        self.spec_core_triplet.setObjectName('sourceSpecCoreTriplet')
+        self.spec_core_triplet.setFixedHeight(34)
+        self.spec_core_triplet.setWordWrap(True)
+        self.spec_core_triplet.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        grid.addWidget(self.spec_core_triplet)
         lay.addWidget(graph,1)
         self._spec_data_ymin=0.
         self._spec_data_ymax=1.
@@ -1783,6 +1798,11 @@ class MainWindow(QMainWindow):
             return
         self._live_prior_session=self.session
         self._offline_flow=None  # Never mix verified offline evidence with LIVE preview
+        self._source_view_time=None
+        self._source_wave_readout=None
+        self._source_spectrum_readout=None
+        self.original_shell.clear_source_view_time()
+        self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._live_active=True
         self._live_preview=None
         self.session=None
@@ -2112,6 +2132,15 @@ class MainWindow(QMainWindow):
         # Accepted new file must not inherit a former ZIP VALUES/AUX bank.
         # File/Signal/Spectrum/Status are updated together after rebinding.
         self._pagestatus_snapshot=None
+        self._source_view_time=None
+        self._source_wave_readout=None
+        self._source_spectrum_readout=None
+        blocked=self.wave_start.blockSignals(True)
+        try:
+            self.wave_start.setRange(0.,max(300.,len(samples)/float(fs)))
+            self.wave_start.setValue(0.)
+        finally:
+            self.wave_start.blockSignals(blocked)
         # Source data, selected combo ADC and both DFM tab bars move as
         # ONE transaction. A BIN-only ADC4 never selects stale ADC1/2.
         self._bind_only_verified_channels(channels)
@@ -2169,7 +2198,12 @@ class MainWindow(QMainWindow):
         self._full_spectrum=None
         self._spectrum_summary=None
         self._pagestatus_snapshot=None
+        self._source_view_time=None
+        self._source_wave_readout=None
+        self._source_spectrum_readout=None
         self.wave_plot.clear()
+        self.spec_core_triplet.setText('Нет подтверждённого расчётного спектра')
+        self.original_shell.clear_source_view_time()
         self.spec_plot.clear()
         self._bind_only_verified_channels(tuple(range(1,9)))
         self.tick.blockSignals(True)
@@ -2248,13 +2282,59 @@ class MainWindow(QMainWindow):
             self._offline_flow=flow
         return flow
 
+    def _source_time_position_changed(self,position:int) -> None:
+        """One real tbViewTime position for source ADC, signal and spectrum."""
+        if (self.session is None or self._live_active or
+                self._offline_flow is None):
+            return
+        try:
+            flow=self._current_offline_flow()
+            model=self.original_shell.sync_source_view_time(
+                flow,position=int(position))
+            self._source_view_time=model
+            blocked=self.wave_start.blockSignals(True)
+            try:
+                self.wave_start.setValue(model.selected_start_seconds)
+            finally:
+                self.wave_start.blockSignals(blocked)
+            self.refresh_wave()
+            if not self.spec_last.isChecked():
+                self.refresh_spec()
+            else:
+                # Last-NFFT always means archive end, not the selected
+                # tbViewTime start. Keep its actual FFT unchanged.
+                self.original_shell.refresh_source_time_context(
+                    flow,verified_status=self._pagestatus_snapshot)
+        except (OSError,ValueError,KeyError,RuntimeError) as exc:
+            self._source_view_time=None
+            self.original_shell.clear_source_view_time()
+            self.statusBar().showMessage(
+                'Исходное время просмотра отклонено: '+str(exc))
+
+    def _sync_source_time_from_wave_start(self,flow):
+        """Legacy research spinbox and visible original slider stay paired."""
+        model=self.original_shell.sync_source_view_time(
+            flow,requested_start_s=float(self.wave_start.value()))
+        self._source_view_time=model
+        blocked=self.wave_start.blockSignals(True)
+        try:
+            self.wave_start.setValue(model.selected_start_seconds)
+        finally:
+            self.wave_start.blockSignals(blocked)
+        return model
+
     def refresh_all(self,*_):
         if self._live_active:
             self._render_live_wave()
             self._render_live_spectrum()
             return
         if self.session is None:return
-        self._current_offline_flow()  # reject cross-session/channel references
+        flow=self._current_offline_flow()  # same source/ADC/tick
+        try:
+            self._sync_source_time_from_wave_start(flow)
+        except (OSError,ValueError,KeyError,RuntimeError):
+            self._source_view_time=None
+            self.original_shell.clear_source_view_time()
         self._update_original_gain_inspector()
         self.refresh_calc()
         self.refresh_wave()
@@ -2331,6 +2411,8 @@ class MainWindow(QMainWindow):
         if flow.direct_bin:
             self._pagestatus_snapshot=None
             self._refresh_source_pagestatus()
+            if self._source_view_time is not None:
+                self.original_shell.refresh_source_time_context(flow)
             # BIN/TSXML contains no authenticated AUX/VALUES DSP. Do not
             # show stale values from the previously opened Native ZIP.
             self.calc_source.setText('BIN/TSXML: приборные DSP/VALUES/AUX отсутствуют')
@@ -2356,6 +2438,9 @@ class MainWindow(QMainWindow):
             d=flow.status_snapshot()
             self._pagestatus_snapshot=d
             self._refresh_source_pagestatus()
+            if self._source_view_time is not None:
+                self.original_shell.refresh_source_time_context(
+                    flow,verified_status=d)
             # One validated DSP tick feeds the visible original PageFile
             # 24 result rows, 43 octave rows AND PageStatus, no fake BIN DSP.
             self.original_shell.refresh_file_workbench(verified_status=d)
@@ -2399,6 +2484,8 @@ class MainWindow(QMainWindow):
             # belonged to the current (now rejected or modified) archive.
             self._pagestatus_snapshot=None
             self._refresh_source_pagestatus()
+            if self._source_view_time is not None:
+                self.original_shell.refresh_source_time_context(flow)
             self.original_shell.refresh_file_workbench()
             self.calc_source.setText('VALUES/AUX: текущий источник отклонён')
             self.calc_status.setText('DSP недоступен: '+str(e))
@@ -2461,6 +2548,7 @@ class MainWindow(QMainWindow):
         if not self.session:return
         flow=self._current_offline_flow()
         try:
+            time=self._sync_source_time_from_wave_start(flow)
             mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
             order=self._signal_order()
             code=int(self.wave_envelope_code.currentData() or 0)
@@ -2491,6 +2579,8 @@ class MainWindow(QMainWindow):
                     f" · локальное СКЗ: {d['rms_m_s2']:.7g} {units}"
                     f" · удалённое DC: {d['removed_mean_m_s2']:.7g} {units}"
                     " · паритет TQGrapher НЕ доказан")
+            verified_wave=source_wave_readout(flow,d,time)
+            self._source_wave_readout=verified_wave
             self.wave_plot.clear()
             self.wave_plot.setLabel(
                 'left', 'Отсчёты BIN (калибровка не проверена)'
@@ -2507,14 +2597,20 @@ class MainWindow(QMainWindow):
             source_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
                          else 'расч. ед.')
             self.wave_mean_primary.setText(
-                f'СКЗ сигнала: {d["rms_m_s2"]:.5g} {source_unit}\n'
+                f'СКЗ сигнала: {verified_wave["rms_from_core"]:.5g} {source_unit}\n'
                 + ('Калибровка НЕ подтверждена'
                    if isinstance(self.session,DirectBinSession)
                    else 'Локальный расчёт · оригинал не аттестован'))
             self.wave_cursor_primary.setText('Курсор: —')
             self._sync_wave_primary_labels()
+            self.wave_mean_primary.setToolTip(
+                f"GetSignal: {verified_wave['signal_samples']} исходных "
+                f"отсчётов, АЦП{verified_wave['adc']}, SHA "
+                f"{verified_wave['source_bin_sha256'][:12]}…; "
+                "данные взяты из Core, не из прореженного графика.")
             self._wave_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
+            self._source_wave_readout=None
             # Original invalidates both series when EnvelopeCode changes.
             self.wave_plot.clear()
             self.wave_line=None
@@ -3188,6 +3284,10 @@ class MainWindow(QMainWindow):
         yy=np.asarray(d['amplitude'],dtype=np.float64)
         self._full_spectrum=d
         self._spectrum_summary=d['spectrum_summary']
+        self._source_spectrum_readout=None
+        self.spec_core_triplet.setText(
+            'Оригинальный Power/Y x32dbg: независимый эталон; '
+            'не связан с текущим временем BIN.')
         self._spec_display_contract=contract
         self._spec_visible_max_hz=float(axis['full_horizontal_menu_axis_end_hz'])
         self._spec_original_vscale_mode=None
@@ -3393,6 +3493,7 @@ class MainWindow(QMainWindow):
             return
         if not self.session:return
         flow=self._current_offline_flow()
+        self._source_spectrum_readout=None
         self._spec_original_hscale_selected=None
         self.spec_hscale_button.setText('Диапазон X')
         for action in self._spec_hscale_actions:
@@ -3444,6 +3545,24 @@ class MainWindow(QMainWindow):
             valid_summary=(isinstance(self._spectrum_summary,dict) and
                 self._spectrum_summary.get('source')==
                 'APP_DERIVED_GETSPECTRUM_PEAK_SUMMARY_IDR_CANDIDATE')
+            if valid_summary:
+                clock=self._source_view_time
+                if clock is None or clock.adc!=flow.channel:
+                    clock=self._sync_source_time_from_wave_start(flow)
+                readout=source_spectrum_readout(
+                    flow,d,n_fft,archive_end=self.spec_last.isChecked(),
+                    view_time=clock)
+                self._source_spectrum_readout=readout
+                frame=('Конец архива' if readout['archive_end_selected']
+                       else 'Окно '+clock.label)
+                self.spec_core_triplet.setText(
+                    f"FFT {n_fft}, Δf={readout['df_hz']:.7g} Гц · "
+                    f"СКЗ {readout['spectrum_rms_from_core']:.6g} · "
+                    f"Пик {readout['peak_frequency_hz_from_core']:.7g} Гц / "
+                    f"{readout['peak_y_from_core']:.6g} · {frame}")
+            else:
+                self.spec_core_triplet.setText(
+                    'Нет принятой тройки GetSpectrum для этого режима')
             self.spec_copy_button.setEnabled(valid_summary)
             self.spec_save_button.setEnabled(valid_summary)
             self.spec_original_copy_compare.setEnabled(valid_summary)
@@ -3572,6 +3691,9 @@ class MainWindow(QMainWindow):
             self._clear_archive_source_projection()
             self._full_spectrum=None
             self._spectrum_summary=None
+            self._source_spectrum_readout=None
+            self.spec_core_triplet.setText(
+                'Спектр не рассчитан: '+str(e))
             self._spec_display_contract=None
             self._archive_raw_line=None
             self._spec_last_cursor=None
