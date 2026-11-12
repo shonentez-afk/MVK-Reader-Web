@@ -44,7 +44,7 @@ def test_source_h_preset_and_real_frange_survive_fft_recompute_and_user_pan(
         assert "FRange TSXML 6.25" in win.spec_cursor_primary.text()
         assert "не калибровка" in win.spec_cursor_primary.text()
         assert "6.25" in win.spec_vscale_button.toolTip()
-        assert "не подтверждена" in win.spec_mean_primary.text()
+        assert "НЕ подтверждена" in win.spec_mean_primary.text()
         assert not evidence.original_runtime_frange_verified
         source=np.asarray(win._full_spectrum["amplitude"],
                           dtype="<f4").view("<u4").copy()
@@ -108,7 +108,7 @@ def test_source_h_preset_and_real_frange_survive_fft_recompute_and_user_pan(
         assert win._source_spectrum_gain.spectrum_mode==1
         assert win._spec_source_h_view.channel==4
         assert "СКЗ спектра" in win.spec_mean_primary.text()
-        assert "не подтверждена" in win.spec_mean_primary.text()
+        assert "НЕ подтверждена" in win.spec_mean_primary.text()
         assert "FRange TSXML" in win.spec_vscale_button.toolTip()
         win._select_original_vscale(3)
         qt_app.processEvents()
@@ -156,7 +156,9 @@ def test_source_gain_changes_with_selected_bin_adc_without_cross_talk(
         assert win._source_spectrum_gain.channel==6
         assert win._source_spectrum_gain.frange_single==12.5
         assert "FRange TSXML 12.5" in win.spec_cursor_primary.text()
-        assert win._source_spectrum_gain.source_bin_sha256!=hash4
+        # Synthetic ADC4 and ADC6 contain the SAME raw sine words, thus
+        # identical SHA is valid: channel identity must still be distinct.
+        assert win._source_spectrum_gain.source_bin_sha256==hash4
         assert win._pagestatus_snapshot is None
         assert win.original_shell.file_values.count()==1
         win.adc.setCurrentIndex(3)
