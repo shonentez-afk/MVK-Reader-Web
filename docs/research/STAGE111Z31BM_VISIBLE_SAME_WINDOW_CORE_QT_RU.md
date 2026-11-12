@@ -1,6 +1,6 @@
 # Stage111Z31BM — одновременная проверка расчетного Core и ВИДИМОГО спектра Qt
 
-Статус: пакет отправлен в рабочую ветку; окончательную GitHub Actions приёмку проверять по проверенному source SHA.
+**ОФИЦИАЛЬНАЯ ПРИЁМКА (12.11.2026):** source SHA `4c7f3790b9f95294d12457d84990be1225db110d`; [Actions #43151345794](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43151345794) **SUCCESS 3/3**. EXE #13913812658, synthetic Qt DPI150 #13913204631. Проверены все три CI jobs; running-original Win32 parity НЕ проводился.
 
 Исходный CLI same-window сравнивал пересчитанный кандидат с Power/Y из x32dbg, но не подтверждал именно то значение Y, которое открыто в окне Qt PageSpectrum. Теперь автономный Core original_visible_spectrum_pair.py связан с реальным спектральным экраном, без изменения девяти элементов оригинальной панели pnSpecTools.
 
