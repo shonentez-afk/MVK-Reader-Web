@@ -126,7 +126,7 @@ def _checked_spectrum(flow: OfflineMeasurementFlow,spectrum: dict) -> tuple[dict
         fs_fft=float(spectrum.get("output_sample_rate_hz",float("nan")))
         if (not math.isfinite(fs_fft) or fs_fft<=0
                 or fs_fft>fs
-                or spectrum.get("pre_fir_unreversed_float32_sha256") is None
+                or spectrum.get("pre_fft_envelope_float32_sha256") is None
                 or not spectrum.get("full_fft_bins",False)):
             raise ValueError("FIR spectrum requires validated output Fs/history")
     else:
