@@ -1,7 +1,7 @@
 # Stage111Z31BK — оригинальная pnView + сигнал/спектр/результаты как ОДИН функциональный пакет
 
 **Дата:** 12.11.2026. **Ветка:** research/stage111-mvkview-desktop-20261029.
-**Проверенная база:** Stage111Z31BJ source \`6902675975d720c35d0a7ba4875ea912427bc0a6\`, [CI #43007865488](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43007865488) SUCCESS 3/3. Новый BK: **исходники и тесты в GitHub, окончательный результат CI проверить по конкретному source SHA; original Win32 runtime parity не выполнена**.
+**Проверенная база:** Stage111Z31BJ source \`6902675975d720c35d0a7ba4875ea912427bc0a6\`, [CI #43007865488](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43007865488) SUCCESS 3/3. Новый BK: **исходники и тесты в GitHub; после двух неудачных QA-прогонов устранены сброс проверенного VALUES при обновлении времени и сдвиг оригинального PaintBox/DFM-контролов; финальный source SHA `f8fbbfb65337cfb1cd9887e4909ae71d265d41a1`, CI #43131228882 проверяется, original Win32 parity не выполнена**.
 
 ## Почему новый этап важен
 
