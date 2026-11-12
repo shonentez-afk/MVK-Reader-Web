@@ -1193,6 +1193,19 @@ class MainWindow(QMainWindow):
         stack.setContentsMargins(0,0,0,0)
         stack.setSpacing(0)
         stack.addWidget(self.spec_source_canvas)
+        # All displayed values come from the SAME complete Core spectrum
+        # as the visible plot. Keep it outside pnSpecGraph: changing the
+        # PaintBox height breaks original TCo2Draw raster/cursor geometry.
+        self.spec_core_triplet=QLabel(
+            'Нет подтверждённого расчётного спектра',tools)
+        self.spec_core_triplet.setObjectName('sourceSpecCoreTriplet')
+        self.spec_core_triplet.setFixedHeight(42)
+        self.spec_core_triplet.setWordWrap(True)
+        self.spec_core_triplet.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.spec_core_triplet.setToolTip(
+            'СКЗ/пик берутся из того же полного FFT N/2 в Core, '
+            'а не из нарисованной Qt-кривой. Delphi runtime не принят.')
+        stack.addWidget(self.spec_core_triplet)
         self.spec_advanced_button.setFixedHeight(26)
         stack.addWidget(self.spec_advanced_button)
         stack.addStretch()
@@ -1253,15 +1266,8 @@ class MainWindow(QMainWindow):
         self.spec_vscroll.hide()
         chart.addWidget(self.spec_vscroll)
         grid.addLayout(chart,1)
-        # Visible results are lifted from the same Core FFT record used to
-        # draw the entire plot.  No recomputation from downsampled Qt points.
-        self.spec_core_triplet=QLabel(
-            'Нет подтверждённого расчётного спектра',graph)
-        self.spec_core_triplet.setObjectName('sourceSpecCoreTriplet')
-        self.spec_core_triplet.setFixedHeight(34)
-        self.spec_core_triplet.setWordWrap(True)
-        self.spec_core_triplet.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        grid.addWidget(self.spec_core_triplet)
+        # Original TQGrapher pixel viewport MUST retain its previous
+        # full height; the new numerical readout lives in the tools column.
         lay.addWidget(graph,1)
         self._spec_data_ymin=0.
         self._spec_data_ymax=1.
