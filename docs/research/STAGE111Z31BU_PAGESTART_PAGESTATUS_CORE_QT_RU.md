@@ -1,5 +1,7 @@
 # Stage111Z31BU — PageStart + PageStatus, единое восстановление ядра и интерфейса
 
+**ПРИЁМКА 12.11.2026:** source SHA `18ce4a67f769b86b45e114da18cbcc88cf4d53af`, [GitHub Actions #43201184322](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43201184322) — **3/3 SUCCESS**, Linux Core, Windows Core+Qt DPI150 и автономный Native R6.1 Windows EXE. [Windows EXE #13934824675](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43201184322/artifacts/13934824675) (68 877 196 байт, до 26.11.2026); [синтетические Qt скриншоты #13935836377](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43201184322/artifacts/13935836377) (624 746 байт, до 19.11.2026). Параметры DFM/PAS подтверждены по операторским приватным исходникам, Qt functional E2E — на синтетических данных; это не 1:1 исходная Win32 runtime или приборная аттестация.
+
 **Основание:** приватные файлы владельца Projects.7z/Projects/mvkform.dfm и _Unit128.pas изучены локально. Ни один оригинальный DFM/PAS/IDP/BIN или битмап не публикуется.
 
 ## PageStart — подтверждённый оригинал
