@@ -106,7 +106,7 @@ class OriginalPageFileSelection:
             if group=="spec" and flow.direct_bin:
                 raise ValueError("Original SPEC cannot be inferred from BIN")
             if group=="values" and (
-                    flow.direct_bin or index>=ADC_VALUE_COUNT+BAND_VALUE_COUNT)):
+                    flow.direct_bin or index>=ADC_VALUE_COUNT+BAND_VALUE_COUNT):
                 raise ValueError("Missing verified VALUES or original TACH export")
         updated=list(original)
         updated[index]=checked
