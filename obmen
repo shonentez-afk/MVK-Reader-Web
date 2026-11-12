@@ -1,2 +1,14 @@
-curl.exe -I https://opencode.ai
-curl.exe -I https://kilo.ai
+Get-Command hermes -All -ErrorAction SilentlyContinue
+
+Test-Path "$env:USERPROFILE\.hermes"
+
+Get-ChildItem "$env:USERPROFILE\.local\bin" `
+    -ErrorAction SilentlyContinue
+
+
+
+irm https://hermes-agent.nousresearch.com/install.ps1 |
+    iex
+
+
+
