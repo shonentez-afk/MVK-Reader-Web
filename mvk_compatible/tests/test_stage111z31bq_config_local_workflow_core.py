@@ -17,12 +17,12 @@ def _source(tmp_path):
     sub=tmp_path/"sub.cfg"
     sub.write_text(
         "; original ADC1 cells\n"
-        "+0x0100\n0x0002 F:1.25\n0x0062 F:2.50\n",
+        "+0x0100\n0x0002 f:1.25\n0x0062 f:2.50\n",
         encoding="utf-8")
     root.write_text(
         "; source-compatible synthetic file with a bounded include\n"
-        "0x0004 D:16909060\n0x000A D:502\n0x0020 F:2.5\n"
-        "0x0060 S:synthetic-opaque-string\n"
+        "0x0004 a:1.2.3.4\n0x000A w:502\n0x0020 f:2.5\n"
+        "0x0060 p:synthetic-opaque-string\n"
         "@sub.cfg\n",encoding="utf-8")
     return root,sub
 
@@ -33,18 +33,18 @@ def test_real_source_load_edit_save_reload_exact_raw_format_all_three_pages(tmp_
     b_sha=hashlib.sha256(include.read_bytes()).hexdigest()
     w=OriginalLocalConfigWorkspace.load(source)
     assert w.describe()["source"]==SOURCE
-    assert w.current.value(0x0162).formatted=="F:2.50"
+    assert w.current.value(0x0162).formatted=="f:2.50"
     assert w.changed_count==0
     w=w.edit_field("ip",3,"503")
     w=w.edit_field("calib",0,"3.5")
     w=w.edit_field("adc",0,"1.75",adc=1)
     w=w.edit_alarm(1,1,"yellow_threshold","4.50")
     assert w.changed_count==4
-    assert w.original.value(0x000A).formatted=="D:502"
-    assert w.current.value(0x000A).formatted=="D:503"
-    assert w.current.value(0x0020).formatted=="F:3.5"
-    assert w.current.value(0x0102).formatted=="F:1.75"
-    assert w.current.value(0x0162).formatted=="F:4.50"
+    assert w.original.value(0x000A).formatted=="w:502"
+    assert w.current.value(0x000A).formatted=="w:503"
+    assert w.current.value(0x0020).formatted=="f:3.5"
+    assert w.current.value(0x0102).formatted=="f:1.75"
+    assert w.current.value(0x0162).formatted=="f:4.50"
     assert w.current.value(0x0060).literal=="synthetic-opaque-string"
     report=w.describe()
     assert "synthetic-opaque-string" not in repr(report)
@@ -69,11 +69,11 @@ def test_real_source_load_edit_save_reload_exact_raw_format_all_three_pages(tmp_
         (x.address,x.formatted) for x in w.current.cells)
     reopened=OriginalLocalConfigWorkspace.load(out)
     assert not reopened.changed
-    assert reopened.current.value(0x0162).formatted=="F:4.50"
+    assert reopened.current.value(0x0162).formatted=="f:4.50"
     reverted=w.discard_changes()
     assert reverted.changed_count==0
-    assert reverted.current.value(0x000A).formatted=="D:502"
-    assert reverted.current.value(0x0162).formatted=="F:2.50"
+    assert reverted.current.value(0x000A).formatted=="w:502"
+    assert reverted.current.value(0x0162).formatted=="f:2.50"
 
 
 def test_draft_validation_and_password_protection_no_modification(tmp_path):
@@ -85,12 +85,18 @@ def test_draft_validation_and_password_protection_no_modification(tmp_path):
         ("ip",3,"65536",None,"ctTooBig"),
         ("ip",3,"wrong",None,"ctInvalidFormat"),
         ("ip",14,"a-secret",None,"ctProtectedValue"),
-        ("ip",13,"SOME-SSID",None,"ctProtectedValue"),
         ("adc",0,"-2",1,"ctTooSmall"),
     ]
     for section,row,text,adc,message in wrong:
         with pytest.raises(SourceInputRejected,match=message):
             w.edit_field(section,row,text,adc=adc)
+    # Original type13 SSID (32-byte 'q') is adjacent to, NOT overlapping,
+    # the type14 password at 0x0060. It must remain editable without ever
+    # changing protected password bytes.
+    ssid=w.edit_field("ip",13,"SOME-SSID")
+    assert ssid.changed_count==1
+    assert ssid.current.value(0x0050).formatted=="q:SOME-SSID"
+    assert ssid.current.value(0x0060).formatted==w.current.value(0x0060).formatted
     with pytest.raises(SourceInputRejected,match="ctNoEntrySupported"):
         w.edit_alarm(1,2,"yellow_threshold","5.1")
     with pytest.raises(ValueError):
@@ -121,9 +127,9 @@ def test_source_cells_are_immutable_until_local_editor_commit(tmp_path):
     w=OriginalLocalConfigWorkspace.load(source)
     draft=w.edit_field("ip",3,"502")  # identical original literal
     assert not draft.changed
-    assert draft.current.value(0x000A).formatted=="D:502"
+    assert draft.current.value(0x000A).formatted=="w:502"
     draft=draft.edit_field("ip",3,"504")
     assert draft.changed
     draft=draft.edit_field("ip",3,"502")
     assert not draft.changed
-    assert w.current.value(0x000A).formatted=="D:502"
+    assert w.current.value(0x000A).formatted=="w:502"

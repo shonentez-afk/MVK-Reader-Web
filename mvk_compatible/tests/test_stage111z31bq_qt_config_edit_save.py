@@ -19,8 +19,8 @@ from ..core.original_config_input_draft import SourceInputRejected
 def _file(tmp_path):
     file=tmp_path/"synthetic_local_config.cfg"
     file.write_text(
-        "0x000A D:502\n0x0020 F:2.5\n"
-        "+0x0100\n0x0002 F:1.25\n0x0062 F:2.50\n",
+        "0x000A w:502\n0x0020 f:2.5\n"
+        "+0x0100\n0x0002 f:1.25\n0x0062 f:2.50\n",
         encoding="utf-8")
     return file
 
@@ -56,7 +56,7 @@ def test_real_original_config_toolbar_load_edit_save_reload_and_discard(
         # its actual candidate, rather than a permanently read-only dialog.
         panel.set_source_mode(4)
         qt_app.processEvents()
-        assert panel.basic_table.item(3,3).text()=="D:502"
+        assert panel.basic_table.item(3,3).text()=="w:502"
         def input_503(dlg):
             assert dlg.objectName()=="mvkeditform"
             assert not dlg.edVal.isReadOnly()
@@ -65,7 +65,7 @@ def test_real_original_config_toolbar_load_edit_save_reload_and_discard(
             return QDialog.Accepted
         monkeypatch.setattr(OriginalValueEditDialog,"exec",input_503)
         panel.show_basic_details(3,3)
-        assert panel.basic_table.item(3,3).text()=="D:503"
+        assert panel.basic_table.item(3,3).text()=="w:503"
         assert panel.workspace.changed_count==1
         assert panel.discard_button.isEnabled()
         assert "Изменено в памяти: 1" in panel.source_note.text()
@@ -74,18 +74,18 @@ def test_real_original_config_toolbar_load_edit_save_reload_and_discard(
         # generator / physical device remain blocked.
         panel.set_source_mode(5)
         panel.edit_local_field("calib",0,"3.25")
-        assert panel.basic_table.item(0,3).text()=="F:3.25"
+        assert panel.basic_table.item(0,3).text()=="f:3.25"
         panel.set_source_mode(6)
         qt_app.processEvents()
         assert panel.channel_fields.isVisible()
         assert panel.channel_fields.rowCount()==11
         panel.edit_local_field("adc",0,"1.75",adc=1)
-        assert panel.channel_fields.item(0,3).text()=="F:1.75"
+        assert panel.channel_fields.item(0,3).text()=="f:1.75"
         panel.page_tabs.setCurrentIndex(1)
         qt_app.processEvents()
-        assert panel.alarm_table.item(0,4).text()=="F:2.50"
+        assert panel.alarm_table.item(0,4).text()=="f:2.50"
         panel.edit_local_alarm(1,1,"yellow_threshold","4.5")
-        assert panel.alarm_table.item(0,4).text()=="F:4.5"
+        assert panel.alarm_table.item(0,4).text()=="f:4.5"
         assert not panel.channel_fields.isVisible()
         assert panel.workspace.changed_count==4
         assert panel.save_button.isEnabled()
@@ -101,19 +101,19 @@ def test_real_original_config_toolbar_load_edit_save_reload_and_discard(
         qt_app.processEvents()
         assert output.exists()
         doc=inspect_original_local_config(output)
-        assert doc.value(0x000A).formatted=="D:503"
-        assert doc.value(0x0020).formatted=="F:3.25"
-        assert doc.value(0x0102).formatted=="F:1.75"
-        assert doc.value(0x0162).formatted=="F:4.5"
+        assert doc.value(0x000A).formatted=="w:503"
+        assert doc.value(0x0020).formatted=="f:3.25"
+        assert doc.value(0x0102).formatted=="f:1.75"
+        assert doc.value(0x0162).formatted=="f:4.5"
         assert hashlib.sha256(source.read_bytes()).hexdigest()==src_sha
         assert "Локальный файл сохранён" in panel.source_note.text()
         panel.discard_button.click()
         assert panel.workspace.changed_count==0
-        assert panel.alarm_table.item(0,4).text()=="F:2.50"
+        assert panel.alarm_table.item(0,4).text()=="f:2.50"
         assert not panel.discard_button.isEnabled()
         panel.load_local_file(output)
         assert not panel.workspace.changed
-        assert panel.alarm_table.item(0,4).text()=="F:4.5"
+        assert panel.alarm_table.item(0,4).text()=="f:4.5"
         assert panel.save_button.isEnabled()
         assert w.original_window_man is not None
     finally:
