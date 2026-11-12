@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
-from PySide6.QtGui import QAction, QFont, QFontMetrics, QPainterPath
+from PySide6.QtGui import QAction, QFont, QFontMetrics, QPainterPath, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
     QSpinBox,QDoubleSpinBox,QCheckBox,QFileDialog,QMessageBox,QHeaderView,
@@ -31,6 +31,7 @@ from ..core.original_spectrum_view_binding import (
     source_spectrum_gain,source_spectrum_h_view,SOURCE_GAIN,
 )
 from ..core.original_visible_spectrum_pair import compare_visible_original_spectrum_pair
+from ..core.original_visible_pixel_compare import compare_current_original_pixel_view
 from ..core.original_spectrum_vertical_view import source_spectrum_vertical_view
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
@@ -80,7 +81,7 @@ from ..core.tqgrapher_viewport_sync_source import (
 from ..core.tqgrapher_bitmap_xor_cursor import source_bitmap_xor_cursor
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .xor_cursor_overlay import QtSpectrumXorCursor
-from .source_pixel_audit_io import save_source_graph_pixel_audit
+from .source_pixel_audit_io import save_source_graph_pixel_audit, read_png_rgba
 from .original_shell import install_original_shell
 from .original_task_ui import make_original_channel_tabs
 from .source_control_canvas import source_control_canvas
@@ -115,6 +116,7 @@ class MainWindow(QMainWindow):
         self._spectrum_summary=None
         self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
         self._visible_original_pair=None  # current SHA-bound visible Power/Y comparison
+        self._visible_original_pixel_report=None  # only current active research bitmap
         self._spectrum_reference_saved=None
         self._spec_source_grid_applied=False
         self._spec_source_grid_apply_busy=False
@@ -1117,6 +1119,43 @@ class MainWindow(QMainWindow):
         self.spec_pair_status.setWordWrap(True)
         self.spec_pair_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         research_stack.addWidget(self.spec_pair_status)
+        # Stage111Z31BO: show screenshot difference INSIDE the same working
+        # PageSpectrum research dock; no second core-only CLI round-trip.
+        self.spec_original_pixel_operator_claim=QCheckBox(
+            'Подтверждаю: тот же спектр, окно, масштаб, FRange, DPI и без курсора')
+        self.spec_original_pixel_operator_claim.setObjectName(
+            'operatorSameOriginalSpectrumWindowDeclaration')
+        self.spec_original_pixel_operator_claim.setChecked(False)
+        research_stack.addWidget(self.spec_original_pixel_operator_claim)
+        self.spec_original_pixel_compare_button=QPushButton(
+            'Сравнить видимый график с PNG оригинала…')
+        self.spec_original_pixel_compare_button.setObjectName(
+            'compareOriginalPixelScreenshotAgainstCurrentSpectrum')
+        self.spec_original_pixel_compare_button.setToolTip(
+            'Текущий построенный TCo2Draw RGBA, исходный x32dbg Power/Y '
+            'и выбранный локальный PNG оригинального MVKView. Проверить размеры '
+            'PaintBox, PixelRect, X/Y, SHA Y и исходный масштаб; '
+            'показать карту отличий, НЕ утверждая Win32 runtime parity.')
+        self.spec_original_pixel_compare_button.setEnabled(False)
+        self.spec_original_pixel_compare_button.clicked.connect(
+            self.compare_current_original_graph_pixels)
+        research_stack.addWidget(self.spec_original_pixel_compare_button)
+        self.spec_original_pixel_status=QLabel(
+            'PNG оригинала ещё не сравнивался с текущим графиком')
+        self.spec_original_pixel_status.setObjectName(
+            'currentOriginalSpectrumPixelComparisonStatus')
+        self.spec_original_pixel_status.setWordWrap(True)
+        self.spec_original_pixel_status.setTextInteractionFlags(
+            Qt.TextSelectableByMouse)
+        research_stack.addWidget(self.spec_original_pixel_status)
+        self.spec_original_pixel_diff_preview=QLabel(
+            'Карта отличий: красный — график, оранжевый — оси и подписи.')
+        self.spec_original_pixel_diff_preview.setObjectName(
+            'currentSpectrumPixelDifferencePreview')
+        self.spec_original_pixel_diff_preview.setFixedHeight(160)
+        self.spec_original_pixel_diff_preview.setAlignment(Qt.AlignCenter)
+        self.spec_original_pixel_diff_preview.setWordWrap(True)
+        research_stack.addWidget(self.spec_original_pixel_diff_preview)
         self.spec_source_grid_checkbox=QCheckBox(
             'Сетка TQGrapher 10×10 · исследовательская')
         self.spec_source_grid_checkbox.setObjectName(
@@ -3031,6 +3070,9 @@ class MainWindow(QMainWindow):
         self._spec_source_grid_axis_label_fonts=None
         if hasattr(self,'spec_pixel_audit_export_button'):
             self.spec_pixel_audit_export_button.setEnabled(False)
+        if hasattr(self,'spec_original_pixel_compare_button'):
+            self.spec_original_pixel_compare_button.setEnabled(False)
+            self._invalidate_original_pixel_comparison()
         if self._spec_source_series_item is not None:
             self._spec_source_series_item.setVisible(True)
         blocked=self.spec_source_raster_checkbox.blockSignals(True)
@@ -3117,6 +3159,9 @@ class MainWindow(QMainWindow):
                 self._spec_source_grid_model.get('combined_preview_active',False)==combined and
                 self._spec_source_grid_model.get('bitmap_viewport_signature')==signature):
                 return
+            # Any rerender/viewport change invalidates the previous pixel
+            # report, even if the source Power/Y itself is unchanged.
+            self._invalidate_original_pixel_comparison()
             # A new image invalidates XOR and source affine transforms.
             # Preserve only the SCENE-LOCAL mouse X, not the old FFT bin
             # or bitmap X/Y. It will be reprojected after rebuilding this
@@ -3273,6 +3318,8 @@ class MainWindow(QMainWindow):
             self._spec_source_grid_model=model
             self.spec_pixel_audit_export_button.setEnabled(
                 bool(combined and self._spec_source_raster_data is not None))
+            self.spec_original_pixel_compare_button.setEnabled(
+                bool(combined and self._spec_source_raster_data is not None))
             # A Qt ImageItem/axis layout change can deliver another
             # sigResized AFTER MouseMove. Re-select under the new canvas
             # rather than dropping an already valid cursor (or retaining
@@ -3400,6 +3447,88 @@ class MainWindow(QMainWindow):
             self.show_original_spectrum_reference(path)
         except (OSError,ValueError,KeyError,TypeError,UnicodeError,RuntimeError) as exc:
             QMessageBox.warning(self,'Оригинальный Power/Y не принят',str(exc))
+
+    def _invalidate_original_pixel_comparison(self):
+        """No stale screenshot verdict after a source, zoom, mode or DPI change."""
+        self._visible_original_pixel_report=None
+        if hasattr(self,'spec_original_pixel_status'):
+            self.spec_original_pixel_status.setText(
+                'PNG оригинала ещё не сравнивался с текущим графиком')
+        if hasattr(self,'spec_original_pixel_diff_preview'):
+            self.spec_original_pixel_diff_preview.clear()
+            self.spec_original_pixel_diff_preview.setText(
+                'Карта отличий: красный — график, оранжевый — подписи/оси.')
+
+    def compare_current_original_graph_pixels(self):
+        """Current on-screen source bitmap vs explicit local original PNG.
+
+        Only the existing separate research composite, not fabricated GDI
+        pixels or the archive FFT itself. No user images/network/file writes.
+        """
+        if (not self._source_software_composite_selected()
+                or self._spec_source_raster_data is None
+                or self._spectrum_reference is None or self._full_spectrum is None):
+            self.spec_original_pixel_status.setText(
+                'ОТКАЗ: включите эталон Power/Y и единый TCo2Draw график.')
+            return None
+        if not self.spec_original_pixel_operator_claim.isChecked():
+            self.spec_original_pixel_status.setText(
+                'ОТКАЗ: сначала подтвердите тот же исходный график, '
+                'размер, масштаб, DPI и отсутствие курсора.')
+            return None
+        path,_=QFileDialog.getOpenFileName(
+            self,'Оригинальный MVKView PNG, та же область PaintBox','',
+            'PNG (*.png)')
+        if not path:return None
+        try:
+            # Refresh the currently painted image before checking its SHA.
+            self._sync_source_tqgrapher_grid_candidate()
+            if (not self._source_software_composite_selected()
+                    or self._spec_source_raster_data is None):
+                raise ValueError('Нет текущего полного TCo2Draw для сравнения')
+            model=self._spec_source_grid_model
+            xr,yr=self.spec_plot.getViewBox().viewRange()
+            report,diff=compare_current_original_pixel_view(
+                self._spectrum_reference,self._full_spectrum,
+                source_bitmap=self._spec_source_raster_data,
+                canvas=model['combined_canvas'],source_model=model,
+                view_x=tuple(xr),view_y=tuple(yr),
+                qt_device_pixel_ratio=float(
+                    self.spec_plot.viewport().devicePixelRatioF()),
+                original_png_rgba=read_png_rgba(path),
+                operator_declared_same_window=True,shift_radius=3,
+                textout_diagnostics=model.get(
+                    'spectrum_textout_native_metrics'))
+        except (OSError,ValueError,TypeError,KeyError,OverflowError,RuntimeError) as exc:
+            self._invalidate_original_pixel_comparison()
+            self.spec_original_pixel_status.setText(
+                'ОТКАЗ: '+str(exc)[:280])
+            self.statusBar().showMessage('PNG оригинала не принят, график не изменён')
+            return None
+        self._visible_original_pixel_report=report
+        plot=report['plot_pixels']
+        axis=report['axes_text_and_margins']
+        self.spec_original_pixel_status.setText(
+            f"PixelRect: {plot['pixels_any_rgb_channel_gt_1']} "
+            f"из {plot['pixels_compared']} отличаются (>1 RGB); "
+            f"оси/подписи: {axis['pixels_any_rgb_channel_gt_1']} "
+            f"из {axis['pixels_compared']}; "
+            f"все пиксели равны: {'ДА' if report['exact_rgb_equal_without_alignment'] else 'НЕТ'}. "
+            'Операторский PNG/Win32/DPI не удостоверен; это диагностический результат.')
+        h,w=diff.shape[:2]
+        img=QImage(
+            np.ascontiguousarray(diff).tobytes(),w,h,w*4,
+            QImage.Format_RGBA8888).copy()
+        pix=QPixmap.fromImage(img).scaled(
+            300,150,Qt.KeepAspectRatio,Qt.FastTransformation)
+        self.spec_original_pixel_diff_preview.setPixmap(pix)
+        self.spec_original_pixel_diff_preview.setToolTip(
+            'Белый=совпали; красный=ошибка PixelRect; '
+            'оранжевый=ошибка осей/подписей; серый=разница 1 RGB. '
+            'Без изменения текущего исходного графика.')
+        self.statusBar().showMessage(
+            'Локальная диагностика PNG готова; original Canvas parity НЕ принята')
+        return report
 
     def _leave_original_spectrum_reference(self):
         """Restore original archive controls, without touching source samples."""
