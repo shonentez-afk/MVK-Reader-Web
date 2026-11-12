@@ -1,6 +1,6 @@
 # STAGE111Z31BX — исходная обратная ось PageAdc, FRange/Y и связность с PageSpectrum
 
-**Поставка:** Core + реальный Qt/DPI150 + сквозные тесты. **Окончательный CI/EXE:** см. Actions по исполняемому SHA после приёмки. Не эквивалентно оригинальному Win32 и приборной аттестации.
+**ПРИЁМКА 12.11.2026:** исполняемый source SHA `ed60a9eedb82cb53d5483c3185cf613fae847c3a`, [GitHub Actions #43229137074](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43229137074) — **SUCCESS 3/3**: Linux Core 1797 PASS (90 skipped), Windows Core 1926 PASS (7 skipped), Qt smoke 49 PASS, Windows Qt DPI150 100 PASS и автономный Windows EXE Native R6.1. [EXE artifact #13950165701](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43229137074/artifacts/13950165701) — ZIP 68 907 394 байта до 26.11.2026; [Synthetic UI #13950615602](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43229137074/artifacts/13950615602) до 19.11.2026. Linux/Windows синтетические проверки — это НЕ original Win32 runtime/приборная аттестация. QA исправил тест, требовавший полного N/2 из усечённого max_points, уточнил подсказку PageAdc/Spectrum, а прежние Qt-тесты переключил на явно исследовательскую хронологию. Реальный source reverse X остаётся значением по умолчанию.
 
 ## Новая восстановленная исходная логика
 
