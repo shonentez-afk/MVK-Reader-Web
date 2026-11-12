@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QPointF
+from PySide6.QtWidgets import QMessageBox
 
 from .test_desktop_qt import qt_app
 from .test_offline_core import fixture_zip
@@ -24,8 +25,18 @@ def _with_tsxml_gain(sidecar,gain):
         "</Channel>"),encoding="utf-8")
 
 
+@pytest.fixture
+def reject_modal_dialog(monkeypatch):
+    """Unexpected invalid-session dialogs must FAIL a headless CI test,
+    never leave the Windows runner waiting for a human to click OK."""
+    def unexpected(*args,**kwargs):
+        raise AssertionError("Unexpected modal QMessageBox in offline UI acceptance")
+    for name in ("critical","warning","question","information"):
+        monkeypatch.setattr(QMessageBox,name,staticmethod(unexpected))
+
+
 def test_source_h_preset_and_real_frange_survive_fft_recompute_and_user_pan(
-        qt_app,tmp_path):
+        qt_app,tmp_path,reject_modal_dialog):
     from mvk_compatible.desktop.main_window import MainWindow
     p4,xml4,_=_make_pair(tmp_path,n=16384,adc=4)
     _with_tsxml_gain(xml4,"6.25")
@@ -137,7 +148,7 @@ def test_source_h_preset_and_real_frange_survive_fft_recompute_and_user_pan(
 
 
 def test_source_gain_changes_with_selected_bin_adc_without_cross_talk(
-        qt_app,tmp_path):
+        qt_app,tmp_path,reject_modal_dialog):
     from mvk_compatible.desktop.main_window import MainWindow
     p4,x4,_=_make_pair(tmp_path,n=8192,adc=4)
     p6,x6,_=_make_pair(tmp_path,n=8192,adc=6)
