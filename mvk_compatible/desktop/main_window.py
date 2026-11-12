@@ -82,6 +82,7 @@ from ..core.original_adc_view_controls import (
 )
 from ..core.original_adc_source_axes import (
     source_adc_grapher_x,source_adc_grapher_cursor,
+    source_adc_envelope_axes,source_adc_envelope_cursor,
     source_adc_spectrum_joint_receipt,
 )
 from ..core.original_spectrum_x32dbg_reference import (
@@ -517,7 +518,8 @@ class MainWindow(QMainWindow):
         self.wave_order.setCurrentIndex(2)
         self.wave_order.setToolTip(
             'Source _Unit128: ScrLeft=H, ScrWidth=-H, XScale 1000/Fs '
-            'или 1/Fs; GetSignal без FIR. Win32 GDI ещё не сверен.')
+            'или 1/Fs. Для FIR — действительный выходной Fs; без '
+            'подстановки архивного времени фильтра. Win32 GDI не сверен.')
 
         self.wave_envelope_load=QPushButton(
             'Открыть локальный оригинальный IDP для огибающей…')
@@ -704,6 +706,8 @@ class MainWindow(QMainWindow):
                 target.blockSignals(previously)
 
     def _wave_filter_selected(self,*_):
+        # Source mEnvelopeType1Click changes both ADC and Spectrum Tags.
+        # Recalculate both views even when the other page is hidden.
         self._sync_original_envelope_menu_tag(self.wave_envelope_code)
         self._sync_wave_primary_labels()
         self._wave_envelope_dirty=True
@@ -712,7 +716,7 @@ class MainWindow(QMainWindow):
             self._spectrum_envelope_dirty=True
             if self.spec_envelope_code.currentData()==0:
                 self.spec_envelope_button.setChecked(False)
-            elif self.tabs.currentIndex()==2:
+            else:
                 self._toggle_spec_envelope(True)
 
     def _wave_mode_selected(self,*_):
@@ -1988,12 +1992,13 @@ class MainWindow(QMainWindow):
         self._sync_original_envelope_menu_tag(self.spec_envelope_code)
         self._sync_wave_primary_labels()
         self._wave_envelope_dirty=True
-        if self.tabs.currentIndex()==1:
+        if self.session is not None and not self._live_active:
+            # Original 0084B2C8 refreshes both TQGrapher pages, not merely
+            # the currently visible diagnostic tab.
             self.refresh_wave()
         code=int(self.spec_envelope_code.currentData() or 0)
         if code==0 and self.spec_envelope_button.isChecked():
-            # Original Tag=0 is no filter: clear/recalculate an active FIR
-            # trace instead of leaving its old peaks under "Без фильтра".
+            # Original Tag=0 invalidates the active FIR immediately.
             self.spec_envelope_button.setChecked(False)
         elif self.spec_envelope_button.isChecked():
             self._toggle_spec_envelope(True)
@@ -2972,11 +2977,16 @@ class MainWindow(QMainWindow):
             if self._source_wave_hscale_model is not None and not code:
                 self._source_wave_hscale_model=validate_source_adc_horizontal_trace(
                     flow,d,self._source_wave_hscale_model)
-            if (self.wave_order.currentIndex()==2 and not code
+            if (self.wave_order.currentIndex()==2
                     and self._wave_hscale_tag is not None
                     and self._source_wave_hscale_model is not None):
-                self._source_wave_xaxes_model=source_adc_grapher_x(
-                    flow,d,self._wave_hscale_tag)
+                # Both original raw GetSignal and filtered GetSignal use
+                # ScrLeft=H and ScrWidth=-H. FIR uses actual OutputSampleRate,
+                # NOT the pre-filter SelectedSampleRate (Unit128:00848033).
+                self._source_wave_xaxes_model=(
+                    source_adc_envelope_axes(flow,d,self._wave_hscale_tag)
+                    if code else
+                    source_adc_grapher_x(flow,d,self._wave_hscale_tag))
             self.wave_plot.clear()
             self.wave_plot.setLabel(
                 'left', 'Отсчёты BIN (калибровка не проверена)'
@@ -3021,9 +3031,20 @@ class MainWindow(QMainWindow):
                     f"{verified_wave['source_bin_sha256'][:12]}…; "
                     "данные взяты из Core, не из прореженного графика.")
             else:
-                self.wave_mean_primary.setToolTip(
-                    "FIR огибающая — отдельный расчётный кандидат; "
-                    "оригинальная временная шкала/численный паритет ещё не приняты.")
+                firaxes=self._source_wave_xaxes_model
+                if firaxes is not None and firaxes.get('kind')=='SOURCE_FIR':
+                    self.wave_mean_primary.setToolTip(
+                        f"Source GetSignal FIR Code{firaxes['envelope_code']}: "
+                        f"{firaxes['requested_raw_samples']} исходных отсчётов "
+                        f"→ {firaxes['required_input_samples']} реальной истории "
+                        f"→ {firaxes['series_samples']} выходных отсчётов "
+                        f"при {firaxes['output_sample_rate_hz']} Гц. "
+                        "Полный Float32 проверен SHA. Время latency и "
+                        "Win32/x87 numerical parity НЕ подтверждены.")
+                else:
+                    self.wave_mean_primary.setToolTip(
+                        "FIR огибающая — отдельный расчётный кандидат; "
+                        "оригинальная временная шкала/численный паритет ещё не приняты.")
             # One real BIN/ADC source drives both Core results after a
             # change of ADC H/V, without rerunning or modifying the FFT.
             if self._full_spectrum is not None:
@@ -4399,20 +4420,40 @@ class MainWindow(QMainWindow):
                 if flow.source_record()['source_bin_sha256']!=filtered.source_bin_sha256:
                     raise ValueError('Фильтрованный курсор устарел: другой BIN/ADC')
                 x=float(vb.mapSceneToView(pos).x())
-                p=filtered.pick(x)
-                self.wave_line.setPos(p['output_buffer_relative_s'])
+                axes=self._source_wave_xaxes_model
+                if axes is not None and axes.get('kind')=='SOURCE_FIR':
+                    selected=source_adc_envelope_cursor(
+                        flow,self._source_wave_trace,axes,x)
+                    p=filtered.pick(selected['output_buffer_relative_s'])
+                    if (p['output_index']!=selected['output_index']
+                            or p['filtered_output_sha256']!=axes[
+                                'filtered_float32_sha256']):
+                        raise ValueError('Source FIR cursor differs from FULL buffer')
+                    self.wave_line.setPos(selected['plot_x'])
+                    time_text=(
+                        f"{selected['plot_x']:.6g} {axes['axis_unit']}")
+                    context=(
+                        " · обратный исходный ScrWidth; "
+                        "OutputSampleRate по FIR GetSignal; "
+                        "абсолютная задержка фильтра и Win32 Canvas "
+                        "НЕ подтверждены")
+                else:
+                    p=filtered.pick(x)
+                    self.wave_line.setPos(p['output_buffer_relative_s'])
+                    time_text=f"{p['output_buffer_relative_s']:.6g} с"
+                    context=" · время относительно буфера, не Win32 исходное время"
                 self.wave_line.setVisible(True)
                 unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
                       else 'расч. ед.')
                 self.wave_cursor_primary.setText(
-                    f"{p['output_buffer_relative_s']:.6g} с\n"
+                    f"{time_text}\n"
                     f"{p['value_from_full_filtered_float32']:.6g} {unit}")
                 self.wave_hint.setText(
                     f"Огибающая Code{p['code']} · исходный "
                     f"ADCGrapher.UpdateCursor X → полный FIR[{p['output_index']}], "
                     f"{p['value_from_full_filtered_float32']:.8g} {unit} · "
-                    f"порядок {p['order']} · Fs {filtered.output_hz:.8g} Гц · "
-                    "время относительно буфера, не Win32 исходное время")
+                    f"порядок {p['order']} · Fs {filtered.output_hz:.8g} Гц"
+                    +context)
                 return
             if self._wave_hover_window is None:
                 # Do not re-read the complete ZIP and recompute GetSignal at
