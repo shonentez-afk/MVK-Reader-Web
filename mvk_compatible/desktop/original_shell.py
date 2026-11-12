@@ -515,6 +515,13 @@ class OriginalRootShell:
             return
         caption=source_linked_caption(
             flow,model,verified_status=verified_status)
+        # Source-backed TSXML gain, if present, is shown in the COMMON
+        # view panel without modifying source lbSpecHint (cursor must
+        # return to exactly "Курсор: —" when the mouse exits).
+        gain=getattr(self.window,"_source_spectrum_gain",None)
+        if (gain is not None and gain.channel==flow.channel
+                and gain.source_bin_sha256==model.bin_sha256):
+            caption+=" · "+gain.label
         self.view_context.setText(caption)
         self.status_note.setToolTip(caption)
 
