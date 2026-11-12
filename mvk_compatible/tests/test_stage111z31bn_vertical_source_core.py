@@ -59,8 +59,9 @@ def test_delphi_mode_default_is_bottom_anchored_and_uses_real_tsxml_f_range(
     assert view["f_range_origin"]==ORIGIN_TSXML
     assert view["f_range_single"]==6.25
     assert view["graph_default_vscale_candidate"]==scale
+    # Source computes/stores intermediate values as IEEE-754 Single.
     assert view["y_min"]==pytest.approx(0.,abs=.00003*scale)
-    assert view["y_max"]==pytest.approx(scale/1000.,rel=2e-5)
+    assert view["y_max"]==pytest.approx(scale/1000.,rel=5e-5)
     assert view["source_anchored_without_local_y_offset"]
     assert not view["original_runtime_f_range_verified"]
     assert not view["original_win32_canvas_pixel_parity_verified"]
