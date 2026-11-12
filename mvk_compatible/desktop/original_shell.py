@@ -22,6 +22,7 @@ from .original_task_ui import install_source_task_buttons
 from .original_config_readonly_ui import OriginalConfigReadOnlyPanel
 from .original_windowman_form import OriginalWindowMan
 from .original_measure_controls_ui import OriginalMeasureControls
+from .original_calibration_ui import build_original_calibration_page, OriginalCalibrationPanel
 from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
@@ -359,57 +360,8 @@ def _status_page(parent: QWidget) -> QWidget:
 
 
 def _calib_page(parent: QWidget) -> QWidget:
-    page = QWidget(parent)
-    page.setObjectName("PageCalib")
-    lay = QVBoxLayout(page)
-    lay.setContentsMargins(4, 4, 4, 4)
-    split = QSplitter(Qt.Horizontal, page)
-    split.setObjectName("splCalib")
-    left = QTabWidget(split)
-    left.setObjectName("tcCalibParam")
-    steps = QWidget(left)
-    steps_lay = QVBoxLayout(steps)
-    top_actions = QHBoxLayout()
-    top_actions.addWidget(_disabled("bCalibStart", "Пуск", steps))
-    top_actions.addWidget(_text(steps, "Порт генератора: —"))
-    steps_lay.addLayout(top_actions)
-    list_view = QListWidget(steps)
-    list_view.setObjectName("cbCalibSteps")
-    steps_lay.addWidget(list_view, 1)
-    unit_row = QHBoxLayout()
-    for key in ("A", "V", "D", "DR", "T"):
-        unit_row.addWidget(_disabled("bCalib" + key, key, steps))
-    steps_lay.addLayout(unit_row)
-    left.addTab(steps, "Параметры")
-
-    right = QTabWidget(split)
-    right.setObjectName("tcCalibResult")
-    result = QWidget(right)
-    result_lay = QVBoxLayout(result)
-    result_buttons = QHBoxLayout()
-    for name, title in (
-        ("bCalibSave", "Сохранить"),
-        ("bCalibClear", "Очистить"),
-        ("bCalibGenerate", "Создать"),
-    ):
-        result_buttons.addWidget(_disabled(name, title, result))
-    result_lay.addLayout(result_buttons)
-    log = QPlainTextEdit(result)
-    log.setObjectName("logCalibResult")
-    log.setReadOnly(True)
-    log.setPlaceholderText("Калибровочные измерения не проводились.")
-    result_lay.addWidget(log, 1)
-    right.addTab(result, "Результаты")
-    split.addWidget(left)
-    split.addWidget(right)
-    split.setChildrenCollapsible(False)
-    split.setSizes([ORIGINAL_CALIB_SPLITTER_LEFT, 615])
-    lay.addWidget(split, 1)
-    lay.addWidget(_text(page,
-        "Калибровочный экран структурно восстановлен по оригинальному "
-        "DFM. Генератор и запись в прибор отключены до восстановления "
-        "и отдельного подтверждения протокола."))
-    return page
+    """Source PageCalib DFM: functional 49-step, 77x11, two-mode worksheet."""
+    return build_original_calibration_page(parent)
 
 
 class OriginalRootShell:
@@ -447,6 +399,9 @@ class OriginalRootShell:
         window.original_window_man=OriginalWindowMan(window)
         self.stack.addWidget(_file_page(window, window.choose_archive))  # 2
         self.stack.addWidget(_calib_page(window))           # index 3
+        self.calib_page=self.stack.widget(3)
+        self.calib_panel=OriginalCalibrationPanel(self.calib_page,window)
+        window.original_calib_panel=self.calib_panel
         self.stack.addWidget(_status_page(window))          # index 4
         self.status_page = self.stack.widget(4)
         self.status_tabs = self.status_page.mode_tabs
@@ -668,6 +623,10 @@ class OriginalRootShell:
                     self.refresh_status()
             else:
                 self.stack.setCurrentIndex({1: 1, 5: 2, 6: 3}[root_index])
+                if root_index==6:
+                    # The local PageConfig workspace may have been changed
+                    # since the last original PageCalib visit.
+                    self.calib_panel.refresh_gate()
         finally:
             self._routing = False
         if 0 <= root_index < len(PAGES):
