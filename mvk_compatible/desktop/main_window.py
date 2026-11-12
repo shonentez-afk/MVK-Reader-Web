@@ -734,6 +734,14 @@ class MainWindow(QMainWindow):
         # without horizontal scrolling or clipped diagnostics.
         self.spec_tools.setFixedWidth(177)
         self.spec_tools.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Stage111Z31BS: original pnMeasure uses 53 logical pixels at bottom.
+        # At 150% Windows DPI it makes the Spectrum pane tall enough to need
+        # a vertical scrollbar. The default 15-23px Qt scrollbar narrowed
+        # the SOURCE bSpecEnvelopeType controls from 162 to 154, violating
+        # original Delphi DFM geometry. Use a visible narrow scroll handle
+        # (6 logical px) so a 177px source sidebar still fits x=9,width=162.
+        # Preserve actual vertical scrolling and never weaken DFM tests.
+        self.spec_tools.verticalScrollBar().setFixedWidth(6)
         self.spec_tools.setWidgetResizable(True)
         self.spec_tools.setFrameShape(QFrame.NoFrame)
         tools=QWidget()
