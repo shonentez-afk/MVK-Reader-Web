@@ -1,6 +1,6 @@
 # Stage111Z31BR — реальное восстановление PageFile: исходные списки и параметры, рабочий локальный экспорт
 
-**Текущая CI приёмка:** source SHA `bf9f3d6608e0d244919974de8297c2958cc13c4c`. [Actions #43181779598](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43181779598) — Linux Core PASS, Windows queued; автономный EXE этой версии пока НЕ принят.
+**ПРИЁМКА 12.11.2026:** исходный исполняемый SHA `bf9f3d6608e0d244919974de8297c2958cc13c4c`, [GitHub Actions #43181779598](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43181779598) — **SUCCESS 3/3**, Linux Core, Windows Core/Qt DPI150, Windows EXE Native R6.1. [EXE artifact #13927901338](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43181779598/artifacts/13927901338) (68 809 496 байт; до 26.11.2026), [синтетические UI скриншоты #13927181547](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43181779598/artifacts/13927181547) (417 804 байта; до 19.11.2026). Не подтверждает native Win32 pixel parity или работу непроверенных аппаратных записей.
 
 **Требование владельца:** больше не тратить этапы на сравнение Power/Y/PNG до восстановления основных функций всех трёх форм и семи страниц. Работать только блоками автономное Core + оригинальная видимая Qt-страница + сквозные Windows тесты.
 
