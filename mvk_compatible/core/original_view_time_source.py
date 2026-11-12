@@ -180,6 +180,8 @@ def source_spectrum_readout(flow: OfflineMeasurementFlow, spectrum: dict,
     if (record["selected_channel"] != view_time.adc or
             record["source_bin_sha256"] != view_time.bin_sha256):
         raise ValueError("Spectrum/time source provenance mismatch")
+    if spectrum.get("channel") != flow.channel:
+        raise ValueError("FFT channel is not from selected source ADC")
     bins = spectrum.get("amplitude")
     frequencies = spectrum.get("frequency_hz")
     if bins is None or frequencies is None or (
