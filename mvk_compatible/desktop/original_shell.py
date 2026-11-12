@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
-    QHeaderView, QSpinBox,
+    QHeaderView, QSpinBox, QSlider,
     QTableWidgetItem, QListWidgetItem, QStyle, QVBoxLayout, QWidget,
 )
 
@@ -25,6 +25,7 @@ from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_file_workbench import source_file_workbench
+from ..core.original_view_time_source import source_view_time, source_linked_caption
 
 from ..core.original_ui_form_contract import (
     ORIGINAL_ROOT_PAGES, ORIGINAL_ROOT_TAB_HEIGHT,
@@ -414,6 +415,42 @@ class OriginalRootShell:
         window.adc.currentIndexChanged.connect(self._sync_file_selection)
         layout.insertWidget(1, self.navigation)
         layout.insertWidget(2, self.stack, 1)
+        # Real original pnView sits beneath all seven pages.  Its slider is
+        # bound to the SAME checked ADC/window that GetSignal/GetSpectrum use.
+        self.view_panel=QWidget(window)
+        self.view_panel.setObjectName("pnView")
+        self.view_panel.setFixedHeight(64)  # 48px original + visible provenance
+        time_layout=QVBoxLayout(self.view_panel)
+        time_layout.setContentsMargins(7,2,7,2)
+        time_layout.setSpacing(1)
+        time_line=QHBoxLayout()
+        time_line.addWidget(QLabel("Время просмотра:",self.view_panel))
+        self.view_slider=QSlider(Qt.Horizontal,self.view_panel)
+        self.view_slider.setObjectName("tbViewTime")
+        self.view_slider.setTracking(False)
+        self.view_slider.setRange(0,120)
+        self.view_slider.setPageStep(60)
+        self.view_slider.setTickInterval(60)
+        self.view_slider.setTickPosition(QSlider.TicksAbove)
+        self.view_slider.setEnabled(False)
+        time_line.addWidget(self.view_slider,1)
+        self.view_time_label=QLabel("00:00:00.000",self.view_panel)
+        self.view_time_label.setObjectName("lbViewTime")
+        self.view_time_label.setMinimumWidth(104)
+        self.view_time_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        time_line.addWidget(self.view_time_label)
+        time_layout.addLayout(time_line)
+        self.view_context=QLabel("Нет подтверждённого сигнала",self.view_panel)
+        self.view_context.setObjectName("sourceViewTimeContext")
+        self.view_context.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.view_context.setToolTip(
+            "Локальный исходный выбор окна BIN; оригинальная Win32 1:1 "
+            "координатная/временная приёмка ещё не завершена.")
+        time_layout.addWidget(self.view_context)
+        layout.insertWidget(3,self.view_panel)
+        self._source_view_time=None
+        self.view_panel.hide()
+        self.view_slider.valueChanged.connect(window._source_time_position_changed)
         window.tabs.tabBar().hide()  # 3 internal tabs no longer 3 top-level pages
         window.original_start_launcher = install_source_task_buttons(window, self.navigation)
         # DFM PageStart is a task launcher, not six research subpages.
@@ -423,6 +460,54 @@ class OriginalRootShell:
         self.navigation.currentChanged.connect(self._selected)
         window.tabs.currentChanged.connect(self._legacy_changed)
         self._selected(0)
+
+    def clear_source_view_time(self) -> None:
+        self._source_view_time=None
+        blocked=self.view_slider.blockSignals(True)
+        try:
+            self.view_slider.setRange(0,120)
+            self.view_slider.setValue(0)
+            self.view_slider.setEnabled(False)
+        finally:
+            self.view_slider.blockSignals(blocked)
+        self.view_time_label.setText("00:00:00.000")
+        self.view_context.setText("Нет проверенного offline сигнала")
+        self.view_panel.hide()
+
+    def sync_source_view_time(self,flow,*,requested_start_s=None,position=None):
+        """One source-derived tbViewTime and all visible time/readout pages."""
+        if flow is None or self.window.session is None or self.window._live_active:
+            self.clear_source_view_time()
+            return None
+        flow.require_session(self.window.session)
+        model=source_view_time(
+            flow,requested_start_s=requested_start_s,position=position)
+        blocked=self.view_slider.blockSignals(True)
+        try:
+            self.view_slider.setRange(model.minimum,model.maximum)
+            self.view_slider.setPageStep(model.page_step)
+            self.view_slider.setSingleStep(1)
+            self.view_slider.setTickInterval(model.frequency)
+            self.view_slider.setValue(model.position)
+            self.view_slider.setEnabled(model.maximum>model.minimum)
+        finally:
+            self.view_slider.blockSignals(blocked)
+        self._source_view_time=model
+        self.view_time_label.setText(model.label)
+        self.view_panel.show()
+        self.refresh_source_time_context(flow)
+        return model
+
+    def refresh_source_time_context(self,flow,*,verified_status=None) -> None:
+        """One ADC + one BIN hash + one VALUES tick in visible caption."""
+        model=self._source_view_time
+        if flow is None or model is None:
+            self.view_context.setText("Нет подтверждённого offline сигнала")
+            return
+        caption=source_linked_caption(
+            flow,model,verified_status=verified_status)
+        self.view_context.setText(caption)
+        self.status_note.setToolTip(caption)
 
     def _remember_view_action(self,action,selection):
         self.view_state=self.view_state.transition(action,selection)
