@@ -70,6 +70,10 @@ from ..core.tqgrapher_dfm_design_idr_candidate import (
     DFM_DESIGN_FONT_FAMILY, DFM_DESIGN_FONT_HEIGHT,
     DFM_DESIGN_PIXELS_PER_INCH, PAINTBOX_DIMENSIONS)
 from ..core.spectrum_summary_export_candidate import (spectrum_triplet_text,append_research_summary_csv)
+from ..core.original_adc_spectrum_actions import (
+    OriginalSpectrumAction,OriginalEnvelopeCursor,
+    append_source_spec_freq_csv,spectrum_source_daily_path,
+)
 from ..core.original_spectrum_x32dbg_reference import (
     load_original_spectrum_reference, SOURCE as ORIGINAL_X32DBG_REF_SOURCE)
 from ..triplet_reference_compare import read_operator_triplet_file,compare_operator_triplet
@@ -113,6 +117,7 @@ class MainWindow(QMainWindow):
         self._spec_mouse_pixel=None  # Native UpdateCursor ignores unchanged integer X
         self._wave_mouse_pixel=None
         self._wave_hover_window=None  # Lazy, one offline BIN read per displayed window
+        self._source_envelope_cursor=None  # Original ADCGrapher full filtered series, not LOD
         self._full_spectrum=None
         self._spectrum_summary=None
         self._spectrum_reference=None  # Explicit research-only original x32dbg visual overlay
@@ -912,8 +917,10 @@ class MainWindow(QMainWindow):
         self.spec_copy_button.setFixedHeight(41)
         self.spec_copy_button.setEnabled(False)
         self.spec_copy_button.setToolTip(
-            'Только 3 локально вычисленные значения: сумма/пик-частота/пик-амплитуда. '
-            'Табуляция как в 0084BC28; оригинальная Delphi точность не принята')
+            'Исходный bSpecCopyValueClick 0084BC28: три поля текущего '
+            'АЦП/режима GetSpectrum (СКЗ, пик Гц, амплитуда) через TAB. '
+            'Прямой BIN — только с предупреждением о калибровке; '
+            'битовый паритет Delphi FloatToStr ещё не принят.')
         self.spec_copy_button.clicked.connect(self._copy_spec_summary)
         stack.addWidget(self.spec_copy_button)
 
@@ -922,8 +929,10 @@ class MainWindow(QMainWindow):
         self.spec_save_button.setFixedHeight(41)
         self.spec_save_button.setEnabled(False)
         self.spec_save_button.setToolTip(
-            'Только локальный CSV sep=|, отдельный от оригинальных SPEC-FREQ; '
-            'исходные BIN/IDP не записываются')
+            'Исходный bSpecSaveValueClick 0084BD7C: SPEC-FREQ-YYYY-MM-DD.csv, '
+            'sep=|, три поля, добавление строк в выбранном edLibraryPath. '
+            'Исходный Win32 кодировочный/локализованный заголовок не аттестован. '
+            'Никаких команд прибору и перезаписи чужого файла.')
         self.spec_save_button.clicked.connect(self._save_spec_summary)
         stack.addWidget(self.spec_save_button)
         self.spec_original_copy_compare=QPushButton('Сверить с MVKView…')
@@ -2353,6 +2362,7 @@ class MainWindow(QMainWindow):
         self._pagestatus_snapshot=None
         self._source_view_time=None
         self._source_wave_readout=None
+        self._source_envelope_cursor=None
         self._source_spectrum_readout=None
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
@@ -2439,6 +2449,7 @@ class MainWindow(QMainWindow):
         self._pagestatus_snapshot=None
         self._source_view_time=None
         self._source_wave_readout=None
+        self._source_envelope_cursor=None
         self._source_spectrum_readout=None
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
@@ -2840,6 +2851,10 @@ class MainWindow(QMainWindow):
             # never pretend its downsampled output is the source raw window.
             verified_wave=(
                 None if code else source_wave_readout(flow,d,time))
+            # Source pbAdcMouseMove/ADCGrapher.UpdateCursor must use ALL
+            # post-FIR GetSignal samples, never the reduced plotted trace.
+            self._source_envelope_cursor=(
+                OriginalEnvelopeCursor.from_trace(flow,d) if code else None)
             self._source_wave_readout=verified_wave
             self.wave_plot.clear()
             self.wave_plot.setLabel(
@@ -2876,6 +2891,7 @@ class MainWindow(QMainWindow):
             self._wave_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
             self._source_wave_readout=None
+            self._source_envelope_cursor=None
             # Original invalidates both series when EnvelopeCode changes.
             self.wave_plot.clear()
             self.wave_line=None
@@ -4200,10 +4216,35 @@ class MainWindow(QMainWindow):
                 self.wave_cursor_primary.setText('Курсор: —')
                 return
             if self.wave_envelope_code.currentData():
-                self.wave_line.setVisible(False)
-                self.statusBar().showMessage(
-                    'Исходный курсор огибающей TQGrapher ещё не принят')
-                self.wave_cursor_primary.setText('Курсор огибающей: —')
+                # Original 0084B4AC forwards mouse X to ADCGrapher. The
+                # local FIR engine already supplied ALL processed f32
+                # samples and their SHA. Keep the readout explicitly in
+                # output-buffer relative time; Delphi absolute time/parity
+                # remains unverified.
+                filtered=self._source_envelope_cursor
+                if filtered is None or filtered.channel!=self._ch():
+                    self.wave_line.setVisible(False)
+                    self.wave_cursor_primary.setText('Курсор огибающей: —')
+                    return
+                flow=self._current_offline_flow()
+                flow.require_session(self.session)
+                if flow.source_record()['source_bin_sha256']!=filtered.source_bin_sha256:
+                    raise ValueError('Фильтрованный курсор устарел: другой BIN/ADC')
+                x=float(vb.mapSceneToView(pos).x())
+                p=filtered.pick(x)
+                self.wave_line.setPos(p['output_buffer_relative_s'])
+                self.wave_line.setVisible(True)
+                unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
+                      else 'расч. ед.')
+                self.wave_cursor_primary.setText(
+                    f"{p['output_buffer_relative_s']:.6g} с\n"
+                    f"{p['value_from_full_filtered_float32']:.6g} {unit}")
+                self.wave_hint.setText(
+                    f"Огибающая Code{p['code']} · исходный "
+                    f"ADCGrapher.UpdateCursor X → полный FIR[{p['output_index']}], "
+                    f"{p['value_from_full_filtered_float32']:.8g} {unit} · "
+                    f"порядок {p['order']} · Fs {filtered.output_hz:.8g} Гц · "
+                    "время относительно буфера, не Win32 исходное время")
                 return
             if self._wave_hover_window is None:
                 # Do not re-read the complete ZIP and recompute GetSignal at
@@ -4612,55 +4653,105 @@ class MainWindow(QMainWindow):
         except (KeyError,OSError,ValueError,UnicodeError,TypeError) as exc:
             QMessageBox.warning(self,'Сравнение оригинальной MVKView отклонено',str(exc))
 
+    def _current_original_spectrum_action(self):
+        """Original _Unit128:0084EADC selects the active tcSpectrum ADC.
+
+        Every Copy/Save is independently rebound to ONE current verified
+        GetSpectrum+channel; a former screenshot/reference or stale archive
+        must never be exported as physical measurement data.
+        """
+        if (self._live_active or self.session is None or
+                self._spectrum_reference is not None or
+                self._full_spectrum is None):
+            raise ValueError("No verified offline GetSpectrum for current ADC")
+        flow=self._current_offline_flow()
+        flow.require_session(self.session)
+        action=OriginalSpectrumAction.from_view(flow,self._full_spectrum)
+        if action.adc!=self._ch():
+            raise ValueError("Current spectrum channel disagrees with original tab")
+        return flow,action
+
     def _copy_spec_summary(self):
-        """Source-confirmed 3-column tab structure; formatter still CANDIDATE."""
+        """bSpecCopyValueClick 0084BC28: real selected channel's 3 values."""
         if self._spectrum_summary is None:return
         try:
-            text=spectrum_triplet_text(self._spectrum_summary,decimal_separator=',')
-            if isinstance(self.session,DirectBinSession):
+            flow,action=self._current_original_spectrum_action()
+            action.validate_flow(flow,self._full_spectrum)
+            if action.direct_bin_uncalibrated:
                 confirmed=QMessageBox.question(
                     self,'Некалиброванные значения BIN/TSXML',
-                    'Физическая калибровка этого BIN не подтверждена. '
-                    'Копировать локальные исследовательские значения '
-                    'с предупреждением об условных единицах?',
+                    'Физическая калибровка BIN не подтверждена. Копировать '
+                    'локальные значения с предупреждением об условных единицах?',
                     QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
-                if confirmed!=QMessageBox.Yes:
-                    return
-                # Do not silently copy a Delphi-looking three-number line
-                # as if it were certified physical measurements.
-                text='НЕ КАЛИБРОВАНО · условные единицы · локальный FFT\n'+text
+                if confirmed!=QMessageBox.Yes:return
+            text=action.clipboard_text(decimal_separator=',')
             QApplication.clipboard().setText(text)
             self.statusBar().showMessage(
-                'Скопирован исследовательский спектр · '
-                'прямой BIN без калибровки' if isinstance(self.session,DirectBinSession)
-                else 'Скопированы 3 расчётных значения (не приборный DSP)')
-        except (KeyError,TypeError,ValueError) as exc:
-            self.statusBar().showMessage('Ошибка Copy candidate: '+str(exc))
+                f"bSpecCopyValue: АЦП{action.adc}, режим "
+                f"{action.spectrum_mode}, FFT {action.n_fft} · "
+                "три числа из текущего GetSpectrum, не приборный DSP")
+        except (OSError,KeyError,TypeError,ValueError) as exc:
+            self.statusBar().showMessage('bSpecCopyValue отклонён: '+str(exc))
 
     def _save_spec_summary(self):
-        """Explicit user-selected local CSV, never silently overwrite vendor."""
+        """bSpecSaveValueClick 0084BD7C: real SPEC-FREQ day/append semantics.
+
+        Original uses edLibraryPath and a localized 3-column header.
+        In our safe app, a known operator-selected directory enables
+        original daily name/append; an unknown directory asks for Save As.
+        Unknown Win32 localization/ANSI bytes are never claimed exact.
+        """
         if self._spectrum_summary is None:return
-        filename,_=QFileDialog.getSaveFileName(
-            self,'Сохранить исследовательский CSV (не формат оригинальной MVKView)',
-            'MVK_COMPATIBLE_SPEC_CANDIDATE.csv','CSV (*.csv)')
-        if not filename:return
         try:
-            direct=isinstance(self.session,DirectBinSession)
-            if direct:
+            flow,action=self._current_original_spectrum_action()
+            if action.direct_bin_uncalibrated:
+                # A standalone BIN can be copied with an explicit warning,
+                # but cannot produce an original-looking SPEC-FREQ CSV.
+                # Retain the clearly different existing RESEARCH format.
                 confirmed=QMessageBox.question(
                     self,'Сохранение некалиброванного спектра',
-                    'Будет сохранён отдельный исследовательский CSV с явным '
-                    'заголовком «НЕ КАЛИБРОВАНО». Это не приборный DSP. Продолжить?',
-                    QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
-                if confirmed!=QMessageBox.Yes:
-                    return
-            report=append_research_summary_csv(
-                filename,self._spectrum_summary,uncalibrated=direct)
+                    'Для BIN/TSXML доступен только исследовательский CSV '
+                    'с явной пометкой «НЕ КАЛИБРОВАНО», не оригинальный SPEC-FREQ. '
+                    'Продолжить?',QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No)
+                if confirmed!=QMessageBox.Yes:return
+                target,_=QFileDialog.getSaveFileName(
+                    self,'Сохранить некалиброванный локальный FFT',
+                    'MVK_COMPATIBLE_SPEC_CANDIDATE.csv','CSV (*.csv)')
+                if not target:return
+                report=append_research_summary_csv(
+                    target,self._spectrum_summary,uncalibrated=True)
+                self.statusBar().showMessage(
+                    'Сохранён отдельно помеченный некалиброванный локальный FFT')
+                return report
+            start=getattr(self,'original_start_controller',None)
+            library=getattr(getattr(start,'workspace',None),'library_path',None)
+            if library is not None:
+                # Native Delphi bSpecSaveValue uses edLibraryPath instead
+                # of opening an arbitrary data picker each time.
+                from datetime import date
+                target=spectrum_source_daily_path(
+                    start.workspace.directory(),date.today())
+            else:
+                from datetime import date
+                proposed='SPEC-FREQ-'+date.today().strftime('%Y-%m-%d')+'.csv'
+                target,_=QFileDialog.getSaveFileName(
+                    self,
+                    'SPEC-FREQ · локальная запись текущего GetSpectrum (не Win32 codepage)',
+                    proposed,'SPEC-FREQ CSV (*.csv)')
+                if not target:return
+            report=append_source_spec_freq_csv(
+                action,flow,target,spectrum=self._full_spectrum)
             self.statusBar().showMessage(
-                f"Сохранены 3 локальных IDR-кандидата: {report['path']} (Delphi parity НЕ доказан)")
+                f"bSpecSaveValue: АЦП{action.adc} · "
+                +('добавлена строка' if report['appended_existing_candidate']
+                  else 'создан исходный 3-столбцовый CSV')+
+                f" · SHA {report['full_csv_sha256'][:12]}… "
+                "(UTF-8 кандидат, Delphi codepage не аттестован)")
+            return report
         except (OSError,UnicodeError,KeyError,TypeError,ValueError) as exc:
-            QMessageBox.warning(self,'Локальный CSV не сохранён',str(exc))
-
+            QMessageBox.warning(self,'Исходная операция Save Spectrum отклонена',
+                                str(exc))
     def compare_fft(self):
         if not self.session:return
         try:

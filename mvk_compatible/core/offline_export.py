@@ -581,6 +581,13 @@ class OfflineSession:
         # x is output *buffer position*, not yet an original Delphi graph time.
         output_rate=processed['output_sample_rate_hz']
         xx,yy=reduce_minmax(raw,output_rate,0,points)
+        # Source _Unit128:0084B4AC feeds the original full GetSignal
+        # series into ADCGrapher.UpdateCursor, not min/max LOD pixels.
+        # Keep the exact POST-FIR output in RAM for the original-compatible
+        # PageAdc cursor. It is never embedded in screenshots or metadata.
+        cursor_full=np.asarray(raw,dtype='<f4').copy()
+        cursor_full.setflags(write=False)
+        cursor_sha=hashlib.sha256(cursor_full.tobytes()).hexdigest()
         return {'version':VERSION,'channel':channel,'code':code,
                 'source':processed['source'],'file':filename,
                 'profile_source':processed['profile_source'],
@@ -593,6 +600,8 @@ class OfflineSession:
                 'post_fir_getsignal_output_samples':processed['output_samples'],
                 'original_getsignal_envelope_output_runtime_verified':False,
                 'time_s':xx,'amplitude':yy,'unit':'м/с²',
+                'cursor_full_samples_float32':cursor_full,
+                'cursor_full_samples_sha256':cursor_sha,
                 'output_samples':processed['output_samples'],
                 'output_sample_rate_hz':output_rate,
                 'rms_m_s2':processed['rms_m_s2'],
