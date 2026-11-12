@@ -742,6 +742,11 @@ class MainWindow(QMainWindow):
         # (6 logical px) so a 177px source sidebar still fits x=9,width=162.
         # Preserve actual vertical scrolling and never weaken DFM tests.
         self.spec_tools.verticalScrollBar().setFixedWidth(6)
+        # Windows' native style can override setFixedWidth() layout hints.
+        # A matching QSS scrollbar width reserves at most 6px in the
+        # QScrollArea viewport, keeping x=9 + 162 source pixels visible.
+        self.spec_tools.setStyleSheet(
+            "QScrollArea#pnSpecTools QScrollBar:vertical { width: 6px; }")
         self.spec_tools.setWidgetResizable(True)
         self.spec_tools.setFrameShape(QFrame.NoFrame)
         tools=QWidget()
