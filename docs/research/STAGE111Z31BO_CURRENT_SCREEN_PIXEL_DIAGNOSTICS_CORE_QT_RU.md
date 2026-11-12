@@ -1,6 +1,6 @@
 # Stage111Z31BO — прямое сравнение ТЕКУЩЕГО графика с PNG оригинала
 
-**Состояние:** единый пакет автономного Core + рабочего PageSpectrum Qt + синтетических Core/E2E/Windows DPI150 тестов. Итоговый CI результат и проверенный source SHA фиксируются после приёмки.
+**ПРИЁМКА 12.11.2026:** source SHA `00316691650a64244c1b8456e020e23ea3e9b5f4`. [GitHub Actions #43167922739](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43167922739) — **SUCCESS 3/3** (Linux Core, Windows Qt DPI150, EXE Native R6.1). [EXE #13920443825](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43167922739/artifacts/13920443825) до 26.11.2026; [синтетические Qt-скриншоты #13921291077](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43167922739/artifacts/13921291077) до 19.11.2026. Оригинальная Win32 same-call/PixelRect/X87 аттестация этим CI НЕ проводилась.
 
 ## Что было и что изменено
 
