@@ -1699,11 +1699,19 @@ class MainWindow(QMainWindow):
             lower=min(limits[1]-visible,
                       max(limits[0],limits[0]+source['scr_left_single']))
             vb.setXRange(lower,lower+visible,padding=0)
-            if (self._spec_original_hscale_selected in HORIZONTAL_HZ
-                    and hasattr(self,'original_shell')):
-                self.original_shell.record_source_spectrum_hscale(
-                    self.spec_mode.currentIndex(),
-                    self._spec_original_hscale_selected,native_pos)
+            if self._spec_original_hscale_selected in HORIZONTAL_HZ:
+                # Keep one current provenance record after USER-driven pan.
+                # No bin or FFT mutation, and no gain from another ADC.
+                if (self.session is not None and not self._live_active
+                        and self._spectrum_reference is None):
+                    self._spec_source_h_view=source_spectrum_h_view(
+                        self._current_offline_flow(),self._full_spectrum,
+                        selected_hz=self._spec_original_hscale_selected,
+                        position_hz=native_pos)
+                if hasattr(self,'original_shell'):
+                    self.original_shell.record_source_spectrum_hscale(
+                        self.spec_mode.currentIndex(),
+                        self._spec_original_hscale_selected,native_pos)
         else:
             # Vertical Qt 0..1000 slider remains an explicit research candidate.
             lower=limits[0]+(value/1000.)*available
@@ -1749,6 +1757,7 @@ class MainWindow(QMainWindow):
                 if (self._spec_original_hscale_selected is not None and
                         native_page!=self._spec_original_hscale_selected):
                     self._spec_original_hscale_selected=None
+                    self._spec_source_h_view=None
                     self.spec_hscale_button.setText(f'{native_page} Гц')
                     for action in self._spec_hscale_actions:
                         action.setChecked(False)
@@ -3929,7 +3938,7 @@ class MainWindow(QMainWindow):
                 self._spec_last_cursor=None
                 self.spec_hint.setText(
                     'CursorString: — (курсор вне области графика; original IDR candidate)')
-                self.spec_cursor_primary.setText('Курсор: —')
+                self.spec_cursor_primary.setText(self._idle_spectrum_cursor_label())
                 return
             width=float(rect.width())
             pixel=float(pixel_native)
@@ -3953,7 +3962,7 @@ class MainWindow(QMainWindow):
                     self._spec_source_last_pointer_local_x=None
                     self._spec_last_cursor=None
                     self.spec_hint.setText('CursorString: — (вне source PixelRect)')
-                    self.spec_cursor_primary.setText('Курсор: —')
+                    self.spec_cursor_primary.setText(self._idle_spectrum_cursor_label())
                     return
                 pixel,geom=registered
             mid=rect.center().y()
