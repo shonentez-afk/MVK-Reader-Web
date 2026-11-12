@@ -746,8 +746,11 @@ class OriginalRootShell:
             self.status_plot.setXRange(-0.5,42.5,padding=0)
             self.status_plot.enableAutoRange(axis="y")
         self.status_plot.setVisible(bool(verified_chart))
-        self.status_splitter.setHandleWidth(
-            ORIGINAL_STATUS_SPLITTER[2] if verified_chart else 0)
+        # Source DFM splResult.Width=8 for ALL modes. Hide chResult
+        # when its 43 source bars are absent, but never mutate the
+        # original Delphi splitter width to zero: Qt already collapses
+        # its handle when either adjacent child is hidden.
+        self.status_splitter.setHandleWidth(ORIGINAL_STATUS_SPLITTER[2])
         if verified_chart:
             self.status_splitter.setSizes([ORIGINAL_STATUS_CHART[2],580])
         self.status_cursor.setText(
