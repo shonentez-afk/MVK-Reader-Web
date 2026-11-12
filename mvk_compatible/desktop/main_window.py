@@ -27,6 +27,9 @@ from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from ..core.original_view_time_source import (
     source_view_time, source_wave_readout, source_spectrum_readout,
 )
+from ..core.original_spectrum_view_binding import (
+    source_spectrum_gain,source_spectrum_h_view,SOURCE_GAIN,
+)
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
@@ -96,6 +99,8 @@ class MainWindow(QMainWindow):
         self._source_view_time=None
         self._source_wave_readout=None
         self._source_spectrum_readout=None
+        self._source_spectrum_gain=None
+        self._spec_source_h_view=None
         self.wave_line=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
@@ -1427,8 +1432,13 @@ class MainWindow(QMainWindow):
         # source-derived absolute Y scroll model WITHOUT an invented offset.
         reference=self._spectrum_reference
         exact_operator_frange=reference is not None
-        f_range=(reference.f_range if exact_operator_frange
-                 else self.spec_f_range.value())
+        source_evidence=self._source_spectrum_gain
+        source_tsxml=(not exact_operator_frange
+                      and source_evidence is not None
+                      and source_evidence.frange_single is not None)
+        f_range=(reference.f_range if exact_operator_frange else
+                 source_evidence.frange_single if source_tsxml else
+                 self.spec_f_range.value())
         local_native=source_spectrum_v_scr(
             choice['delphi_position'],choice['page'],choice['full'],
             db_mode=db,graph_default_v_scale=default_scale,
@@ -1463,6 +1473,8 @@ class MainWindow(QMainWindow):
             'qt_original_graph_default_vscale_estimated':not exact_operator_frange,
             'qt_y_baseline_from_local_spectrum':not exact_operator_frange,
             'operator_reference_f_range_word_used':exact_operator_frange,
+            'source_tsxml_f_range_static_candidate_used':source_tsxml,
+            'original_physical_calibration_verified':False,
             'original_delphi_y_canvas_parity_verified':False}
         bar=self.spec_vscroll
         bar.blockSignals(True)
@@ -1480,11 +1492,16 @@ class MainWindow(QMainWindow):
             ' · На границе x87 результат Python требует аппаратной сверки'
             if candidate['original_x87_boundary_requires_runtime_reference']
             else '')
+        evidence=self._source_spectrum_gain
         source_scope=(
             'Single FRange взят из проверенного x32dbg JSON; '
             'оригинальное x87/Canvas ЕЩЁ НЕ СВЕРЕНЫ'
             if self._spectrum_reference is not None
-            else 'FRange гипотезы архива и x87 НЕ ПОДТВЕРЖДЕНЫ')
+            else ('FRange из текущего TSXML, static loader CANDIDATE; '
+                  'НЕ калибровка и НЕ runtime parity'
+                  if evidence is not None and
+                     evidence.frange_single is not None else
+                  'FRange только ручной гипотезы, x87 НЕ ПОДТВЕРЖДЕНЫ'))
         self.spec_graph_default_label.setText(
             "GraphDefaultVScale · реконструкция _Unit128: "
             f"FRange={candidate['candidate_f_range_single']:.7g} ×"
@@ -1556,6 +1573,31 @@ class MainWindow(QMainWindow):
         self._sync_spec_lines_presentation()
         self.refresh_spec()
 
+    def _idle_spectrum_cursor_label(self) -> str:
+        """Display measured gain provenance in the ORIGINAL cursor label."""
+        evidence=self._source_spectrum_gain
+        return ("Курсор: —\n"+evidence.label
+                if evidence is not None else "Курсор: —")
+
+    def _sync_visible_source_f_range(self) -> None:
+        """One source-derived FRange is visible, but NOT reapplied to BIN."""
+        evidence=self._source_spectrum_gain
+        if evidence is None:
+            self.spec_vscale_button.setToolTip(
+                "Шкала Y: текущего оригинального FRange нет")
+            return
+        candidate=evidence.graph_default_vscale_candidate
+        tooltip=evidence.label+(
+            f"; GraphDefaultVScale-кандидат={candidate:.9g}"
+            if candidate is not None else "; нет численного исходного FRange")
+        tooltip+=(
+            "; только исходная TSXML-метаинформация; BIN и FFT не умножаются;"
+            " калибровка, x87 и паритет Delphi не подтверждены")
+        self.spec_vscale_button.setToolTip(tooltip)
+        self.spec_hscale_button.setToolTip(
+            "10 исходных пресетов 25600..50 Гц; меняется только видимый X. "
+            "Данные FFT N/2 и СКЗ остаются без изменений. "+evidence.label)
+
     def _cycle_original_hscale(self):
         """Main part of split button: next source-verified smaller scale."""
         if self._full_spectrum is None:return
@@ -1567,20 +1609,22 @@ class MainWindow(QMainWindow):
                 return
         self._select_original_hscale(HORIZONTAL_HZ[-1])
 
-    def _select_original_hscale(self,hz):
-        """Original _Unit128:0084C3AC menu Tag→DWORD table.
+    def _select_original_hscale(self,hz,*,position_hz=None):
+        """Original source H Tag/Position plus selected ADC/BIN provenance.
 
-        The source frequency table is recovered exactly. The current data
-        window and original Delphi runtime Canvas are *not* identical.
+        This is an X-VIEW operation: never re-run GetSpectrum or mutate its
+        N/2 raw Float32 array, peak summary, FIR history or VALUES bank.
         """
         hz=validate_source_h_scale(hz)
         if self._full_spectrum is None:return
         full=HORIZONTAL_HZ[0]
         vb=self.spec_plot.getViewBox()
         selected=self._spec_original_hscale_selected
-        # Never mix a normalized Qt zoom position with the source VCL
-        # menu's integer Hz position when switching domains.
-        if selected in HORIZONTAL_HZ:
+        if position_hz is not None:
+            if type(position_hz) is not int:
+                raise ValueError('Original H position must be integer Hz')
+            pos=position_hz
+        elif selected in HORIZONTAL_HZ:
             native=int(self.spec_hscroll.value())
             old=NativeScrollContract(
                 'horizontal',full,selected,
@@ -1588,14 +1632,28 @@ class MainWindow(QMainWindow):
             pos=rescale_scroll(old,selected_page=hz).position
         else:
             pos=0
+        pos=max(0,min(full-hz,pos))
+        # Capture source evidence before the mutable Qt viewport changes.
+        source_view=None
+        if (self.session is not None and not self._live_active
+                and self._spectrum_reference is None):
+            source_view=source_spectrum_h_view(
+                self._current_offline_flow(),self._full_spectrum,
+                selected_hz=hz,position_hz=pos)
+            if source_view.channel!=self._ch():
+                raise ValueError('Horizontal viewport changed source ADC')
+            pos=source_view.native_position_hz
         self._spec_original_hscale_selected=None
         self.spec_hz.blockSignals(True)
-        self.spec_hz.setValue(float(full))
-        self.spec_hz.blockSignals(False)
+        try:
+            self.spec_hz.setValue(float(full))
+        finally:
+            self.spec_hz.blockSignals(False)
         self._spec_visible_max_hz=float(full)
         vb.setLimits(xMin=0.,xMax=float(full))
         vb.setXRange(float(pos),float(pos+hz),padding=0.)
         self._spec_original_hscale_selected=hz
+        self._spec_source_h_view=source_view
         self.spec_hscale_button.setText(f'{hz} Гц')
         for action in self._spec_hscale_actions:
             action.setChecked(action.data()==hz)
@@ -1604,8 +1662,8 @@ class MainWindow(QMainWindow):
             self.original_shell.record_source_spectrum_hscale(
                 self.spec_mode.currentIndex(),hz,pos)
         self.statusBar().showMessage(
-            f'Исходный H-пресет {hz} Гц; численная FFT/Canvas '
-            'идентичность с Delphi ещё НЕ подтверждена')
+            f'Исходный H-пресет {hz} Гц · позиция {pos} Гц, '
+            'исходные N/2 FFT и VALUES не изменены; Win32 Canvas ещё не принят')
 
     def _spec_scroll_changed(self,axis:int,value:int):
         if self._full_spectrum is None:return
@@ -1812,6 +1870,8 @@ class MainWindow(QMainWindow):
         self._source_view_time=None
         self._source_wave_readout=None
         self._source_spectrum_readout=None
+        self._source_spectrum_gain=None
+        self._spec_source_h_view=None
         self.original_shell.clear_source_view_time()
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._live_active=True
@@ -2146,6 +2206,14 @@ class MainWindow(QMainWindow):
         self._source_view_time=None
         self._source_wave_readout=None
         self._source_spectrum_readout=None
+        self._source_spectrum_gain=None
+        self._spec_source_h_view=None
+        # Source H page is a property of the selected file/ADC context,
+        # never silently inherited from the previous archive.
+        self._spec_original_hscale_selected=None
+        self.spec_hscale_button.setText('Диапазон X')
+        for action in self._spec_hscale_actions:
+            action.setChecked(False)
         blocked=self.wave_start.blockSignals(True)
         try:
             self.wave_start.setRange(0.,max(300.,len(samples)/float(fs)))
@@ -2212,6 +2280,9 @@ class MainWindow(QMainWindow):
         self._source_view_time=None
         self._source_wave_readout=None
         self._source_spectrum_readout=None
+        self._source_spectrum_gain=None
+        self._spec_source_h_view=None
+        self._spec_original_hscale_selected=None
         self.wave_plot.clear()
         self.spec_core_triplet.setText('Нет подтверждённого расчётного спектра')
         self.original_shell.clear_source_view_time()
@@ -3527,8 +3598,16 @@ class MainWindow(QMainWindow):
         if not self.session:return
         flow=self._current_offline_flow()
         self._source_spectrum_readout=None
+        # Do not discard an explicit original H preset on each FFT refresh.
+        # Preserve the same integer Position/Page on current BIN/ADC; this
+        # will be revalidated after the new, full N/2 spectrum is accepted.
+        previous_h=self._spec_original_hscale_selected
+        previous_pos=(
+            int(round(self.spec_plot.getViewBox().viewRange()[0][0]))
+            if previous_h in HORIZONTAL_HZ else 0)
         self._spec_original_hscale_selected=None
-        self.spec_hscale_button.setText('Диапазон X')
+        self._spec_source_h_view=None
+        self._source_spectrum_gain=None
         for action in self._spec_hscale_actions:
             action.setChecked(False)
         try:
@@ -3575,6 +3654,9 @@ class MainWindow(QMainWindow):
                                            display_contract['grapher_axis_end_frequency_hz'])
             self._full_spectrum=d
             self._spectrum_summary=d.get('spectrum_summary')
+            self._source_spectrum_gain=source_spectrum_gain(
+                flow,d,mode=self.spec_mode.currentIndex())
+            self._sync_visible_source_f_range()
             valid_summary=(isinstance(self._spectrum_summary,dict) and
                 self._spectrum_summary.get('source')==
                 'APP_DERIVED_GETSPECTRUM_PEAK_SUMMARY_IDR_CANDIDATE')
@@ -3658,8 +3740,15 @@ class MainWindow(QMainWindow):
             self.spec_plot.getViewBox().setLimits(
                 xMin=0,xMax=float(self._spec_visible_max_hz))
             self._sync_spec_scroll()
+            if previous_h in HORIZONTAL_HZ:
+                self._select_original_hscale(
+                    previous_h,position_hz=previous_pos)
+            else:
+                self.spec_hscale_button.setText(
+                    f'{self._spec_visible_max_hz:g} Гц')
             self._sync_spectrum_summary_primary()
-            self.spec_cursor_primary.setText('Курсор: —')
+            self.spec_cursor_primary.setText(
+                self._idle_spectrum_cursor_label())
             if valid_summary:
                 summ=self._spectrum_summary
                 self.spec_mean.setText(
@@ -3725,6 +3814,10 @@ class MainWindow(QMainWindow):
             self._full_spectrum=None
             self._spectrum_summary=None
             self._source_spectrum_readout=None
+            self._source_spectrum_gain=None
+            self._spec_source_h_view=None
+            self._spec_original_hscale_selected=None
+            self._sync_visible_source_f_range()
             self.spec_core_triplet.setText(
                 'Спектр не рассчитан: '+str(e))
             self._spec_display_contract=None
