@@ -1,2 +1,2 @@
-Test-NetConnection opencode.ai -Port 443
-Test-NetConnection kilo.ai -Port 443
+curl.exe -I https://opencode.ai
+curl.exe -I https://kilo.ai
