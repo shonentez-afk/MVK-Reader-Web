@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from .original_task_ui import install_source_task_buttons
 from .original_config_readonly_ui import OriginalConfigReadOnlyPanel
 from .original_windowman_form import OriginalWindowMan
+from .original_measure_controls_ui import OriginalMeasureControls
 from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
@@ -511,6 +512,11 @@ class OriginalRootShell:
         window.adc.currentIndexChanged.connect(self._sync_file_selection)
         layout.insertWidget(1, self.navigation)
         layout.insertWidget(2, self.stack, 1)
+        # Original Delphi pnMeasure: source 53px bottom panel and five 160x41 buttons.
+        # The Qt controller NEVER sends the original TMVKThread device commands.
+        self.measure_controls=OriginalMeasureControls(window)
+        window.original_measure_controls=self.measure_controls
+        layout.insertWidget(3,self.measure_controls.panel)
         # Real original pnView sits beneath all seven pages.  Its slider is
         # bound to the SAME checked ADC/window that GetSignal/GetSpectrum use.
         self.view_panel=QWidget(window)
@@ -832,6 +838,8 @@ class OriginalRootShell:
             finally:
                 widget.blockSignals(blocked)
         self.file_selection_status.setText(self._file_selection_status())
+        if hasattr(self,"measure_controls"):
+            self.measure_controls.render()
 
     @staticmethod
     def _checked_item(text,index,checked,enabled=True):
@@ -1021,6 +1029,8 @@ class OriginalRootShell:
             self._sync_file_selection(self.window.adc.currentIndex())
             self.update_file_evidence(flow)
             self.refresh_file_workbench()
+            if hasattr(self,"measure_controls"):
+                self.measure_controls.render()
         finally:
             self.file_channels.blockSignals(blocked)
 

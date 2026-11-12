@@ -96,6 +96,7 @@ class MainWindow(QMainWindow):
         self._offline_flow=None  # One autonomous File/Signal/Spectrum/Status source
         self._native_dialog=None  # Stage111Z.25: integrated verified Go recorder controller
         self._live_active=False
+        self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._live_prior_session=None
         self._live_control_states=[]
@@ -1979,6 +1980,7 @@ class MainWindow(QMainWindow):
         self.task_metrics_button.setEnabled(ready)
         if getattr(self,'original_shell',None) is not None:
             self.original_shell.sync_availability()
+            self.original_shell.measure_controls.sync_source()
 
     def _begin_live_capture(self):
         self._reset_visible_original_pair()
@@ -2002,6 +2004,7 @@ class MainWindow(QMainWindow):
         self.original_shell.sync_file_session(None,())
         self._bind_only_verified_channels(tuple(range(1,9)))
         self._set_active(True)
+        self.original_shell.measure_controls.begin_live()
         self.tick.setEnabled(False)
         self.task_metrics_button.setEnabled(False)
         self._live_control_states=[(widget,widget.isEnabled()) for widget in (
@@ -2052,13 +2055,23 @@ class MainWindow(QMainWindow):
     def _receive_live_preview(self, preview):
         if not self._live_active:
             return
+        try:
+            # Never show a preview not associated with the ONE trusted
+            # Native R6.1 session. Freeze only stops rendering, not RAW.
+            self.original_shell.measure_controls.observe_preview(preview)
+        except (ValueError,KeyError,TypeError):
+            self._invalidate_live_preview("Native session/rate mismatch")
+            return
         self._live_preview=preview
+        if self._source_live_view_frozen:
+            return
         self._render_live_wave()
         self._render_live_spectrum()
 
     def _invalidate_live_preview(self, reason):
         if not self._live_active:
             return
+        self.original_shell.measure_controls.invalidate_preview()
         if self._live_preview is None:
             return
         self._live_preview=None
@@ -2139,6 +2152,7 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._live_active=False
+        self.original_shell.measure_controls.end_live()
         self._live_preview=None
         self._pagestatus_snapshot=None
         self._refresh_source_pagestatus()
@@ -2553,8 +2567,9 @@ class MainWindow(QMainWindow):
 
     def refresh_all(self,*_):
         if self._live_active:
-            self._render_live_wave()
-            self._render_live_spectrum()
+            if not self._source_live_view_frozen:
+                self._render_live_wave()
+                self._render_live_spectrum()
             return
         if self.session is None:return
         flow=self._current_offline_flow()  # same source/ADC/tick
