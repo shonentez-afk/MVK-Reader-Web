@@ -504,6 +504,24 @@ class OriginalRootShell:
         window.tick.valueChanged.connect(self._sync_file_tick_from_model)
         self.status_tabs.currentChanged.connect(
             window.original_status_mode.setCurrentIndex)
+        # DFM tcAnyChange source event routes for THREE additional tab
+        # controls were previously Qt-visual only. Persist their safe
+        # local selection in the autonomous OriginalOfflineView, without
+        # calling any original device/calibration procedure.
+        self.config_panel.page_tabs.currentChanged.connect(
+            lambda index:self._remember_view_action(
+                "select_config_tab",index))
+        self.file_action_tabs.currentChanged.connect(
+            self._source_file_action_mode_changed)
+        self.calib_panel.tabs.currentChanged.connect(
+            lambda index:self._remember_view_action(
+                "select_calibration_result_tab",index))
+        self.file_action_tabs.setProperty(
+            "originalDfmHandler","tcAnyChange")
+        self.config_panel.page_tabs.setProperty(
+            "originalDfmHandler","tcAnyChange")
+        self.calib_panel.tabs.setProperty(
+            "originalDfmHandler","tcAnyChange")
         self.status_plot.scene().sigMouseMoved.connect(
             self._status_chart_moved)
         self.status_export.clicked.connect(self._export_selected_status)
@@ -629,6 +647,23 @@ class OriginalRootShell:
     def _remember_view_action(self,action,selection):
         self.view_state=self.view_state.transition(action,selection)
         self.window.source_view_state=self.view_state
+
+    def _source_file_action_mode_changed(self,index:int):
+        """Source tcFileActions.OnChange, restricted to its two DFM tabs.
+
+        Switching SPEC/VALUES versus pnFileAdc changes only visible
+        workbench state. Actual TMVKThread.WriteData/WriteValues remain
+        unavailable and are not simulated by changing tabs.
+        """
+        self._remember_view_action("select_file_action_tab",int(index))
+        self.file_action_tabs.setProperty("sourceCurrentFileActionMode",index)
+        self.file_capture_panel.setProperty(
+            "sourceLocalCaptureOptionsVisible",index==1)
+        self.file_selection_status.setToolTip(
+            "Оригинальный tcFileActions.OnChange: "
+            + ("SPEC / VALUES (локальные проверенные данные)" if index==0
+               else "Параметры записи — только локальный экспорт, "
+                    "команда TMVKThread запрещена"))
 
     def record_source_spectrum_hscale(self,mode,hz,position):
         """Mirror original menu state into autonomous Core, not DSP data."""

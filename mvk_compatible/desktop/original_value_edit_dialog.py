@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QDialog, QLabel, QLineEdit, QListWidget, QPushButton,
 )
+from ..core.original_value_recalc import source_recalc_millivolt_g
 
 ORIGINAL_DIALOG_CLIENT_SIZE = (357, 445)
 ORIGINAL_DIALOG_CAPTION = "Редактирование"
@@ -20,16 +21,22 @@ class OriginalValueEditDialog(QDialog):
 
     def __init__(self, *, prompt: str = "", value: str = "",
                  units: str = "", choices: list[str] | None = None,
-                 parent=None, read_only: bool = False):
+                 parent=None, read_only: bool = False,
+                 sensitivity_conversion: bool = False):
         super().__init__(parent)
         self.setObjectName("mvkeditform")
         self.setWindowTitle(ORIGINAL_DIALOG_CAPTION)
         self.setFixedSize(*ORIGINAL_DIALOG_CLIENT_SIZE)
         self.setModal(True)
         self._source_inspection_only = bool(read_only)
+        self._initial_prompt = prompt or "Значение"
+        self._recalc_receipt = None
+        self._sensitivity_conversion_enabled = bool(
+            sensitivity_conversion and choices is None and not read_only)
 
         label = QLabel(prompt or "Значение", self)
         label.setObjectName("lbVal")
+        self.lbVal = label
         label.setGeometry(16, 10, 321, 47)
         label.setWordWrap(True)
 
@@ -65,7 +72,16 @@ class OriginalValueEditDialog(QDialog):
         self.bRecalc = QPushButton("Пересчитать мВ/g → В/(м/с²)", self)
         self.bRecalc.setObjectName("bRecalc")
         self.bRecalc.setGeometry(16, 104, 245, 33)
-        self.bRecalc.setVisible(False)  # explicitly original DFM Visible=False
+        # Source DFM Visible=False. The original FormShow keeps that
+        # default unless the caller explicitly enables the sensitivity
+        # editor mode. No automatic guess from an arbitrary config field.
+        self.bRecalc.setVisible(self._sensitivity_conversion_enabled)
+        self.bRecalc.setEnabled(self._sensitivity_conversion_enabled)
+        self.bRecalc.clicked.connect(self._recalc_clicked)
+        self.bRecalc.setToolTip(
+            "Исходный bRecalcClick 008404E8: Float32 мВ/g × "
+            "Extended 0,00010194 → Float32 В/(м/с²). "
+            "Только локальное текстовое поле, НЕ прибор.")
         if self._source_inspection_only:
             # Only the original dialog's DFM structure is reused here.
             # Source TMvkCellList.InputValue commits a LOCAL register image,
@@ -75,6 +91,27 @@ class OriginalValueEditDialog(QDialog):
             self.bOk.setEnabled(False)
             self.bCancel.setText("Закрыть")
             self.setWindowTitle("Исходное поле · просмотр без изменения")
+
+    @property
+    def source_recalc_receipt(self):
+        return self._recalc_receipt
+
+    def _recalc_clicked(self):
+        """Execute original bRecalcClick arithmetic on edVal only."""
+        if (not self._sensitivity_conversion_enabled
+                or self._source_inspection_only or self.cbVal.isVisible()):
+            return False
+        try:
+            receipt=source_recalc_millivolt_g(self.edVal.text())
+        except (ValueError,OverflowError) as exc:
+            self._recalc_receipt=None
+            self.lbVal.setText(
+                "Недопустимое значение чувствительности (мВ/g): "+str(exc))
+            return False
+        self._recalc_receipt=receipt
+        self.edVal.setText(receipt.formatted_candidate)
+        self.lbVal.setText(self._initial_prompt)
+        return True
 
     def selected_value(self) -> str:
         """Return edited value without applying it to any instrument."""

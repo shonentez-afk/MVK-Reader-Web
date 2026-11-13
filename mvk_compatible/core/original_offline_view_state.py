@@ -36,6 +36,8 @@ SAFE_TRANSITIONS=frozenset((
     "select_spectrum_mode","select_spectrum_hscale",
     "scroll_spectrum_horizontal","select_spectrum_vscale",
     "scroll_spectrum_vertical","select_spectrum_fft_lines",
+    "select_config_tab","select_file_action_tab",
+    "select_calibration_result_tab",
 ))
 UNSAFE_OR_UNVERIFIED=frozenset((
     "device_connect","device_config_download","device_config_upload",
@@ -95,6 +97,9 @@ class OriginalOfflineView:
     vscale_tag: int = 0
     vscroll_position: int = 0
     fft_lines_tag: int = 0
+    config_tab: int = 0
+    file_action_tab: int = 0
+    calibration_result_tab: int = 0
 
     def __post_init__(self):
         if self.page not in PAGES:
@@ -105,6 +110,9 @@ class OriginalOfflineView:
         _bounded_int("hscale_tag",self.hscale_tag,0,len(HORIZONTAL_HZ)-1)
         _bounded_int("vscale_tag",self.vscale_tag,0,5)
         _bounded_int("fft_lines_tag",self.fft_lines_tag,0,len(FFT_WINDOW_SAMPLES)-1)
+        _bounded_int("tcConfig",self.config_tab,0,1)
+        _bounded_int("tcFileActions",self.file_action_tab,0,1)
+        _bounded_int("tcCalibResult",self.calibration_result_tab,0,1)
         native=NativeScrollContract(
             "horizontal",DEFAULT_HZ,HORIZONTAL_HZ[self.hscale_tag],
             _bounded_int("hscroll_position",self.hscroll_position,0,DEFAULT_HZ),
@@ -173,6 +181,15 @@ class OriginalOfflineView:
             # Source control selects an FFT length; it does NOT itself prove
             # sufficient real archive history, DSP readiness or device state.
             return replace(self,fft_lines_tag=tag)
+        if action=="select_config_tab":
+            return replace(self,config_tab=_bounded_int(
+                "tcConfig",selection,0,1))
+        if action=="select_file_action_tab":
+            return replace(self,file_action_tab=_bounded_int(
+                "tcFileActions",selection,0,1))
+        if action=="select_calibration_result_tab":
+            return replace(self,calibration_result_tab=_bounded_int(
+                "tcCalibResult",selection,0,1))
         raise AssertionError("Exhaustive source action dispatch")
 
     def snapshot(self,*,n_fft:int|None=None,fs_out_hz:int|None=None)->dict:
@@ -195,6 +212,10 @@ class OriginalOfflineView:
             "vscale_menu":original_v_scale_options(self.spectrum_mode)[
                 self.vscale_tag]["caption"],
             "fft_lines_tag":self.fft_lines_tag,
+            "config_tab":self.config_tab,
+            "file_action_tab":self.file_action_tab,
+            "calibration_result_tab":self.calibration_result_tab,
+            "source_other_tab_changes_are_offline_view_only":True,
             "n_fft_requested":FFT_WINDOW_SAMPLES[self.fft_lines_tag],
             "hscroll":h,"vscroll":v,
             "only_offline_safe_view_transitions":True,
