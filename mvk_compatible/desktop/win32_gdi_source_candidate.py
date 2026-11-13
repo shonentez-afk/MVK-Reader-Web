@@ -79,6 +79,10 @@ class Win32SourceTextCanvas:
         self._font=None
         self._oldfont=None
         self._closed=False
+        self._incremental_frame=None
+        self._incremental_old=None
+        self._incremental_pixels=None
+        self._incremental_size=None
         if not self._dc:
             raise OSError("CreateCompatibleDC failed")
         try:
@@ -104,6 +108,7 @@ class Win32SourceTextCanvas:
     def close(self):
         if self._closed:
             return
+        self._discard_incremental_frame()
         self._closed=True
         if self._dc and self._oldfont:
             self._select(self._dc,self._oldfont)
@@ -199,3 +204,115 @@ class Win32SourceTextCanvas:
             if old:
                 self._select(self._dc,old)
             self._delete(bmp)
+
+    def _discard_incremental_frame(self):
+        """Unselect cached DIB *before* DeleteObject; never retain raw ptr."""
+        frame=self._incremental_frame
+        if frame is None:
+            return
+        if self._dc and self._incremental_old:
+            self._select(self._dc,self._incremental_old)
+        self._incremental_pixels=None
+        self._incremental_old=None
+        self._incremental_frame=None
+        self._incremental_size=None
+        self._delete(frame)
+
+    def _ensure_incremental_frame(self,w,h):
+        if self._closed:
+            raise RuntimeError("Original GDI font/DC already closed")
+        if self._incremental_size==(w,h):
+            return self._incremental_pixels
+        self._discard_incremental_frame()
+        bi=_BI()
+        bi.bmiHeader.biSize=ctypes.sizeof(_BIH)
+        bi.bmiHeader.biWidth=w
+        bi.bmiHeader.biHeight=-h
+        bi.bmiHeader.biPlanes=1
+        bi.bmiHeader.biBitCount=32
+        bi.bmiHeader.biCompression=0
+        bi.bmiHeader.biSizeImage=w*h*4
+        ptr=ctypes.c_void_p()
+        frame=self._dib(self._dc,ctypes.byref(bi),0,
+                        ctypes.byref(ptr),None,0)
+        if not frame or not ptr.value:
+            if frame:
+                self._delete(frame)
+            raise OSError("Cached original-source CreateDIBSection failed")
+        old=self._select(self._dc,frame)
+        if not old:
+            self._delete(frame)
+            raise OSError("Cached original-source SelectObject failed")
+        try:
+            view=np.ctypeslib.as_array(
+                (ctypes.c_uint8*(w*h*4)).from_address(ptr.value))
+            view=view.reshape(h,w,4)
+        except BaseException:
+            self._select(self._dc,old)
+            self._delete(frame)
+            raise
+        self._incremental_frame=frame
+        self._incremental_old=old
+        self._incremental_pixels=view
+        self._incremental_size=(w,h)
+        return view
+
+    def draw_incremental_text(self,rgba,events):
+        """Interleave GDI TextOut with source TCo2Draw IN PLACE, by glyph ROI.
+
+        Reuse one DIB and logical source DC/font per frame. Only a small
+        padded rectangle around each TextOut event moves from RGBA into
+        the source BGRA DIB and back, preserving the CURRENT grid pixels
+        under the glyph at the exact original command order.
+
+        This is a Windows candidate, NOT a native original-process
+        parity statement; the 3px overhang guard is source-derived.
+        """
+        if self._closed:
+            raise RuntimeError("Source Win32 font/DC already closed")
+        if (not isinstance(rgba,np.ndarray) or rgba.dtype!=np.uint8 or
+                rgba.ndim!=3 or rgba.shape[2]!=4 or
+                not rgba.flags.c_contiguous or
+                min(rgba.shape[:2])<4 or rgba.shape[0]*rgba.shape[1]>MAX_PIXELS):
+            raise ValueError("Bounded contiguous source RGBA buffer required")
+        if not isinstance(events,(tuple,list)) or len(events)>1:
+            raise ValueError("One native TextOut per original grid tick")
+        if not events:
+            return rgba
+        event=events[0]
+        if (not isinstance(event,dict)
+                or event.get("kind") not in (
+                    "x_tick","y_tick","x_name","y_name")
+                or type(event.get("x")) is not int
+                or type(event.get("y")) is not int
+                or not isinstance(event.get("text"),str)
+                or len(event["text"])>256 or "\x00" in event["text"]):
+            raise ValueError("Invalid original source single TextOut event")
+        txt=event["text"]
+        if not txt:
+            return rgba
+        text_w,text_h=self._textsize(txt)
+        h,w=rgba.shape[:2]
+        x,y=event["x"],event["y"]
+        # This is the whole PaintBox, including margin and off-edge text.
+        # Tahoma normal weight may overhang metrics by a pixel: keep
+        # guard pixels so no source GDI glyph pixel is thrown away.
+        left=max(0,x-3)
+        top=max(0,y-3)
+        right=min(w,x+text_w+4)
+        bottom=min(h,y+text_h+4)
+        if left>=right or top>=bottom:
+            return rgba
+        dib=self._ensure_incremental_frame(w,h)
+        source=rgba[top:bottom,left:right]
+        if not bool(np.all(source[:,:,3]==255)):
+            raise ValueError("Source RGBA glyph region must remain opaque")
+        # The same 32-bit logical bitmap is mirrored into the persistent
+        # GDI DIB only for the source text rectangle being updated.
+        dib[top:bottom,left:right]=source[:,:,[2,1,0,3]]
+        if not self._text(self._dc,x,y,txt,len(txt)):
+            raise OSError("Win32 TextOutW failed on source PaintBox")
+        returned=dib[top:bottom,left:right]
+        source[:,:,:3]=returned[:,:,[2,1,0]]
+        source[:,:,3]=255  # GDI may clear alpha in antialiased glyphs.
+        return rgba

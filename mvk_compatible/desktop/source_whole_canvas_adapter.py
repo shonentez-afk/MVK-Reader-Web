@@ -36,7 +36,7 @@ class _PerFrameWin32TextRenderer:
             font_face="Tahoma",font_height=-13)
 
     def __call__(self,rgba,events):
-        return self._canvas.draw_text(rgba,events)
+        return self._canvas.draw_incremental_text(rgba,events)
 
     def close(self):
         if self._canvas is not None:

@@ -219,14 +219,16 @@ class WholePaintboxTask:
         return self._pass == 5
 
     def _textout(self,event):
-        before=self._rgba.copy(order="C")
-        candidate=self._renderer(before,(event,))
+        # A verified per-frame Win32 GDI backend may update only the
+        # source glyph ROI IN PLACE. This is a private uncommitted raster:
+        # if TextOut fails it is discarded, never presented to Qt.
+        candidate=self._renderer(self._rgba,(event,))
         if (not isinstance(candidate,np.ndarray) or
                 candidate.dtype!=np.uint8 or
                 candidate.shape!=self._rgba.shape or
                 not bool(np.all(candidate[:,:,3]==255))):
             raise ValueError("TextOut returned nonopaque or invalid source canvas")
-        self._rgba=np.array(candidate,dtype=np.uint8,order="C",copy=True)
+        self._rgba=np.ascontiguousarray(candidate)
         self.textout_calls += 1
         self.draw_trace.append(("textout",event["kind"],
                                 event["source_value"]
