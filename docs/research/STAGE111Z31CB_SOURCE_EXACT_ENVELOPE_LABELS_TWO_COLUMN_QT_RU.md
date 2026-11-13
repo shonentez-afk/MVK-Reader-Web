@@ -1,6 +1,6 @@
 # STAGE111Z31CB — точные подписи 31 полосового фильтра, исходные две колонки popEnvelopeType и рабочие Core + Qt
 
-**Дата:** 13.11.2026. Состояние приёмки CI/EXE фиксировать только после завершения GitHub Actions для конкретного исходного SHA.
+**ПРИЁМКА 13.11.2026:** исходный ИСПОЛНЯЕМЫЙ SHA `d28b406e26979086779f65e1e08d1d6d6509fb64`; [GitHub Actions #43350746561](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43350746561) — **SUCCESS 3/3**, Linux Core **1808 PASS (94 SKIP)**, Windows Core **1951 PASS (7 SKIP)**, Windows Qt Smoke **49 PASS**, Windows Qt DPI 150% **114 PASS**, автономный EXE с Native Go R6.1. [Windows EXE artifact #14004032658](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43350746561/artifacts/14004032658) — ZIP **68 930 024 байта** до 27.11.2026; [Synthetic two-column-popup Qt UI artifact #14003762881](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43350746561/artifacts/14003762881) до 20.11.2026. **Реальные интерактивные клики по двум колонкам Tag20→Tag1→Tag0 при DPI150 прошли.** Отдельные сбои первых трех CI были исправлены: скрытый QAction в Qt терял enabled, слишком поздно назначенный QWidgetAction.defaultWidget не отображал панель, старый Qt Smoke ожидал надпись `AC · без DC` вместо source DFM `AC`. Не объявлять другие SHA принятыми. Оригинальная Win32 численная/пиксельная пара и физическая калибровка пока не доказаны; последующий docs-only SHA НЕ проверенный EXE.
 
 ## Исправлена содержательная ошибка старого интерфейса
 
