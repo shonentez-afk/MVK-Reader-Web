@@ -20,13 +20,23 @@ from PySide6.QtGui import QImage, QPainter
 
 from ..core.original_live_plot_composite import (
     prepare_live_source_bitmap, LiveSourceBitmapTask,
+    SOURCE as CG_SOURCE,
+)
+from ..core.original_live_whole_paintbox import (
+    WholePaintboxTask, SOURCE as WHOLE_SOURCE,
+)
+from .source_whole_canvas_adapter import (
+    prepare_qt_source_whole_paintbox_task,
 )
 
 
 class SourceLiveCompositeOverlay(pg.GraphicsObject):
-    def __init__(self, view_box):
+    def __init__(self, view_box, plot_widget=None):
         super().__init__()
         self._view_box = view_box
+        self._plot_widget = plot_widget
+        self.source_textout_sink = None
+        self.source_whole_paintbox_last_error = None
         self._rect = QRectF(view_box.viewRect())
         self._series = None
         self._generation = 0
@@ -79,14 +89,23 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
 
     def _signature(self):
         rect = self._rect
+        if self._plot_widget is None:
+            labels=("","")
+        else:
+            item=self._plot_widget.getPlotItem()
+            labels=(item.getAxis("bottom").labelText or "",
+                    item.getAxis("left").labelText or "")
         return (rect.left(),rect.right(),rect.top(),rect.bottom(),
                 max(0,int(round(self._view_box.width()))),
                 max(0,int(round(self._view_box.height()))),
                 bool(self._view_box.state.get("xInverted",False)),
-                self._series[4] if self._series else None)
+                self._series[4] if self._series else None,
+                *labels)
 
     def _cancel(self):
         self._generation += 1
+        if self.source_textout_sink is not None:
+            self.source_textout_sink.invalidate_adopted_bitmap()
         self._start_timer.stop()
         self._slice_timer.stop()
         self._task = None
@@ -115,26 +134,44 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
         signature = self._signature()
         if self._completed_signature == signature and self._image is not None:
             return True
-        data, x_start, x_scale, provenance, digest = self._series
+        self.source_whole_paintbox_last_error = None
         try:
-            plan = prepare_live_source_bitmap(
-                data,view_x=(signature[0],signature[1]),
-                view_y=(signature[2],signature[3]),
-                width=signature[4],height=signature[5],
-                x_inverted=signature[6],
-                x_start=x_start,x_scale=x_scale,
-                provenance=provenance,expected_series_sha256=digest)
-            self._task = LiveSourceBitmapTask(plan)
+            self._task = self._build_source_task(signature)
             self._task_signature = signature
-        except (ValueError,TypeError,KeyError,OverflowError,MemoryError) as ex:
+        except (ValueError,TypeError,KeyError,OverflowError,MemoryError,
+                OSError,RuntimeError) as ex:
             self.source_composite_last_error=str(ex)
             self._task = None
             self._task_signature = None
             self._image = None
             self.setVisible(False)
+            if self.source_textout_sink is not None:
+                self.source_textout_sink.schedule_fallback_text()
             return False
         self._render_slice()
         return True
+
+    def _build_source_task(self, signature, *, allow_whole=True):
+        data, x_start, x_scale, provenance, digest = self._series
+        if allow_whole and self._plot_widget is not None:
+            try:
+                return prepare_qt_source_whole_paintbox_task(
+                    self._plot_widget,data,signature=signature,
+                    x_start=x_start,x_scale=x_scale,provenance=provenance,
+                    expected_series_sha256=digest)
+            except (ValueError,TypeError,KeyError,OverflowError,MemoryError,
+                    OSError,RuntimeError) as ex:
+                # Native GDI/paintbox registration must never make a
+                # previously accepted archive waveform/spectrum invisible.
+                self.source_whole_paintbox_last_error = str(ex)
+        plan = prepare_live_source_bitmap(
+            data,view_x=(signature[0],signature[1]),
+            view_y=(signature[2],signature[3]),
+            width=signature[4],height=signature[5],
+            x_inverted=signature[6],
+            x_start=x_start,x_scale=x_scale,
+            provenance=provenance,expected_series_sha256=digest)
+        return LiveSourceBitmapTask(plan)
 
     def _render_slice(self):
         task = self._task
@@ -145,8 +182,20 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
             return
         try:
             complete = task.step(max_segments=128)
-        except (ValueError,TypeError,OverflowError,MemoryError) as ex:
+        except (ValueError,TypeError,OverflowError,MemoryError,
+                OSError,RuntimeError) as ex:
             self.source_composite_last_error=str(ex)
+            if isinstance(task, WholePaintboxTask):
+                self.source_whole_paintbox_last_error = str(ex)
+                try:
+                    self._task = self._build_source_task(
+                        self._task_signature,allow_whole=False)
+                    if self.source_textout_sink is not None:
+                        self.source_textout_sink.schedule_fallback_text()
+                    self._render_slice()
+                    return
+                except (ValueError,TypeError,OverflowError,MemoryError):
+                    pass
             self._cancel()
             return
         if not complete:
@@ -160,14 +209,30 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
     def _install_frame(self, result, signature):
         if self._series is None or signature != self._signature():
             return False
+        whole = result.get("source") == WHOLE_SOURCE
         arr = result["rgba"]
-        w,h=result["logical_size"]
-        # Source row zero is screen TOP. Qt ViewBox +Y upward requires
-        # reversing rows; source reverse-X additionally requires columns.
-        if signature[6]:
-            display = np.ascontiguousarray(arr[::-1, ::-1])
+        if whole:
+            canvas=result["canvas"]
+            left,right=canvas["pixel_left"],canvas["pixel_right"]
+            top,bottom=canvas["pixel_top"],canvas["pixel_bottom"]
+            if not (0<=left<right<=arr.shape[1]
+                    and 0<=top<bottom<=arr.shape[0]):
+                self.source_composite_last_error=(
+                    "Full PaintBox source crop outside GDI pixel bounds")
+                return False
+            # ONE immutable source bitmap is split only at presentation
+            # time: QGraphicsView draws the plot, the mouse-transparent
+            # widget draws its axis margins. Source TextOut was already
+            # applied before all black series strokes in THIS array.
+            plot_pixels=arr[top:bottom,left:right]
+            h,w=plot_pixels.shape[:2]
         else:
-            display = np.ascontiguousarray(arr[::-1])
+            plot_pixels=arr
+            w,h=result["logical_size"]
+        if signature[6]:
+            display = np.ascontiguousarray(plot_pixels[::-1, ::-1])
+        else:
+            display = np.ascontiguousarray(plot_pixels[::-1])
         qimage = QImage(display.data,w,h,display.strides[0],
                         QImage.Format_RGBA8888).copy()
         qimage.setDevicePixelRatio(1.0)
@@ -175,10 +240,27 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
             self.source_composite_last_error="Invalid source Qt QImage"
             self.setVisible(False)
             return False
+        if whole and self.source_textout_sink is not None:
+            if not self.source_textout_sink.accept_whole_paintbox_bitmap(
+                    result,signature):
+                self.source_composite_last_error=(
+                    "Full PaintBox text margin crop rejected")
+                return False
         self._image = qimage
         self._completed_signature = signature
         self.source_composite_receipt = {
-            k:v for k,v in result.items() if k!="rgba"}
+            k:v for k,v in result.items() if k not in ("rgba","text_plan")}
+        if whole:
+            self.source_composite_receipt.update({
+                "source":CG_SOURCE,
+                "whole_paintbox_source":WHOLE_SOURCE,
+                "source_software_grid_and_series_and_frame_one_bitmap":True,
+                "source_textout_full_paintbox_implemented":True,
+                "original_win32_gdi_pixel_parity_verified":False,
+            })
+        else:
+            if self.source_textout_sink is not None:
+                self.source_textout_sink.schedule_fallback_text()
         self.source_composite_render_count += 1
         self.source_composite_last_error = None
         self.setVisible(True)
@@ -197,22 +279,26 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
         if self._task is not None and self._task_signature == signature:
             task = self._task
         else:
-            data,x_start,x_scale,provenance,digest=self._series
             try:
-                task=LiveSourceBitmapTask(prepare_live_source_bitmap(
-                    data,view_x=(signature[0],signature[1]),
-                    view_y=(signature[2],signature[3]),
-                    width=signature[4],height=signature[5],
-                    x_inverted=signature[6],x_start=x_start,x_scale=x_scale,
-                    provenance=provenance,expected_series_sha256=digest))
-            except (TypeError,ValueError,OverflowError,MemoryError) as ex:
+                task=self._build_source_task(signature)
+            except (TypeError,ValueError,OverflowError,MemoryError,
+                    OSError,RuntimeError) as ex:
                 self.source_composite_last_error=str(ex)
                 return False
         try:
             result=task.finish(max_segments=256)
-        except (ValueError,TypeError,OverflowError,MemoryError) as ex:
+        except (ValueError,TypeError,OverflowError,MemoryError,
+                OSError,RuntimeError) as ex:
             self.source_composite_last_error=str(ex)
-            return False
+            if isinstance(task,WholePaintboxTask):
+                self.source_whole_paintbox_last_error=str(ex)
+                try:
+                    task=self._build_source_task(signature,allow_whole=False)
+                    result=task.finish(max_segments=256)
+                except (ValueError,TypeError,OverflowError,MemoryError):
+                    return False
+            else:
+                return False
         self._task=None
         self._task_signature=None
         return self._install_frame(result,signature)

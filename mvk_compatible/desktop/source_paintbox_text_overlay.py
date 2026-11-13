@@ -16,6 +16,7 @@ the CG source software series; original 1:1 GDI/Win32 parity is open.
 from __future__ import annotations
 
 from hashlib import sha256
+from functools import lru_cache
 import sys
 
 import numpy as np
@@ -34,20 +35,26 @@ from .win32_gdi_source_candidate import (
 )
 
 
+@lru_cache(maxsize=1)
+def _source_gdi_dfm_metrics_cached():
+    """Reuse fixed design Tahoma -13 metrics; never cache a live GDI DC."""
+    with Win32SourceTextCanvas(
+            font_face="Tahoma",font_height=-13) as dc:
+        d=dc.diagnostics()
+    return {
+        "zero":d["gdi_width_zero"],
+        "six":d["gdi_width_sixdecimals"],
+        "height":d["gdi_height_zero"],
+        "font_metrics_provenance":"gdi_reconstructed_from_dfm",
+        "requested_font_height":-13,
+        "source_native_original_font_verified":False,
+    }
+
+
 def source_paintbox_font_metrics():
     """Source DFM font metrics from Windows GDI, Qt fallback elsewhere."""
     if native_gdi_supported():
-        with Win32SourceTextCanvas(
-                font_face="Tahoma",font_height=-13) as dc:
-            d=dc.diagnostics()
-            return {
-                "zero":d["gdi_width_zero"],
-                "six":d["gdi_width_sixdecimals"],
-                "height":d["gdi_height_zero"],
-                "font_metrics_provenance":"gdi_reconstructed_from_dfm",
-                "requested_font_height":-13,
-                "source_native_original_font_verified":False,
-            }
+        return dict(_source_gdi_dfm_metrics_cached())
     fm=QFontMetrics(qt_source_font_candidate())
     return {
         "zero":fm.horizontalAdvance("0"),
@@ -73,6 +80,7 @@ class SourcePaintBoxTextOverlay(QWidget):
         # overlay actually hid them; otherwise leave research ownership.
         self._owns_axes=False
         self._signature_last=None
+        self._force_fallback_render=False
         self._timer=QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.render_source_text_now)
@@ -124,7 +132,109 @@ class SourcePaintBoxTextOverlay(QWidget):
         rect=self.plot.viewport().rect()
         if self.geometry()!=rect:
             self.setGeometry(rect)
+        comp=getattr(self.plot,"source_composite_overlay",None)
+        if comp is not None and comp.source_series_bound:
+            # One source whole PaintBox is already being prepared;
+            # do not run the old independent 3MB GDI TextOut in parallel.
+            return
         self._timer.start(50)
+
+    def schedule_fallback_text(self):
+        """Resume accepted CH candidate if the complete source fails."""
+        if not self._enabled:
+            return
+        self._force_fallback_render=True
+        self._timer.start(0)
+
+    def invalidate_adopted_bitmap(self):
+        """Discard an old full PaintBox on zoom/pan; never show stale text."""
+        if not (self.source_textout_receipt or {}).get(
+                "source_one_paintbox_shared_buffer"):
+            return
+        self.source_textout_image=None
+        self.source_textout_receipt=None
+        self._signature_last=None
+        self.hide()
+        self._restore_axes()
+
+    def accept_whole_paintbox_bitmap(self,result,signature):
+        """Crop only *margins* from THE SAME completed source raster.
+
+        The graphic's interior is rendered in QGraphicsView, without
+        a second TextOut pass. This QWidget does not own another raster;
+        it just presents source bytes which already contain GDI glyphs.
+        """
+        if not self._enabled or result.get("source") != (
+                "SOURCE_DERIVED_LIVE_FULL_PAINTBOX_TCO2DRAW_TEXTOUT_STAGE111Z31CI"):
+            return False
+        whole=result.get("rgba")
+        plan=result.get("text_plan")
+        canvas=result.get("canvas")
+        if (not isinstance(whole,np.ndarray) or
+                whole.dtype!=np.uint8 or whole.ndim!=3 or
+                whole.shape[2]!=4 or not isinstance(plan,dict) or
+                not isinstance(canvas,dict)):
+            return False
+        h,w=whole.shape[:2]
+        if (w!=self.plot.viewport().width() or
+                h!=self.plot.viewport().height()):
+            return False
+        if (not np.all(whole[:,:,3]==255) or
+                not 1<=canvas["pixel_left"]<canvas["pixel_right"]<w or
+                not 1<=canvas["pixel_top"]<canvas["pixel_bottom"]<h):
+            return False
+        rgba=np.zeros((h,w,4),dtype=np.uint8)
+        alpha=255-np.min(whole[:,:,:3],axis=2)
+        alpha[canvas["pixel_top"]:canvas["pixel_bottom"],
+              canvas["pixel_left"]:canvas["pixel_right"]]=0
+        rgba[:,:,3]=alpha
+        image=QImage(rgba.data,w,h,rgba.strides[0],
+                     QImage.Format_RGBA8888).copy()
+        image.setDevicePixelRatio(1.0)
+        if image.isNull():
+            return False
+        font=plan["font_metrics_provenance"]
+        backend=("WIN32_GDI_DFM_TEXT_OUT"
+                 if font=="gdi_reconstructed_from_dfm"
+                 else "QT_GLYPHS_NOT_GDI")
+        self._timer.stop()
+        self._force_fallback_render=False
+        self.source_textout_image=image
+        self.source_textout_last_error=None
+        self._signature_last=self._signature()
+        self.source_textout_receipt={
+            "source":plan["source"],
+            "whole_paintbox_source":result["source"],
+            "source_one_paintbox_shared_buffer":True,
+            "source_bitmap_sha256":result["rgba_sha256"],
+            "axis_event_count":len(plan["events"]),
+            "axis_event_kinds":tuple(
+                sorted({ev["kind"] for ev in plan["events"]})),
+            "textout_engine":backend,
+            "native_gdi_metrics":(
+                source_paintbox_font_metrics() if native_gdi_supported()
+                else None),
+            "font_metrics_provenance":font,
+            "source_dfm_font_family":"Tahoma",
+            "source_dfm_font_height":-13,
+            "source_dfm_design_ppi":96,
+            "source_paintbox_canvas":canvas,
+            "source_textout_placements":plan["textout"],
+            "axis_glyph_sha256":sha256(rgba.tobytes()).hexdigest(),
+            "source_inverted_x":result["source_x_inverted"],
+            "source_raster_textout_before_series":True,
+            "native_original_font_verified":False,
+            "original_gdi_pixel_parity_verified":False,
+            "original_whole_tcanvas_bitmap_implemented":False,
+            "original_delphi_text_formatfloat_parity_verified":False,
+            "qt_logical_pixels":True,
+        }
+        self._hide_axes()
+        self.setGeometry(self.plot.viewport().rect())
+        self.show()
+        self.raise_()
+        self.update()
+        return True
 
     def _signature(self):
         vb=self.plot.getViewBox()
@@ -139,11 +249,26 @@ class SourcePaintBoxTextOverlay(QWidget):
         )
 
     def render_source_text_now(self):
-        """Explicit synchronous QA path; normal UI uses debounced update."""
+        """Explicit synchronous QA path; prefer same source offscreen image."""
         self._timer.stop()
         if not self._enabled:
             return False
         signature=self._signature()
+        if (self.source_textout_receipt is not None and
+                self.source_textout_receipt.get(
+                    "source_one_paintbox_shared_buffer") and
+                self._signature_last==signature):
+            return True
+        comp=getattr(self.plot,"source_composite_overlay",None)
+        force_fallback=self._force_fallback_render
+        self._force_fallback_render=False
+        if (not force_fallback and comp is not None and
+                comp.source_series_bound and
+                comp.render_source_composite_now() and
+                self.source_textout_receipt is not None and
+                self.source_textout_receipt.get(
+                    "source_one_paintbox_shared_buffer")):
+            return True
         if (signature==self._signature_last and
                 self.source_textout_image is not None):
             return True

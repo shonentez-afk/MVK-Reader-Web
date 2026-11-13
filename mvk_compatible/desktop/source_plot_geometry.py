@@ -78,7 +78,7 @@ class SourceGeometryPlot(pg.PlotWidget):
         # Source Draw's full software bitmap covers Qt curve/frame,
         # while preserving original Qt PlotDataItems for autorange.
         self.source_composite_overlay = SourceLiveCompositeOverlay(
-            self.getViewBox())
+            self.getViewBox(),plot_widget=self)
         self.getViewBox().addItem(self.source_composite_overlay,
                                   ignoreBounds=True)
         self._geometry_timer = QTimer(self)
@@ -88,6 +88,8 @@ class SourceGeometryPlot(pg.PlotWidget):
         # A full PaintBox margin plane (not an extra axis label hack)
         # carries source TextOut glyph pixels for current verified data.
         self.source_paintbox_text_overlay=SourcePaintBoxTextOverlay(self)
+        self.source_composite_overlay.source_textout_sink=(
+            self.source_paintbox_text_overlay)
         self.sourceGeometryChanged.connect(
             self.source_paintbox_text_overlay.schedule_source_text)
         self.getViewBox().sigRangeChanged.connect(
@@ -148,6 +150,8 @@ class SourceGeometryPlot(pg.PlotWidget):
         self.getPlotItem().setLabel(*args,**kwargs)
         if hasattr(self,"source_paintbox_text_overlay"):
             self.source_paintbox_text_overlay.schedule_source_text()
+        if hasattr(self,"source_composite_overlay"):
+            self.source_composite_overlay._schedule_view()
 
     def schedule_source_geometry(self, *_):
         if hasattr(self, '_geometry_timer') and not self._geometry_busy:

@@ -28,7 +28,14 @@ def _receipt(plot):
     assert report["series_stroke_count"]>0
     assert report["frame_stroke_count"]==4
     assert report["source_series_samples"]>2
-    assert not report["source_textout_full_paintbox_implemented"]
+    if "whole_paintbox_source" in report:
+        assert report["source_textout_full_paintbox_implemented"]
+        assert report["source_gdi_textout_interposed_before_series"]
+        assert not report["original_win32_pixel_parity_verified"]
+    else:
+        # Accepted CG fallback remains available if Font/PixelRect is
+        # unmeasured or native GDI rejects the complete PaintBox.
+        assert not report["source_textout_full_paintbox_implemented"]
     assert not report["original_win32_gdi_pixel_parity_verified"]
     assert report["rgba_sha256"] and len(report["rgba_sha256"])==64
     assert len(plot.getPlotItem().listDataItems())>=1
