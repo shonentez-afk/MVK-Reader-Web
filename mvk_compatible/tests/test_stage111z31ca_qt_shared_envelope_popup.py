@@ -28,14 +28,18 @@ def _full_fft_sha(win):
 
 
 def _click_source_popup_without_selection(qt_app,button,menu):
-    before=menu.isVisible()
-    assert not before
-    # An actual click opens the popup, as the original bAnyDropDownClick,
-    # never changes the selected Tag just by opening it.
-    QTimer.singleShot(30,menu.hide)
+    assert not menu.isVisible()
+    shown=[]
+    menu.aboutToShow.connect(lambda:shown.append(True))
+    # Some Windows Qt platforms process delayed timers only after a
+    # nested popup event loop. Always explicitly close after the click.
+    QTimer.singleShot(300,menu.hide)
     QTest.mouseClick(button,Qt.LeftButton,
                      pos=QPoint(9,button.height()//2))
     qt_app.processEvents()
+    menu.hide()
+    qt_app.processEvents()
+    assert shown, 'Original split button never displayed its QMenu'
     assert not menu.isVisible()
 
 
@@ -67,6 +71,10 @@ def test_both_original_envelope_buttons_share_one_popup_and_no_click_cycle(
         assert win.spec_envelope_code.currentData()==0
         assert actions[0].isChecked()
 
+        # PageSpectrum is disabled as an ancestor without any source:
+        # its own button cannot be user-enabled until we open a BIN/ZIP.
+        win.open_archive(fixture_zip(tmp_path,sample_count=8192))
+        qt_app.processEvents()
         win.set_envelope_profile(fake_profile(i=1.,q=.4))
         assert win.spec_envelope_button.isEnabled()
         assert win.wave_envelope_code.currentData()==0
@@ -234,8 +242,10 @@ def test_open_new_lower_rate_source_resets_active_source_fir_on_both_pages(
         assert not win.original_envelope_menu.actions()[20].isEnabled()
         assert not win.spec_envelope_button.isChecked()
         assert win._source_original_envelope_receipt is None
+        # Direct BIN uses its own correct provenance string, never the
+        # Native ZIP FFT backend label.
         assert win._full_spectrum['source']==(
-            'APP_DERIVED_FFT_MVKVIEW_CANDIDATE')
+            'APP_DERIVED_DIRECT_BIN_FFT_CANDIDATE')
         assert win._source_envelope_cursor is None
         assert sha256(low_bin.read_bytes()).hexdigest()==low_sha
     finally:

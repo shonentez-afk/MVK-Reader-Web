@@ -5,7 +5,7 @@ The screenshot artifact shows OUR Qt application, NOT original pixel parity.
 """
 import pytest
 pytest.importorskip("PySide6")
-from PySide6.QtWidgets import QLabel, QSlider
+from PySide6.QtWidgets import QLabel, QSlider, QPushButton
 from .test_desktop_qt import qt_app
 from .test_offline_core import fixture_zip
 from .test_stage111z16_direct_bin_tsxml import _make_pair
@@ -150,7 +150,7 @@ def test_original_view_time_is_only_source_model_and_bin_has_no_fake_dsp(
         for name in ("bConfigSave","bConfigUpload","bConfigReset",
                      "bConfigDownload"):
             assert not shell.config_page.findChild(
-                type(win.wave_filter_button),name).isEnabled()
+                QPushButton,name).isEnabled()
     finally:
         win.close()
         qt_app.processEvents()
