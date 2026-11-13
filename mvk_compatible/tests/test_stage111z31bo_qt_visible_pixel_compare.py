@@ -41,6 +41,15 @@ def _source_composite(win,qt_app):
         if not toggle.isChecked():
             toggle.click()
             qt_app.processEvents()
+    # Keep room for the later one-Hz pan within source Fs limits. The
+    # source-sized plot now fits the full range exactly; translating that
+    # full range is correctly clamped and cannot invalidate a screenshot.
+    vb=win.spec_plot.getViewBox()
+    lo,hi=vb.viewRange()[0]
+    inset=(hi-lo)*.01
+    vb.setXRange(lo+inset,hi-inset,padding=0)
+    qt_app.processEvents()
+    win._sync_source_tqgrapher_grid_candidate()
     model=win._spec_source_grid_model
     assert model is not None and model["combined_preview_active"]
     assert win._spec_source_raster_data is not None

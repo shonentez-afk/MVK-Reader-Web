@@ -98,6 +98,7 @@ from ..core.tqgrapher_viewport_sync_source import (
     bitmap_cursor_overlay_coordinates)
 from ..core.tqgrapher_bitmap_xor_cursor import source_bitmap_xor_cursor
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
+from .source_plot_geometry import SourceGeometryPlot
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .source_pixel_audit_io import save_source_graph_pixel_audit, read_png_rgba
 from .original_shell import install_original_shell
@@ -181,8 +182,9 @@ class MainWindow(QMainWindow):
         self._set_active(False)
 
     @staticmethod
-    def _plot(x,y):
-        p=pg.PlotWidget(background='#ffffff')
+    def _plot(x,y,*,source_geometry=False):
+        plot_class=SourceGeometryPlot if source_geometry else pg.PlotWidget
+        p=plot_class(background='#ffffff')
         p.setLabel('bottom',x)
         p.setLabel('left',y)
         p.showGrid(x=True,y=True,alpha=.2)
@@ -648,10 +650,21 @@ class MainWindow(QMainWindow):
         left.addStretch()
         root.addWidget(panel,0)
 
-        self.wave_plot=self._plot('Время, с','Ускорение, м/с²')
+        self.wave_plot=self._plot('Время, с','Ускорение, м/с²',source_geometry=True)
+        self.wave_plot.setObjectName('pbAdc')
+        self.wave_plot.getViewBox().sigRangeChanged.connect(
+            lambda *_:self._invalidate_graph_cursor('adc'))
+        self.wave_plot.getViewBox().sigResized.connect(
+            lambda *_:self._invalidate_graph_cursor('adc'))
         self.wave_plot.scene().sigMouseClicked.connect(self._wave_click)
         self.wave_plot.scene().sigMouseMoved.connect(self._wave_mouse_move)
-        root.addWidget(self.wave_plot,1)
+        wave_graph=QWidget()
+        wave_graph.setObjectName('pnAdcGraph')
+        wave_graph_layout=QVBoxLayout(wave_graph)
+        wave_graph_layout.setContentsMargins(8,8,8,8)
+        wave_graph_layout.setSpacing(0)
+        wave_graph_layout.addWidget(self.wave_plot)
+        root.addWidget(wave_graph,1)
 
         # Existing diagnostic cursor text stays intact for advanced QA.
         self.wave_hint=QLabel(
@@ -1571,9 +1584,12 @@ class MainWindow(QMainWindow):
         graph=QWidget()
         graph.setObjectName('pnSpecGraph')
         grid=QVBoxLayout(graph)
-        grid.setContentsMargins(8,8,0,8)
+        grid.setContentsMargins(8,8,8,8)
         grid.setSpacing(0)
-        self.spec_hscroll=QScrollBar(Qt.Horizontal)
+        self.spec_scroll_top=QWidget()
+        self.spec_scroll_top.setObjectName('pnSpecGraphTop')
+        self.spec_scroll_top.setFixedHeight(24)
+        self.spec_hscroll=QScrollBar(Qt.Horizontal,self.spec_scroll_top)
         self.spec_hscroll.setObjectName('sbSpecHScroll')
         self.spec_hscroll.setFixedHeight(24)
         self.spec_hscroll.setRange(0,0)
@@ -1583,22 +1599,31 @@ class MainWindow(QMainWindow):
             'PageSize=размер видимого окна. Исходные десять масштабов '
             'ещё не все восстановлены; это Qt-кандидат.')
         self.spec_hscroll.hide()
-        grid.addWidget(self.spec_hscroll)
+        grid.addWidget(self.spec_scroll_top)
         chart=QHBoxLayout()
         chart.setContentsMargins(0,0,0,0)
         chart.setSpacing(0)
-        self.spec_plot=self._plot('Частота, Гц','Амплитуда')
+        self.spec_plot=self._plot('Частота, Гц','Амплитуда',source_geometry=True)
+        self.spec_plot.getViewBox().sigRangeChanged.connect(
+            lambda *_:self._invalidate_graph_cursor('spectrum'))
+        self.spec_plot.getViewBox().sigResized.connect(
+            lambda *_:self._invalidate_graph_cursor('spectrum'))
         self.spec_plot.setObjectName('pbSpectrum')
         self.spec_plot.scene().sigMouseClicked.connect(self._spec_click)
         self.spec_plot.scene().sigMouseMoved.connect(self._spec_mouse_move)
         chart.addWidget(self.spec_plot,1)
-        self.spec_vscroll=QScrollBar(Qt.Vertical)
+        self.spec_scroll_right=QWidget()
+        self.spec_scroll_right.setObjectName('pnSpecGraphRight')
+        self.spec_scroll_right.setFixedWidth(24)
+        self.spec_vscroll=QScrollBar(Qt.Vertical,self.spec_scroll_right)
         self.spec_vscroll.setObjectName('sbSpecVScroll')
         self.spec_vscroll.setFixedWidth(24)
         self.spec_vscroll.setRange(0,1000)
         self.spec_vscroll.setPageStep(50)
         self.spec_vscroll.hide()
-        chart.addWidget(self.spec_vscroll)
+        chart.addWidget(self.spec_scroll_right)
+        self.spec_plot.sourceGeometryChanged.connect(
+            self._sync_spec_scroll_geometry)
         grid.addLayout(chart,1)
         # Original TQGrapher pixel viewport MUST retain its previous
         # full height; the new numerical readout lives in the tools column.
@@ -2167,6 +2192,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f'Исходный H-пресет {hz} Гц · позиция {pos} Гц, '
             'исходные N/2 FFT и VALUES не изменены; Win32 Canvas ещё не принят')
+
+    def _sync_spec_scroll_geometry(self):
+        """Unit128 0084C8A6..0084C8F3 aligns bars to drawable PixelRect.
+
+        DFM top/right panels reserve 24 logical pixels even if their child
+        scrollbars are hidden. Showing a scale must not resize the plot.
+        """
+        m=self.spec_plot.source_canvas_model
+        if m is None:return
+        self.spec_hscroll.setGeometry(m['pixel_left'],0,m['pixel_plot_width'],24)
+        self.spec_vscroll.setGeometry(0,m['pixel_top'],24,m['pixel_plot_height'])
 
     def _spec_scroll_changed(self,axis:int,value:int):
         if self._full_spectrum is None:return
@@ -4685,6 +4721,29 @@ class MainWindow(QMainWindow):
             self.spec_mean.setText('Спектр не рассчитан: '+str(e))
             self.spec_hint.setText('Нет действительного спектра: '+str(e))
             self._error(e)
+
+    def _invalidate_graph_cursor(self, page):
+        """A cursor from the old affine viewport must never survive a pan/resize.
+
+        Source Draw recalculates its canvas coefficients. Qt's same-X shortcut
+        must not reuse a value selected with the previous coefficients.
+        """
+        if page=='adc':
+            self._wave_mouse_pixel=None
+            line=getattr(self,'wave_line',None)
+            if line is not None:line.setVisible(False)
+            label=getattr(self,'wave_cursor_primary',None)
+            if label is not None:label.setText('Курсор: —')
+        else:
+            self._spec_mouse_pixel=None
+            self._spec_last_cursor=None
+            for name in ('spec_line','spec_hline'):
+                line=getattr(self,name,None)
+                if line is not None:line.setVisible(False)
+            overlay=getattr(self,'spec_xor_crosshair',None)
+            if overlay is not None:overlay.clear_cursor()
+            label=getattr(self,'spec_cursor_primary',None)
+            if label is not None:label.setText(self._idle_spectrum_cursor_label())
 
     def _wave_click(self,event):
         """Keep explicit click support; original Delphi also uses MouseMove."""

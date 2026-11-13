@@ -125,6 +125,9 @@ def test_original_adc_filtered_getsignal_cursor_uses_full_fir_not_lod(
         assert w.wave_line is not None
         assert len(cursor.full_values)>30
         assert w._source_wave_readout is None  # downsampled FIR != raw GetSignal
+        # Let the source-sized plot finish deferred layout before mapping
+        # a scene point. A pending resize intentionally erases old cursors.
+        for _ in range(4):qt_app.processEvents()
         box=w.wave_plot.getViewBox()
         view=box.viewRange()
         # Move onto real, internal filtered sample, not a LOD/mean line.
