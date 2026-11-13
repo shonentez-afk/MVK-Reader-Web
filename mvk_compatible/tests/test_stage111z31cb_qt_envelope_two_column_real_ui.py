@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QPoint,Qt
+from PySide6.QtGui import QAction
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMenu,QWidgetAction,QRadioButton,QGridLayout,QToolButton
 
@@ -60,14 +61,14 @@ def test_exact_31_static_original_captions_20_plus_12_visible_radio_geometry(
         actions=menu.actions()
         assert len(actions)==32
         assert [a.data() for a in actions]==list(range(32))
-        assert isinstance(actions[0],QWidgetAction)
-        # Only the QWidgetAction palette is a Qt native menu item.
-        # All 32 source actions remain independent enabled/triggerable
-        # model entries, not artificially disabled invisible actions.
-        assert menu.native_actions()==(actions[0],)
+        assert all(isinstance(a,QAction) for a in actions)
+        # Native menu has just ONE host widget action; 32 independent
+        # source QAction are enabled/checked through radio proxies.
+        assert isinstance(menu.widget_host_action,QWidgetAction)
+        assert menu.native_actions()==(menu.widget_host_action,)
         palette=w.original_envelope_palette
         assert palette.objectName()=='sourceEnvelopeTwoColumnPalette'
-        assert actions[0].defaultWidget() is palette
+        assert menu.widget_host_action.defaultWidget() is palette
         assert isinstance(palette.layout(),QGridLayout)
         radios=w._original_envelope_radios
         assert len(radios)==32
