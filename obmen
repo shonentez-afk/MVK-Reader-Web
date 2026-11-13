@@ -1,1 +1,9 @@
-Оригинальный MVKView уже запущен. Сохранённое измерение загружено. Активная вкладка — «Временной сигнал». Через MCP выполни mvk_trace(mode="ui_map", backend="uia", capture=false), затем mvk_trace(mode="ui_map", backend="win32", capture=false). Затем вызови mvk_trace(mode="ui_tree", backend="uia", capture=false) для основного окна Tmvkform, указав window_handle при необходимости. Сопоставь видимые страницы, TTabSheet и TabItem. Если нельзя программно определить выбранную вкладку, сообщи об этом, не угадывай. Сохрани три JSON локально, ничего не нажимай и не изменяй.
+Через MCP вызови:
+
+mvk_trace(mode="ui_active")
+
+Проверь определение активной страницы оригинального MVKView при уже открытом измерении.
+
+Сообщи active_page, status, selected_tabs, visible_pages обоих backend и способ подтверждения активной страницы.
+
+Ничего не переключай и не изменяй.
