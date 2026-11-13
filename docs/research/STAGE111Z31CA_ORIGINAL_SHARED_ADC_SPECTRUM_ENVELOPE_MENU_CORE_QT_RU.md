@@ -1,6 +1,6 @@
 # STAGE111Z31CA — оригинальные девять split-кнопок графиков + общий фильтр PageAdc/PageSpectrum (Core + Qt)
 
-**Дата:** 13.11.2026. Начато после принятого Stage111Z31BZ (исправление поведения и масштаба спектральной кнопки Y). Настоящий акт CI/EXE и исполняемый SHA вписать после проверки.
+**ПРИЁМКА 13.11.2026:** ИСПОЛНЯЕМЫЙ SHA `00f1b7531b563350dfe00db7b69b51d2a4b7b445` — [GitHub Actions #43342769471](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43342769471) **3/3 SUCCESS**: Linux Core **1805 PASS, 93 skipped**, Windows Core **1945 PASS, 7 skipped**, Windows Qt Smoke **49 PASS**, Qt DPI150 **111 PASS**; автономный Windows EXE со встроенным Go Native R6.1. [EXE artifact #14000856243](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43342769471/artifacts/14000856243) — ZIP **68 923 883 байта** до **27.11.2026**; [Synthetic UI screenshot artifact #13999633021](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43342769471/artifacts/13999633021) до **20.11.2026**. Непринятые `#43341752622`/`#43342279572` выявили ошибки Qt-тестов: ложное сопоставление типа исходной QToolButton с QPushButton конфигурации, неправильный source DirectBIN FFT label, клик по кнопке при закрытом/отключённом PageAdc. Эти ошибки исправлены и тесты проверяют реальное появление popup. Численная пара с запущенным оригиналом и физическая калибровка приборного сигнала НЕ доказаны. Данный последующий документационный коммит НЕ является новым EXE.
 
 ## Исходные правила, обнаруженные в закрытых операторских файлах (НЕ экспортировать их)
 
