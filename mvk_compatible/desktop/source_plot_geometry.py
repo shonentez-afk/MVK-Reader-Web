@@ -14,6 +14,9 @@ from ..core.original_live_axis_ticks import (
 from .tqgrapher_textout_qt_candidate import qt_source_font_candidate
 from .source_live_grid import SourceLiveGridOverlay, SourceLiveFrameOverlay
 from .source_live_composite import SourceLiveCompositeOverlay
+from .source_paintbox_text_overlay import (
+    SourcePaintBoxTextOverlay, source_paintbox_font_metrics,
+)
 
 
 class SourceTickAxis(pg.AxisItem):
@@ -82,6 +85,15 @@ class SourceGeometryPlot(pg.PlotWidget):
         self._geometry_timer.setSingleShot(True)
         self._geometry_timer.timeout.connect(self.sync_source_geometry)
         self.getViewBox().sigResized.connect(self.schedule_source_geometry)
+        # A full PaintBox margin plane (not an extra axis label hack)
+        # carries source TextOut glyph pixels for current verified data.
+        self.source_paintbox_text_overlay=SourcePaintBoxTextOverlay(self)
+        self.sourceGeometryChanged.connect(
+            self.source_paintbox_text_overlay.schedule_source_text)
+        self.getViewBox().sigRangeChanged.connect(
+            self.source_paintbox_text_overlay.schedule_source_text)
+        self.getViewBox().sigResized.connect(
+            self.source_paintbox_text_overlay.schedule_source_text)
         self.schedule_source_geometry()
 
     def bind_source_tqgr_series(self, values, *, x_start, x_scale,
@@ -97,13 +109,16 @@ class SourceGeometryPlot(pg.PlotWidget):
                 values,x_start=x_start,x_scale=x_scale,
                 provenance=provenance,
                 expected_series_sha256=expected_series_sha256)
+            self.source_paintbox_text_overlay.set_source_enabled(True)
         except (TypeError,ValueError,OverflowError,MemoryError):
             self.source_composite_overlay.clear_source_series()
+            self.source_paintbox_text_overlay.set_source_enabled(False)
             self.source_grid_overlay.suspend_automatic_raster(False)
             raise
 
     def clear_source_tqgr_series(self):
         self.source_composite_overlay.clear_source_series()
+        self.source_paintbox_text_overlay.set_source_enabled(False)
         self.source_grid_overlay.suspend_automatic_raster(False)
 
     def enable_source_grid(self, enabled: bool):
@@ -112,15 +127,27 @@ class SourceGeometryPlot(pg.PlotWidget):
         self.source_frame_overlay.setVisible(enabled)
         if not enabled:
             self.source_composite_overlay.setVisible(False)
+            self.source_paintbox_text_overlay.set_source_enabled(False)
         else:
             self.source_grid_overlay.sync_source_grid()
             self.source_frame_overlay.sync_source_frame()
             self.source_composite_overlay._schedule_view()
+            if self.source_composite_overlay.source_series_bound:
+                self.source_paintbox_text_overlay.set_source_enabled(True)
 
     def showEvent(self,event):
         super().showEvent(event)
         if hasattr(self,"source_composite_overlay"):
             self.source_composite_overlay._schedule_view()
+        if hasattr(self,"source_paintbox_text_overlay"):
+            self.source_paintbox_text_overlay.schedule_source_text()
+
+    def setLabel(self, *args, **kwargs):
+        # Existing MainWindow updates the native unit labels dynamically.
+        # Keep the event/text plan in sync without changing Qt data curves.
+        self.getPlotItem().setLabel(*args,**kwargs)
+        if hasattr(self,"source_paintbox_text_overlay"):
+            self.source_paintbox_text_overlay.schedule_source_text()
 
     def schedule_source_geometry(self, *_):
         if hasattr(self, '_geometry_timer') and not self._geometry_busy:
@@ -129,6 +156,8 @@ class SourceGeometryPlot(pg.PlotWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.schedule_source_geometry()
+        if hasattr(self,"source_paintbox_text_overlay"):
+            self.source_paintbox_text_overlay.schedule_source_text()
 
     def sync_source_geometry(self):
         if self._geometry_busy:
@@ -136,13 +165,16 @@ class SourceGeometryPlot(pg.PlotWidget):
         self._geometry_busy = True
         try:
             item = self.getPlotItem()
-            fm = QFontMetrics(qt_source_font_candidate())
+            # On Windows the actual source-derived DFM GDI Font.Height
+            # (-13 logical px), not Qt QFontMetrics, defines margins.
+            # The original executable's runtime font/PPI remain OPEN.
+            fonts=source_paintbox_font_metrics()
             model = source_graph_layout(
                 width=max(30, self.viewport().width()),
                 height=max(30, self.viewport().height()),
-                zero_width=fm.horizontalAdvance('0'),
-                six_decimals_width=fm.horizontalAdvance('0.000000'),
-                text_height=fm.height(),
+                zero_width=fonts['zero'],
+                six_decimals_width=fonts['six'],
+                text_height=fonts['height'],
                 x_name=bool(item.getAxis('bottom').labelText),
                 y_name=bool(item.getAxis('left').labelText))
             # Empty top/right axes must not reserve a second set of margins.
@@ -157,6 +189,9 @@ class SourceGeometryPlot(pg.PlotWidget):
                 item.getAxis(name).setTickFont(qt_source_font_candidate())
             item.layout.activate()
             model['qt_logical_pixels'] = True
+            model['source_font_metrics_backend'] = fonts[
+                'font_metrics_provenance']
+            model['source_dfm_font_height'] = -13
             model['original_canvas_font_metrics_verified'] = False
             changed = model != self.source_canvas_model
             self.source_canvas_model = model
