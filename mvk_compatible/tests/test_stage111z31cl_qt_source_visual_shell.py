@@ -105,11 +105,17 @@ def test_source_wave_spectrum_main_graphs_keep_original_visible_rects_and_dsp(
                 assert mapped.property("originalDfmLogicalRect")==(
                     x,y,width,height)
                 assert mapped.geometry().height()==height
-                assert mapped.property("sourceDfmImageCandidate") is True
-                assert not mapped.property("sourceOriginalBitmapProvided")
-                if isinstance(mapped,QToolButton):
+                if isinstance(mapped,QLabel):
+                    # Original source lbAdcHint/lbMean/lbSpecHint/lbSpecMean
+                    # are readouts, NOT TButtons with an ImageName/icon.
+                    assert bool(mapped.text())
+                    assert mapped.alignment() & Qt.AlignHCenter
+                else:
+                    assert mapped.property("sourceDfmImageCandidate") is True
+                    assert not mapped.property("sourceOriginalBitmapProvided")
                     assert not mapped.icon().isNull()
-                    assert mapped.toolButtonStyle()==Qt.ToolButtonTextBesideIcon
+                    if isinstance(mapped,QToolButton):
+                        assert mapped.toolButtonStyle()==Qt.ToolButtonTextBesideIcon
             assert not w.source_view_state.snapshot()["device_command_issued"]
         import numpy as np
         np.testing.assert_array_equal(w._full_spectrum["amplitude"],fft)
