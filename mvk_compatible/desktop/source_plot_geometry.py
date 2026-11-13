@@ -8,7 +8,42 @@ from PySide6.QtGui import QFontMetrics
 import pyqtgraph as pg
 
 from ..core.original_graph_layout import source_graph_layout
+from ..core.original_live_axis_ticks import (
+    source_live_axis_ticks, source_live_axis_tick_text,
+)
 from .tqgrapher_textout_qt_candidate import qt_source_font_candidate
+
+
+class SourceTickAxis(pg.AxisItem):
+    """Source 10x10 tick model for the actual Qt graph, not a GDI glyph oracle.
+
+    This is deliberately an AxisItem: 10-division ticks and labels update
+    from the *current* view range for pan, resize, FIR Fs and FFT zoom,
+    without touching the underlying sampled values or drawing a stale
+    bitmap overlay. Research setTicks() still overrides this model.
+    """
+    def __init__(self, orientation, **kwargs):
+        super().__init__(orientation=orientation, **kwargs)
+        self.source_tick_model = None
+
+    def tickValues(self, minVal, maxVal, size):
+        try:
+            lo = float(min(minVal, maxVal))
+            span = float(max(minVal, maxVal)-lo)
+            model = source_live_axis_ticks(scr_left=lo, scr_width=span)
+        except (ValueError, OverflowError, TypeError):
+            self.source_tick_model = None
+            return super().tickValues(minVal, maxVal, size)
+        self.source_tick_model = model
+        return [(model["spacing_single"], list(model["values"]))]
+
+    def tickStrings(self, values, scale, spacing):
+        # Native Delphi "3-digit" fixed point candidate: Qt's default
+        # engineering prefixes would generate different source labels.
+        try:
+            return [source_live_axis_tick_text(v, spacing) for v in values]
+        except (ValueError, OverflowError, TypeError):
+            return super().tickStrings(values, scale, spacing)
 
 
 class SourceGeometryPlot(pg.PlotWidget):
@@ -17,6 +52,13 @@ class SourceGeometryPlot(pg.PlotWidget):
     def __init__(self, *args, **kwargs):
         self.source_canvas_model = None
         self._geometry_busy = False
+        # Only the two source geometry plots use source numeric ticks;
+        # Status/Config/Calib/research charts retain their own axis models.
+        if "axisItems" not in kwargs:
+            kwargs["axisItems"] = {
+                "bottom": SourceTickAxis(orientation="bottom"),
+                "left": SourceTickAxis(orientation="left"),
+            }
         super().__init__(*args, **kwargs)
         self._geometry_timer = QTimer(self)
         self._geometry_timer.setSingleShot(True)
