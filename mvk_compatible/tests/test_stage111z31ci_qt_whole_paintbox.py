@@ -36,7 +36,9 @@ def _assert_same_source_paintbox(plot, expected_inverse):
     assert r["whole_paintbox_source"]==WHOLE_SOURCE
     assert r["source_textout_full_paintbox_implemented"]
     assert r["source_software_grid_and_series_and_frame_one_bitmap"]
-    assert r["textout_calls"]==1
+    assert r["textout_calls"]==r["textout_event_count"]
+    assert r["source_interleaved_tick_textout"]
+    assert r["source_gdi_textout_per_matching_grid_tick"]
     assert r["series_stroke_count"]>0
     assert r["frame_stroke_count"]==4
     assert r["source_x_inverted"] is expected_inverse
@@ -92,7 +94,8 @@ def test_both_live_pages_use_one_full_paintbox_gdi_source(
             settle(qt_app)
             changed,_=_assert_same_source_paintbox(plot,inverted)
             assert changed["source_series_sha256"]==original["source_series_sha256"]
-            assert changed["textout_calls"]==1
+            assert changed["textout_calls"]==changed["textout_event_count"]
+            assert changed["source_interleaved_tick_textout"]
             assert plot.source_composite_overlay.source_composite_render_count>count
         np.testing.assert_array_equal(win._full_spectrum["amplitude"],power)
         assert sha256(src.read_bytes()).hexdigest()==input_sha

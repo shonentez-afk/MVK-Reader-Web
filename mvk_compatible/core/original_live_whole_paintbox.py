@@ -1,16 +1,16 @@
-"""Stage111Z31CI: one full PaintBox TCo2Draw + native TextOut bitmap.
+"""Stage111Z31CJ: exact source GRID/TextOut event interleaving candidate.
 
-Reconstructs the original *ordering* in user-private _Unit115.pas:
-TCo2Draw.Create(white) -> horizontal/vertical grid -> TCanvas.TextOut
-with inherited PaintBox font -> per-pixel TQGRSeries min/max strokes ->
-four black plot frame segments -> display. Supports native negative ADC
-ScrWidth. This source-geometry candidate is **not** a claim of Win32
-TCanvas/GDI/x87, physical DPI or original process pixel parity.
+Recovered directly from operator-private _Unit115.pas TQGrapher.Draw:
+007CAD77..007CAE35 each horizontal software grid stroke is followed
+by its y-tick TextOut; 007CAEA9..007CAF6B does the same for positive
+ScrWidth x ticks; negative ScrWidth uses the reverse loop
+007CAF76..007CB080; 007CB086..007CB129 writes YName then XName;
+007CB12F..007CB3E5 writes source per-pixel series, then the frame.
+The tick/grid micro-order is retained in a SINGLE 32-bit PaintBox.
 
-No Qt, Win32, connected hardware, original exe or private PAS/DFM assets.
-The raster receives SHA-checked Float32 samples only, never mutates data.
-The only UI-specific operation, TextOut, is an injected bounded callback
-and is executed between grid and series passes.
+This models source control flow; exact original Win32 GDI font, x87,
+RTL locale, physical DPI, pixel AA/parity remain unverified.
+No Qt, hardware access, published private PAS/DFM/BIN, or source writes.
 """
 from __future__ import annotations
 
@@ -30,8 +30,10 @@ from .original_live_paintbox_text import (
 
 SOURCE = "SOURCE_DERIVED_LIVE_FULL_PAINTBOX_TCO2DRAW_TEXTOUT_STAGE111Z31CI"
 ORIGINAL_DRAW_ORDER = (
-    "white_32bpp_bitmap", "horizontal_source_grid",
-    "vertical_source_grid", "canvas_textout",
+    "white_32bpp_bitmap",
+    "each_horizontal_source_grid_line_then_matching_y_tick_textout",
+    "each_vertical_source_grid_line_then_matching_x_tick_textout_signed_scrwidth",
+    "y_axis_name_textout", "x_axis_name_textout",
     "source_minmax_series", "black_frame")
 MAX_STEP_SEGMENTS = 256
 
@@ -43,6 +45,9 @@ class WholePaintboxPlan:
     source_text_plan: dict
     horizontal_grid: tuple
     vertical_grid: tuple
+    horizontal_tick_events: tuple
+    vertical_tick_events: tuple
+    axis_name_events: tuple
     series_segments: tuple
     frame_segments: tuple
     source_series_sha256: str
@@ -121,6 +126,37 @@ def prepare_whole_paintbox_plan(
                        for v in grid["y_grid_ticks"])
     vertical = tuple((px_x(v),float(t),px_x(v),float(b))
                      for v in grid["x_grid_ticks"])
+    # Source has two distinct 007CAE4E branches. For negative
+    # ScrWidth, 007CAFBE..007CB080 DECREMENTS the source index,
+    # drawing x tick lines right-to-left in index/value order.
+    if inverted:
+        vertical = tuple(reversed(vertical))
+    original_events = tuple(source_text_plan["events"])
+    y_events = tuple(e for e in original_events if e["kind"]=="y_tick")
+    x_events = tuple(e for e in original_events if e["kind"]=="x_tick")
+    name_events = tuple(e for e in original_events
+                        if e["kind"] in ("y_name","x_name"))
+    if len(y_events) not in (0,len(horizontal)):
+        raise ValueError("TQGrapher y line/TextOut source count mismatch")
+    if len(x_events) not in (0,len(vertical)):
+        raise ValueError("TQGrapher x line/TextOut source count mismatch")
+    if (len(name_events)>2 or
+            tuple(e["kind"] for e in name_events)
+                not in ((),("y_name",),("x_name",),
+                        ("y_name","x_name"))):
+        raise ValueError("Unexpected source axis-name TextOut order")
+    if x_events and inverted:
+        x_events = tuple(reversed(x_events))
+    # Pair source LineTo with TextOut at the exact iteration that
+    # originally emitted it, rather than a bulk text pass.
+    for events, ticks in ((y_events,grid["y_grid_ticks"]),
+                          (x_events,tuple(reversed(grid["x_grid_ticks"]))
+                           if inverted else grid["x_grid_ticks"])):
+        if events and not all(
+                float(np.float32(e["source_value"])) ==
+                float(np.float32(v))
+                for e,v in zip(events,ticks)):
+            raise ValueError("Grid and TextOut value mapping diverged")
     projection=source_tqgr_series_columns(
         samples,scr_left=scrleft,scr_width=scrwidth,
         scr_bottom=scrbottom,scr_height=scrheight,
@@ -132,6 +168,8 @@ def prepare_whole_paintbox_plan(
     return WholePaintboxPlan(
         width=w,height=h,source_text_plan=source_text_plan,
         horizontal_grid=horizontal,vertical_grid=vertical,
+        horizontal_tick_events=y_events,vertical_tick_events=x_events,
+        axis_name_events=name_events,
         series_segments=series,frame_segments=frame,
         source_series_sha256=digest,source_series_samples=int(samples.size),
         source_series_provenance=provenance,inverted_x=inverted,
@@ -141,10 +179,16 @@ def prepare_whole_paintbox_plan(
 
 
 class WholePaintboxTask:
-    """Cancellable, bounded graphics state; publish only completed bytes.
+    """Bounded source Draw state. Never publishes a partially drawn bitmap.
 
-    Finite-step scheduling is driven by existing Qt QTimer; text renderer
-    is invoked *once* in the same buffer, after grid and before series.
+    Original sequence:
+      0: each Y grid line + matching Y tick TextOut
+      1: each X grid line + matching X tick TextOut (reverse for ADC)
+      2: YName then XName TextOut
+      3: full min/max series
+      4: four black frame lines
+      5: complete
+    Platform GDI is deliberately injected and never imported by Core.
     """
     def __init__(self,plan,text_renderer):
         if not isinstance(plan,WholePaintboxPlan):
@@ -158,53 +202,104 @@ class WholePaintboxTask:
         self._offset=0
         self.slices=0
         self.textout_calls=0
+        self.draw_trace=[]
+        self._renderer_closed=False
+
+    def close(self):
+        """Release a native GDI DC on finish, cancellation or exception."""
+        if self._renderer_closed:
+            return
+        self._renderer_closed=True
+        release=getattr(self._renderer,"close",None)
+        if callable(release):
+            release()
 
     @property
     def done(self):
         return self._pass == 5
+
+    def _textout(self,event):
+        before=self._rgba.copy(order="C")
+        candidate=self._renderer(before,(event,))
+        if (not isinstance(candidate,np.ndarray) or
+                candidate.dtype!=np.uint8 or
+                candidate.shape!=self._rgba.shape or
+                not bool(np.all(candidate[:,:,3]==255))):
+            raise ValueError("TextOut returned nonopaque or invalid source canvas")
+        self._rgba=np.array(candidate,dtype=np.uint8,order="C",copy=True)
+        self.textout_calls += 1
+        self.draw_trace.append(("textout",event["kind"],
+                                event["source_value"]
+                                if "source_value" in event else None))
+
+    def _draw_line(self,stroke,ink):
+        self._rgba=source_raster_rgba(
+            width=self.plan.width,height=self.plan.height,
+            segments=(stroke,),initial_rgba=self._rgba,ink=ink)
 
     def step(self,max_segments=128):
         if type(max_segments) is not int or not 1<=max_segments<=MAX_STEP_SEGMENTS:
             raise ValueError("Bounded source raster step count required")
         if self.done:
             return True
-        if self._pass == 2:
-            # The original TCanvas draws glyphs into the same opaque
-            # bitmap. Only this point in the drawing order may call GDI.
-            before=self._rgba.copy(order="C")
-            candidate=self._renderer(before,self.plan.source_text_plan["events"])
-            if (not isinstance(candidate,np.ndarray) or
-                    candidate.dtype!=np.uint8 or
-                    candidate.shape!=self._rgba.shape or
-                    not bool(np.all(candidate[:,:,3]==255))):
-                raise ValueError("TextOut returned nonopaque or invalid source canvas")
-            self._rgba=np.array(candidate,dtype=np.uint8,order="C",copy=True)
-            self.textout_calls+=1
-            self._pass=3
-            self.slices+=1
-            return False
-        strokes=(
-            self.plan.horizontal_grid if self._pass==0 else
-            self.plan.vertical_grid if self._pass==1 else
-            self.plan.series_segments if self._pass==3 else
-            self.plan.frame_segments)
-        piece=strokes[self._offset:self._offset+max_segments]
-        if piece:
-            ink = GRID_LINE_RGB if self._pass < 2 else (0,0,0)
-            self._rgba=source_raster_rgba(
-                width=self.plan.width,height=self.plan.height,
-                segments=piece,initial_rgba=self._rgba,ink=ink)
-            self._offset += len(piece)
-        if self._offset >= len(strokes):
-            self._offset=0
-            self._pass+=1
+        p=self.plan
+        if self._pass in (0,1):
+            horizontal=self._pass==0
+            strokes=p.horizontal_grid if horizontal else p.vertical_grid
+            events=(p.horizontal_tick_events if horizontal
+                    else p.vertical_tick_events)
+            limit=min(self._offset+max_segments,len(strokes))
+            for index in range(self._offset,limit):
+                self._draw_line(strokes[index],GRID_LINE_RGB)
+                self.draw_trace.append((
+                    "grid_horizontal" if horizontal else "grid_vertical",
+                    index,None))
+                if events:
+                    self._textout(events[index])
+            self._offset=limit
+            if self._offset==len(strokes):
+                self._pass+=1
+                self._offset=0
+        elif self._pass==2:
+            events=p.axis_name_events
+            limit=min(self._offset+max_segments,len(events))
+            for index in range(self._offset,limit):
+                self._textout(events[index])
+            self._offset=limit
+            if self._offset==len(events):
+                self._pass=3
+                self._offset=0
+        else:
+            strokes=(p.series_segments if self._pass==3
+                     else p.frame_segments)
+            limit=min(self._offset+max_segments,len(strokes))
+            part=strokes[self._offset:limit]
+            if part:
+                self._rgba=source_raster_rgba(
+                    width=p.width,height=p.height,
+                    segments=part,
+                    ink=(0,0,0),initial_rgba=self._rgba)
+                # One short trace marker per series/frame SLICE, never
+                # one marker per FFT sample or source bin.
+                self.draw_trace.append((
+                    "series" if self._pass==3 else "frame",
+                    len(part),None))
+            self._offset=limit
+            if self._offset==len(strokes):
+                self._pass+=1
+                self._offset=0
         self.slices+=1
+        if self.done:
+            self.close()
         return self.done
 
     def finish(self,max_segments=128):
-        while not self.step(max_segments=max_segments):
-            pass
-        return self.result()
+        try:
+            while not self.step(max_segments=max_segments):
+                pass
+            return self.result()
+        finally:
+            self.close()
 
     def result(self):
         if not self.done:
@@ -236,6 +331,14 @@ class WholePaintboxTask:
             "frame_stroke_count":len(p.frame_segments),
             "textout_calls":self.textout_calls,
             "source_draw_order":ORIGINAL_DRAW_ORDER,
+            "source_interleaved_tick_textout":True,
+            "source_negative_scrwidth_reverse_x_loop":p.inverted_x,
+            "source_gdi_textout_per_matching_grid_tick":True,
+            "source_interleaved_tick_count":(
+                len(p.horizontal_tick_events)+len(p.vertical_tick_events)),
+            "source_axis_name_text_count":len(p.axis_name_events),
+            "source_draw_trace":tuple(self.draw_trace),
+            "source_trace_is_source_derived_candidate":True,
             "whole_paintbox_grid_text_series_frame_one_bitmap":True,
             "source_gdi_textout_interposed_before_series":True,
             "original_exe_runtime_font_verified":False,

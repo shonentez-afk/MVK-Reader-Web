@@ -108,7 +108,12 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
             self.source_textout_sink.invalidate_adopted_bitmap()
         self._start_timer.stop()
         self._slice_timer.stop()
+        previous_task=self._task
         self._task = None
+        if previous_task is not None:
+            close=getattr(previous_task,"close",None)
+            if callable(close):
+                close()
         self._task_signature = None
         self._image = None
         self._completed_signature = None
@@ -181,9 +186,16 @@ class SourceLiveCompositeOverlay(pg.GraphicsObject):
             self._cancel()
             return
         try:
-            complete = task.step(max_segments=128)
+            # Interleaved source LineTo/TextOut can call native Win32
+            # GDI four times per tick: keep each event-loop turn bounded.
+            budget=(4 if isinstance(task,WholePaintboxTask)
+                    and task._pass in (0,1,2) else 128)
+            complete = task.step(max_segments=budget)
         except (ValueError,TypeError,OverflowError,MemoryError,
                 OSError,RuntimeError) as ex:
+            close=getattr(task,"close",None)
+            if callable(close):
+                close()
             self.source_composite_last_error=str(ex)
             if isinstance(task, WholePaintboxTask):
                 self.source_whole_paintbox_last_error = str(ex)

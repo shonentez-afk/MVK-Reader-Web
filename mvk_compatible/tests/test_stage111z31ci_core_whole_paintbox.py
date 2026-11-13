@@ -68,20 +68,24 @@ def test_whole_source_paintbox_exact_stage_order_and_reverse_adc(invert):
     task=WholePaintboxTask(plan,_fake_text)
     with pytest.raises(ValueError):
         task.result()
-    # Source stages: horizontal grid, vertical grid, GDI TextOut,
-    # full per-column minmax black series, black frame.
+    # Source 007CAD77/007CAEA9 loops must paint EACH grid line
+    # and the matching TCanvas.TextOut before advancing the loop.
     assert task._pass==0
     assert not task.step(max_segments=128)
     assert task._pass==1
+    assert task.textout_calls==len(plan.horizontal_tick_events)
     assert not task.step(max_segments=128)
     assert task._pass==2
-    assert task.textout_calls==0
+    assert task.textout_calls==(
+        len(plan.horizontal_tick_events)+len(plan.vertical_tick_events))
     assert not task.step(max_segments=128)
     assert task._pass==3
-    assert task.textout_calls==1
+    assert task.textout_calls==len(plan.source_text_plan["events"])
     result=task.finish(max_segments=13)
     assert task.done
-    assert result["textout_calls"]==1
+    assert result["textout_calls"]==result["textout_event_count"]
+    assert result["source_interleaved_tick_textout"]
+    assert result["source_gdi_textout_per_matching_grid_tick"]
     assert result["source"]==SOURCE
     assert result["source_draw_order"]==ORIGINAL_DRAW_ORDER
     assert result["whole_paintbox_grid_text_series_frame_one_bitmap"]
@@ -119,8 +123,8 @@ def test_textout_failure_never_emits_a_partially_accepted_image():
     def invalid(rgba,events):
         return rgba[:,:,:3]
     task=WholePaintboxTask(plan,invalid)
-    task.step(max_segments=128)
-    task.step(max_segments=128)
+    # First horizontal grid line is immediately followed by its
+    # matching TextOut; invalid GDI must fail on this very first step.
     with pytest.raises(ValueError):
         task.step(max_segments=128)
     assert task.textout_calls==0

@@ -24,6 +24,26 @@ from .tqgrapher_textout_qt_candidate import (
 )
 
 
+class _PerFrameWin32TextRenderer:
+    """One GDI font/DC per completed frame, not 20 font/DC recreations.
+
+    The TCo2Draw backing RGBA is passed by the Core between each source
+    line and its TextOut call. GDI DIB pixels themselves are ephemeral.
+    Native DC/font lifetime ends on source task completion or cancellation.
+    """
+    def __init__(self):
+        self._canvas=Win32SourceTextCanvas(
+            font_face="Tahoma",font_height=-13)
+
+    def __call__(self,rgba,events):
+        return self._canvas.draw_text(rgba,events)
+
+    def close(self):
+        if self._canvas is not None:
+            self._canvas.close()
+            self._canvas=None
+
+
 def prepare_qt_source_whole_paintbox_task(
         plot, values, *, signature, x_start, x_scale,
         provenance, expected_series_sha256):
@@ -53,10 +73,9 @@ def prepare_qt_source_whole_paintbox_task(
                 zero_text_height=metrics["gdi_height_zero"],
                 text_width=dc.text_width,text_height=dc.text_height,
                 font_provenance="gdi_reconstructed_from_dfm")
-        def draw_text(rgb,events):
-            with Win32SourceTextCanvas(
-                    font_face="Tahoma",font_height=-13) as dc:
-                return dc.draw_text(rgb,events)
+        # Initialize the reusable renderer only after the full source
+        # PixelRect and independent Float32 SHA have been validated.
+        draw_text=None
     else:
         font=qt_source_font_candidate()
         fm=QFontMetrics(font)
@@ -84,4 +103,12 @@ def prepare_qt_source_whole_paintbox_task(
         values,source_text_plan=text,x_start=x_start,x_scale=x_scale,
         provenance=provenance,
         expected_series_sha256=expected_series_sha256)
-    return WholePaintboxTask(plan,draw_text)
+    if native_gdi_supported():
+        draw_text=_PerFrameWin32TextRenderer()
+    try:
+        return WholePaintboxTask(plan,draw_text)
+    except BaseException:
+        closer=getattr(draw_text,"close",None)
+        if callable(closer):
+            closer()
+        raise
