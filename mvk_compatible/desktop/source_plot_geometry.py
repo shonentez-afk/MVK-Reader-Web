@@ -12,7 +12,7 @@ from ..core.original_live_axis_ticks import (
     source_live_axis_ticks, source_live_axis_tick_text,
 )
 from .tqgrapher_textout_qt_candidate import qt_source_font_candidate
-from .source_live_grid import SourceLiveGridOverlay
+from .source_live_grid import SourceLiveGridOverlay, SourceLiveFrameOverlay
 
 
 class SourceTickAxis(pg.AxisItem):
@@ -66,6 +66,11 @@ class SourceGeometryPlot(pg.PlotWidget):
         self.source_grid_overlay = SourceLiveGridOverlay(self.getViewBox())
         self.getViewBox().addItem(self.source_grid_overlay,
                                   ignoreBounds=True)
+        # Original Unit115:007CB3FF draws its black plot frame after
+        # the source data, but before the clGreen pmXor cursor.
+        self.source_frame_overlay = SourceLiveFrameOverlay(self.getViewBox())
+        self.getViewBox().addItem(self.source_frame_overlay,
+                                  ignoreBounds=True)
         self._geometry_timer = QTimer(self)
         self._geometry_timer.setSingleShot(True)
         self._geometry_timer.timeout.connect(self.sync_source_geometry)
@@ -73,9 +78,12 @@ class SourceGeometryPlot(pg.PlotWidget):
         self.schedule_source_geometry()
 
     def enable_source_grid(self, enabled: bool):
-        self.source_grid_overlay.setVisible(bool(enabled))
+        enabled = bool(enabled)
+        self.source_grid_overlay.setVisible(enabled)
+        self.source_frame_overlay.setVisible(enabled)
         if enabled:
             self.source_grid_overlay.sync_source_grid()
+            self.source_frame_overlay.sync_source_frame()
 
     def schedule_source_geometry(self, *_):
         if hasattr(self, '_geometry_timer') and not self._geometry_busy:
