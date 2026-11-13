@@ -6,11 +6,12 @@ One QMenu is shared by bAdcEnvelopeType and bSpecEnvelopeType.
 The host QMenu preserves the original public 32 QAction menu objects
 (including each Tag, checked, enabled, triggered) for existing Core/Qt
 integration, but visually displays a 20+12 QWidgetAction radio palette:
-no duplicate native rows, no scroll-to-find the second octave column.
+no disabled ghost-actions and no scroll-to-find the second octave column.
 Nothing here computes FIR, calibrates a source or reads private files.
 """
 from __future__ import annotations
 
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QMenu, QWidget, QWidgetAction, QGridLayout, QRadioButton,
 )
@@ -18,6 +19,39 @@ from ..core.original_envelope_shared_menu import (
     COUNT, ORIGINAL_COLUMN_BREAK_TAG, ORIGINAL_MENU_COLUMN_COUNT,
     source_original_envelope_menu,
 )
+
+
+class OriginalSourceEnvelopeMenu(QMenu):
+    """One native QWidgetAction, 32 independently enabled source Actions.
+
+    Qt QAction becomes automatically disabled if setVisible(False).
+    Therefore the source actions for Tag1..31 are NOT added as ghost
+    native menu rows. They are ordinary live QAction models attached
+    to this QObject, and the QWidgetAction radios are their visual
+    counterparts. The public actions() exposes the original 32 source
+    entries, as did the native VCL menu. native_actions() exposes the
+    actual Qt base menu items to support nonvisual regression checks.
+    """
+
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self._source_actions=None
+        self.source_palette=None
+
+    def actions(self):
+        if self._source_actions is None:
+            return super().actions()
+        return list(self._source_actions)
+
+    def native_actions(self):
+        return tuple(super().actions())
+
+    def set_source_actions(self,entries):
+        if self._source_actions is not None:
+            raise ValueError("Source menu actions already registered")
+        if len(entries)!=COUNT or entries[0] not in self.native_actions():
+            raise ValueError("Original source menu action registry is malformed")
+        self._source_actions=tuple(entries)
 
 
 def build_source_envelope_popup(parent, *, on_select):
@@ -28,7 +62,7 @@ def build_source_envelope_popup(parent, *, on_select):
     """
     if not callable(on_select):
         raise ValueError("Original shared filter requires a selection callback")
-    menu=QMenu(parent)
+    menu=OriginalSourceEnvelopeMenu(parent)
     menu.setObjectName("popEnvelopeType")
     menu.setToolTipsVisible(True)
     palette=QWidget(menu)
@@ -63,12 +97,11 @@ def build_source_envelope_popup(parent, *, on_select):
             menu.addAction(action)
             host_action=action
         else:
-            action=menu.addAction(item["caption"])
-            # Qt still exposes exactly 32 original QAction objects, so
-            # existing research and automated selection are unchanged.
-            # The native row is hidden only because the visible radio is
-            # now a two-column proxy for this same original item.
-            action.setVisible(False)
+            # DO NOT call QMenu.addAction or setVisible(False) here:
+            # Qt auto-disables invisible QAction even if setEnabled(True).
+            # A nonregistered QAction remains fully operational and
+            # is triggered by this item's REAL visible radio control.
+            action=QAction(item["caption"],menu)
         action.setData(tag)
         action.setCheckable(True)
         action.triggered.connect(
@@ -88,6 +121,11 @@ def build_source_envelope_popup(parent, *, on_select):
     if host_action is None or len(actions)!=COUNT or len(radios)!=COUNT:
         raise ValueError("Original VCL 32 radio items not fully constructed")
     host_action.setDefaultWidget(palette)
+    menu.source_palette=palette
+    menu.set_source_actions(actions)
+    # Just one QMenu native row: the actual two-column radio palette.
+    if len(menu.native_actions())!=1:
+        raise ValueError("Qt menu unexpectedly contains duplicate native entries")
     return menu,tuple(actions),tuple(radios),palette
 
 

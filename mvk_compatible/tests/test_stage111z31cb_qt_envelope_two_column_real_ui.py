@@ -27,7 +27,12 @@ def _popup_from(qt_app,menu,button):
     menu.popup(button.mapToGlobal(QPoint(0,button.height())))
     qt_app.processEvents()
     assert menu.isVisible()
-    assert menu.findChild(QRadioButton,'sourceEnvelopeMenuTag00').isVisible()
+    # QWidgetAction can reparent its defaultWidget to the internal Qt
+    # menu container when opening; findChild() on QMenu is not stable.
+    # The actual palette/radio objects themselves MUST be visible.
+    assert menu.source_palette.isVisible()
+    assert menu.source_palette.findChild(
+        QRadioButton,'sourceEnvelopeMenuTag00').isVisible()
 
 
 def _graph_digest(win):
@@ -56,6 +61,10 @@ def test_exact_31_static_original_captions_20_plus_12_visible_radio_geometry(
         assert len(actions)==32
         assert [a.data() for a in actions]==list(range(32))
         assert isinstance(actions[0],QWidgetAction)
+        # Only the QWidgetAction palette is a Qt native menu item.
+        # All 32 source actions remain independent enabled/triggerable
+        # model entries, not artificially disabled invisible actions.
+        assert menu.native_actions()==(actions[0],)
         palette=w.original_envelope_palette
         assert palette.objectName()=='sourceEnvelopeTwoColumnPalette'
         assert actions[0].defaultWidget() is palette
