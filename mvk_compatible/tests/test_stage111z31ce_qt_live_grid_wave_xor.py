@@ -51,6 +51,11 @@ def test_both_live_page_grid_and_cursor_are_shown_without_replacing_full_data(
     w=MainWindow();w.show();settle(qt_app)
     try:
         w.open_archive(src)
+        # The source ADC H=20 ms tag has a complete real sample window
+        # inside this bounded synthetic archive. Do not test a mismatched
+        # 1-second research default against the full-history GetSignal gate.
+        w.wave_hscale_menu.actions()[9].trigger()
+        settle(qt_app)
         fft=np.asarray(w._full_spectrum["amplitude"]).copy()
         for page,plot,handler,overlay_attr,line_attr in [
             (3,w.wave_plot,w._wave_at_scene_pos,
@@ -71,7 +76,11 @@ def test_both_live_page_grid_and_cursor_are_shown_without_replacing_full_data(
             handler(pos,force=True)
             xor=getattr(w,overlay_attr)
             assert isinstance(xor,QtSpectrumXorCursor)
-            assert xor.cursor is not None
+            assert xor.cursor is not None, (
+                f"page={page}, active_window={w.original_root_tabs.currentIndex()}, "
+                f"status={w.statusBar().currentMessage()!r}, "
+                f"wave={w.wave_hint.text() if page==3 else 'n/a'}, "
+                f"spec={w.spec_hint.text() if page==4 else 'n/a'}")
             assert getattr(w,line_attr).isVisible()
             assert len(model["x_ticks"])>=2
             handler(QPointF(plot.getViewBox().sceneBoundingRect().left(),
