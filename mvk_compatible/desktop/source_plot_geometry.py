@@ -12,6 +12,7 @@ from ..core.original_live_axis_ticks import (
     source_live_axis_ticks, source_live_axis_tick_text,
 )
 from .tqgrapher_textout_qt_candidate import qt_source_font_candidate
+from .source_live_grid import SourceLiveGridOverlay
 
 
 class SourceTickAxis(pg.AxisItem):
@@ -60,11 +61,21 @@ class SourceGeometryPlot(pg.PlotWidget):
                 "left": SourceTickAxis(orientation="left"),
             }
         super().__init__(*args, **kwargs)
+        # This overlay is added straight to ViewBox, not PlotItem.items:
+        # normal spectrum/waveform .clear() never removes the source grid.
+        self.source_grid_overlay = SourceLiveGridOverlay(self.getViewBox())
+        self.getViewBox().addItem(self.source_grid_overlay,
+                                  ignoreBounds=True)
         self._geometry_timer = QTimer(self)
         self._geometry_timer.setSingleShot(True)
         self._geometry_timer.timeout.connect(self.sync_source_geometry)
         self.getViewBox().sigResized.connect(self.schedule_source_geometry)
         self.schedule_source_geometry()
+
+    def enable_source_grid(self, enabled: bool):
+        self.source_grid_overlay.setVisible(bool(enabled))
+        if enabled:
+            self.source_grid_overlay.sync_source_grid()
 
     def schedule_source_geometry(self, *_):
         if hasattr(self, '_geometry_timer') and not self._geometry_busy:

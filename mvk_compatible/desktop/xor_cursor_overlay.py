@@ -14,8 +14,9 @@ from __future__ import annotations
 import math
 
 import pyqtgraph as pg
-from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor,QPainter,QPen
+from ..core.original_live_grid_cursor import source_live_clip_crosshair
 
 
 SOURCE="APP_DERIVED_ORIGINAL_GDI_XOR_CLGREEN_QT_GRAPHICS_CANDIDATE"
@@ -79,11 +80,18 @@ class QtSpectrumXorCursor(pg.GraphicsObject):
             return
         x,y=self._cursor
         rect=self._rect
-        if not rect.contains(QPointF(x,y)):
+        clipped=source_live_clip_crosshair(
+            left=rect.left(),right=rect.right(),
+            top=rect.top(),bottom=rect.bottom(),x=x,y=y)
+        if clipped is None:
             return
+        x,y=clipped["x"],clipped["y"]
         painter.save()
         try:
             painter.setRenderHint(QPainter.Antialiasing,False)
+            # Clip in the current Qt logical ViewBox. The original
+            # Win32 endpoint-excluded GDI LineTo pixel parity is OPEN.
+            painter.setClipRect(rect,Qt.IntersectClip)
             # This raster operation is a per-channel BITWISE XOR with the
             # destination pixel color, as in original VCL/GDI pmXor.
             painter.setCompositionMode(QPainter.RasterOp_SourceXorDestination)

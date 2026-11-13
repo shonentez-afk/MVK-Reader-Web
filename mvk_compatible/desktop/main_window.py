@@ -99,6 +99,7 @@ from ..core.tqgrapher_viewport_sync_source import (
 from ..core.tqgrapher_bitmap_xor_cursor import source_bitmap_xor_cursor
 from ..core.waveform_hover_idr_candidate import prepare_waveform_hover_window
 from .source_plot_geometry import SourceGeometryPlot
+from ..core.original_live_grid_cursor import source_live_cursor_hit
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .source_pixel_audit_io import save_source_graph_pixel_audit, read_png_rgba
 from .original_shell import install_original_shell
@@ -129,6 +130,7 @@ class MainWindow(QMainWindow):
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
         self.wave_line=None
+        self.wave_xor_crosshair=None
         self.spec_line=None
         self.spec_hline=None  # Source 007CA9BA: raw signed peak crosshair, NOT averaged label
         self._spec_last_cursor=None
@@ -187,7 +189,9 @@ class MainWindow(QMainWindow):
         p=plot_class(background='#ffffff')
         p.setLabel('bottom',x)
         p.setLabel('left',y)
-        p.showGrid(x=True,y=True,alpha=.2)
+        # The native PageAdc/PageSpectrum now share source 10x10
+        # grid strokes; other research/Status plots keep Qt default.
+        p.showGrid(x=not source_geometry,y=not source_geometry,alpha=.2)
         p.getPlotItem().setClipToView(True)
         p.getPlotItem().setDownsampling(mode='peak')
         return p
@@ -3339,9 +3343,14 @@ class MainWindow(QMainWindow):
             else:
                 self.wave_plot.plot(d['time_s'],d['amplitude'],
                                     pen=pg.mkPen('#176c92'))
-            self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen('#a56017'))
-            self.wave_line.setVisible(False)  # Source cursor drawn only after mouse X changes
+            # InfiniteLine stays as the legacy testable selection state,
+            # but only the source clGreen/pmXor overlay is visibly painted.
+            self.wave_line=pg.InfiniteLine(angle=90,pen=pg.mkPen(None))
+            self.wave_line.setVisible(False)
             self.wave_plot.addItem(self.wave_line)
+            self.wave_xor_crosshair=QtSpectrumXorCursor(
+                self.wave_plot.getViewBox())
+            self.wave_plot.addItem(self.wave_xor_crosshair,ignoreBounds=True)
             self._wave_hover_window=None
             self._wave_mouse_pixel=None
             self.wave_plot.enableAutoRange()
@@ -3615,8 +3624,11 @@ class MainWindow(QMainWindow):
         self._spec_last_cursor=None
         if getattr(self,'spec_xor_crosshair',None):
             self.spec_xor_crosshair.clear_cursor()
+        # Restore the SOURCE live grid after leaving a research bitmap,
+        # not a second overlapping default pyqtgraph auto-grid.
+        self.spec_plot.enable_source_grid(True)
         if applied:
-            self.spec_plot.showGrid(x=True,y=True,alpha=.2)
+            self.spec_plot.showGrid(x=False,y=False)
         if self._spec_source_grid_applied:
             for name in ('bottom','left'):
                 axis=self.spec_plot.getPlotItem().getAxis(name)
@@ -3764,6 +3776,7 @@ class MainWindow(QMainWindow):
                     axis.setTicks([list(zip(ticks,labels))])
                 axis.label.setVisible(not combined)
             self.spec_plot.showGrid(x=False,y=False)
+            self.spec_plot.enable_source_grid(False)
             for line in self._spec_source_grid_lines:
                 self.spec_plot.removeItem(line)
             self._spec_source_grid_lines=[]
@@ -4732,6 +4745,8 @@ class MainWindow(QMainWindow):
             self._wave_mouse_pixel=None
             line=getattr(self,'wave_line',None)
             if line is not None:line.setVisible(False)
+            overlay=getattr(self,'wave_xor_crosshair',None)
+            if overlay is not None:overlay.clear_cursor()
             label=getattr(self,'wave_cursor_primary',None)
             if label is not None:label.setText('Курсор: —')
         else:
@@ -4766,8 +4781,17 @@ class MainWindow(QMainWindow):
             if not force and pixel==self._wave_mouse_pixel:
                 return
             self._wave_mouse_pixel=pixel
-            if rect.width()<=2 or not 0<pixel<rect.width():
+            canvas=self.wave_plot.source_canvas_model
+            hit=(source_live_cursor_hit(
+                canvas=canvas,scene_left=rect.left(),
+                scene_right=rect.right(),scene_x=pos.x())
+                if canvas is not None else None)
+            if (rect.width()<=2 or
+                    (not hit['inside_original_pixel_rect'] if hit is not None
+                     else not 0<pixel<rect.width())):
                 self.wave_line.setVisible(False)
+                if self.wave_xor_crosshair is not None:
+                    self.wave_xor_crosshair.clear_cursor()
                 self.wave_hint.setText(
                     'CursorString: — (курсор вне временного графика; Qt-кандидат)')
                 self.wave_cursor_primary.setText('Курсор: —')
@@ -4781,6 +4805,8 @@ class MainWindow(QMainWindow):
                 filtered=self._source_envelope_cursor
                 if filtered is None or filtered.channel!=self._ch():
                     self.wave_line.setVisible(False)
+                    if self.wave_xor_crosshair is not None:
+                        self.wave_xor_crosshair.clear_cursor()
                     self.wave_cursor_primary.setText('Курсор огибающей: —')
                     return
                 flow=self._current_offline_flow()
@@ -4811,6 +4837,10 @@ class MainWindow(QMainWindow):
                     time_text=f"{p['output_buffer_relative_s']:.6g} с"
                     context=" · время относительно буфера, не Win32 исходное время"
                 self.wave_line.setVisible(True)
+                if self.wave_xor_crosshair is not None:
+                    self.wave_xor_crosshair.set_cursor(
+                        float(self.wave_line.value()),
+                        float(p['value_from_full_filtered_float32']))
                 unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
                       else 'расч. ед.')
                 self.wave_cursor_primary.setText(
@@ -4846,6 +4876,9 @@ class MainWindow(QMainWindow):
                 p=self._wave_hover_window.pick(x)
                 self.wave_line.setPos(p['time_s'])
             self.wave_line.setVisible(True)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.set_cursor(
+                    float(self.wave_line.value()),float(p['value_m_s2']))
             self.wave_cursor_primary.setText(
                 f"{p['original_sample_time_s']:.5g} с\n"
                 f"{p['value_m_s2']:.5g} "
@@ -4860,6 +4893,10 @@ class MainWindow(QMainWindow):
                    if self._source_wave_xaxes_model is not None else
                    ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены'))
         except (OSError,KeyError,TypeError,ValueError,RuntimeError) as exc:
+            if self.wave_line is not None:self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
+            self.wave_cursor_primary.setText('Курсор: —')
             self.statusBar().showMessage(str(exc))
 
     def _spec_click(self,event):
@@ -4882,7 +4919,14 @@ class MainWindow(QMainWindow):
             if not force and pixel_native==self._spec_mouse_pixel:
                 return
             self._spec_mouse_pixel=pixel_native
-            if rect.width()<=2 or not 0<pixel_native<rect.width():
+            canvas=self.spec_plot.source_canvas_model
+            hit=(source_live_cursor_hit(
+                canvas=canvas,scene_left=rect.left(),
+                scene_right=rect.right(),scene_x=pos.x())
+                if canvas is not None else None)
+            if (rect.width()<=2 or
+                    (not hit['inside_original_pixel_rect'] if hit is not None
+                     else not 0<pixel_native<rect.width())):
                 # Original erases previous X and each active series' Y line
                 # and clears CursorString when CursorPos is out of bounds.
                 if self.spec_line:self.spec_line.setVisible(False)
