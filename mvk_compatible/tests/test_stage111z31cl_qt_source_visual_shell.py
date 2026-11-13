@@ -94,14 +94,14 @@ def test_source_wave_spectrum_main_graphs_keep_original_visible_rects_and_dsp(
             assert canvas.width()>=170
             assert plot.isVisible()
             for name,kind,x,y,width,height in controls:
-                mapped=canvas.findChild(QWidget,name)
-                # The Qt spectrum type and FFT models are hidden; the
-                # real DFM canvas uses source presenters instead.
-                if name=="bSpecType":
-                    mapped=w.spec_type_button
-                elif name=="bSpecLines":
-                    mapped=w.spec_lines_button
-                assert mapped is not None
+                # QLabel names and Qt presenter model names differ
+                # from source Delphi DFM identities by design. The
+                # source canvas registers the authoritative DFM binding
+                # on EVERY actual widget (including the real readouts).
+                matched=[child for child in canvas.findChildren(QWidget)
+                         if child.property("originalDfmControlName")==name]
+                assert len(matched)==1, (page,name)
+                mapped=matched[0]
                 assert mapped.property("originalDfmLogicalRect")==(
                     x,y,width,height)
                 assert mapped.geometry().height()==height
