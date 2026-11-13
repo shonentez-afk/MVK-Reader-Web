@@ -69,7 +69,8 @@ def test_qt_envelope_original_storage_without_profile_stays_unavailable(tmp_path
     w.spec_input_domain.setCurrentIndex(1)
     assert w.spec_input_domain.currentData()=="original_float_storage"
     assert w.envelope_profile is None
-    assert not w.spec_envelope_button.isEnabled()
+    assert w.spec_envelope_button.isEnabled()  # source menu still opens
+    assert not w.original_envelope_menu.actions()[20].isEnabled()
     assert not w.spec_envelope_button.isChecked()
     w.close()
     qt_app.processEvents()

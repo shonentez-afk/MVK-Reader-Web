@@ -18,9 +18,39 @@ from __future__ import annotations
 
 from .envelope_idr_candidate import ENVELOPE_RATES
 
-SOURCE = "MVKVIEW_ORIGINAL_SHARED_ENVELOPE_MENU_STAGE111Z31CA"
+SOURCE = "MVKVIEW_ORIGINAL_SHARED_ENVELOPE_MENU_STAGE111Z31CB"
 COUNT = 32
 ORIGINAL_COLUMN_BREAK_TAG = 20
+ORIGINAL_MENU_COLUMN_COUNT = 2
+ORIGINAL_MENU_FIRST_COLUMN_ROWS = 20
+# Source strings (NOT FIR coefficients): verified from the exact UTF-16
+# application-image strings referenced by the 31 pointers of the user's
+# local mvkview.idp at 0x008CD900. Original Pascal _Unit128:008458C4
+# uses these direct strings for Tag1..31. Tag0 invokes a TLanguage key
+# 'xNoEnvelope'; the local translation dictionary is not verified.
+# Do not commit/source-share the IDP image or any memory offsets/banks.
+SOURCE_ORIGINAL_FILTER_CAPTIONS = (
+    "Без фильтра",  # Tag0: honest localized fallback only
+    "1/3окт 25 кГц", "1/3окт 20 кГц", "1/3окт 16 кГц",
+    "1/3окт 13 кГц", "1/3окт 10 кГц", "1/3окт 8000 Гц",
+    "1/3окт 6300 Гц", "1/3окт 5000 Гц", "1/3окт 4000 Гц",
+    "1/3окт 3150 Гц", "1/3окт 2500 Гц", "1/3окт 2000 Гц",
+    "1/3окт 1600 Гц", "1/3окт 1250 Гц", "1/3окт 1000 Гц",
+    "1/3окт 800 Гц", "1/3окт 630 Гц", "1/3окт 500 Гц",
+    "1/3окт 400 Гц",
+    "1окт 16 кГц", "1окт 8000 Гц", "1окт 4000 Гц",
+    "1окт 2000 Гц", "1окт 1000 Гц", "1окт 500 Гц",
+    "2окт 13 кГц", "2окт 6400 Гц", "2окт 3200 Гц",
+    "2окт 1600 Гц", "2окт 800 Гц", "2окт 400 Гц",
+)
+
+
+def source_original_envelope_caption(tag:int) -> str:
+    """31 source-exact menu captions; Tag0 uses untranslated fallback."""
+    _tag(tag)
+    if len(SOURCE_ORIGINAL_FILTER_CAPTIONS) != COUNT:
+        raise ValueError("Source original 32-caption filter table is corrupted")
+    return SOURCE_ORIGINAL_FILTER_CAPTIONS[tag]
 
 
 def _tag(value: int) -> int:
@@ -65,17 +95,23 @@ def source_original_envelope_menu(*, selected_tag: int,
             "original_shared_popup_name": "popEnvelopeType",
             "source_radio_item": True,
             "source_column_break_before": tag == ORIGINAL_COLUMN_BREAK_TAG,
+            "source_menu_columns": ORIGINAL_MENU_COLUMN_COUNT,
+            "source_menu_column": 0 if tag < ORIGINAL_COLUMN_BREAK_TAG else 1,
+            "source_menu_row": tag if tag < ORIGINAL_COLUMN_BREAK_TAG else tag - ORIGINAL_COLUMN_BREAK_TAG,
+            "source_menu_column_size": (ORIGINAL_MENU_FIRST_COLUMN_ROWS if tag < ORIGINAL_COLUMN_BREAK_TAG else COUNT-ORIGINAL_COLUMN_BREAK_TAG),
             "source_target_rate_hz": fs if tag else None,
             "original_sample_rate_gate_pass": native_allowed,
             "source_gate_deferred_without_selected_channel": rate is None,
             "local_private_fir_profile_present": local_profile_available,
             "qt_selectable_without_fabricated_fir": usable,
             "checked": tag == selected,
-            # The source uses TLanguage + private string table for the
-            # exact translation. Russian fallback != literal Delphi text.
-            "caption": ("Без фильтра" if tag == 0 else
-                        f"Огибающая {tag} · {fs} Гц"),
+            # Pascal tag0 is a TLanguage lookup not available from the
+            # original IDP; the other 31 strings ARE exact static strings
+            # in the checked operator-supplied original image.
+            "caption": source_original_envelope_caption(tag),
+            "original_static_caption_verified": tag != 0,
             "original_translation_caption_verified": False,
+            "source_ui_caption_from_original_idp_static": tag != 0,
             "original_win32_canvas_parity_verified": False,
         })
     return tuple(items)
@@ -111,6 +147,10 @@ def source_original_envelope_selection(*, selected_tag: int, new_tag: int,
         "spectrum_tag":new,
         "source_radio_item_checked":True,
         "source_target_rate_hz":entry["source_target_rate_hz"],
+        "source_filter_caption":entry["caption"],
+        "source_filter_static_caption_verified":entry["original_static_caption_verified"],
+        "source_filter_menu_column":entry["source_menu_column"],
+        "source_filter_menu_row":entry["source_menu_row"],
         "original_filter_enabled":new>0,
         "requires_real_fir_coefficients":new>0,
         "source_both_screen_series_invalidated":True,

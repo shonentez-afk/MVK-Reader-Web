@@ -36,7 +36,7 @@ from ..core.original_spectrum_vertical_view import source_spectrum_vertical_view
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
 from ..core.original_envelope_shared_menu import (
     source_original_envelope_menu,source_original_envelope_selection,
-    source_original_envelope_rebind)
+    source_original_envelope_rebind,source_original_envelope_caption)
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
@@ -103,6 +103,9 @@ from .source_pixel_audit_io import save_source_graph_pixel_audit, read_png_rgba
 from .original_shell import install_original_shell
 from .original_task_ui import make_original_channel_tabs
 from .source_control_canvas import source_control_canvas
+from .source_envelope_popup import (
+    build_source_envelope_popup, sync_source_envelope_popup,
+)
 from ..core.original_ui_form_contract import (
     ORIGINAL_WAVE_CONTROLS, ORIGINAL_SPECTRUM_CONTROLS)
 
@@ -530,10 +533,12 @@ class MainWindow(QMainWindow):
             'Открыть локальный оригинальный IDP для огибающей…')
         self.wave_envelope_load.clicked.connect(self.choose_private_envelope_idp)
         self.wave_envelope_code=QComboBox()
-        self.wave_envelope_code.addItem('Без огибающей',0)
+        # Tag1..31 have exact original IDP UTF-16 labels; the research
+        # select reflects the same source meaning as the real popup.
+        self.wave_envelope_code.addItem(source_original_envelope_caption(0),0)
         for code in range(1,32):
             self.wave_envelope_code.addItem(
-                f'Код огибающей {code} · таблица {ENVELOPE_RATES[code]} Гц',code)
+                source_original_envelope_caption(code),code)
         self.wave_envelope_code.setEnabled(False)
         self.wave_envelope_code.setToolTip(
             'Режимы по исходной таблице IDR; нужен локальный профиль.')
@@ -541,19 +546,10 @@ class MainWindow(QMainWindow):
         # Delphi: ONE popEnvelopeType for BOTH original split buttons,
         # 32 radio Tag0..31, with source sample-rate availability gating.
         # Do not cycle filter codes from a main-button click.
-        self.original_envelope_menu=QMenu(self)
-        self.original_envelope_menu.setObjectName('popEnvelopeType')
-        self._original_envelope_actions=[]
-        for entry in source_original_envelope_menu(
-                selected_tag=0,sample_rate_hz=None,
-                local_profile_available=False):
-            a=self.original_envelope_menu.addAction(entry['caption'])
-            a.setData(entry['tag'])
-            a.setCheckable(True)
-            a.triggered.connect(
-                lambda checked=False,tag=entry['tag']:
-                    self._select_original_envelope_popup_tag(tag))
-            self._original_envelope_actions.append(a)
+        (self.original_envelope_menu,self._original_envelope_actions,
+         self._original_envelope_radios,
+         self.original_envelope_palette)=build_source_envelope_popup(
+             self,on_select=self._select_original_envelope_popup_tag)
         self.wave_filter_button=QToolButton()
         self.wave_filter_button.setText('Без фильтра')
         self.wave_filter_button.setObjectName('bAdcEnvelopeType')
@@ -571,7 +567,8 @@ class MainWindow(QMainWindow):
         self.wave_type_button.setPopupMode(QToolButton.InstantPopup)
         self.wave_type_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.wave_type_menu=QMenu(self.wave_type_button)
-        for i,name in enumerate(('AC · без DC','AC+DC')):
+        # mvkform.dfm popAdcType.mAdcType1/2 source-exact captions.
+        for i,name in enumerate(('AC','AC+DC')):
             act=self.wave_type_menu.addAction(name)
             act.setCheckable(True)
             act.setData(i)
@@ -716,35 +713,47 @@ class MainWindow(QMainWindow):
         if len(entries)!=len(self._original_envelope_actions):
             raise ValueError('Shared source envelope popup lost a Tag')
         for entry,action in zip(entries,self._original_envelope_actions):
-            if int(action.data())!=entry['tag']:
-                raise ValueError('Original popEnvelopeType Tag order changed')
-            action.setChecked(entry['checked'])
-            action.setEnabled(
-                entry['qt_selectable_without_fabricated_fir'] and
-                not self._live_active and self._spectrum_reference is None)
             why=(
                 'Нужен локальный оригинальный IDP; '
                 if entry['tag'] and self.envelope_profile is None else
                 'Текущий АЦП имеет недостаточную частоту дискретизации; '
                 if entry['tag'] and not entry['original_sample_rate_gate_pass']
                 else '')
+            caption_evidence=(
+                'строка из оригинального IDP проверена; '
+                if entry['original_static_caption_verified'] else
+                'локализация Tag0 из оригинального TLanguage не проверена; ')
             action.setToolTip(
                 f"Оригинальный popEnvelopeType Tag{entry['tag']} · "
                 + (f"целевая Fs {entry['source_target_rate_hz']} Гц; "
                    if entry['tag'] else 'без FIR; ')
-                + why
-                + 'подпись исходного TLanguage не аттестована')
-        text=('Без фильтра' if tag==0 else f'Огибающая {tag}')
+                + caption_evidence + why)
+        sync_source_envelope_popup(
+            entries=entries,actions=self._original_envelope_actions,
+            radios=self._original_envelope_radios)
+        for entry,action,radio in zip(
+                entries,self._original_envelope_actions,
+                self._original_envelope_radios):
+            # The Core rate/profile gate is independent from current
+            # LIVE/reference availability; neither action nor visible
+            # radio can trigger a new filter in a frozen source view.
+            usable=(entry['qt_selectable_without_fabricated_fir'] and
+                not self._live_active and self._spectrum_reference is None)
+            action.setEnabled(usable)
+            radio.setEnabled(usable)
+            radio.setToolTip(action.toolTip())
+        text=source_original_envelope_caption(tag)
         self.wave_filter_button.setText(text)
         self.wave_filter_button.setToolTip(
-            f"Source popEnvelopeType Tag{tag}; два экрана используют один Tag. "
+            f"Source popEnvelopeType Tag{tag}: {text}; "
+            "оригинальные две колонки 20+12, оба экрана используют один Tag. "
             "Нажатие открывает меню, но само не переключает код. "
             "FIR только с проверенным локальным IDP; "
             "текущее окно и частота АЦП проверяются независимо.")
         if hasattr(self,'spec_envelope_button') and self._spectrum_reference is None:
             self.spec_envelope_button.setText(text)
             self.spec_envelope_button.setToolTip(
-                f"Source popEnvelopeType Tag{tag}; раскрыть меню. "
+                f"Source popEnvelopeType Tag{tag}: {text}; раскрыть две колонки. "
                 "Выбор пункта обновляет ADC + Spectrum и рассчитывает FIR "
                 "только с реальными коэффициентами/историей; "
                 "спектральная калибровка/Delphi x87 не подтверждены.")
@@ -829,8 +838,9 @@ class MainWindow(QMainWindow):
         if self.session is None or (tag==0 or self.spec_envelope_button.isChecked()):
             self.statusBar().showMessage(
                 f"popEnvelopeType Tag{tag}: "
-                + ('без FIR' if tag==0 else
-                   f"FIR {receipt['source_target_rate_hz']} Гц")
+                + receipt['source_filter_caption']
+                + (' · без FIR' if tag==0 else
+                   f" · FIR выходная Fs {receipt['source_target_rate_hz']} Гц")
                 + '; оба исходных экрана синхронизированы; '
                 'Win32 численный паритет пока не подтверждён')
 
@@ -932,7 +942,7 @@ class MainWindow(QMainWindow):
         code=int(self.wave_envelope_code.currentData() or 0)
         self._sync_original_envelope_menu_ui()
         self.wave_type_button.setText(
-            'AC · без DC' if self.wave_mode.currentIndex()==0 else 'AC+DC')
+            'AC' if self.wave_mode.currentIndex()==0 else 'AC+DC')
         self.wave_hscale_button.setText(
             (original_adc_horizontal_options()[self._wave_hscale_tag]['caption']
              if self._wave_hscale_tag is not None and
@@ -1005,15 +1015,20 @@ class MainWindow(QMainWindow):
         # The checked flag is retained as the legacy Core FIR calculation
         # state. Actual pointer clicks only open the popup, never toggle it.
         self.spec_envelope_button.setCheckable(True)
-        self.spec_envelope_button.setEnabled(False)
+        # The original button is always accessible once the measurement
+        # PageSpectrum is enabled. Without local FIR coefficients its
+        # menu still opens, but Tags1..31 are individually disabled and
+        # Tag0 remains a safe user-visible state.
+        self.spec_envelope_button.setEnabled(True)
         self.spec_envelope_button.setToolTip(
-            'Оригинальное общее меню FIR Tag0..31; локальный IDP '
-            'нужен для выполнения фильтра, а не для открытия файла.')
+            'Исходное общее меню 20+12 (32 полосы). Без локального '
+            'оригинального IDP фильтры недоступны, но меню доступно.')
         stack.addWidget(self.spec_envelope_button)
         self.spec_envelope_code=QComboBox()
-        self.spec_envelope_code.addItem('Код не выбран',0)
+        self.spec_envelope_code.addItem(source_original_envelope_caption(0),0)
         for code in range(1,32):
-            self.spec_envelope_code.addItem(f'Код {code} · IDR огибающая',code)
+            self.spec_envelope_code.addItem(
+                source_original_envelope_caption(code),code)
         self.spec_envelope_code.setEnabled(False)
         self.spec_envelope_code.setToolTip('Исходные коды 1..31, только с проверенным локальным mvkview.idp')
         stack.addWidget(self.spec_envelope_code)

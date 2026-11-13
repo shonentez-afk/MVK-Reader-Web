@@ -162,7 +162,8 @@ def test_dmf_spectrum_left_panel_and_functional_scrollbars(tmp_path,qt_app):
     assert win.spec_hint.objectName()=='lbSpecHint'
     assert win.spec_cursor_primary.objectName()=='lbSpecHintPrimary'
     assert win.spec_mean_primary.objectName()=='lbSpecMeanPrimary'
-    assert not win.spec_envelope_button.isEnabled()  # not faked
+    assert win.spec_envelope_button.isEnabled()  # menu visible, FIR actions disabled without IDP
+    assert not win.original_envelope_menu.actions()[20].isEnabled()
     assert win.spec_copy_button.isEnabled()           # explicit research candidate
     assert win.spec_save_button.isEnabled()           # safe user-selected research CSV
     start=win.spec_plot.getViewBox().viewRange()[0]
@@ -240,7 +241,8 @@ def test_qt_stage111f_spectrum_envelope_requires_private_profile(tmp_path,qt_app
     window.tabs.setCurrentIndex(2)
     qt_app.processEvents()
     assert window._full_spectrum['source']=='APP_DERIVED_FFT_MVKVIEW_CANDIDATE'
-    assert not window.spec_envelope_button.isEnabled()
+    assert window.spec_envelope_button.isEnabled()  # original popup remains discoverable
+    assert not window.original_envelope_menu.actions()[20].isEnabled()
     assert not window.spec_envelope_button.isChecked()
     assert not window.spec_envelope_code.isEnabled()
     window.set_envelope_profile(fake_profile())

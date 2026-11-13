@@ -68,7 +68,8 @@ def test_both_original_envelope_buttons_share_one_popup_and_no_click_cycle(
         assert [a.data() for a in actions]==list(range(32))
         assert actions[0].isChecked()
         assert not actions[20].isEnabled() # no local FIR coefficients
-        assert not win.spec_envelope_button.isEnabled()
+        assert win.spec_envelope_button.isEnabled()  # original popup opens, FIR gated
+        assert not win.original_envelope_menu.actions()[20].isEnabled()
         win.original_root_tabs.setCurrentIndex(3)
         qt_app.processEvents()
         _click_source_popup_without_selection(qt_app,win.wave_filter_button,menu)
@@ -121,8 +122,8 @@ def test_original_popup_code20_code1_tag0_updates_both_visible_pages_core(
         assert win.spec_envelope_button.isChecked()
         assert win.wave_envelope_code.currentData()==20
         assert win.spec_envelope_code.currentData()==20
-        assert win.wave_filter_button.text()=='Огибающая 20'
-        assert win.spec_envelope_button.text()=='Огибающая 20'
+        assert win.wave_filter_button.text()=='1окт 16 кГц'
+        assert win.spec_envelope_button.text()=='1окт 16 кГц'
         assert menu.actions()[20].isChecked()
         assert sum(a.isChecked() for a in menu.actions())==1
         assert win._source_wave_xaxes_model['kind']=='SOURCE_FIR'
