@@ -246,7 +246,10 @@ def test_qt_stage111f_spectrum_envelope_requires_private_profile(tmp_path,qt_app
     window.set_envelope_profile(fake_profile())
     assert window.spec_envelope_button.isEnabled()
     assert window.spec_envelope_code.isEnabled()
-    assert window.spec_envelope_code.currentData()==20
+    # Source popEnvelopeType starts at Tag0; importing an IDP must not
+    # silently choose or activate an FIR. Research test chooses Code20.
+    assert window.spec_envelope_code.currentData()==0
+    window.spec_envelope_code.setCurrentIndex(20)
     window.spec_envelope_button.setChecked(True)
     qt_app.processEvents()
     assert window.spec_envelope_button.isChecked()

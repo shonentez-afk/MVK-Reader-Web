@@ -34,6 +34,9 @@ from ..core.original_visible_spectrum_pair import compare_visible_original_spect
 from ..core.original_visible_pixel_compare import compare_current_original_pixel_view
 from ..core.original_spectrum_vertical_view import source_spectrum_vertical_view
 from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
+from ..core.original_envelope_shared_menu import (
+    source_original_envelope_menu,source_original_envelope_selection,
+    source_original_envelope_rebind)
 from ..core.cursor_format_candidate import format_cursor_idr_candidate
 from ..core.tqgrapher_display_idr_candidate import (spectrum_display_contract,cursor_string_candidate)
 from ..core.tqgrapher_paintbox_registration_idr_candidate import source_paintbox_registration
@@ -164,6 +167,8 @@ class MainWindow(QMainWindow):
         self._wave_envelope_dirty=False
         self._spectrum_envelope_dirty=False
         self.envelope_profile=None  # Optional original local user IDP; never saved or uploaded
+        self._source_envelope_menu_fs=None  # Verified selected offline ADC Fs; never from neighboring ZIP
+        self._source_original_envelope_receipt=None
         self._spec_loaded_sample_rate_hz=None
         self.setWindowTitle('ТПО МВК')
         self.resize(1360,850)
@@ -533,12 +538,32 @@ class MainWindow(QMainWindow):
         self.wave_envelope_code.setToolTip(
             'Режимы по исходной таблице IDR; нужен локальный профиль.')
 
-        self.wave_filter_button=QPushButton('Без фильтра')
+        # Delphi: ONE popEnvelopeType for BOTH original split buttons,
+        # 32 radio Tag0..31, with source sample-rate availability gating.
+        # Do not cycle filter codes from a main-button click.
+        self.original_envelope_menu=QMenu(self)
+        self.original_envelope_menu.setObjectName('popEnvelopeType')
+        self._original_envelope_actions=[]
+        for entry in source_original_envelope_menu(
+                selected_tag=0,sample_rate_hz=None,
+                local_profile_available=False):
+            a=self.original_envelope_menu.addAction(entry['caption'])
+            a.setData(entry['tag'])
+            a.setCheckable(True)
+            a.triggered.connect(
+                lambda checked=False,tag=entry['tag']:
+                    self._select_original_envelope_popup_tag(tag))
+            self._original_envelope_actions.append(a)
+        self.wave_filter_button=QToolButton()
+        self.wave_filter_button.setText('Без фильтра')
         self.wave_filter_button.setObjectName('bAdcEnvelopeType')
+        self.wave_filter_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.wave_filter_button.setPopupMode(QToolButton.InstantPopup)
+        self.wave_filter_button.setMenu(self.original_envelope_menu)
         self.wave_filter_button.setToolTip(
-            'Исходная огибающая требует профиль из локального оригинального IDP; '
-            'код выбирается в «Исследование».')
-        self.wave_filter_button.clicked.connect(self._wave_filter_primary_click)
+            'Оригинальное общее меню popEnvelopeType: Tag0..31. '
+            'Для расчёта FIR требуется локальный исходный IDP; '
+            'выбор кода синхронно обновляет оба графика.')
         left.addWidget(self.wave_filter_button)
 
         self.wave_type_button=QToolButton()
@@ -676,13 +701,138 @@ class MainWindow(QMainWindow):
         self._sync_wave_primary_labels()
 
     def _wave_filter_primary_click(self):
-        if self.envelope_profile is None:
-            self.statusBar().showMessage(
-                'Без фильтра. Исследовательская огибающая требует локальный IDP.')
+        """Compatibility entrypoint: original bAnyDropDownClick only POPUPS."""
+        self.wave_filter_button.showMenu()
+
+    def _sync_original_envelope_menu_ui(self):
+        """One checked source Tag/caption and Fs gate for BOTH DFM buttons."""
+        if not hasattr(self,'_original_envelope_actions'):
             return
-        # Only cycle between no filter and the last explicitly selected code.
-        self.wave_envelope_code.setCurrentIndex(
-            0 if self.wave_envelope_code.currentIndex() else 20)
+        tag=int(self.wave_envelope_code.currentData() or 0)
+        entries=source_original_envelope_menu(
+            selected_tag=tag,
+            sample_rate_hz=self._source_envelope_menu_fs,
+            local_profile_available=self.envelope_profile is not None)
+        if len(entries)!=len(self._original_envelope_actions):
+            raise ValueError('Shared source envelope popup lost a Tag')
+        for entry,action in zip(entries,self._original_envelope_actions):
+            if int(action.data())!=entry['tag']:
+                raise ValueError('Original popEnvelopeType Tag order changed')
+            action.setChecked(entry['checked'])
+            action.setEnabled(
+                entry['qt_selectable_without_fabricated_fir'] and
+                not self._live_active and self._spectrum_reference is None)
+            why=(
+                'Нужен локальный оригинальный IDP; '
+                if entry['tag'] and self.envelope_profile is None else
+                'Текущий АЦП имеет недостаточную частоту дискретизации; '
+                if entry['tag'] and not entry['original_sample_rate_gate_pass']
+                else '')
+            action.setToolTip(
+                f"Оригинальный popEnvelopeType Tag{entry['tag']} · "
+                + (f"целевая Fs {entry['source_target_rate_hz']} Гц; "
+                   if entry['tag'] else 'без FIR; ')
+                + why
+                + 'подпись исходного TLanguage не аттестована')
+        text=('Без фильтра' if tag==0 else f'Огибающая {tag}')
+        self.wave_filter_button.setText(text)
+        self.wave_filter_button.setToolTip(
+            f"Source popEnvelopeType Tag{tag}; два экрана используют один Tag. "
+            "Нажатие открывает меню, но само не переключает код. "
+            "FIR только с проверенным локальным IDP; "
+            "текущее окно и частота АЦП проверяются независимо.")
+        if hasattr(self,'spec_envelope_button') and self._spectrum_reference is None:
+            self.spec_envelope_button.setText(text)
+            self.spec_envelope_button.setToolTip(
+                f"Source popEnvelopeType Tag{tag}; раскрыть меню. "
+                "Выбор пункта обновляет ADC + Spectrum и рассчитывает FIR "
+                "только с реальными коэффициентами/историей; "
+                "спектральная калибровка/Delphi x87 не подтверждены.")
+
+    def _rebind_original_envelope_for_selected_channel(self):
+        """Source 0084BB2E: disabled selected Fs code falls back to Tag0."""
+        current=int(self.wave_envelope_code.currentData() or 0)
+        model=source_original_envelope_rebind(
+            selected_tag=current,
+            sample_rate_hz=self._source_envelope_menu_fs,
+            local_profile_available=self.envelope_profile is not None)
+        if not model['reset_to_zero']:
+            return model
+        for combo in (self.wave_envelope_code,self.spec_envelope_code):
+            previously=combo.blockSignals(True)
+            try:
+                combo.setCurrentIndex(combo.findData(0))
+            finally:
+                combo.blockSignals(previously)
+        was=self.spec_envelope_button.blockSignals(True)
+        try:
+            self.spec_envelope_button.setChecked(False)
+        finally:
+            self.spec_envelope_button.blockSignals(was)
+        self._wave_envelope_dirty=True
+        self._spectrum_envelope_dirty=True
+        self._source_original_envelope_receipt=None
+        self._sync_wave_primary_labels()
+        self.statusBar().showMessage(
+            f"Исходный EnvelopeCode{current} сброшен в Tag0: "
+            "новый АЦП не поддерживает исходную частоту FIR "
+            "или локальный IDP недоступен")
+        return model
+
+    def _select_original_envelope_popup_tag(self,tag:int):
+        """Source mEnvelopeType1Click: atomic Tag to both visible source pages.
+
+        Deliberately separate from legacy research QComboBox edits: the
+        original popup, unlike the legacy checkbox, *activates* the
+        chosen filter when the user explicitly selects Tag1..31.
+        """
+        if self._live_active or self._spectrum_reference is not None:
+            self.statusBar().showMessage(
+                'Исходная огибающая недоступна в LIVE или режиме эталона')
+            return
+        previous=int(self.wave_envelope_code.currentData() or 0)
+        try:
+            receipt=source_original_envelope_selection(
+                selected_tag=previous,new_tag=int(tag),
+                sample_rate_hz=self._source_envelope_menu_fs,
+                local_profile_available=self.envelope_profile is not None)
+        except ValueError as exc:
+            self.statusBar().showMessage('Код FIR не принят: '+str(exc))
+            return
+        for combo in (self.wave_envelope_code,self.spec_envelope_code):
+            index=combo.findData(tag)
+            if index<0:
+                raise ValueError('Source EnvelopeCode missing from Qt model')
+            blocked=combo.blockSignals(True)
+            try:
+                combo.setCurrentIndex(index)
+            finally:
+                combo.blockSignals(blocked)
+        self._source_original_envelope_receipt=receipt
+        self._wave_envelope_dirty=True
+        self._spectrum_envelope_dirty=True
+        blocked=self.spec_envelope_button.blockSignals(True)
+        try:
+            self.spec_envelope_button.setChecked(tag!=0)
+        finally:
+            self.spec_envelope_button.blockSignals(blocked)
+        self._sync_wave_primary_labels()
+        if self.session is not None:
+            self.refresh_wave(quiet=True)
+            # Exact same selected ADC/BIN, source Tag and original FIR history
+            # are independently validated before both real Core calculations.
+            # On error the existing handler resets stale FFT/checked state.
+            self._toggle_spec_envelope(tag!=0)
+        else:
+            self.spec_compare_button.setEnabled(tag==0)
+        self._sync_original_envelope_menu_ui()
+        if self.session is None or (tag==0 or self.spec_envelope_button.isChecked()):
+            self.statusBar().showMessage(
+                f"popEnvelopeType Tag{tag}: "
+                + ('без FIR' if tag==0 else
+                   f"FIR {receipt['source_target_rate_hz']} Гц")
+                + '; оба исходных экрана синхронизированы; '
+                'Win32 численный паритет пока не подтверждён')
 
     def _sync_original_envelope_menu_tag(self,source):
         """Mirror original shared ADC+Spectrum TButton.Tag (0..31).
@@ -780,8 +930,7 @@ class MainWindow(QMainWindow):
 
     def _sync_wave_primary_labels(self):
         code=int(self.wave_envelope_code.currentData() or 0)
-        self.wave_filter_button.setText(
-            'Без фильтра' if not code else f'Огибающая {code} (исслед.)')
+        self._sync_original_envelope_menu_ui()
         self.wave_type_button.setText(
             'AC · без DC' if self.wave_mode.currentIndex()==0 else 'AC+DC')
         self.wave_hscale_button.setText(
@@ -846,13 +995,20 @@ class MainWindow(QMainWindow):
         stack.setContentsMargins(7,9,7,9)
         stack.setSpacing(4)
 
-        self.spec_envelope_button=QPushButton('Без фильтра')
+        self.spec_envelope_button=QToolButton()
+        self.spec_envelope_button.setText('Без фильтра')
         self.spec_envelope_button.setObjectName('bSpecEnvelopeType')
         self.spec_envelope_button.setFixedHeight(41)
-        self.spec_envelope_button.setEnabled(False)
+        self.spec_envelope_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.spec_envelope_button.setPopupMode(QToolButton.InstantPopup)
+        self.spec_envelope_button.setMenu(self.original_envelope_menu)
+        # The checked flag is retained as the legacy Core FIR calculation
+        # state. Actual pointer clicks only open the popup, never toggle it.
         self.spec_envelope_button.setCheckable(True)
+        self.spec_envelope_button.setEnabled(False)
         self.spec_envelope_button.setToolTip(
-            'Включить исследовательский GetSpectrum после локальной проверки IDP; не эквивалент original MVKView')
+            'Оригинальное общее меню FIR Tag0..31; локальный IDP '
+            'нужен для выполнения фильтра, а не для открытия файла.')
         stack.addWidget(self.spec_envelope_button)
         self.spec_envelope_code=QComboBox()
         self.spec_envelope_code.addItem('Код не выбран',0)
@@ -934,19 +1090,18 @@ class MainWindow(QMainWindow):
             'Частотное разрешение Δf=Fs/N. Оригинальный набор FFT и '
             'исследовательские малые N доступны только при достаточной истории.')
 
-        # Original bSpecHScale is a VCL split button with ten numeric
-        # source-defined menu presets. Preserve quick-click zoom while
-        # exposing verified original menu values in the arrow popup.
+        # Original bSpecHScale has OnClick=bAnyDropDownClick, which only
+        # opens its ten-entry menu. No quick-click zoom is source-backed.
         self.spec_hscale_button=QToolButton()
         self.spec_hscale_button.setText('Диапазон X')
         self.spec_hscale_button.setObjectName('bSpecHScale')
         self.spec_hscale_button.setFixedHeight(41)
         self.spec_hscale_button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
         self.spec_hscale_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        self.spec_hscale_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.spec_hscale_button.setPopupMode(QToolButton.InstantPopup)
         self.spec_hscale_button.setToolTip(
-            'Стрелка: десять восстановленных шкал оригинальной MVKView. '
-            'Основное нажатие выбирает ближайший меньший оригинальный масштаб.')
+            'Открыть десять исходных шкал X. Основное нажатие открывает '
+            'меню, но не меняет масштаб; только выбор пункта изменяет диапазон.')
         self.spec_hscale_menu=QMenu(self.spec_hscale_button)
         self._spec_hscale_actions=[]
         self._spec_original_hscale_selected=None
@@ -958,11 +1113,8 @@ class MainWindow(QMainWindow):
                 lambda checked=False,hz=entry['hz']:self._select_original_hscale(hz))
             self._spec_hscale_actions.append(a)
         self.spec_hscale_button.setMenu(self.spec_hscale_menu)
-        # Original _Unit128:0084EAF4 bAnyDropDownClick only pops up the
-        # FDropDownMenu. Clicking the main half must NOT silently cycle
-        # scales; a menu selection is the sole source change action.
-        self.spec_hscale_button.clicked.connect(
-            lambda checked=False: self.spec_hscale_button.showMenu())
+        # InstantPopup forwards a real click directly to the native QMenu;
+        # no clicked/showMenu reentry or hidden secondary selection.
         stack.addWidget(self.spec_hscale_button)
 
         self.spec_vscale_button=QToolButton()
@@ -1466,6 +1618,7 @@ class MainWindow(QMainWindow):
         self.spec_input_domain.currentIndexChanged.connect(self.refresh_spec)
         self.spec_envelope_button.toggled.connect(self._toggle_spec_envelope)
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
+        self._sync_original_envelope_menu_ui()
 
     def _sync_spec_type_presenter(self,*_):
         """Mirror source mSpecType1..4 Tag into the primary split button."""
@@ -2238,6 +2391,8 @@ class MainWindow(QMainWindow):
         self._live_active=True
         self._live_preview=None
         self.session=None
+        self._source_envelope_menu_fs=None
+        self._sync_original_envelope_menu_ui()
         # File page is tied to the previous verified ZIP: hide it as soon
         # as this separate, not-yet-accepted live source is entered.
         self.original_shell.sync_file_session(None,())
@@ -2574,6 +2729,8 @@ class MainWindow(QMainWindow):
         self._leave_original_spectrum_reference()
         self.session=s
         self._offline_flow=flow
+        self._source_envelope_menu_fs=float(fs)
+        self._rebind_original_envelope_for_selected_channel()
         # Accepted new file must not inherit a former ZIP VALUES/AUX bank.
         # File/Signal/Spectrum/Status are updated together after rebinding.
         self._pagestatus_snapshot=None
@@ -2667,6 +2824,9 @@ class MainWindow(QMainWindow):
         self._clear_archive_source_projection()
         self.session=None
         self._offline_flow=None
+        self._source_envelope_menu_fs=None
+        self._source_original_envelope_receipt=None
+        self._sync_original_envelope_menu_ui()
         self._full_spectrum=None
         self._spectrum_summary=None
         self._pagestatus_snapshot=None
@@ -2826,6 +2986,15 @@ class MainWindow(QMainWindow):
             return
         if self.session is None:return
         flow=self._current_offline_flow()  # same source/ADC/tick
+        # _Unit128:0084BAF9..0084BB2C disables popup modes with target
+        # output rate above the currently selected channel's actual Fs.
+        # Rebind after every verified channel change, never inherit ZIP ADC1.
+        try:
+            self._source_envelope_menu_fs=flow.source_record()['sample_rate_hz']
+        except (OSError,ValueError,KeyError):
+            self._source_envelope_menu_fs=1  # fail closed (no FIR mode admitted)
+        self._rebind_original_envelope_for_selected_channel()
+        self._sync_original_envelope_menu_ui()
         try:
             self._sync_source_time_from_wave_start(flow)
         except (OSError,ValueError,KeyError,RuntimeError):
@@ -3018,16 +3187,10 @@ class MainWindow(QMainWindow):
         self.envelope_profile=profile
         self.wave_envelope_code.setEnabled(True)
         self.spec_envelope_button.setEnabled(True)
-        self.spec_envelope_button.setText('Огибающая (исслед.)')
         self.spec_envelope_code.setEnabled(True)
-        if self.spec_envelope_code.currentIndex()==0:
-            # Retain existing research default code 20 but do not silently
-            # activate FIR on the ADC merely by loading an IDP profile.
-            was_blocked=self.spec_envelope_code.blockSignals(True)
-            try:
-                self.spec_envelope_code.setCurrentIndex(20)
-            finally:
-                self.spec_envelope_code.blockSignals(was_blocked)
+        # The original opens with Tag0. Merely loading an IDP must NOT
+        # silently preselect Code20 on Spectrum or start FIR on ADC.
+        # Programmatic research users can still set Code20 explicitly.
         self.wave_envelope_load.setText('Локальные коэффициенты готовы (только этот запуск)')
         self.wave_hint.setText(
             'Огибающая доступна только по исходному IDR профилю; '

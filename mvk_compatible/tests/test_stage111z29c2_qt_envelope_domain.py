@@ -22,6 +22,7 @@ def test_qt_envelope_original_storage_f_range_selected_explicitly_no_false_alarm
     w.set_envelope_profile(fake_profile(i=1.,q=.4))
     w.spec_mode.setCurrentIndex(1)
     w.spec_backend.setCurrentIndex(1) # NumPy only for synthetic UI test
+    w.spec_envelope_code.setCurrentIndex(20) # explicit user FIR code
     w.spec_envelope_button.setChecked(True)
     qt_app.processEvents()
     assert w.spec_n.currentText()=="1024"

@@ -19,8 +19,10 @@ def test_original_shared_menu_tag_from_either_pane_without_recursion(qt_app):
     win=MainWindow()
     try:
         win.set_envelope_profile(fake_profile())
-        # Existing Qt research default is code 20 and is not an original
-        # startup Tag claim. Explicit user selection is source-synchronized.
+        # Source Tag0 is preserved on IDP load; explicit selection from
+        # either independent research combo mirrors the other Tag.
+        assert win.wave_envelope_code.currentData()==0
+        assert win.spec_envelope_code.currentData()==0
         for selected in (1, 7, 20, 31, 0):
             win.wave_envelope_code.setCurrentIndex(selected)
             assert win.wave_envelope_code.currentData()==selected
@@ -46,7 +48,8 @@ def test_spec_menu_tag_zero_returns_to_plain_fft_without_stale_fir(
         win.tabs.setCurrentIndex(2)
         qt_app.processEvents()
         win.set_envelope_profile(fake_profile())
-        assert win.spec_envelope_code.currentData()==20
+        assert win.spec_envelope_code.currentData()==0
+        win.spec_envelope_code.setCurrentIndex(20)
         win.spec_envelope_button.setChecked(True)
         qt_app.processEvents()
         assert win.spec_envelope_button.isChecked()
@@ -86,6 +89,7 @@ def test_insufficient_original_fir_history_rejects_and_shows_plain_fft(
         win.tabs.setCurrentIndex(2)
         qt_app.processEvents()
         win.set_envelope_profile(fake_profile())
+        win.spec_envelope_code.setCurrentIndex(20)
         win.spec_envelope_button.setChecked(True)
         assert win._full_spectrum['source']==(
             'APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE')
