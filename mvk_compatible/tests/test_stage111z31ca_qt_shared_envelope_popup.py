@@ -50,6 +50,11 @@ def test_both_original_envelope_buttons_share_one_popup_and_no_click_cycle(
     win.show()
     qt_app.processEvents()
     try:
+        # PageAdc and PageSpectrum are disabled before any measurement.
+        # Test a real operator click only after an actual verified source
+        # enabled the original root pages (not a hidden/disabled control).
+        win.open_archive(fixture_zip(tmp_path,sample_count=8192))
+        qt_app.processEvents()
         menu=win.original_envelope_menu
         assert win.wave_filter_button.menu() is menu
         assert win.spec_envelope_button.menu() is menu
@@ -71,10 +76,6 @@ def test_both_original_envelope_buttons_share_one_popup_and_no_click_cycle(
         assert win.spec_envelope_code.currentData()==0
         assert actions[0].isChecked()
 
-        # PageSpectrum is disabled as an ancestor without any source:
-        # its own button cannot be user-enabled until we open a BIN/ZIP.
-        win.open_archive(fixture_zip(tmp_path,sample_count=8192))
-        qt_app.processEvents()
         win.set_envelope_profile(fake_profile(i=1.,q=.4))
         assert win.spec_envelope_button.isEnabled()
         assert win.wave_envelope_code.currentData()==0
