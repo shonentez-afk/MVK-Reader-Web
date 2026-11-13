@@ -29,10 +29,15 @@ class OriginalValueEditDialog(QDialog):
         self.setFixedSize(*ORIGINAL_DIALOG_CLIENT_SIZE)
         self.setModal(True)
         self._source_inspection_only = bool(read_only)
+        # The native list/edit source mode is selected by FormShow, not
+        # by QObject.isVisible() AFTER Dialog.Accepted closes the form.
+        # Keep the authoritative mode until the caller reads its result.
+        self._source_list_mode = choices is not None
         self._initial_prompt = prompt or "Значение"
         self._recalc_receipt = None
         self._sensitivity_conversion_enabled = bool(
-            sensitivity_conversion and choices is None and not read_only)
+            sensitivity_conversion and not self._source_list_mode
+            and not read_only)
 
         label = QLabel(prompt or "Значение", self)
         label.setObjectName("lbVal")
@@ -99,7 +104,7 @@ class OriginalValueEditDialog(QDialog):
     def _recalc_clicked(self):
         """Execute original bRecalcClick arithmetic on edVal only."""
         if (not self._sensitivity_conversion_enabled
-                or self._source_inspection_only or self.cbVal.isVisible()):
+                or self._source_inspection_only or self._source_list_mode):
             return False
         try:
             receipt=source_recalc_millivolt_g(self.edVal.text())
@@ -115,7 +120,7 @@ class OriginalValueEditDialog(QDialog):
 
     def selected_value(self) -> str:
         """Return edited value without applying it to any instrument."""
-        if self.cbVal.isVisible():
+        if self._source_list_mode:
             selected = self.cbVal.currentItem()
             return selected.text() if selected is not None else ""
         return self.edVal.text()
@@ -123,6 +128,6 @@ class OriginalValueEditDialog(QDialog):
     def _accept_selected(self, *_):
         if self._source_inspection_only:
             return  # No local commit, no device/call-site action
-        if self.cbVal.isVisible() and self.cbVal.currentItem() is None:
+        if self._source_list_mode and self.cbVal.currentItem() is None:
             return
         self.accept()
