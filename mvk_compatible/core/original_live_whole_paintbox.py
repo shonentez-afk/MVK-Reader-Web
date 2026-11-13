@@ -225,6 +225,11 @@ class WholePaintboxTask:
             "source_series_samples":p.source_series_samples,
             "source_series_sha256":p.source_series_sha256,
             "source_series_provenance":p.source_series_provenance,
+            # Keep accepted CG source screen readout for source-driven
+            # pan/zoom regression. This is only metadata, not a newly
+            # computed pixel transform or numerical resampling.
+            "view_x":p.view_x,
+            "view_y":p.view_y,
             "source_grid_segment_count":(
                 len(p.horizontal_grid)+len(p.vertical_grid)),
             "series_stroke_count":len(p.series_segments),
