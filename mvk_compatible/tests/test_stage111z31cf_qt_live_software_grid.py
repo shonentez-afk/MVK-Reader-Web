@@ -57,7 +57,13 @@ def test_both_actual_pages_use_software_grid_and_preserve_complete_fft(
             settle(qt_app)
             second=_assert_software_grid(plot)
             assert second["view_x"]!=first["view_x"]
-            assert second["rgba_sha256"]!=first["rgba_sha256"]
+            assert plot.source_grid_overlay._image_signature[-2:] == second[
+                "logical_size"]
+            assert plot.source_grid_overlay.source_software_raster_receipt is not None
+            # A source 10x10 division grid can be *pixel-identical*
+            # after zoom despite new physical X labels. The signature,
+            # not differing bitmap bytes, proves stale-range exclusion.
+            assert plot.source_grid_overlay._image_signature[:2] == second["view_x"]
             assert plot.source_frame_overlay.scene() is not None
             # Research bitmap explicitly disables BOTH ordinary overlays.
             plot.enable_source_grid(False)
