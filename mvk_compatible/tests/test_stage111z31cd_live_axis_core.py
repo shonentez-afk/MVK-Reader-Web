@@ -1,6 +1,7 @@
 """Source numeric tick contract, including original reversed ADC X."""
 import math
 import pytest
+import numpy as np
 
 from ..core.original_live_axis_ticks import (
     source_live_axis_ticks, source_live_axis_tick_text,
@@ -14,8 +15,15 @@ from ..core.tqgrapher_grid_idr_candidate import source_tqgrapher_grid_candidate
 ])
 def test_source_live_ticks_share_the_verified_10x10_numeric_candidate(left,width):
     model = source_live_axis_ticks(scr_left=left,scr_width=width)
+    # The real TQGrapher stores ScrLeft and ScrWidth as Single BEFORE
+    # selecting integer multiples. An independent Float64 low/width
+    # around 19.98 s can move the first boundary tick by one division.
+    fleft=float(np.float32(left))
+    fwidth=float(np.float32(width))
     original = source_tqgrapher_grid_candidate(
-        scr_left=min(left,left+width),scr_width=abs(width),
+        scr_left=(float(np.float32(fleft+fwidth))
+                  if fwidth<0 else fleft),
+        scr_width=float(np.float32(abs(fwidth))),
         scr_bottom=0.0,scr_height=10.0)
     assert model["values"] == original["x_grid_ticks"]
     assert model["texts"] == original["x_tick_labels_candidate"]
