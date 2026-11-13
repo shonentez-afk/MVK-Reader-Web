@@ -1218,7 +1218,7 @@ def test_stage111z19_waveform_primary_and_advanced_are_not_mixed(
     assert win.wave_hscale_button.objectName()=="bAdcHScale"
     assert win.wave_vscale_button.objectName()=="bAdcVScale"
     assert win.wave_filter_button.text()=="Без фильтра"
-    assert win.wave_type_button.text()=="AC · без DC"
+    assert win.wave_type_button.text()=="AC"  # exact original DFM caption
     assert win.wave_hscale_button.text()=="1 с"
     assert not win.wave_inspector.isVisible()
     assert "СКЗ сигнала" in win.wave_mean_primary.text()
