@@ -32,7 +32,11 @@ def _assert_software_grid(plot):
     assert sha256(pixels.tobytes()).hexdigest()==receipt["rgba_sha256"]
     assert pixels.shape[:2]==(receipt["logical_size"][1],
                              receipt["logical_size"][0])
-    assert np.any(np.all(pixels[:,:,:3]==[192,192,192],axis=2))
+    # Source software line antialiasing blends gray ink with white:
+    # subpixel line centers may have NO pixel exactly equal to 192.
+    assert np.any(np.all(
+        (pixels[:,:,:3]>=[192,192,192]) &
+        (pixels[:,:,:3]<[255,255,255]),axis=2))
     return receipt
 
 

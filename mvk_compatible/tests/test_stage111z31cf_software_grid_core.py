@@ -43,7 +43,12 @@ def test_actual_tco2draw_source_grid_order_and_copy(view_x,view_y,w,h):
         ink=GRID_LINE_RGB,background=BACKGROUND_RGB)
     np.testing.assert_array_equal(image,expected)
     assert grid["rgba_sha256"]==sha256(image.tobytes()).hexdigest()
-    assert np.any(np.all(image[:,:,:3] == GRID_LINE_RGB,axis=2))
+    # TCo2Draw blends fractional scanline coverage with the white
+    # background. Even a correct source grid need not contain exact
+    # RGB192 at these synthetic viewport sizes.
+    assert np.any(np.all(
+        (image[:,:,:3] >= GRID_LINE_RGB) &
+        (image[:,:,:3] < BACKGROUND_RGB),axis=2))
     assert np.any(np.all(image[:,:,:3] == BACKGROUND_RGB,axis=2))
 
 
