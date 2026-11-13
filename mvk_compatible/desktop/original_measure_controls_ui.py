@@ -193,9 +193,21 @@ class OriginalMeasureControls:
     def render(self):
         state=self.state
         mode=state.mode
-        self.panel.setVisible(mode!="idle")
         live=(mode=="live")
         offline=(mode=="offline")
+        # Original pnMeasure design-time Visible=False and the accepted
+        # operator PageSpectrum archive screenshot shows ONLY pnView time,
+        # not the 53px five-button device toolbar. In a connected Native
+        # LIVE preview, source pnMeasure is available; in OFFLINE archive
+        # it is available only when F12 enables compatible technical UI.
+        skin=getattr(self.window,"original_visual_skin",None)
+        technical=bool(skin is None or skin.technical)
+        show_source_measure=bool(live or (offline and technical))
+        self.panel.setVisible(show_source_measure)
+        self.panel.setProperty(
+            "sourceRuntimeMeasurePanelVisible",show_source_measure)
+        self.panel.setProperty(
+            "sourceOfflineMeasureCommandsRemainLocalOnly",True)
         self.freeze.setEnabled(live)
         self.freeze.blockSignals(True)
         try:

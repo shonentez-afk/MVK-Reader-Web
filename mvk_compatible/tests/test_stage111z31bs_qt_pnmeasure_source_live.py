@@ -120,8 +120,13 @@ def test_source_toolbar_offline_table_values_and_original_file_selection(
         win.open_archive(source)
         qt_app.processEvents()
         panel=win.original_measure_controls
-        assert panel.panel.isVisible()
+        # True original ARCHIVE screenshot has pnMeasure hidden, pnView
+        # visible. Offline local bWrite* exports remain in F12 tech mode.
         assert panel.state.mode=="offline"
+        assert not panel.panel.isVisible()
+        win.original_visual_skin.toggle_action.setChecked(True)
+        qt_app.processEvents()
+        assert panel.panel.isVisible()
         assert not panel.freeze.isEnabled()
         assert panel.buttons["bWriteTable"].isEnabled()
         assert panel.buttons["bWriteAdc"].isEnabled()
@@ -200,6 +205,9 @@ def test_source_toolbar_direct_single_only_has_real_adc_local_export(
         qt_app.processEvents()
         panel=win.original_measure_controls
         assert panel.state.mode=="offline"
+        assert not panel.panel.isVisible()
+        win.original_visual_skin.toggle_action.setChecked(True)
+        qt_app.processEvents()
         assert panel.panel.isVisible()
         assert not panel.buttons["bWriteTable"].isEnabled()
         assert not panel.buttons["bWriteValues"].isEnabled()

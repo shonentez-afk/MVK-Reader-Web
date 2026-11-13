@@ -79,7 +79,9 @@ class SourceStartBackdrop(QWidget):
         self.setProperty("sourceOriginalBitmapParityVerified",False)
         self.setProperty("sourceBackgroundOriginalDfmGeometry",True)
         self.setProperty("sourceContainsPublishedVendorImageData",False)
-        self.logo=QLabel("ТПО МВК",self)
+        # Source original imLogo contains the operator's VAST logo.
+        # Approximate text only; the exact private PNG is loaded locally.
+        self.logo=QLabel("ВАСТ",self)
         self.logo.setObjectName("imLogo")
         self.logo.setGeometry(*_START_LOGO_RECT)
         self.logo.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
@@ -286,6 +288,10 @@ class OriginalVisualSkin:
         w.setProperty("sourceFaithfulWindowChrome",not enabled)
         w.setProperty("sourceTechnicalInterfaceVisible",enabled)
         self.update_runtime_tabs()
+        # Runtime original pnMeasure has independent visible-state rules.
+        # Re-evaluate the 53px panel when F12 changes between native
+        # archive reading and compatible technical export controls.
+        w.original_shell.measure_controls.render()
         if hasattr(self,"toggle_action"):
             self.toggle_action.setText(
                 "Скрыть технический интерфейс Qt" if enabled else

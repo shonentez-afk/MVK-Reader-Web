@@ -82,6 +82,11 @@ def test_source_wave_spectrum_main_graphs_keep_original_visible_rects_and_dsp(
         assert w.original_visual_skin.snapshot()["visible_source_tabs"]==[
             "PageStart","PageAdc","PageSpectrum"]
         assert w.original_root_tabs.count()==7
+        assert w.original_measure_controls.state.mode=="offline"
+        assert not w.original_measure_controls.panel.isVisible()
+        assert w.original_shell.view_panel.height()==48
+        assert w.original_measure_controls.panel.property(
+            "sourceRuntimeMeasurePanelVisible") is False
         fft=w._full_spectrum["amplitude"].copy()
         for page,canvas,controls,plot in (
             (3,w.wave_source_canvas,ORIGINAL_WAVE_CONTROLS,w.wave_plot),
