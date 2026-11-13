@@ -3398,7 +3398,10 @@ class MainWindow(QMainWindow):
                                 != axes['series_samples']):
                             raise ValueError(
                                 'Source GetSignal buffer does not match H window')
-                        self._wave_hover_window=hover
+                        # Preserve Stage111O: mouse cursor cache stays
+                        # lazy until first genuine MouseMove. Source raster
+                        # may use the ephemeral same verified samples
+                        # without publishing a stale hover-window object.
                         pixels_source=np.asarray(
                             hover.signal_chronological[::-1],dtype='<f4')
                     if (pixels_source.ndim!=1 or
