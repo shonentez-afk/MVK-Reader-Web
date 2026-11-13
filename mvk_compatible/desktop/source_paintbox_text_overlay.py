@@ -68,6 +68,10 @@ class SourcePaintBoxTextOverlay(QWidget):
         self.source_textout_image=None
         self.source_textout_last_error=None
         self._enabled=False
+        # The opt-in x32dbg research composite *also* controls these
+        # AxisItem labels. Restore them ONLY when this standard-page
+        # overlay actually hid them; otherwise leave research ownership.
+        self._owns_axes=False
         self._signature_last=None
         self._timer=QTimer(self)
         self._timer.setSingleShot(True)
@@ -84,17 +88,21 @@ class SourcePaintBoxTextOverlay(QWidget):
         return item.getAxis("bottom"),item.getAxis("left")
 
     def _restore_axes(self):
+        if not self._owns_axes:
+            return
         for axis in self._axes():
             axis.setStyle(showValues=True)
             if axis.labelText:
                 axis.label.show()
             else:
                 axis.label.hide()
+        self._owns_axes=False
 
     def _hide_axes(self):
         for axis in self._axes():
             axis.setStyle(showValues=False)
             axis.label.hide()
+        self._owns_axes=True
 
     def set_source_enabled(self,enable):
         enable=bool(enable)
