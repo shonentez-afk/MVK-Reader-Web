@@ -807,8 +807,12 @@ def test_stage111t_original_vertical_six_menu_and_scroll_position(tmp_path,qt_ap
     assert win._spec_vertical_model['full']==100000
     assert win._spec_vertical_model['page']==100
     assert win.spec_vscroll.maximum()==99900
+    # BZ: the exact original Tag/divisor table is still used; a native
+    # synthetic ZIP has NO source FRange, so physical-unit captions MUST
+    # disclose that this Y baseline was locally auto-fitted from the FFT.
+    assert win.spec_vscale_button.popupMode()==QToolButton.InstantPopup
     assert [a.text() for a in win.spec_vscale_menu.actions()]==[
-        f'÷ {n}' for n in PHYSICAL_Y_DIVISORS]
+        f'÷ {n} (лок.)' for n in PHYSICAL_Y_DIVISORS]
     assert win._spec_vscroll_source_candidate['qt_y_baseline_from_local_spectrum'] is True
     assert not win._spec_vscroll_source_candidate['original_delphi_y_canvas_parity_verified']
     win.spec_mode.setCurrentIndex(0)
