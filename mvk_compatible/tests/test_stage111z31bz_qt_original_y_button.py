@@ -154,6 +154,7 @@ def test_unknown_original_f_range_keeps_explicit_uncalibrated_divisors(
         assert span[1]-span[0]==pytest.approx(1.2*local_max,rel=1e-4)
         auto=win._spec_vscroll_source_candidate
         assert auto["research_local_autofit_original_default_tag"]==3
+        assert auto["research_local_float32_zero_anchor_corrected"]
         assert auto["research_local_full_y_baseline"]==pytest.approx(
             1200*local_max,rel=1e-4)
         same_sha=_fft_digest(win)

@@ -1677,6 +1677,16 @@ class MainWindow(QMainWindow):
             # This is NOT an original physical-unit calibration.
             offset=0.
         lower=offset+native['scr_bottom_single']
+        # Exact original VCL ratio: at Position=Full-Page, the bottom of
+        # the physical viewport is algebraically ZERO. Float32 cancellation
+        # can yield -2.38e-5 from two large local auto-fit terms. In the
+        # UNCALIBRATED research fallback only, present the mathematical
+        # zero without fabricating a modified original Single/Win32 state.
+        research_zero_anchor=bool(
+            not db and not exact_operator_frange and source_scope is None
+            and choice['delphi_position']==choice['full']-choice['page'])
+        if research_zero_anchor:
+            lower=0.
         upper=lower+native['scr_height_single']
         if not math.isfinite(lower) or not math.isfinite(upper) or upper<=lower:
             raise ValueError('Unrepresentable Qt Y view for source V scale')
@@ -1705,6 +1715,7 @@ class MainWindow(QMainWindow):
             'research_local_full_y_baseline':(
                 default_scale if not db and not exact_operator_frange
                 and source_scope is None else None),
+            'research_local_float32_zero_anchor_corrected':research_zero_anchor,
             'operator_reference_f_range_word_used':exact_operator_frange,
             'source_tsxml_f_range_static_candidate_used':source_tsxml,
             'original_physical_calibration_verified':False,
@@ -1772,7 +1783,18 @@ class MainWindow(QMainWindow):
                    "Y по FRange: численная модель источника" if source_bound else
                    "Y: локальный некалиброванный авто-масштаб; "
                    "исходный Tag3 подгоняется под полный FFT-пик")
+        source_gain=self._source_spectrum_gain
+        source_f_range_note=(
+            f"FRange TSXML {source_gain.frange_single:.7g} "
+            "(статическая ветка, не калибровка). "
+            if (source_gain is not None and
+                source_gain.frange_single is not None) else
+            f"FRange x32dbg {self._spectrum_reference.f_range:.7g} "
+            "(не физическая аттестация). "
+            if self._spectrum_reference is not None else
+            "FRange не подтверждён; ")
         tip=(
+            source_f_range_note+
             f"{indicator}; видимый Y {lower:.8g}…{upper:.8g}. "
             f"Пункт {tag+1}/6, VCL Position={choice['delphi_position']}, "
             f"PageSize={choice['page']}, исходный scroll full={choice['full']}. "
