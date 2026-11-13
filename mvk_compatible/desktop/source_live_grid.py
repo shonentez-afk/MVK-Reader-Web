@@ -33,6 +33,7 @@ class SourceLiveGridOverlay(pg.GraphicsObject):
         self._image_signature = None
         self._requested_signature = None
         self._render_timer = QTimer(self)
+        self._suspend_auto_software = False
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self.render_source_grid_bitmap_now)
         self.setAcceptedMouseButtons(Qt.NoButton)
@@ -40,6 +41,18 @@ class SourceLiveGridOverlay(pg.GraphicsObject):
         view_box.sigRangeChanged.connect(self.sync_source_grid)
         view_box.sigResized.connect(self.sync_source_grid)
         self.sync_source_grid()
+
+    def suspend_automatic_raster(self, suspend: bool):
+        """Keep source geometry but avoid duplicate CPU raster work.
+
+        A complete source composite (CG) covers the CF grid. Explicit
+        diagnostic render_source_grid_bitmap_now() is still supported.
+        """
+        self._suspend_auto_software = bool(suspend)
+        if self._suspend_auto_software:
+            self._render_timer.stop()
+        elif self.source_grid_model is not None and self.isVisible():
+            self._render_timer.start(0)
 
     def _signature(self):
         rect = self._rect
@@ -67,7 +80,8 @@ class SourceLiveGridOverlay(pg.GraphicsObject):
             self._image_signature = None
             self.source_software_rgba = None
             self.source_software_raster_receipt = None
-        if model is not None and self.isVisible():
+        if (model is not None and self.isVisible()
+                and not self._suspend_auto_software):
             self._render_timer.start(0)
         self.update()
 

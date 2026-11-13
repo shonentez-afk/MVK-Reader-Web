@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from contextlib import nullcontext
 from fractions import Fraction
+from hashlib import sha256
 import math
 import numpy as np
 import pyqtgraph as pg
@@ -2483,7 +2484,9 @@ class MainWindow(QMainWindow):
         self.note.setText(
             'LIVE PREVIEW: нет аппаратного паритета с MVKView; '
             'FRange уже применён Native к BIN, повторно НЕ умножать')
+        self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
+        self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
         self.wave_line=None
         self._full_spectrum=None
@@ -2524,7 +2527,9 @@ class MainWindow(QMainWindow):
         if self._live_preview is None:
             return
         self._live_preview=None
+        self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
+        self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
         self.wave_line=None
         self._full_spectrum=None
@@ -2543,6 +2548,7 @@ class MainWindow(QMainWindow):
             ch=self._ch()
             d=provisional_waveform(
                 self._live_preview,ch,ac=self.wave_mode.currentIndex()==0)
+            self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_line=None  # Original cursor requires audited archived samples
             self._wave_hover_window=None
@@ -2559,6 +2565,7 @@ class MainWindow(QMainWindow):
                 f'AC={"без DC" if self.wave_mode.currentIndex()==0 else "с DC"} · '
                 'GetSignal IDR-кандидат; исходный RAW не изменён')
         except (ValueError,OSError,KeyError) as exc:
+            self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_hint.setText('Live signal недоступен: '+str(exc))
 
@@ -2571,6 +2578,7 @@ class MainWindow(QMainWindow):
                 self._live_preview,ch,mode=self.spec_mode.currentIndex())
             xs=np.asarray(d['frequency_hz'],dtype=float)
             ys=np.asarray(d['amplitude'],dtype=float)
+            self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
             # Preserve four existing mode selectors, but keep this DATA
             # separate from all original TQGrapher pointer/cursor acceptance.
@@ -2594,6 +2602,7 @@ class MainWindow(QMainWindow):
                 'результат не предназначен для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
+            self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
             self.spec_hint.setText('Live FFT недоступен: '+str(exc))
 
@@ -2612,7 +2621,9 @@ class MainWindow(QMainWindow):
         self._live_control_states=[]
         self.session=None
         self._offline_flow=None
+        self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
+        self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
         self.wave_line=None
         self._full_spectrum=None
@@ -2898,9 +2909,11 @@ class MainWindow(QMainWindow):
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
         self._spec_original_hscale_selected=None
+        self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
         self.spec_core_triplet.setText('Нет подтверждённого расчётного спектра')
         self.original_shell.clear_source_view_time()
+        self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
         self._bind_only_verified_channels(tuple(range(1,9)))
         self.tick.blockSignals(True)
@@ -3329,6 +3342,7 @@ class MainWindow(QMainWindow):
                     source_adc_envelope_axes(flow,d,self._wave_hscale_tag)
                     if code else
                     source_adc_grapher_x(flow,d,self._wave_hscale_tag))
+            self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_plot.setLabel(
                 'left', 'Отсчёты BIN (калибровка не проверена)'
@@ -3358,6 +3372,53 @@ class MainWindow(QMainWindow):
                 self.wave_plot.setXRange(
                     0.,self._source_wave_xaxes_model['axis_max'],padding=0)
             self._apply_original_wave_vscale()
+            # Original TQGRSeries consumes ALL source GetSignal or FIR
+            # output samples, never the plotted LOD. A failed/rejected
+            # source binding leaves the verified Qt trace visible.
+            if axes is not None:
+                try:
+                    if code:
+                        pixels_source=np.asarray(
+                            d['cursor_full_samples_float32'],
+                            dtype='<f4')
+                        if (sha256(pixels_source.tobytes()).hexdigest()
+                                != axes['filtered_float32_sha256']):
+                            raise ValueError('FIR source buffer SHA mismatch')
+                    else:
+                        if axes['series_samples']>524288:
+                            raise ValueError(
+                                'Source software ADC preview exceeds '
+                                'bounded full-buffer pixel budget')
+                        hover=prepare_waveform_hover_window(
+                            self.session,self._ch(),
+                            start_s=self._effective_source_start_seconds(),
+                            seconds=duration,mode=mode,
+                            display_order='getsignal_buffer')
+                        if (hover.end_index_exclusive-hover.start_index
+                                != axes['series_samples']):
+                            raise ValueError(
+                                'Source GetSignal buffer does not match H window')
+                        self._wave_hover_window=hover
+                        pixels_source=np.asarray(
+                            hover.signal_chronological[::-1],dtype='<f4')
+                    if (pixels_source.ndim!=1 or
+                            pixels_source.size!=axes['series_samples']):
+                        raise ValueError('Full source series sample count mismatch')
+                    self.wave_plot.bind_source_tqgr_series(
+                        pixels_source,x_start=0.,
+                        x_scale=axes['series_xscale_single'],
+                        provenance=('CURRENT_OFFLINE_ADC'
+                            +str(flow.channel)+'_BIN_SHA_'
+                            +str(axes['source_bin_sha256'])[:16]),
+                        expected_series_sha256=sha256(
+                            np.asarray(pixels_source,dtype='<f4').tobytes()
+                        ).hexdigest())
+                except (OSError,KeyError,TypeError,ValueError,
+                        OverflowError,MemoryError) as graphic_error:
+                    self.wave_plot.clear_source_tqgr_series()
+                    self.statusBar().showMessage(
+                        'Original software ADC preview fallback Qt: '
+                        +str(graphic_error))
             self.wave_hint.setText(
                 descr + (' · исходный ScrWidth<0, XScale Single; '
                          'Win32 Canvas не аттестован'
@@ -3412,6 +3473,7 @@ class MainWindow(QMainWindow):
             self._source_wave_xaxes_model=None
             self._source_adc_spectrum_joint_receipt=None
             # Original invalidates both series when EnvelopeCode changes.
+            self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_line=None
             self._wave_hover_window=None
@@ -4167,6 +4229,7 @@ class MainWindow(QMainWindow):
         self._leave_original_spectrum_reference()
         self._full_spectrum=None
         self._spectrum_summary=None
+        self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
         self.spec_line=None
         self.spec_hline=None
@@ -4268,6 +4331,7 @@ class MainWindow(QMainWindow):
             action.setChecked(False)
         for action in self._spec_hscale_actions:
             action.setChecked(False)
+        self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
         self.spec_plot.setLabel('bottom','Гц')
         self.spec_plot.setLabel('left',d['unit'])
@@ -4577,6 +4641,7 @@ class MainWindow(QMainWindow):
             # Clear previously compressed *visuals*, not stored FFT.
             self._clear_archive_source_projection()
             self._archive_raw_line=None
+            self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
             # Native TQGrapher labels the axis by its UNIT, not a long title.
             self.spec_plot.setLabel('bottom','Гц')
@@ -4694,6 +4759,29 @@ class MainWindow(QMainWindow):
                 self._full_spectrum.get('fft_backend')=='idr_float32'
                 and self._spectrum_reference is None)
             self._sync_archive_source_projection()
+            # Bind ONLY a current, Core-computed, full N/2 Float32
+            # spectrum. The accepted TQGrapher DataSize controls the
+            # visible series count; no invented final x=end sample.
+            try:
+                original_series=np.ascontiguousarray(
+                    np.asarray(d['amplitude'],
+                               dtype='<f4')[:display_contract[
+                                   'grapher_series_bins']])
+                if original_series.size<2:
+                    raise ValueError('Original spectral DataSize is empty')
+                self.spec_plot.bind_source_tqgr_series(
+                    original_series,x_start=0.,x_scale=float(d['df_hz']),
+                    provenance=('CURRENT_OFFLINE_ADC'
+                        +str(flow.channel)+'_BIN_SHA_'
+                        +str(flow.source_record()['source_bin_sha256'])[:16]),
+                    expected_series_sha256=sha256(
+                        original_series.tobytes()).hexdigest())
+            except (OSError,KeyError,TypeError,ValueError,OverflowError,
+                    MemoryError) as graphic_error:
+                self.spec_plot.clear_source_tqgr_series()
+                self.statusBar().showMessage(
+                    'Original software Spectrum preview fallback Qt: '
+                    +str(graphic_error))
             self._spectrum_envelope_dirty=False
         except (OSError,KeyError,ValueError) as e:
             # An archive may change after DirectBinSession.open(). A failed
@@ -4724,6 +4812,7 @@ class MainWindow(QMainWindow):
             self.spec_line=None
             self.spec_hline=None
             self.spec_xor_crosshair=None
+            self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
             self.spec_copy_button.setEnabled(False)
             self.spec_save_button.setEnabled(False)
