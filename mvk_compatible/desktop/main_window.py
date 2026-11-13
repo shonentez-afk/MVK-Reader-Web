@@ -104,6 +104,7 @@ from ..core.original_live_grid_cursor import source_live_cursor_hit
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .source_pixel_audit_io import save_source_graph_pixel_audit, read_png_rgba
 from .original_shell import install_original_shell
+from .source_visual_skin import OriginalVisualSkin
 from .original_task_ui import make_original_channel_tabs
 from .source_control_canvas import source_control_canvas
 from .source_envelope_popup import (
@@ -221,6 +222,8 @@ class MainWindow(QMainWindow):
         action.setShortcut('Ctrl+O')
         action.triggered.connect(self.choose_archive)
         file_menu.addAction(action)
+        # Ctrl+O must remain active when source-mode hides the Qt menubar.
+        self.addAction(action)
         file_menu.addAction('Закрыть измерение',self._close_session)
         capture_action=QAction('Запись с прибора · Native R6.1…',self)
         capture_action.triggered.connect(self.open_native_capture)
@@ -280,6 +283,8 @@ class MainWindow(QMainWindow):
         details.setShortcut('Ctrl+D')
         details.triggered.connect(self._toggle_current_research)
         research_menu.addAction(details)
+        # Ctrl+D remains actionable even while source-mode hides menubar.
+        self.addAction(details)
         research_tabs=QAction('Вкладки технического анализа',self)
         research_tabs.setCheckable(True)
         research_tabs.setChecked(False)
@@ -297,6 +302,7 @@ class MainWindow(QMainWindow):
         # Recreate original IDR/Delphi 7-page root structure without replacing
         # the existing three internal, fully functional archive/DSP tabs.
         self.original_shell=install_original_shell(self,layout)
+        self.original_visual_skin=OriginalVisualSkin(self,view_menu)
         self.statusBar().showMessage('Открыть локальное измерение или выбрать «Запись с прибора · Native R6.1»')
 
     def _calculated_tab(self):
@@ -304,6 +310,9 @@ class MainWindow(QMainWindow):
         # Original MVKView 1.0.47 visible top tab: 'Задачи' (2026-11-01 reference).
         self.tabs.addTab(tab,'Задачи')
         lay=QVBoxLayout(tab)
+        # A hidden internal research row must not displace PageStart DFM.
+        lay.setContentsMargins(0,0,0,0)
+        lay.setSpacing(0)
         self.calc_source=QLabel('Штатные данные МВК (AUX4700 / VALUES)')
         self.calc_status=QLabel('Статус: —')
         row=QHBoxLayout()

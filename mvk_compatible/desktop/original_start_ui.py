@@ -29,6 +29,7 @@ from ..core.original_start_workbench import (
     START_LIBRARY_DEFAULT,START_IP_RECT,START_LIBRARY_RECT,
 )
 from ..core.original_ui_form_contract import ORIGINAL_TASK_BUTTONS
+from .source_visual_skin import SourceStartBackdrop
 
 
 class OriginalStartController:
@@ -39,11 +40,14 @@ class OriginalStartController:
         self.navigation=navigation
         self.workspace=OriginalStartWorkspace()
         home=window.task_subpages.widget(0)
-        self.host=QWidget(home)
-        self.host.setObjectName("SourcePageStartLauncher")
-        self.host.setMinimumWidth(840)
-        self.host.setFixedHeight(494)
-        self.host.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
+        # The SOURCE PageStart hosts the whole 992x766 logical TTabSheet.
+        # A fixed 494px Qt-only wrapper cropped source imLogo at y568 and
+        # shifted all five DFM buttons below research headers. Use a fully
+        # expandable source client with in-memory optional original TImages.
+        self.host=SourceStartBackdrop(home)
+        self.host.setMinimumWidth(0)
+        self.host.setMinimumHeight(494)
+        self.host.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
         captions={
             "bTaskConnect":"Подключение к прибору",
             "bTaskConfigCh":"Настройка каналов",
@@ -160,11 +164,26 @@ class OriginalStartController:
         self.status.setGeometry(29,461,800,24)
         self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
-        home.layout().insertWidget(2,self.host)
+        self.technical_widgets=(
+            self.native_note,extra,self.library_files,
+            refresh,open_selected,self.status)
+        for widget in self.technical_widgets:
+            widget.hide()
+        # Remove the extra Qt research heading, summary and 24px insets
+        # from the SOURCE page. They are still held in the widget tree
+        # for backward-compatible technical diagnostics.
+        home.layout().setContentsMargins(0,0,0,0)
+        home.layout().setSpacing(0)
+        home.layout().insertWidget(0,self.host,1)
         for old in (window.task_open_button,window.task_capture_button,
                     window.task_signal_button,window.task_spectrum_button,
                     window.task_metrics_button):
             old.hide()
+        for name in ("taskHomeHeading","taskSessionSummary",
+                     "taskDeviceOfflineNotice"):
+            obsolete=home.findChild(QWidget,name)
+            if obsolete is not None:
+                obsolete.hide()
         window.original_start_controller=self
 
     def commit_ip(self):
@@ -235,7 +254,11 @@ class OriginalStartController:
         if self.window.session is None or self.window.session is prior:
             self.status.setText("Локальный источник не открыт")
             return False
-        self.navigation.setCurrentIndex(5)
+        skin=getattr(self.window,"original_visual_skin",None)
+        if skin is not None:
+            skin.reveal_page(5)
+        else:
+            self.navigation.setCurrentIndex(5)
         self.status.setText(
             "Открыта проверенная локальная запись: "+source.name+
             " · прибор не опрашивался")
@@ -244,12 +267,20 @@ class OriginalStartController:
     def open_config_mode(self,mode):
         if mode not in (4,6):raise ValueError("Original local config mode")
         self.window.original_config_panel.set_source_mode(mode)
-        self.navigation.setCurrentIndex(1)
+        skin=getattr(self.window,"original_visual_skin",None)
+        if skin is not None:
+            skin.reveal_page(1)
+        else:
+            self.navigation.setCurrentIndex(1)
         return mode
 
     def open_file_page(self):
         self.workspace.source_route("bTaskView")
-        self.navigation.setCurrentIndex(5)
+        skin=getattr(self.window,"original_visual_skin",None)
+        if skin is not None:
+            skin.reveal_page(5)
+        else:
+            self.navigation.setCurrentIndex(5)
         return 5
 
     def open_capture_dialog(self):

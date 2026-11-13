@@ -719,7 +719,11 @@ class OriginalRootShell:
         self._routing = True
         try:
             self.stack.setCurrentIndex(0)
-            self.navigation.setCurrentIndex(expected)
+            skin=getattr(self.window,"original_visual_skin",None)
+            if skin is not None:
+                skin.reveal_page(expected)
+            else:
+                self.navigation.setCurrentIndex(expected)
         finally:
             self._routing = False
         self._remember_view_action('select_page',PAGES[expected])
@@ -1161,6 +1165,9 @@ class OriginalRootShell:
             3, self.window.tabs.isTabEnabled(1))
         self.navigation.setTabEnabled(
             4, self.window.tabs.isTabEnabled(2))
+        skin=getattr(self.window,"original_visual_skin",None)
+        if skin is not None:
+            skin.update_runtime_tabs()
 
 
 def install_original_shell(window, layout) -> OriginalRootShell:
