@@ -13,7 +13,7 @@ from hashlib import sha256
 import math
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QPoint, QPointF, QRectF
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QTimer
 from PySide6.QtGui import QAction, QFont, QFontMetrics, QPainterPath, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
@@ -26,6 +26,7 @@ from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_tabl
 from ..core.original_connected_status import connected_system_status
 from ..core.original_live_write_stages import OriginalLiveWriteLedger
 from ..core.original_mode2_runtime_trace import OriginalMode2RuntimeTrace
+from ..core.original_mode2_interface_timer import OriginalMode2InterfaceTimer
 from .original_write_export_worker import SourceWriteWindowExportWorker
 from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
@@ -140,6 +141,12 @@ class MainWindow(QMainWindow):
         self._pending_native_pagefile_plan=None  # set only by accepted Native event
         self._source_live_writer=OriginalLiveWriteLedger()
         self._source_mode2_runtime=OriginalMode2RuntimeTrace()
+        self._source_interface_clock=OriginalMode2InterfaceTimer()
+        self._source_interface_qtimer=QTimer(self)
+        self._source_interface_qtimer.setInterval(20)
+        self._source_interface_qtimer.setTimerType(Qt.PreciseTimer)
+        self._source_interface_qtimer.timeout.connect(self._source_interface_tick)
+        self._source_interface_last_page=None
         self._pending_source_write_ledger=None
         self._source_writer_export_worker=None
         self._source_writer_last_export=None
@@ -2475,6 +2482,55 @@ class MainWindow(QMainWindow):
                 self.original_shell.file_page):
             widget.setProperty('sourceOriginalMode2RuntimeReceipt',receipt)
 
+    def _source_interface_tick(self):
+        """Source 0084F7C8: 20ms ONLY the active source tab + pnMeasure.
+
+        This clock never opens TCP, calls a device writer, or creates
+        artificial 20ms ADC/DSP data. Native Go remains independently
+        polled at 900ms. Expensive Qt plotting is coalesced on tab changes
+        and on existing validated preview events, not 50 fake FFTs/s.
+        """
+        if not self._live_active or getattr(self,'original_shell',None) is None:
+            return
+        tabs=self.original_root_tabs
+        index=tabs.currentIndex()
+        page=tabs.tabData(index) if index>=0 else 'PageStart'
+        if not isinstance(page,str):
+            page='PageStart'
+        controls=self.original_shell.measure_controls
+        tick=self._source_interface_clock.tick(
+            page, bool(controls.panel.isVisible()))
+        if tick is None:
+            return
+        receipt=tick.receipt()
+        active=tabs.currentWidget()
+        if active is not None:
+            active.setProperty('sourceOriginalInterfaceTickReceipt',receipt)
+        if controls.panel.isVisible():
+            controls.panel.setProperty('sourceOriginalInterfaceTickReceipt',receipt)
+        if page==self._source_interface_last_page:
+            return
+        self._source_interface_last_page=page
+        # In source 00847248 ONLY the current page gets its handler.
+        # PageStatus can refresh from the already checked source Core.
+        # The two graphs may render an already validated latest preview,
+        # but never read the instrument or refresh an inactive series.
+        if page=='PageStatus':
+            self.original_shell.refresh_status()
+        elif (page=='PageAdc' and self._live_preview is not None
+                and not self._source_live_view_frozen
+                and not self._measurement_exit_requested):
+            self._render_live_wave()
+        elif (page=='PageSpectrum' and self._live_preview is not None
+                and not self._source_live_view_frozen
+                and not self._measurement_exit_requested):
+            self._render_live_spectrum()
+        elif page=='PageFile':
+            self.original_shell.file_selection_status.setText(
+                self.original_shell._file_selection_status())
+        if controls.panel.isVisible():
+            controls.render()
+
     def enter_measurement_mode(self):
         """Original Delphi Mode2: five pages and pnMeasure BEFORE TCP.
 
@@ -2486,6 +2542,9 @@ class MainWindow(QMainWindow):
             return False
         self._measurement_mode_selected=True
         self._source_mode2_runtime=OriginalMode2RuntimeTrace()
+        self._source_interface_qtimer.stop()
+        self._source_interface_clock=OriginalMode2InterfaceTimer()
+        self._source_interface_last_page=None
         self._source_mode2_runtime.enter_mode2()
         self.original_start_controller.sync_measurement_button()
         self._measurement_connection_error=False
@@ -2671,6 +2730,9 @@ class MainWindow(QMainWindow):
             self._source_mode2_runtime=OriginalMode2RuntimeTrace()
             self._source_mode2_runtime.enter_mode2()
         self._source_mode2_runtime.native_started()
+        self._source_interface_clock.start()
+        self._source_interface_last_page=None
+        self._source_interface_qtimer.start()
         self._sync_source_mode2_runtime()
         # The prior verified archive can have been re-opened after a
         # failed read while the original Mode2 tabs stay visible. Park
@@ -2941,6 +3003,9 @@ class MainWindow(QMainWindow):
     def _end_live_capture(self, exported):
         if not self._live_active:
             return
+        self._source_interface_qtimer.stop()
+        self._source_interface_clock.stop()
+        self._source_interface_last_page=None
         self._live_active=False
         self._source_mode2_runtime.complete(accepted=bool(exported))
         self._sync_source_mode2_runtime()
