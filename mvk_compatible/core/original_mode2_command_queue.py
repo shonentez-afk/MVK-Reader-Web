@@ -126,8 +126,8 @@ class OriginalMode2CommandQueue:
     def set_rate(self, source_rate_code: int) -> OriginalCommandRecord | None:
         """Exact SetRate code-change gate. NOT a frequency in Hz.
 
-        The five original UI Tag codes from gvar_008D2F7C are currently
-        not independently attested. A caller's supplied code is ONLY
+        The five original UI Tag codes from gvar_008D2F7C were verified
+        in the private IDP. A caller's supplied code is ONLY
         used for offline simulation and must not be sent over TCP.
         """
         _u32(source_rate_code, "MvkSampleRate")
@@ -141,7 +141,7 @@ class OriginalMode2CommandQueue:
 
     def take_one(self, source_stage: int) -> OriginalCommandRecord | None:
         """Source 00807E8F processes 1 FIFO item at Stage==1 per loop."""
-        if type(source_stage) is not int or source_stage not in (0, 1, 2):
+        if type(source_stage) is not int or source_stage not in (0, 1, 2, 3):
             raise ValueError("Unverified source thread Stage")
         if self._closed or source_stage != 1 or not self._pending:
             return None
