@@ -6,7 +6,8 @@ _Unit125.pas TMVKThread.Execute 00807A98, source 20ms timer, and source
 exception handlers 008088A2/CE/FA/00808923. This is NOT a driver.
 
 Composes the independently source-verified nontransmitting queue/fault
-models; does NOT invoke their enqueue methods for real device traffic.
+models; the initial SetRate is enqueued only into the OFFLINE simulator,
+never into any real device/Go transport.
 """
 from __future__ import annotations
 
@@ -14,6 +15,10 @@ from dataclasses import dataclass
 from .original_connected_status import connected_system_status
 from .original_mode2_command_queue import (
     OriginalMode2CommandQueue, OriginalMode2FaultRoutes,
+)
+from .original_mode2_rate_menu_source import (
+    SOURCE_DEFAULT_MENU_TAG, SOURCE_THREAD_INITIAL_CODE,
+    source_initial_rate_provenance,
 )
 
 SOURCE = "STAGE111Z31DC_MODE2_NATIVE_LIVE_LIFECYCLE_SOURCE_TRACE"
@@ -44,6 +49,7 @@ class OriginalMode2RuntimeTrace:
         self._events: list[Mode2TraceEvent] = []
         self._event_total = 0
         self.finished = False
+        self.source_initial_rate_queued_offline = False
 
     def _event(self, name: str):
         self._event_total += 1
@@ -64,6 +70,17 @@ class OriginalMode2RuntimeTrace:
         self.capture_started = True
         self.phase = "CONNECTING"
         self._event("NATIVE_START")
+        # Original 00846DDF..00846DF7 calls mRate1Click(Items[0])
+        # immediately after TMVKThread.Create. Items[0] is 65536
+        # because five array elements are each inserted at index zero.
+        # The private IDP memory proves a 0x309 (777) thread initial
+        # code, so the initial SetRate enqueues (1,0x0E,65536).
+        # THIS QUEUE IS DRY-RUN ONLY: Native R6.1 gets NO application bytes.
+        source_command=self.command_model.set_rate(SOURCE_DEFAULT_MENU_TAG)
+        if source_command is None:
+            raise AssertionError("Source initial rate should differ from 0x309")
+        self.source_initial_rate_queued_offline=True
+        self._event("SOURCE_INITIAL_MRATE1CLICK_DRY_RUN")
         return self.receipt()
 
     def observe_native(self, status: dict):
@@ -184,6 +201,13 @@ class OriginalMode2RuntimeTrace:
             "native_qt_status_poll_ms": 900,
             "original_timer_behavior_reproduced": False,
             "original_queue": self.command_model.receipt(),
+            "source_initial_rate_queued_offline":
+                self.source_initial_rate_queued_offline,
+            "source_selected_sample_rate_code": (
+                SOURCE_DEFAULT_MENU_TAG if self.source_initial_rate_queued_offline
+                else None),
+            "source_rate_menu_provenance": source_initial_rate_provenance(),
+            "source_initial_device_setrate_sent": False,
             "original_faults": self.fault_routes.receipt(),
             "events_seen": self._event_total,
             "last_events": tuple(
