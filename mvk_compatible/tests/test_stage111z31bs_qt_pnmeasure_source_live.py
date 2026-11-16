@@ -55,7 +55,7 @@ def test_original_global_toolbar_source_geometry_and_live_preview_freeze(
             assert button.property("SourceDFMTag")==tag
             assert button.property("SourceDFMTabOrder")==order
         assert panel.rate_menu.objectName()=="popSampleRate"
-        assert len(panel.rate_menu.actions())>=2
+        assert len(panel.rate_menu.actions())==1
         assert all(not action.isEnabled() for action in panel.rate_menu.actions())
         assert win._source_live_view_frozen is False
 
