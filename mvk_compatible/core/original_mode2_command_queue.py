@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import struct
 
 from .original_mode2_rate_menu_source import (
-    SOURCE_THREAD_INITIAL_CODE,
+    SOURCE_THREAD_INITIAL_CODE, SOURCE_RATE_MENU_TAGS,
 )
 
 SOURCE = "IDR_TMVKTHREAD_00809330_00809288_00809364_00809400_OFFLINE"
@@ -164,7 +164,8 @@ class OriginalMode2CommandQueue:
             "default_source_immediate_hex": "0x309",
             "source_default_is_not_decimal_309": True,
             "current_internal_rate_code": self._rate_code,
-            "five_original_rate_tags_independently_verified": False,
+            "five_original_rate_tags_independently_verified": True,
+            "original_rate_menu_codes": list(SOURCE_RATE_MENU_TAGS),
             "pending_count": len(self._pending),
             "taken_count": len(self._taken),
             "queue_closed": self._closed,
