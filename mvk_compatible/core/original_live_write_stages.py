@@ -419,6 +419,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             encoding="utf-8")
         return {"source":SOURCE,"windows":len(ledger.windows),
                 "files_written":len(emitted),"new_directory":str(target),
+                "verified_frame_boundaries":bool(ledger.frame_marks_verified),
+                "native_mark_requests":len(ledger.frame_mark_actions),
                 "hardware_command_sent":False}
     except Exception:
         if created:

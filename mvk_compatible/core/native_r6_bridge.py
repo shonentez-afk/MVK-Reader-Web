@@ -110,7 +110,8 @@ class CaptureSpec:
         return ["-ip", self.device_ipv4, "-local-ip", self.local_ipv4,
                 "-seconds", str(self.seconds), "-max-mb", str(self.max_mb),
                 "-out", str(root), "-approve=true", "-export=true",
-                "-live-status=true", "-stop-file", str(stop_file.resolve())]
+                "-live-status=true", "-frame-marks=true",
+                "-stop-file", str(stop_file.resolve())]
 
 
 def request_graceful_stop(root: Path) -> None:

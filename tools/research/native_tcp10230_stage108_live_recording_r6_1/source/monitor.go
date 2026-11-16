@@ -48,6 +48,8 @@ type Summary struct {
 	Result                 string            `json:"result"`
 	RawBytes               uint64            `json:"raw_bytes"`
 	RawSHA256              string            `json:"raw_sha256"`
+	FrameMarksSHA256       string            `json:"source_frame_marks_sha256,omitempty"`
+	FrameMarkCount         uint64            `json:"source_frame_marks_count,omitempty"`
 	Chunks                 uint64            `json:"tcp_read_chunks"`
 	TotalFrames            uint64            `json:"frames_decoded"`
 	FrameCounts            map[string]uint64 `json:"frame_counts"`
@@ -90,6 +92,7 @@ type Monitor struct {
 	captureOnly bool
 	closed      bool
 	liveBin     *LiveBinSpool
+	frameMarks  *frameMarkController // local-only source button marks; never device commands
 	// Opt-in Stage111Z26 UI-only telemetry, never part of original RAW/BIN.
 	liveProgressEnabled bool
 	liveTargetSeconds int
@@ -209,6 +212,11 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
 		return nil
 	}
 	frames, parseErr := m.f.Feed(chunk)
+	// At the first complete application frame in this TCP chunk,
+	// apply any queued LOCAL operator source marks before consuming it.
+	if parseErr == nil && len(frames) > 0 && m.frameMarks != nil {
+		m.frameMarks.poll(m, at)
+	}
 	for _, f := range frames {
 		if e := m.consume(f, at); e != nil {
 			m.summary.InvalidFrames++
@@ -403,6 +411,11 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
 		m.summary.CaptureOnly = m.captureOnly
 		m.summary.TailBytes = len(m.f.Tail)
 		m.summary.RawSHA256 = hex.EncodeToString(m.sum.Sum(nil))
+		if m.frameMarks != nil {
+			if markErr := m.frameMarks.finalize(m); markErr != nil {
+				m.warn("Local frame mark audit unavailable: " + markErr.Error())
+			}
+		}
 		switch {
 		case m.summary.RawBytes == 0:
 			m.summary.Result = "NO_DATA"

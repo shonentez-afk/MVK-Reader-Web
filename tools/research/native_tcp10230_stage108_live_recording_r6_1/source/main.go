@@ -202,6 +202,7 @@ func mainInner() int {
 	localIP := flag.String("local-ip", "", "REQUIRED for command-line live: local IPv4 of the wired Ethernet adapter")
 	listIF := flag.Bool("list-interfaces", false, "show local IPv4 adapters and exit without connecting")
 	stopFile := flag.String("stop-file", "", "optional absolute GUI stop-request file (.mvk_stop_requested); stops safely without killing process")
+	frameMarks := flag.Bool("frame-marks", false, "opt-in local-only GUI source write boundaries; NEVER sends device commands")
 	liveStatus := flag.Bool("live-status", false, "opt-in atomic local status JSON for GUI; never sends instrument data")
 	autoExport := flag.Bool("export", true, "after capture, validate and atomically produce 8 BIN/TSXML + VALUES/TABLE in same run folder")
 	offsetText := flag.String("offset", "auto", "capture-PC UTC offset auto or +/-HH:MM; for replay specify original capture PC timezone")
@@ -270,6 +271,10 @@ func mainInner() int {
 			return 2
 		}
 	}
+	if *frameMarks && (!*liveStatus || !*autoExport || *replay != "" || *stopFile == "") {
+		fmt.Println("Local frame marks require approved GUI LIVE status, export and graceful stop")
+		return 2
+	}
 	if *limitMB < 1 || *limitMB > 2048 {
 		fmt.Println("Неверный лимит MB (1..2048)")
 		return 2
@@ -317,6 +322,15 @@ func mainInner() int {
 	if e != nil {
 		fmt.Println("Ошибка создания файлов:", e)
 		return 2
+	}
+	if *frameMarks {
+		marks, err := newFrameMarkController(*out, dir)
+		if err != nil {
+			fmt.Println("Local frame mark inbox rejected:", err)
+			_ = m.CloseFiles()
+			return 2
+		}
+		m.frameMarks = marks
 	}
 	if *liveStatus {
 		m.liveProgressEnabled = true

@@ -19,6 +19,7 @@ from ..core.native_r6_bridge import (CaptureSpec, native_executable,
                                      pack_completed_export, request_graceful_stop)
 from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview
+from ..core.source_frame_mark_protocol import submit_native_frame_mark
 
 
 class ExportPackWorker(QThread):
@@ -65,6 +66,7 @@ class NativeCaptureDialog(QDialog):
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
+        self._frame_mark_sequence = 0
         self._timer = QTimer(self)
         self._timer.setInterval(900)
         self._timer.timeout.connect(self._poll_live_status)
@@ -429,6 +431,7 @@ class NativeCaptureDialog(QDialog):
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
+        self._frame_mark_sequence = 0
         self._reset_live_channels()
         self.progress.setValue(0)
         self.live_quality.setText("Подключение ожидается. Состояние датчиков ещё неизвестно.")
@@ -441,6 +444,29 @@ class NativeCaptureDialog(QDialog):
         self.captureStarted.emit()
         self._timer.start()
         self._sync_buttons()
+
+    def send_source_frame_mark(self,kind,begin,plan,session_id):
+        """Send an operator mark to the ONE Go local recorder, never MVK TCP.
+
+        The file is atomically published in the previously approved local
+        capture root. Go acknowledges at its NEXT decoded frame boundary,
+        not at this Qt button click or the previous 900ms status poll.
+        """
+        if (self._mode!="capture" or self._capture_root is None or
+                self._process.state()!=QProcess.Running):
+            raise ValueError("Source frame recording has no active native receiver")
+        if kind not in ("data","values") or type(begin) is not bool:
+            raise ValueError("Invalid original source start/stop operation")
+        next_sequence=self._frame_mark_sequence+1
+        event=kind+("_begin" if begin else "_end")
+        receipt=submit_native_frame_mark(
+            self._capture_root,next_sequence,session_id,event,plan)
+        self._frame_mark_sequence=next_sequence
+        self.log.appendPlainText(
+            f"Локальный запрос {next_sequence}: {event}; "
+            "ожидается точная граница следующего декодированного кадра. "
+            "Приборных команд нет.")
+        return receipt
 
     def stop_capture(self):
         if self._mode != "capture" or self._capture_root is None:

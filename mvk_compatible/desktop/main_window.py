@@ -2595,7 +2595,30 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             raise ValueError("Исходная запись требует реального активного приёмника")
         plan=self.original_shell.live_file_plan
-        receipt=self._source_live_writer.toggle(kind,plan)
+        writer=self._source_live_writer
+        was_active=bool(writer.receipt()[
+            "write_data_requested" if kind=="data"
+            else "write_values_requested"])
+        receipt=writer.toggle(kind,plan)
+        dlg=self._native_dialog
+        if dlg is not None and getattr(dlg,"_mode",None)=="capture":
+            try:
+                mark=dlg.send_source_frame_mark(
+                    kind,not was_active,plan,writer.session_id)
+                writer.register_native_frame_mark(mark,plan)
+                receipt=writer.receipt()
+                self.statusBar().showMessage(
+                    "Локальная запись запрошена на границе следующего "
+                    "декодированного кадра Native. Нет команд прибору.")
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                # Never silently fall back to the older 900ms status
+                # window when the operator uses actual bundled Go.
+                writer.frame_marks_required=True
+                writer.frame_marks_failed=True
+                writer.invalidate("Точная граница кадра не принята: "+str(exc))
+                writer.windows.clear()
+                self.original_shell.measure_controls.render()
+                raise ValueError("Локальная запись отклонена: "+str(exc)) from exc
         self.original_shell.measure_controls.render()
         self.original_shell.file_selection_status.setText(
             self.original_shell._file_selection_status())
@@ -2982,7 +3005,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             "Оригинальная запись: проверенные локальные интервалы сохранены "
             f"({report['files_written']} файлов, {report['windows']} окон). "
-            "Не исходные Delphi BIN/CSV.")
+            ("Go подтвердил границы кадров; " if
+             report.get("verified_frame_boundaries") else
+             "Границы по периодическому статусу; ")
+            +"не исходные Delphi BIN/CSV.")
 
     def _source_write_export_failed(self,message):
         self._source_writer_last_export={
