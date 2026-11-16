@@ -18,6 +18,16 @@ EVENT_LABELS = {
 }
 
 
+# Win32 OBJID_CURSOR (-9) OBJECT_LOCATIONCHANGE is emitted continuously
+# during mouse movement. It is neither a control transition nor evidence of a
+# changed MVKView graph, so it must not saturate the evidence queue.
+OBJID_CURSOR = -9
+
+
+def meaningful_win_event(event: int, object_id: int) -> bool:
+    return event in EVENT_LABELS and not (event == 0x800B and object_id == OBJID_CURSOR)
+
+
 class WinEventObserver:
     """Observe only events emitted by the chosen PID on the current desktop."""
     def __init__(self, pid: int, output: queue.Queue):
@@ -59,7 +69,7 @@ class WinEventObserver:
             u.PeekMessageW.restype = wintypes.BOOL
             def callback(hook, event, hwnd, object_id, child_id, thread_id, event_ms):
                 try:
-                    if event not in EVENT_LABELS:
+                    if not meaningful_win_event(event, object_id):
                         return
                     entry = {"event": EVENT_LABELS[event], "event_code": event,
                              "hwnd": int(hwnd or 0), "object_id": object_id,

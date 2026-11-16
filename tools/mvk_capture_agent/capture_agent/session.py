@@ -37,6 +37,9 @@ class CaptureSession:
         self.worker = None
         self.observer = None
         self.last_ui_digest = None
+        # Event HWNDs have no text of their own. Associate observed HWNDs with
+        # names/classes only when the selected target's Win32 tree establishes it.
+        self._controls_by_hwnd = {}
         self.last_event_screenshot = 0.0
         self.events_seen = 0
         self.status_label = "created"
@@ -92,7 +95,7 @@ class CaptureSession:
                     self._record_trace(event)
                 elif event is not None and self.events_seen < MAX_WIN_EVENTS:
                     self.events_seen += 1
-                    self.store.event("win_event", event)
+                    self.store.event("win_event", self._annotate_win_event(event))
                     if event.get("event") in {"OBJECT_SHOW", "OBJECT_HIDE",
                          "OBJECT_SELECTION", "OBJECT_INVOKED", "OBJECT_FOCUS"}:
                         now = time.monotonic()
@@ -138,6 +141,53 @@ class CaptureSession:
         self.trace_events += 1
         self.store.event("frida_trace", payload)
 
+    def _update_known_controls(self, ui):
+        # Retain only lightweight, target-bound HWND labels. Handles are only
+        # valid within this live capture; never treat them as stable identities.
+        observed = {}
+        for control in list(ui.get("child_controls") or []) + list(ui.get("toplevel_windows") or []):
+            handle = control.get("hwnd")
+            if type(handle) is int and handle > 0:
+                observed[handle] = {
+                    "control_name": str(control.get("name") or "")[:160],
+                    "control_class": str(control.get("class_name") or "")[:100],
+                }
+        self._controls_by_hwnd = observed
+
+    def _annotate_win_event(self, event):
+        entry = dict(event)
+        handle = entry.get("hwnd")
+        if type(handle) is int:
+            info = self._controls_by_hwnd.get(handle)
+            if info:
+                entry.update(info)
+        return entry
+
+    def _visual_popup_windows(self, ui):
+        # Capture actual popup/menu and modal forms. Do not record visual-only
+        # SysShadow, GDI helpers or 1x1 infrastructure windows as evidence.
+        results = []
+        blocked = {"sysshadow", "tapplication", "gdi+ hook window class",
+                   "msctfime ui", "ime", "tputilwindow"}
+        for window in ui.get("toplevel_windows") or []:
+            handle = window.get("hwnd")
+            cls = str(window.get("class_name") or "").casefold()
+            rect = window.get("rect")
+            if (type(handle) is not int or handle <= 0 or handle == self.hwnd
+                    or window.get("visible") is not True or cls in blocked
+                    or not isinstance(rect, list) or len(rect) != 4):
+                continue
+            try:
+                w, h = int(rect[2]) - int(rect[0]), int(rect[3]) - int(rect[1])
+            except (ValueError, TypeError):
+                continue
+            if w < 32 or h < 32:
+                continue
+            results.append(window)
+            if len(results) >= 4:
+                break
+        return results
+
     def snapshot(self, reason="manual", memory=False, screenshot=True,
                  only_if_changed=False):
         if self.store is None:
@@ -152,22 +202,28 @@ class CaptureSession:
             if only_if_changed and fingerprint == self.last_ui_digest:
                 return {"changed": False, "reason": reason}
             self.last_ui_digest = fingerprint
+            self._update_known_controls(ui)
             detail = {"reason": reason, "ui_sha256": fingerprint, "ui": ui}
-            if screenshot and self.config.screenshot:
+            # v0.2 lost six of seven observed popup menus: poll(screenshot=False)
+            # consumed the new UI digest, so the later win-event snapshot had
+            # nothing left to save. A visible genuine popup is always a visual
+            # evidence transition, even on a low-cost periodic poll.
+            visible_popups = self._visual_popup_windows(ui)
+            take_screenshot = screenshot or bool(visible_popups)
+            if take_screenshot and self.config.screenshot:
                 try:
                     detail["screenshot"] = self.store.screenshot(
                         self.backend, self.pid, self.hwnd)
                     popups = []
-                    for window in ui.get("toplevel_windows", []):
-                        handle = window.get("hwnd")
-                        if (handle != self.hwnd and window.get("visible") is True
-                                and handle and len(popups) < 4):
-                            try:
-                                capture = self.store.screenshot(self.backend, self.pid, handle)
-                                popups.append({"hwnd": handle, "class_name": window.get("class_name"),
-                                               "screenshot": capture})
-                            except (CaptureError, OSError, TypeError, ValueError):
-                                continue
+                    for window in visible_popups:
+                        handle = window["hwnd"]
+                        try:
+                            capture = self.store.screenshot(self.backend, self.pid, handle)
+                            popups.append({"hwnd": handle,
+                                           "class_name": window.get("class_name"),
+                                           "screenshot": capture})
+                        except (CaptureError, OSError, TypeError, ValueError):
+                            continue
                     if popups:
                         detail["additional_process_windows"] = popups
                 except (CaptureError, OSError, TypeError, ValueError) as exc:

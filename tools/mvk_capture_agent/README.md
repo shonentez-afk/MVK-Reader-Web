@@ -1,4 +1,33 @@
-# MVKView Capture Agent 0.2.0
+## 0.3.0 — Popup capture repair from real MVKView evidence (2026-11-16)
+
+Validated against user-supplied MVK_CAPTURE_20261116T074819Z_12c686.zip (private; NOT committed):
+1269 events, 23 UI snapshots, 19 PNGs. Seven native button invocations opened
+Delphi popup windows, but only the first popup was imaged. Polls observed the
+other popups with screenshot=False and consumed the changed UI fingerprints;
+following WinEvent snapshots saw no new state and produced no PNG.
+
+**Fixes**:
+- Capture visible PID-validated top-level popup windows on poll even when the
+  ordinary poll is configured not to save screenshots. One image per distinct
+  UI state; no mouse movement polling screenshots.
+- Exclude `SysShadow` and known invisible/infrastructure windows (the capture
+  previously contained an all-black SysShadow PNG).
+- Filter `OBJECT_LOCATIONCHANGE` with `OBJID_CURSOR=-9` at WinEvent callback;
+  this caused 999 spurious events in the real capture.
+- Enrich WinEvents with the known Win32 control caption/class from the target's
+  most recent snapshot (no extra UI actions, no other process inspection).
+- Add offline tests for popup-poll screenshots, shadow rejection, cursor-event
+  filtering and HWND caption correlation.
+
+Frida opt-in, PID pinning, no device commands, memory bounds and original EXE
+protection are unchanged. This patch improves visual evidence capture; it does
+**not** claim that it interprets all popup menu items as structured text, nor
+that it independently navigates original UI. Real Windows v0.3 requires live
+operator validation after synthetic CI.
+
+---
+
+# MVKView Capture Agent 0.3.0
 
 A **local, target-restricted Windows observer** for the operator's original
 `mvkview.exe` / Delphi `Tmvkform` window. Its purpose is to create a
