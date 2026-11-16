@@ -2650,8 +2650,12 @@ class MainWindow(QMainWindow):
         self._native_live_status=snapshot
         self._measurement_connection_error=False
         self.original_shell.measure_controls.render()
-        if self.original_status_mode.currentIndex()==0:
-            self.original_shell.refresh_status()
+        # Original tmInterfaceUpdate dispatches the ACTIVE source page.
+        # Go emits an authenticated status event at a slower rate than
+        # Delphi's 20ms UI timer; propagate each event to every PageStatus
+        # mode, not only the first. The native provenance remains separate
+        # from unverified original DSP/firmware fields.
+        self.original_shell.refresh_status()
         return evidence
 
     def _invalidate_native_live_status(self,reason):
@@ -2664,8 +2668,9 @@ class MainWindow(QMainWindow):
         self._measurement_connection_error=any(word in detail for word in (
             "rejected","invalid","ошибка","failed"))
         self.original_shell.measure_controls.render()
-        if self.original_status_mode.currentIndex()==0:
-            self.original_shell.refresh_status()
+        # Old per-channel counters must disappear in all fifteen modes
+        # as soon as this Native status loses trusted provenance.
+        self.original_shell.refresh_status()
 
     def _receive_live_preview(self, preview):
         if not self._live_active:

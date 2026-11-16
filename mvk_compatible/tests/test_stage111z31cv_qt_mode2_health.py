@@ -73,6 +73,18 @@ def test_source_96dpi_panel_live_status_silence_and_ten_channels(qt_app):
         assert panel.status.text()=="Ошибки входного потока"
         assert panel.bad_indicator.isVisible()
         assert win.measurement_connection_display().phase=="STREAM_ERRORS"
+        # This status was pushed WHILE source mode 5, without revisiting
+        # the first PageStatus tab. Its receipt must update on the spot.
+        updated=win.original_shell.status_page.property(
+            "sourceNativeLiveQualityReceipt")
+        assert updated["native_invalid_frames"]==3
+        assert updated["native_data_integrity_alert"]
+        win._invalidate_native_live_status("Native status source rejected")
+        qt_app.processEvents()
+        cleared=win.original_shell.status_page.property(
+            "sourceNativeLiveQualityReceipt")
+        assert cleared["native_channels_observed"]==0
+        assert cleared["original_device_system_fields_proven"]==0
         win._end_live_capture(False)
         qt_app.processEvents()
         assert win._measurement_mode_selected
