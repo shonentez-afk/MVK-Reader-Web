@@ -154,3 +154,32 @@ def test_mode2_exit_without_tcp_never_claims_transport():
     assert not trace.receipt()["native_capture_started"]
     assert trace.receipt()["events_seen"]==2
     assert trace.receipt()["hardware_commands_sent"]==0
+
+
+def test_bound_run_cannot_silently_drop_identity_after_valid_status():
+    trace=OriginalMode2RuntimeTrace()
+    trace.enter_mode2()
+    trace.native_started()
+    trace.observe_native(source_status(session=RUN,frames=42,raw=42000))
+    with pytest.raises(ValueError,match="lost source session identity"):
+        trace.observe_native(source_test_transport(frames=43))
+    assert trace.receipt()["native_run_bound"]
+    assert trace.receipt()["native_frames_decoded"]==42
+
+
+def test_long_live_fault_trace_is_bounded_and_rate_failure_is_atomic():
+    faults=OriginalMode2FaultRoutes()
+    for _ in range(90):
+        faults.record_native_fault("NO_PACKET")
+    report=faults.receipt()
+    assert report["event_count"]==90
+    assert report["events_retained"]==64
+    assert len(report["events"])==64
+    queue=OriginalMode2CommandQueue()
+    for index in range(256):
+        queue.queue_command(2,0,index)
+    with pytest.raises(ValueError,match="exhausted"):
+        queue.set_rate(32768)
+    assert queue.source_rate_code==DEFAULT_RATE_CODE
+    assert len(queue.pending)==256
+    assert queue.shutdown()["pending_discarded"]==256
