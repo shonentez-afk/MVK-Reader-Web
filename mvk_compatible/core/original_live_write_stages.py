@@ -108,6 +108,7 @@ class OriginalSourceWriteWindow:
     end_frames:int
     operator_begin_utc:str
     operator_end_utc:str
+    boundary_mode:str="LAST_VERIFIED_NATIVE_STATUS"
 
     def receipt(self):
         return {
@@ -115,7 +116,11 @@ class OriginalSourceWriteWindow:
             "selected_channels":[i+1 for i,v in enumerate(self.channels) if v],
             "source_spec_flags":sum(self.spec),
             "source_values_flags":sum(self.values),
-            "sample_bounds_from_last_verified_status":True,
+            "sample_bounds_from_last_verified_status":
+                self.boundary_mode=="LAST_VERIFIED_NATIVE_STATUS",
+            "sample_bounds_from_go_decoded_frame":
+                self.boundary_mode=="BEFORE_NEXT_REASSEMBLED_APPLICATION_FRAME",
+            "source_boundary_mode":self.boundary_mode,
             "start_samples":list(self.start_samples),
             "end_samples":list(self.end_samples),
             "start_aux":self.start_aux,
@@ -140,6 +145,10 @@ class OriginalLiveWriteLedger:
         self.windows=[]
         self.errors=[]
         self.finished=False
+        self.frame_marks_required=False
+        self.frame_marks_verified=False
+        self.frame_marks_failed=False
+        self.frame_mark_actions=[]
 
     @property
     def trustworthy(self):
@@ -226,6 +235,26 @@ class OriginalLiveWriteLedger:
             self.values_stage=STAGE_IDLE
         return self.receipt()
 
+    def register_native_frame_mark(self,receipt,plan):
+        """Bind ONE actually queued GUI event to this authenticated run."""
+        if (not self.trustworthy or
+                not isinstance(plan,OriginalLiveFilePlan) or
+                not isinstance(receipt,dict) or
+                receipt.get("session_id")!=self.session_id or
+                receipt.get("sequence")!=len(self.frame_mark_actions)+1 or
+                receipt.get("event") not in (
+                    "data_begin","data_end","values_begin","values_end") or
+                receipt.get("queued_local_only") is not True or
+                receipt.get("device_commands_sent") is not False):
+            raise ValueError("Source frame mark not queued for this run")
+        self.frame_marks_required=True
+        self.frame_mark_actions.append({
+            "sequence":receipt["sequence"],"event":receipt["event"],
+            "channels":tuple(plan.channels),"spec":tuple(plan.spec),
+            "values":tuple(plan.values),
+        })
+        return self.receipt()
+
     def finish(self,*,accepted:bool):
         """Close only on VERIFIED final Go export; rejects unfinished fault."""
         if type(accepted) is not bool:
@@ -262,6 +291,10 @@ class OriginalLiveWriteLedger:
             "hardware_commands_sent":False,
             "original_write_bytes_identical":False,
             "native_full_raw_not_filtered":True,
+            "source_native_frame_marks_requested":self.frame_marks_required,
+            "source_native_frame_marks_verified":self.frame_marks_verified,
+            "source_native_mark_event_count":len(self.frame_mark_actions),
+            "source_native_frame_marks_failed":self.frame_marks_failed,
         }
 
 
@@ -316,6 +349,12 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
     if len(ledger.windows)>MAX_WINDOWS or not ledger.session_id:
         raise ValueError("Original writer window count/run identity invalid")
     flow.source_record()
+    frame_mark_evidence=None
+    if ledger.frame_marks_required:
+        from .source_frame_mark_protocol import accept_native_frame_mark_audit
+        # Requests to Go require authentic next-frame marks. Never
+        # substitute the previous periodic Qt status if Go did not ACK.
+        frame_mark_evidence=accept_native_frame_mark_audit(ledger,flow)
     source=Path(flow.session.path).resolve()
     if source.is_symlink() or source.parent.name!=ledger.session_id:
         raise ValueError("This ZIP is NOT from the recorded Native run")
@@ -406,7 +445,11 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "windows":[w.receipt() for w in ledger.windows],
             "files":emitted,
             "missing_source_channels":skipped,
-            "source_segment_boundaries_are_last_native_status_poll":True,
+            "source_segment_boundaries_are_last_native_status_poll":
+                not ledger.frame_marks_required,
+            "source_segment_boundaries_at_next_native_complete_frame":
+                bool(ledger.frame_marks_verified),
+            "native_source_frame_mark_evidence":frame_mark_evidence,
             "original_tmkvthread_byte_exact_recording":False,
             "original_write_data_stage_recovered":True,
             "original_write_values_stage_recovered":True,
