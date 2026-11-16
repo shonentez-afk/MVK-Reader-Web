@@ -38,11 +38,22 @@ def _visible_pointer(win,button):
     mapped=button.mapTo(pane.viewport(),point)
     assert pane.viewport().rect().contains(mapped), (
         button.objectName(),mapped,pane.viewport().rect())
+    # The Qt viewport owns clipping. Recursively hit-test its REAL visible
+    # child, which detects overlap by a QLabel/another widget and a button
+    # outside its QScrollArea even on noninteractive Windows CI desktops.
+    target=pane.viewport().childAt(mapped)
+    assert target is button or (
+        target is not None and button.isAncestorOf(target)), (
+        button.objectName(),target.objectName() if target else "no Qt hit")
     if sys.platform=="win32" and os.environ.get("QT_QPA_PLATFORM")=="windows":
-        target=QApplication.widgetAt(button.mapToGlobal(point))
-        assert target is button or (
-            target is not None and button.isAncestorOf(target)), (
-            button.objectName(),target.objectName() if target else "no hit")
+        # GitHub-hosted Windows agents have a noninteractive desktop; Win32
+        # global QApplication.widgetAt() may report None despite an actually
+        # visible, pointer-clickable Qt viewport. If it gives a result,
+        # require consistency. A null OS-global hit is not a Qt click fail.
+        global_hit=QApplication.widgetAt(button.mapToGlobal(point))
+        if global_hit is not None:
+            assert global_hit is button or button.isAncestorOf(global_hit)
+        win.setProperty("sourceNativeGlobalHitAvailable",global_hit is not None)
 
 
 def _capture(win,name,digest):
