@@ -797,11 +797,28 @@ class OriginalRootShell:
             # A frame count is NOT the device calculation counter.
             native_status=getattr(self.window,"_native_live_status",None)
             model=connected_system_status(native_status)
+            trace=getattr(self.window,"_source_mode2_runtime",None)
+            source_cells=trace.status_cells.receipt() if trace is not None else None
+            known=(source_cells["source_status_cells_valid_count"]
+                   if source_cells is not None else 0)
+            if known:
+                # 14 source StatusCells are NOT the 15 labels below:
+                # never invent serial, firmware, Modbus or DSP values.
+                note=(f"Получено {known}/14 исходных StatusCells "
+                      "из проверенных регистров; соответствие 15 "
+                      "системным строкам не доказано.")
+                if source_cells["source_system_error_latched_until_new_capture"]:
+                    code=source_cells["source_statuscells0_uint32"]
+                    detail=(f"0x{code:08X}" if isinstance(code,int) and code>0
+                            else "ранее подтверждена")
+                    note=("Системная ошибка прибора: "+detail+
+                          " (source StatusCells[0]); "+note)
+            else:
+                note=("Пассивный приёмник подтверждает состояние потока; "
+                      "системные StatusCells прибора ещё не получены.")
             live_table=StatusTable(
                 0,ORIGINAL_OPERATOR_STATUS_TABS[0],
-                model.headers,model.rows,
-                "Из пассивного приёмника подтверждено состояние потока; "
-                "системные регистры прибора ещё не получены.",
+                model.headers,model.rows,note,
                 provenance=CONNECTED_SOURCE)
             from ..core.original_status_workbench import OriginalStatusProjection
             result=OriginalStatusProjection(
