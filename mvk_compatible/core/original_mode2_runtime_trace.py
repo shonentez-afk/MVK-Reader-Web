@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .original_connected_status import connected_system_status
 from .original_mode2_rx_evidence import OriginalMode2ReceiveEvidence
+from .original_mode2_retry_timing import OriginalSourceRetryPlan
 from .original_mode2_command_queue import (
     OriginalMode2CommandQueue, OriginalMode2FaultRoutes,
 )
@@ -43,6 +44,7 @@ class OriginalMode2RuntimeTrace:
         self.command_model = OriginalMode2CommandQueue()
         self.fault_routes = OriginalMode2FaultRoutes()
         self.receive_evidence=OriginalMode2ReceiveEvidence()
+        self.source_retry_plan=OriginalSourceRetryPlan()
         self.phase = "IDLE"
         self.capture_started = False
         self.stop_requested = False
@@ -210,6 +212,7 @@ class OriginalMode2RuntimeTrace:
             "original_timer_behavior_reproduced": False,
             "original_queue": self.command_model.receipt(),
             "original_receive_protocol": self.receive_evidence.receipt(),
+            "original_retry_plan_only": self.source_retry_plan.receipt(),
             "source_initial_rate_queued_offline":
                 self.source_initial_rate_queued_offline,
             "source_selected_sample_rate_code": (
