@@ -51,7 +51,9 @@ def test_actual_qt_20ms_interface_timer_follows_only_visible_source_page(
             assert receipt["active_page_handler_address"]==handler
             assert receipt["active_page_handler_count"]==1
             assert receipt["pnmeasure_source_handler_address"]=="008486F4"
-            selected=win.original_root_tabs.currentWidget()
+            assert win.original_root_tabs.property(
+                "sourceOriginalInterfaceTickReceipt")==receipt
+            selected=win.original_shell.stack.currentWidget()
             assert selected.property(
                 "sourceOriginalInterfaceTickReceipt")==receipt
             assert win.original_measure_controls.panel.property(
