@@ -56,6 +56,7 @@ type Summary struct {
 	IdentityFrames         uint64            `json:"identity_frames"`
 	FullSnapshots          uint64            `json:"full_register_snapshots"`
 	RegisterUpdates        uint64            `json:"register_update_frames"`
+	SourceNonemptyParameters uint64          `json:"source_rx_nonempty_parameter_frames"`
 	RegisterBlocks         uint64            `json:"register_blocks"`
 	Aux4700                uint64            `json:"aux4700_updates"`
 	ValuesTicks            uint64            `json:"values_ticks_address_3100"`
@@ -320,6 +321,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 			m.summary.RegisterBlocks++
 		}
 		m.summary.RegisterUpdates++
+		// Original _Unit125:00808617 changes Stage=0->1 on a
+		// well-formed register frame with at least one descriptor.
+		// This is READ evidence, never an actual Delphi TMVKThread.
+		if len(blocks) > 0 { m.summary.SourceNonemptyParameters++ }
 		if m.liveBin != nil {
 			if e := m.liveBin.paramFrame(f, blocks, &m.image); e != nil {
 				return e
