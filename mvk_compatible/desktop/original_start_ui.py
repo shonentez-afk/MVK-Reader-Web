@@ -30,6 +30,7 @@ from ..core.original_start_workbench import (
     START_LIBRARY_DEFAULT,START_IP_RECT,START_LIBRARY_RECT,
     START_OPERATOR_CAPTIONS,START_OPERATOR_IP_LABEL,
     START_OPERATOR_LIBRARY_LABEL,START_OPERATOR_REFERENCE,
+    source_measure_button_caption,
 )
 from ..core.original_ui_form_contract import ORIGINAL_TASK_BUTTONS
 from .source_visual_skin import SourceStartBackdrop
@@ -185,6 +186,22 @@ class OriginalStartController:
                 obsolete.hide()
         self.apply_private_icons()
         window.original_start_controller=self
+        self.sync_measurement_button()
+
+    def sync_measurement_button(self):
+        """Source task command switches caption on entering/leaving Mode2.
+
+        Original source runtime localization keys are source-verified;
+        the alternative Russian text is a compatible fallback only.
+        """
+        mode2=bool(self.window._measurement_mode_selected)
+        caption,key=source_measure_button_caption(mode2)
+        button=self.buttons["bTaskConnect"]
+        button.setText(caption)
+        button.setProperty("sourceOriginalCaptionKey",key)
+        button.setProperty("sourceOriginalCaptionTranslationVerified",not mode2)
+        button.setProperty("sourceMode2ButtonDisconnectAction",mode2)
+        return key
 
     def apply_private_icons(self):
         """Install only transient private DFM icons on real Qt buttons."""

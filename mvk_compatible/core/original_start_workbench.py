@@ -40,6 +40,21 @@ START_OPERATOR_CAPTIONS = {
 START_OPERATOR_IP_LABEL = "IP-адрес прибора:"
 START_OPERATOR_LIBRARY_LABEL = "Папка хранения результатов измерений:"
 START_OPERATOR_REFERENCE = "OPERATOR_ORIGINAL_IDLE_TASKS_20261116_COMPARISON"
+
+# Source _Unit128:00846E1F localizes bTaskConnectOff after the
+# TMVKThread startup and 00847186 restores bTaskConnect on teardown.
+# The private vendor Russian translation for bTaskConnectOff has NOT
+# been verified. "Отключить" is an explicitly compatible fallback.
+SOURCE_MEASURE_MODE_TITLES=(
+    ("Измерение","bTaskConnect"),
+    ("Отключить","bTaskConnectOff"),
+)
+
+
+def source_measure_button_caption(mode2_selected:bool):
+    if type(mode2_selected) is not bool:
+        raise ValueError("Source Mode2 button requires a Boolean")
+    return SOURCE_MEASURE_MODE_TITLES[int(mode2_selected)]
 assert set(START_OPERATOR_CAPTIONS)=={row[0] for row in START_BUTTONS}
 
 LIBRARY_SUFFIXES=frozenset((".zip",".bin",".tsxml"))

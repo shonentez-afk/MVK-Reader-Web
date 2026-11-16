@@ -2462,6 +2462,7 @@ class MainWindow(QMainWindow):
         if self._measurement_mode_selected:
             return False
         self._measurement_mode_selected=True
+        self.original_start_controller.sync_measurement_button()
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
         self._native_live_status=None
@@ -2537,6 +2538,7 @@ class MainWindow(QMainWindow):
         parked=self._live_prior_session
         self._live_prior_session=None
         self._measurement_mode_selected=False
+        self.original_start_controller.sync_measurement_button()
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
         self._native_live_status=None
@@ -2787,6 +2789,7 @@ class MainWindow(QMainWindow):
             has_parked_archive=self._live_prior_session is not None)
         self._measurement_connection_error=completion.connection_error
         self._measurement_mode_selected=completion.keep_mode2
+        self.original_start_controller.sync_measurement_button()
         self._measurement_exit_requested=False
         self.original_shell.measure_controls.end_live()
         self._live_preview=None

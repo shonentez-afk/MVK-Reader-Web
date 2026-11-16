@@ -65,6 +65,8 @@ def test_actual_original_measure_button_enters_five_tabs_before_tcp(
         start=win.original_start_controller
         button=start.buttons["bTaskConnect"]
         assert not win._measurement_mode_selected
+        assert button.text()=="Измерение"
+        assert button.property("sourceOriginalCaptionKey")=="bTaskConnect"
         assert win.original_visual_skin.snapshot()[
             "visible_source_tabs"]==["PageStart"]
         assert not win.original_measure_controls.panel.isVisible()
@@ -73,6 +75,9 @@ def test_actual_original_measure_button_enters_five_tabs_before_tcp(
         assert called==[(2,list(ORIGINAL_LIVE_VISIBLE),
                          "Ожидание подключения к прибору",False)]
         assert win._measurement_mode_selected
+        assert button.text()=="Отключить"
+        assert button.property("sourceOriginalCaptionKey")=="bTaskConnectOff"
+        assert not button.property("sourceOriginalCaptionTranslationVerified")
         assert win._native_live_status is None
         assert win.session is None
         panel=win.original_measure_controls
@@ -100,6 +105,8 @@ def test_actual_original_measure_button_enters_five_tabs_before_tcp(
         settle(qt_app)
         assert len(called)==1
         assert not win._measurement_mode_selected
+        assert button.text()=="Измерение"
+        assert button.property("sourceOriginalCaptionKey")=="bTaskConnect"
         assert win.original_visual_skin.snapshot()[
             "visible_source_tabs"]==["PageStart"]
         assert not panel.panel.isVisible()

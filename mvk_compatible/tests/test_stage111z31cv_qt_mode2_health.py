@@ -24,6 +24,9 @@ def test_source_96dpi_panel_live_status_silence_and_ten_channels(qt_app):
     try:
         assert win.enter_measurement_mode()
         qt_app.processEvents()
+        button=win.original_start_controller.buttons["bTaskConnect"]
+        assert button.text()=="Отключить"
+        assert button.property("sourceOriginalCaptionKey")=="bTaskConnectOff"
         panel=win.original_measure_controls
         geom=panel.panel.property("sourceOriginalDfmDpiReceipt")
         assert geom["dfm_pixels_per_inch"]==96
