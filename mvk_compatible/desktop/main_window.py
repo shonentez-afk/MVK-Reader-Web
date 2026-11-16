@@ -2960,6 +2960,12 @@ class MainWindow(QMainWindow):
             has_parked_archive=self._live_prior_session is not None)
         self._measurement_connection_error=completion.connection_error
         self._measurement_mode_selected=completion.keep_mode2
+        if not completion.keep_mode2 and not exported:
+            # The operator pressed the original second Mode2 button:
+            # Native has now stopped and the same Core trace must also
+            # leave Mode2, rather than claiming tabs are still selected.
+            self._source_mode2_runtime.leave_after_native()
+            self._sync_source_mode2_runtime()
         self.original_start_controller.sync_measurement_button()
         self._measurement_exit_requested=False
         if exported:
