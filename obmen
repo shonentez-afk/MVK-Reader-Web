@@ -1,2 +1,18 @@
+$key = Read-Host "Token Harbor API Key" -AsSecureString
+$token = [System.Net.NetworkCredential]::new("", $key).Password
 
-thk_live_z1jjjTJMDvy3XNY1r-vqr70-DC5L6voGveKnmUgJIPlriYgNNNUBcGpMBZR2FzZW
+try {
+    $result = Invoke-RestMethod `
+        -Uri "https://tokenharbor.ai/v1/models" `
+        -Headers @{ Authorization = "Bearer $token" } `
+        -Method Get
+
+    Write-Host "API key accepted"
+    $result.data | Select-Object -First 5 -Property id
+}
+catch {
+    Write-Host "Error:" $_.Exception.Message
+}
+finally {
+    Remove-Variable token, key -ErrorAction SilentlyContinue
+}
