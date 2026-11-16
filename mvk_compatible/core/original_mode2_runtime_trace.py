@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from .original_connected_status import connected_system_status
 from .original_mode2_rx_evidence import OriginalMode2ReceiveEvidence
 from .original_mode2_retry_timing import OriginalSourceRetryPlan
+from .original_mode2_received_frames import OriginalSourceReadFramer
 from .original_mode2_wire_word_candidate import plan_verified_source_rate_command
 from .original_mode2_command_queue import (
     OriginalMode2CommandQueue, OriginalMode2FaultRoutes,
@@ -56,6 +57,11 @@ class OriginalMode2RuntimeTrace:
         self.finished = False
         self.source_initial_rate_queued_offline = False
         self.source_initial_rate_write_calls_dry_run: dict | None = None
+        # Source 0084DEA4 toggles TMVKThread.FreezeUpdate. The passive
+        # Go recorder cannot own that hardware flag; this is a parallel
+        # source PROCESSING-gate model, tied to actual Qt preview pause.
+        self.source_processing_reference=OriginalSourceReadFramer()
+        self.source_preview_freeze_requested=False
 
     def _event(self, name: str):
         self._event_total += 1
@@ -149,6 +155,21 @@ class OriginalMode2RuntimeTrace:
         self._event("NATIVE_STATUS")
         return self.receipt()
 
+    def set_source_preview_freeze(self, frozen: bool):
+        """Mirror real bFreezeUpdate click in the offline Delphi gate.
+
+        Do not change Go RAW, Type/Length receiving, or any hardware
+        calibration. Source FreezeUpdate skips ProcessBufferChunk while
+        a valid packet can still change Stage through PARAM headers.
+        """
+        if (type(frozen) is not bool or not self.capture_started or
+                self.stop_requested or self.finished):
+            raise ValueError("Source FreezeUpdate only during active Mode2")
+        self.source_processing_reference.freeze(frozen)
+        self.source_preview_freeze_requested=frozen
+        self._event("SOURCE_FREEZE_ON" if frozen else "SOURCE_FREEZE_OFF")
+        return self.receipt()
+
     def awaiting_native_status(self):
         """No Go JSON yet is a WAIT, not a spurious Delphi TCP fault."""
         if not self.capture_started or self.finished:
@@ -230,6 +251,12 @@ class OriginalMode2RuntimeTrace:
                 self.source_initial_rate_write_calls_dry_run,
             "source_initial_write_calls_physically_sent": False,
             "original_retry_plan_only": self.source_retry_plan.receipt(),
+            "source_preview_freeze_requested":
+                self.source_preview_freeze_requested,
+            "source_source_processing_freeze_gate_offline":
+                self.source_processing_reference.receipt(),
+            "actual_tmkvthread_freeze_updated": False,
+            "native_go_raw_capture_continues_during_preview_freeze": True,
             "source_initial_rate_queued_offline":
                 self.source_initial_rate_queued_offline,
             "source_selected_sample_rate_code": (
