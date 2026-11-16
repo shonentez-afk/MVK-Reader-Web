@@ -72,7 +72,10 @@ def test_original_measure_state_native_live_preview_freeze_does_not_write_device
     assert newer.report()["original_thread_freeze_flag_set"] is False
     assert not newer.report()["native_recorder_filter_or_sample_rate_changed"]
     assert not newer.report()["device_commands_sent"]
-    assert not newer.report()["original_sample_rate_menu_values_verified"]
+    assert newer.report()["original_sample_rate_menu_values_verified"]
+    assert newer.report()["source_original_rate_menu_tags"]==[
+        65536,32768,8192,2048,512]
+    assert not newer.report()["original_hardware_rate_setting_verified"]
     assert newer.invalidate_preview().observed_sample_rate_hz is None
     with pytest.raises(ValueError,match="another capture"):
         newer.accept_preview(_synthetic_preview("ANOTHER-CAPTURE"))
