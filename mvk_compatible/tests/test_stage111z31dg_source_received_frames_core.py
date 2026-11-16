@@ -148,9 +148,15 @@ def test_source_type_to_channel_8adc_2tach_gate(kind,ch):
     assert src.receipt()["source_buffer_chunks_drained"]==1
 
 
-def test_original_source_ack_and_empty_param_do_not_mark_readiness():
+def test_original_source_ack_and_undersized_empty_param_do_not_mark_readiness():
     src=OriginalSourceReadFramer()
-    empty=frame(TYPE_REGISTERS,[0,0,0,0,0])
-    assert src.feed(empty)[0].source_stage==0
     assert src.feed(frame(TYPE_ACK))[0].source_stage==0
     assert src.receipt()["frames_with_register_blocks"]==0
+    # 0080839E requires at least 6 body DWORDS. With 0 descriptor
+    # count a raw 5-word header is undersized (28 bytes), so it cannot
+    # transition Stage 0 -> 1 or silently become a synthetic status.
+    empty=frame(TYPE_REGISTERS,[0,0,0,0,0])
+    with pytest.raises(OriginalSourceRxError):
+        src.feed(empty)
+    assert src.receipt()["original_source_stage_simulated"]==0
+    assert src.receipt()["failed_closed"]
