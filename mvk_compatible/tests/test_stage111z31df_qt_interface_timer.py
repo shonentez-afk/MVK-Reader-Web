@@ -19,11 +19,13 @@ def test_actual_qt_20ms_interface_timer_follows_only_visible_source_page(
     qt_app.processEvents()
     try:
         timer=win._source_interface_qtimer
-        core=win._source_interface_clock
+        idle_core=win._source_interface_clock
         assert timer.interval()==20
         assert not timer.isActive()
-        assert not core.running
+        assert not idle_core.running
         assert win.enter_measurement_mode()
+        core=win._source_interface_clock
+        assert core is not idle_core
         assert not timer.isActive()  # source thread NOT created yet
         win._begin_live_capture()   # simulation, no QProcess/TCP
         assert timer.isActive()
@@ -31,8 +33,8 @@ def test_actual_qt_20ms_interface_timer_follows_only_visible_source_page(
         QTest.qWait(75)
         assert core.receipt()["ticks_total"]>=1
         initial=core.receipt()["last_tick"]
-        assert initial["active_page_name"]=="PageStart"
-        assert initial["active_page_handler_address"] is None
+        assert initial["active_page_name"]=="PageStatus"
+        assert initial["active_page_handler_address"]=="008475BC"
         assert initial["pnmeasure_source_handler_address"]=="008486F4"
 
         # Source 00847248 invokes EXACTLY the active page branch.
@@ -90,7 +92,7 @@ def test_failed_native_retry_renews_20ms_timer_without_reusing_old_ticks(
         second=win._source_interface_clock
         assert second is not first
         assert second.running
-        assert second.tick_count==0
+        assert second.tick_count>=1  # source 00846EE4 direct dispatch
         assert win._source_interface_qtimer.isActive()
         QTest.qWait(50)
         assert second.tick_count>=1
