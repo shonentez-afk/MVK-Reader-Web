@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
+from PySide6.QtCore import Qt, QEvent
+from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget, QScrollArea
 
 
 class SourceControlCanvas(QWidget):
@@ -23,6 +23,7 @@ class SourceControlCanvas(QWidget):
         control_spec: Sequence[tuple[str, str, int, int, int, int]],
         bindings: Mapping[str, QWidget],
         name: str,
+        tab_order: Sequence[str] | None = None,
     ) -> None:
         super().__init__(parent)
         source_names = {entry[0] for entry in control_spec}
@@ -32,6 +33,14 @@ class SourceControlCanvas(QWidget):
                 f"missing={sorted(source_names-set(bindings))}, "
                 f"extra={sorted(set(bindings)-source_names)}")
         self.setObjectName(name)
+        self._focus_controls=set(bindings.values())
+        focus_names={key for key,value in bindings.items()
+                     if not isinstance(value,QLabel)}
+        if tab_order is not None and (len(set(tab_order))!=len(tab_order)
+                or set(tab_order)!=focus_names):
+            raise ValueError("DFM TabOrder must list each button exactly once")
+        self._source_tab_order=tuple(tab_order or ())
+        self.setProperty("originalDfmTabOrder",self._source_tab_order)
         self._source_controls = tuple(
             (left, top, width, height, bindings[source_name])
             for source_name, _, left, top, width, height in control_spec)
@@ -55,7 +64,27 @@ class SourceControlCanvas(QWidget):
             if isinstance(widget, QLabel):
                 widget.setAlignment(Qt.AlignCenter)
                 widget.setWordWrap(True)
+            widget.installEventFilter(self)
             widget.show()
+        if self._source_tab_order:
+            for order,source_name in enumerate(self._source_tab_order):
+                bindings[source_name].setProperty("originalDfmTabOrder",order)
+            for current,following in zip(
+                    self._source_tab_order,self._source_tab_order[1:]):
+                QWidget.setTabOrder(bindings[current],bindings[following])
+
+    def eventFilter(self, watched, event):
+        # When the native source panel is clipped at 150% DPI, moving
+        # focus via *original* TabOrder must reveal the real control in
+        # the scroll viewport, not just activate an invisible widget.
+        if event.type()==QEvent.FocusIn and watched in self._focus_controls:
+            ancestor=self.parentWidget()
+            while ancestor is not None and not isinstance(ancestor,QScrollArea):
+                ancestor=ancestor.parentWidget()
+            if ancestor is not None:
+                ancestor.ensureWidgetVisible(watched,0,6)
+                self.setProperty("sourceDfmFocusRevealedInViewport",True)
+        return super().eventFilter(watched,event)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -79,8 +108,10 @@ def source_control_canvas(
     *,
     name: str,
     panel_width: int = 177,
+    tab_order: Sequence[str] | None = None,
 ) -> SourceControlCanvas:
     """Place source controls; panel_width is surrounding DFM pn*Tools width."""
     if panel_width < max(x + w for _, _, x, _, w, _ in control_spec):
         raise ValueError("Source panel is narrower than its DFM controls")
-    return SourceControlCanvas(parent, control_spec, bindings, name)
+    return SourceControlCanvas(parent, control_spec, bindings, name,
+                               tab_order=tab_order)

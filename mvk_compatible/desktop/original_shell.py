@@ -693,6 +693,12 @@ class OriginalRootShell:
                 self.stack.setCurrentIndex(4 if root_index == 2 else 0)
                 old_index = {0: 0, 2: 0, 3: 1, 4: 2}[root_index]
                 self.window.tabs.setCurrentIndex(old_index)
+                if root_index == 4:
+                    # Reenter native Spectrum at the top source controls,
+                    # even after a compact screen scrolled down to Save.
+                    skin=getattr(self.window,"original_visual_skin",None)
+                    if skin is None or not skin.technical:
+                        self.window.spec_tools.verticalScrollBar().setValue(0)
                 if root_index == 0:
                     self.window.task_subpages.setCurrentIndex(0)
                 elif root_index == 2:

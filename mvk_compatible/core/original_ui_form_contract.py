@@ -92,6 +92,16 @@ ORIGINAL_SPECTRUM_CONTROLS = (
     ("bSpecCopyValue", "TButton", 9, 464, 162, 41),
     ("bSpecSaveValue", "TButton", 9, 511, 162, 41),
 )
+# Source-verified original mvkform.dfm TButton.TabOrder, not visual Y order.
+# In PageSpectrum Envelope sits at y=9 but is keyboard TabOrder=6.
+ORIGINAL_SPECTRUM_TAB_ORDER = (
+    "bSpecType", "bSpecLines", "bSpecHScale", "bSpecVScale",
+    "bSpecCopyValue", "bSpecSaveValue", "bSpecEnvelopeType",
+)
+ORIGINAL_WAVE_TAB_ORDER = (
+    "bAdcType", "bAdcHScale", "bAdcVScale", "bAdcEnvelopeType",
+)
+
 ORIGINAL_WAVE_CONTROLS = (
     ("bAdcEnvelopeType", "TButton", 9, 9, 162, 41),
     ("bAdcType", "TButton", 9, 56, 162, 41),

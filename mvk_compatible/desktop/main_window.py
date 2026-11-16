@@ -111,7 +111,8 @@ from .source_envelope_popup import (
     build_source_envelope_popup, sync_source_envelope_popup,
 )
 from ..core.original_ui_form_contract import (
-    ORIGINAL_WAVE_CONTROLS, ORIGINAL_SPECTRUM_CONTROLS)
+    ORIGINAL_WAVE_CONTROLS, ORIGINAL_SPECTRUM_CONTROLS,
+    ORIGINAL_WAVE_TAB_ORDER, ORIGINAL_SPECTRUM_TAB_ORDER)
 
 
 class MainWindow(QMainWindow):
@@ -657,7 +658,8 @@ class MainWindow(QMainWindow):
                 "bAdcVScale": self.wave_vscale_button,
                 "lbAdcHint": self.wave_cursor_primary,
                 "lbMean": self.wave_mean_primary,
-            }, name="DFMPageAdcSourceCanvas")
+            }, name="DFMPageAdcSourceCanvas",
+            tab_order=ORIGINAL_WAVE_TAB_ORDER)
         left.addWidget(self.wave_source_canvas)
         self.wave_advanced_button.setFixedHeight(28)
         left.addWidget(self.wave_advanced_button)
@@ -1563,7 +1565,8 @@ class MainWindow(QMainWindow):
                 "lbSpecMean": self.spec_mean_primary,
                 "bSpecCopyValue": self.spec_copy_button,
                 "bSpecSaveValue": self.spec_save_button,
-            }, name="DFMPageSpectrumSourceCanvas")
+            }, name="DFMPageSpectrumSourceCanvas",
+            tab_order=ORIGINAL_SPECTRUM_TAB_ORDER)
         stack.setContentsMargins(0,0,0,0)
         stack.setSpacing(0)
         stack.addWidget(self.spec_source_canvas)
