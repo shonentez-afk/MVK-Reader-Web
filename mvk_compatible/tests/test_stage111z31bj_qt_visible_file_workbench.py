@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QPushButton, QTabWidget
+from PySide6.QtWidgets import QPushButton, QTabWidget, QFileDialog
 
 from .test_desktop_qt import qt_app
 from .test_offline_core import fixture_zip
@@ -30,8 +30,13 @@ def capture_synthetic_ui_if_requested(window, app, name: str) -> None:
 
 
 def test_source_file_workspace_real_values_and_actual_graph_navigation(
-        qt_app,tmp_path):
+        qt_app,tmp_path,monkeypatch):
     from mvk_compatible.desktop.main_window import MainWindow
+    source=fixture_zip(tmp_path,sample_count=4096)
+    dialog_calls=[]
+    monkeypatch.setattr(
+        QFileDialog,"getOpenFileName",
+        lambda *args,**kw:(dialog_calls.append(args) or (str(source),"")))
     win=MainWindow()
     win.show()
     qt_app.processEvents()
@@ -40,15 +45,23 @@ def test_source_file_workspace_real_values_and_actual_graph_navigation(
         assert win.original_root_tabs.count()==7
         start=win.original_start_launcher.findChild(QPushButton,"bTaskView")
         assert start is not None
-        start.click()
-        qt_app.processEvents()
-        assert win.original_root_tabs.currentIndex()==5
         assert ui.file_metadata.rowCount()==0
         assert ui.file_action_buttons["fileGoSignal"].isEnabled() is False
         assert ui.file_action_buttons["fileGoSpectrum"].isEnabled() is False
         assert ui.file_action_buttons["fileGoStatus"].isEnabled() is False
-
-        win.open_archive(fixture_zip(tmp_path,sample_count=4096))
+        # Real operator route: opens Win32 common file picker immediately,
+        # not a compatible-only PageFile workspace.
+        start.click()
+        qt_app.processEvents()
+        assert len(dialog_calls)==1
+        assert dialog_calls[0][1]=="Открытие"
+        assert win.session is not None
+        assert win.original_visual_skin.snapshot()["visible_source_tabs"]==[
+            "PageStart","PageAdc","PageSpectrum"]
+        # This test also exercises the original PageFile model as an
+        # explicitly selected 7-page source component. Do not force a
+        # non-original PageFile tab into the ordinary archive header.
+        win.original_visual_skin.reveal_page(5)
         qt_app.processEvents()
         assert win.session is not None
         assert ui.file_page.findChild(QTabWidget,"tcFileActions").count()==2
