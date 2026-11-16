@@ -39,6 +39,7 @@ class LiveTransportHealth:
     stream_silent:bool
     data_integrity_alert:bool
     packet_age_s:float|None
+    received_operation_denied:bool=False
 
     def receipt(self):
         return {
@@ -50,6 +51,7 @@ class LiveTransportHealth:
             "native_nonfinite_samples":self.nonfinite_samples,
             "native_packet_silence":self.stream_silent,
             "native_data_integrity_alert":self.data_integrity_alert,
+            "native_operation_denied_received":self.received_operation_denied,
             "original_dsp_or_firmware_fields_inferred":False,
             "instrument_commands_issued":False,
         }
@@ -69,6 +71,10 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
     raw_invalid=snapshot.get("invalid_frames",0)
     if type(raw_invalid) is not int or raw_invalid<0:
         raise ValueError("Invalid decoded-frame count")
+    denied=snapshot.get("source_rx_denied_responses",0)
+    if type(denied) is not int or denied<0:
+        raise ValueError("Invalid passive source operation-denied counter")
+    operation_denied=denied>0
     age=snapshot.get("seconds_since_last_packet")
     if age is not None and (
             type(age) not in (float,int) or
@@ -80,8 +86,8 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
     channels=snapshot.get("channels")
     if channels is None:
         return LiveTransportHealth(
-            0,raw_invalid,0,0,silent,raw_invalid>0,
-            None if age is None else float(age))
+            0,raw_invalid,0,0,silent,raw_invalid>0 or operation_denied,
+            None if age is None else float(age),operation_denied)
     if not isinstance(channels,list) or len(channels)!=10:
         raise ValueError("Source Mode2 expects ten validated Native channels")
     gaps=0
@@ -99,8 +105,8 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
         nonfinite+=ch["nonfinite_samples"]
     return LiveTransportHealth(
         10,raw_invalid,gaps,nonfinite,silent,
-        raw_invalid>0 or gaps>0 or nonfinite>0,
-        None if age is None else float(age))
+        raw_invalid>0 or gaps>0 or nonfinite>0 or operation_denied,
+        None if age is None else float(age),operation_denied)
 
 
 def original_dpi_geometry(device_pixel_ratio:float)->dict:
