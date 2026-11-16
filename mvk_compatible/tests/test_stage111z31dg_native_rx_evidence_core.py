@@ -97,11 +97,18 @@ def test_integrated_original_mode2_core_receipt_keeps_ack_out_of_dry_run_queue()
     assert read["original_receive_protocol"][
         "original_source_stage_candidate_from_rx"]==1
     assert read["original_receive_protocol"]["native_received_ack_unattributed"]==1
-    assert len(src.command_model.pending)==1
-    assert src.command_model.pending[0]==original
+    assert len(src.command_model.pending)==0
+    assert src.command_model.taken==(original,)
+    offline=read["source_initial_rate_write_calls_dry_run"]
+    assert offline["source_header_write_calls"]==8
+    assert offline["source_followup_write_calls"]==1
+    assert offline["write_argument_uint32_hex"][-1]=="0x00010000"
+    assert not offline["device_command_sender_implemented"]
+    assert not read["source_initial_write_calls_physically_sent"]
     assert read["hardware_commands_sent"]==0
     status.update({FIELDS[2]:1,"frames_decoded":901})
     read=src.observe_native(status)
     assert read["last_events"][-2][1]=="PASSIVE_RX_OPERATION_DENIED"
     assert read["original_receive_protocol"]["denial_seen"]
-    assert len(src.command_model.pending)==1
+    assert len(src.command_model.pending)==0
+    assert src.command_model.taken==(original,)
