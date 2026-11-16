@@ -43,6 +43,9 @@ type LiveStatus struct {
     CaptureOnly            bool                `json:"capture_only"`
     AUXUpdates             uint64              `json:"aux4700_updates"`
     FullSnapshots          uint64              `json:"full_register_snapshots"`
+    SourceRXNonemptyParam   uint64              `json:"source_rx_nonempty_parameter_frames"`
+    SourceRXACKObserved     uint64              `json:"source_rx_ack_observed_no_command_issued"`
+    SourceRXDenials         uint64              `json:"source_rx_denied_responses"`
     WarningCount           uint64              `json:"warning_count"`
     SecondsSinceLastPacket *float64            `json:"seconds_since_last_packet"`
     LastAUXUTC             *string             `json:"last_aux_received_utc"`
@@ -93,6 +96,8 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         RawBytes: report.RawBytes, TotalFrames: report.TotalFrames,
         InvalidFrames: report.InvalidFrames, CaptureOnly: report.CaptureOnly,
         AUXUpdates: report.Aux4700, FullSnapshots: report.FullSnapshots,
+        SourceRXNonemptyParam: report.SourceNonemptyParameters,
+        SourceRXACKObserved: report.ACK, SourceRXDenials: report.Denials,
         WarningCount: report.WarningCount, LastAUXUTC: lastAUX,
         SecondsSinceLastPacket: since, Channels: channels,
         EndReason: report.EndReason,
