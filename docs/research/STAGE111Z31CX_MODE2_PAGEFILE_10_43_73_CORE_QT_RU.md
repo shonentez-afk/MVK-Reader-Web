@@ -44,3 +44,8 @@ complete byte contract and operator authorization are verified.
 Original 10-channel storage buffer/writer, exact source packet framing,
 rate command queue, real read-timeout/retry, simultaneous PageStatus /
 PageAdc / PageSpectrum / PageFile and operator-approved on-device E2E.
+
+
+## Stage111Z31CX acceptance, 2026-11-16
+
+GitHub Actions #43816866535, tested source SHA `dec43371a9a5bc234fe2cacdff3af1088fc88c04`, 4/4 SUCCESS. Linux Core 2007 pass, Windows Core 2200 pass, Qt smoke 49 pass, offscreen 100% 20 pass, 150% 164 pass; actual Windows QPA 100%/150% 20 pass each. Onefile EXE SHA256 `342f1d8f879546164220531812a8e1f548cf1f422edf21592c350937d1dd08fe`, ZIP artifact #14203167482. Three real regressions found in first CX native CI were fixed in Core+Qt commit `dec4337`: missing counters stay UNKNOWN, verified same-tick DSP/VALUES are rendered after archiveReady, and discarded Mode2 sources clear stale ten channel rows. Native R6.1 remains read-only; 10 channel control flags do NOT set original TMVKThread writer state.
