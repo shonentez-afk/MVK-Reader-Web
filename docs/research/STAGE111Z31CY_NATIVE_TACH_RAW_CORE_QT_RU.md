@@ -81,3 +81,9 @@ graphs. Windows Qt and core tests include DPI100/150 receipts.
 Original 10-channel source file recording state machine with masks,
 WriteData/WriteValues Begin/Stop, exact five original rates and device
 command queue recovery from IDP, and same-data E2E physical validation.
+
+## Итоговая приёмка Stage111Z31CY, 16.11.2026
+
+Проверенный код: 7482fa544d03c59d423c321c3701587a029ad994. [GitHub Actions #43823291560](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43823291560) — 4/4 SUCCESS. Linux Core 2016 PASS/117 SKIP; Windows Core 2212 PASS/7 SKIP; Qt smoke 49 PASS; Qt offscreen 100% DPI 23 PASS, 150% DPI 167 PASS; native Windows QPA 23 PASS на каждом масштабе. Native R6.1 Go test/vet PASS включая TACH RAW source, нарушения непрерывности, нечисловые отсчёты и исторический контракт из девятнадцати файлов. [Windows автономный EXE ZIP #14205731923](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43823291560/artifacts/14205731923), ZIP 69 098 142 байта, EXE SHA256 fb5e3e109ba49f79cb7a20aae5e91235d8e5a7daedd75170c559a71a6f041fb5, 69 096 792 байта.
+
+Предыдущие CI ошибки помогли выявить два настоящих дефекта: исходная Go строка записи JSON была ошибочно сформирована с переносом внутри символьной константы (исправлено в 780ab59); создание пустого TACH-аудита нарушало прежний 19-файловый экспорт даже когда TACH-кадров не было (исправлено в 7482fa5). Ранее существовавшие тесты Go НЕ изменялись и НЕ ослаблялись. Нет source IDP/DFM/скриншотов оператора/файлов данных в публичном репозитории.
