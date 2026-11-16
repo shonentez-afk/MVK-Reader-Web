@@ -2824,7 +2824,11 @@ class MainWindow(QMainWindow):
         self.spec_original_copy_compare.setEnabled(False)
         self.spec_canvas_geometry_button.setEnabled(False)
         self.refresh_calc()
-        self.tabs.setCurrentIndex(1)
+        # Original _Unit128:00846ECE..00846ED4 selects PageStatus on
+        # entering Mode2. Do NOT switch to legacy Qt waveform tab here:
+        # its currentChanged signal otherwise selects original PageAdc
+        # and violates the source immediate 00846EE4 dispatcher.
+        self.original_visual_skin.reveal_page(2)
         self.statusBar().showMessage('LIVE PREVIEW — единственный TCP-клиент Go R6.1, данные ещё не приняты')
         # Source Mode2 entry 00846EE4 calls 00847248 once directly
         # after TMVKThread.Create/SetRate, before the periodic timer.
