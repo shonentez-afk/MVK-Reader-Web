@@ -2728,6 +2728,8 @@ class MainWindow(QMainWindow):
             # A new, separately approved attempt requires a FRESH Core
             # command/fault/session identity; no old source writes carry over.
             self._source_mode2_runtime=OriginalMode2RuntimeTrace()
+            self._source_interface_clock=OriginalMode2InterfaceTimer()
+            self._source_interface_last_page=None
             self._source_mode2_runtime.enter_mode2()
         self._source_mode2_runtime.native_started()
         self._source_interface_clock.start()
