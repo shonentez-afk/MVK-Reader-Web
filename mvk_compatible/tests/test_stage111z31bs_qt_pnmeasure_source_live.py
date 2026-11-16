@@ -228,3 +228,42 @@ def test_source_toolbar_direct_single_only_has_real_adc_local_export(
     finally:
         win.close()
         qt_app.processEvents()
+
+
+def test_original_mode2_core_policy_drives_actual_operator_controls(qt_app):
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        panel=win.original_measure_controls
+        idle=panel.panel.property("sourceOriginalMeasureCorePolicy")
+        assert not idle["panel_visible"]
+        assert not idle["original_tmkvthread_device_writes_enabled"]
+        assert win.enter_measurement_mode()
+        qt_app.processEvents()
+        waiting=panel.panel.property("sourceOriginalMeasureCorePolicy")
+        assert waiting["panel_visible"]
+        assert not waiting["freeze_preview_enabled"]
+        assert panel.panel.isVisible()
+        assert not panel.freeze.isEnabled()
+        assert not panel.rate.isEnabled()
+        assert not panel.buttons["bWriteAdc"].isEnabled()
+        win._begin_live_capture()
+        qt_app.processEvents()
+        running=panel.panel.property("sourceOriginalMeasureCorePolicy")
+        assert running["freeze_preview_enabled"]
+        assert running["rate_read_only"]
+        assert not running["original_tmkvthread_set_rate_enabled"]
+        assert not running["original_tmkvthread_device_writes_enabled"]
+        assert panel.freeze.isEnabled()
+        assert not panel.buttons["bWriteAdc"].isEnabled()
+        win._end_live_capture(False)
+        qt_app.processEvents()
+        refused=panel.panel.property("sourceOriginalMeasureCorePolicy")
+        assert refused["panel_visible"]
+        assert not refused["freeze_preview_enabled"]
+        assert panel.bad_indicator.isVisible()
+    finally:
+        win.close()
+        qt_app.processEvents()

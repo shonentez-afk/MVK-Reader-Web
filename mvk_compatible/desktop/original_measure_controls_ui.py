@@ -23,6 +23,7 @@ from ..core.original_measure_controls import (
     TABLE_PREFIX,export_verified_table_csv,
 )
 from ..core.original_measurement_mode import source_connection_display
+from ..core.original_measurement_pipeline import measurement_operator_policy
 from ..core.original_pagefile_recording import OriginalPageFileSelection
 
 
@@ -61,8 +62,9 @@ class OriginalMeasureControls:
         self.freeze.setCheckable(True)
         self.freeze.setToolTip(
             "Оригинал _Unit128:0084DEA4 переключает "
-            "TMVKThread.FreezeUpdate. Здесь пауза ТОЛЬКО экрана Native "
-            "LIVE PREVIEW: RAW запись и получение данных продолжаются.")
+            "TMVKThread.FreezeUpdate (в оригинале влияет и на обработку "
+            "входящих блоков). В совместимом Native R6.1 это ТОЛЬКО "
+            "пауза отображения: RAW запись продолжается.")
         self.freeze.clicked.connect(self._toggle_freeze)
         self.rate=self.buttons["bSampleRate"]
         self.rate_menu=QMenu(self.rate)
@@ -212,13 +214,28 @@ class OriginalMeasureControls:
         # it is available only when F12 enables compatible technical UI.
         skin=getattr(self.window,"original_visual_skin",None)
         technical=bool(skin is None or skin.technical)
-        show_source_measure=bool(requested or live or (offline and technical))
-        self.panel.setVisible(show_source_measure)
+        flow=getattr(self.window,"_offline_flow",None)
+        selection=getattr(
+            getattr(self.window,"original_shell",None),
+            "file_record_selection",None)
+        has_channels=bool(selection and selection.checked("channels"))
+        has_values=bool(selection and (
+            selection.checked("spec") or selection.checked("values")))
+        policy=measurement_operator_policy(
+            ui_mode=mode,mode2_selected=requested,
+            capture_active=bool(self.window._live_active),
+            technical_ui=technical,
+            native_archive_available=bool(
+                flow is not None and not flow.direct_bin),
+            has_channels=has_channels,has_values=has_values)
+        self.panel.setVisible(policy.panel_visible)
         self.panel.setProperty(
-            "sourceRuntimeMeasurePanelVisible",show_source_measure)
+            "sourceRuntimeMeasurePanelVisible",policy.panel_visible)
+        self.panel.setProperty(
+            "sourceOriginalMeasureCorePolicy",policy.receipt())
         self.panel.setProperty(
             "sourceOfflineMeasureCommandsRemainLocalOnly",True)
-        self.freeze.setEnabled(live)
+        self.freeze.setEnabled(policy.freeze_preview_enabled)
         self.freeze.blockSignals(True)
         try:
             self.freeze.setChecked(live and state.frozen)
@@ -226,7 +243,7 @@ class OriginalMeasureControls:
             self.freeze.blockSignals(False)
         self.freeze.setText("Продолжить приём" if state.frozen
                             else "Пауза приема")
-        self.rate.setEnabled(live or offline)
+        self.rate.setEnabled(policy.rate_inspection_enabled)
         self.rate_menu.clear()
         hz=state.observed_sample_rate_hz if (live or offline) else None
         self.rate.setText("ЧД "+str(hz)+" Гц" if hz else "ЧД —")
@@ -236,20 +253,12 @@ class OriginalMeasureControls:
         # Do not display developer placeholders in the source operator menu.
         # There is no verified Native SetRate write path; therefore only
         # show the actually observed sample rate as read-only.
-        flow=getattr(self.window,"_offline_flow",None)
-        is_native=bool(offline and flow is not None
-                       and not flow.direct_bin)
-        selection=getattr(
-            getattr(self.window,"original_shell",None),
-            "file_record_selection",None)
-        has_channels=bool(selection and selection.checked("channels"))
-        has_values=bool(selection and (
-            selection.checked("spec") or selection.checked("values")))
-        self.buttons["bWriteTable"].setEnabled(is_native)
+        self.buttons["bWriteTable"].setEnabled(
+            policy.local_table_enabled)
         self.buttons["bWriteAdc"].setEnabled(
-            offline and has_channels)
+            policy.local_adc_enabled)
         self.buttons["bWriteValues"].setEnabled(
-            is_native and has_channels and has_values)
+            policy.local_values_enabled)
         if requested or live:
             state_view=self.window.measurement_connection_display()
             self.status.setText(state_view.text)
