@@ -4,6 +4,7 @@ pytest.importorskip("PySide6")
 
 from .test_desktop_qt import qt_app
 from .test_stage111z31cr_connected_core import source_test_transport
+from .test_stage111z31cs_qt_measurement_mode import _capture_source_mode2
 from ..core.original_connected_status import UNKNOWN
 from ..core.original_mode2_live_health import SOURCE_CHANNEL_KINDS
 
@@ -49,6 +50,9 @@ def test_source_96dpi_panel_live_status_silence_and_ten_channels(qt_app):
         assert receipt["native_channels_observed"]==10
         assert receipt["original_device_system_fields_proven"]==0
         assert win.original_shell.status_table.item(0,1).text()==UNKNOWN
+        win.original_visual_skin.reveal_page(2)
+        qt_app.processEvents()
+        _capture_source_mode2(win,"15_cv_native_8adc_2tach_readonly_healthy")
         # Healthy JSON timestamp does not make an old packet live.
         silent=good|{"seconds_since_last_packet":5.1}
         win._receive_native_live_status(silent)
@@ -58,6 +62,7 @@ def test_source_96dpi_panel_live_status_silence_and_ten_channels(qt_app):
         assert not panel.indicator.isVisible()
         assert not win.original_shell.status_page.property(
             "sourceNativeTransportConnected")
+        _capture_source_mode2(win,"16_cv_no_new_instrument_packets_red")
         # Source 15-mode tab change must keep same 8+2 evidence and no
         # recycled DSP fields from the previous good/offline session.
         win.original_status_mode.setCurrentIndex(5)
@@ -79,6 +84,7 @@ def test_source_96dpi_panel_live_status_silence_and_ten_channels(qt_app):
             "sourceNativeLiveQualityReceipt")
         assert updated["native_invalid_frames"]==3
         assert updated["native_data_integrity_alert"]
+        _capture_source_mode2(win,"17_cv_invalid_frames_red")
         win._invalidate_native_live_status("Native status source rejected")
         qt_app.processEvents()
         cleared=win.original_shell.status_page.property(
