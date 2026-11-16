@@ -38,14 +38,17 @@ class SourceConnectionDisplay:
 
 
 def source_connection_display(*,selected:bool,capture_started:bool=False,
-        status:dict|None=None,failure:bool=False)->SourceConnectionDisplay:
+        status:dict|None=None,failure:bool=False,
+        stop_requested:bool=False)->SourceConnectionDisplay:
     if (type(selected) is not bool or type(capture_started) is not bool
-            or type(failure) is not bool):
+            or type(failure) is not bool or type(stop_requested) is not bool):
         raise ValueError("Source Mode2/state arguments must be booleans")
     if capture_started and not selected:
         raise ValueError("Recorder cannot precede Mode2 selection")
     if status is not None and not capture_started:
         raise ValueError("Unstarted recorder cannot report Native status")
+    if stop_requested and (not selected or not capture_started):
+        raise ValueError("Source stop requires an active selected Mode2 capture")
     if not selected:
         if failure:
             raise ValueError("Idle state cannot inherit connection error")
@@ -55,6 +58,11 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
         return SourceConnectionDisplay(
             True,capture_started,False,
             "Ошибка соединения с прибором","bad","ERROR")
+    if stop_requested:
+        # A queued Go status cannot restore a green 'connected' lamp
+        # after the operator already requested graceful termination.
+        return SourceConnectionDisplay(
+            True,True,False,"Завершение приёма","waiting","STOPPING")
     if not capture_started:
         return SourceConnectionDisplay(
             True,False,False,
