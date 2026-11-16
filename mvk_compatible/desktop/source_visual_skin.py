@@ -118,21 +118,21 @@ class SourceStartBackdrop(QWidget):
         try:
             painter.setRenderHint(QPainter.Antialiasing,True)
             painter.setPen(QPen(QColor("#e51d2b"),3))
-            line=[QPoint(3,69),QPoint(20,69),QPoint(27,55),
-                  QPoint(33,80),QPoint(40,42),QPoint(49,69),
-                  QPoint(260,69)]
+            line=[QPoint(20,96),QPoint(35,96),QPoint(41,82),
+                  QPoint(47,111),QPoint(53,70),QPoint(61,96),
+                  QPoint(218,96)]
             for begin,end in zip(line,line[1:]):
                 painter.drawLine(begin,end)
             font=QFont("Tahoma")
-            font.setPixelSize(32)
+            font.setPixelSize(24)
             font.setBold(True)
             painter.setFont(font)
             painter.setPen(QColor("#141414"))
-            painter.drawText(55,57,"ВАСТ")
-            font.setPixelSize(12)
+            painter.drawText(67,86,"ВАСТ")
+            font.setPixelSize(10)
             font.setBold(False)
             painter.setFont(font)
-            painter.drawText(54,88,"©2021 ООО «АССОЦИАЦИЯ ВАСТ»")
+            painter.drawText(66,110,"©2021 ООО «АССОЦИАЦИЯ ВАСТ»")
         finally:
             painter.end()
         return pixmap
@@ -197,12 +197,13 @@ class SourceStartBackdrop(QWidget):
                 gradient=QLinearGradient(0,0,max(1,width),0)
                 gradient.setColorAt(0,QColor(_START_FALLBACK_PALETTE[0]))
                 gradient.setColorAt(.58,QColor(_START_FALLBACK_PALETTE[1]))
-                gradient.setColorAt(1,QColor(_START_FALLBACK_PALETTE[2]))
+                gradient.setColorAt(.82,QColor(_START_FALLBACK_PALETTE[2]))
+                gradient.setColorAt(1,QColor(_START_FALLBACK_PALETTE[3]))
                 painter.fillRect(QRect(0,0,width,height),QBrush(gradient))
                 tile=18
                 for xx in range(left,width,tile):
                     progress=(xx-left)/max(1,right)
-                    visibility=min(.72,max(0.,(progress-.08)/.92))
+                    visibility=min(.72,max(0.,(progress-.50)/.50))
                     for yy in range(0,height,tile):
                         if ((xx-left)//tile+yy//tile)%2==0:
                             colour=QColor(255,255,255,round(205*visibility))

@@ -108,8 +108,9 @@ class SourceStartCommandButton(QPushButton):
             p.setRenderHint(QPainter.Antialiasing,True)
             if self.isDown():
                 p.fillRect(self.rect(),QColor(165,221,252,90))
-            elif self.underMouse():
-                p.fillRect(self.rect(),QColor(215,244,255,64))
+            # Delphi command links remain transparent on hover. The
+            # label underline is sufficient; a tinted 301x86 rectangle
+            # reads as another incompatible Qt card overlay.
             if self.hasFocus():
                 p.setPen(QPen(QColor("#5a9dc9"),1,Qt.DashLine))
                 p.setBrush(Qt.NoBrush)
