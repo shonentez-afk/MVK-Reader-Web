@@ -201,7 +201,7 @@ def test_one_source_original_all_seven_pages_three_form_types_safe(
         assert messages.objectName()=="WindowManForm"
         assert messages.property("deviceCommandAllowed") is None
         assert not messages.img.isEnabled()
-        assert w.windowTitle()=="ТПО МВК"
+        assert w.windowTitle()=="ТПО МВК 1.0.47"
         edit.close()
         messages.close()
     finally:

@@ -143,7 +143,7 @@ def test_stage111z31av_pagefile_follows_real_archive_and_close(
 
 def test_stage111z31av_original_title_research_and_config_readable(source_window):
     win = source_window
-    assert win.windowTitle() == "ТПО МВК"
+    assert win.windowTitle() == "ТПО МВК 1.0.47"
     assert win.task_subpages.tabBar().isHidden()
     win.research_tabs_action.setChecked(True)
     assert not win.task_subpages.tabBar().isHidden()
