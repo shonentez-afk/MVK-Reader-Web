@@ -200,3 +200,27 @@ def test_legacy_native_zip_with_no_tach_sidecar_remains_accepted(tmp_path):
     flow=OfflineMeasurementFlow.bind(session,channel=1)
     assert OriginalPageFileSelection.for_flow(flow).channels[8:]==(
         False,False)
+
+
+def test_native_tach_packet_gap_makes_original_mode2_indicator_red():
+    from .test_stage111z31cr_connected_core import source_test_transport
+    from ..core.original_connected_status import connected_system_status
+    from ..core.original_measurement_mode import source_connection_display
+    status=source_test_transport(phase="RECORDING",frames=240)
+    status["seconds_since_last_packet"]=0.1
+    status["channels"]=[
+        {"channel":i,"type":"ADC" if i<=8 else "TACH",
+         "samples":128 if i>8 else 512,
+         "sample_rates_hz":[32768],
+         "sequence_discontinuities":1 if i==9 else 0,
+         "nonfinite_samples":0}
+        for i in range(1,11)]
+    proof=connected_system_status(status)
+    assert proof.connection_verified
+    assert proof.native_sequence_gaps==1
+    assert proof.data_integrity_alert
+    lamp=source_connection_display(
+        selected=True,capture_started=True,status=status)
+    assert lamp.phase=="STREAM_ERRORS"
+    assert lamp.indicator=="bad"
+    assert lamp.transport_verified

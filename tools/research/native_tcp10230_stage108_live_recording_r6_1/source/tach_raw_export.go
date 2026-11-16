@@ -138,8 +138,7 @@ func (t *tachRawDumper) finish(stage, rawSHA string) (map[string]string,error) {
     }
     data,err := json.MarshalIndent(evidence,"","  ")
     if err != nil { return nil,err }
-    data=append(data,'
-')
+    data = append(data, byte(10))
     if err=os.WriteFile(filepath.Join(stage,tachEvidenceName),data,0600); err != nil {
         return nil,err
     }

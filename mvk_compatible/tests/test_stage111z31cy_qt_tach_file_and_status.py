@@ -96,3 +96,39 @@ def test_untrusted_continuity_tach_disabled_but_original_adc_unchanged(
     finally:
         win.close()
         qt_app.processEvents()
+
+
+def test_live_tach_gap_reaches_actual_qt_panel_and_pagefile(qt_app):
+    from ..desktop.main_window import MainWindow
+    from .test_stage111z31cr_connected_core import source_test_transport
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win.enter_measurement_mode()
+        win._begin_live_capture()
+        source=source_test_transport(phase="RECORDING",frames=300)
+        source["seconds_since_last_packet"]=0.1
+        source["channels"]=[
+            {"channel":i,"type":"ADC" if i<=8 else "TACH",
+             "samples":128,"sample_rates_hz":[32768],
+             "sequence_discontinuities":2 if i==10 else 0,
+             "nonfinite_samples":0}
+            for i in range(1,11)]
+        win._receive_native_live_status(source)
+        qt_app.processEvents()
+        panel=win.original_measure_controls
+        assert panel.status.text()=="Ошибки входного потока"
+        assert panel.bad_indicator.isVisible()
+        assert not panel.indicator.isVisible()
+        assert "ошибка потока" in win.original_shell.file_channels.item(9).text()
+        assert win.original_shell.file_page.property(
+            "sourceLiveFilePlanReceipt")[
+                "connected_status_evidence_accepted"]
+        win._end_live_capture(False)
+        qt_app.processEvents()
+        assert win._measurement_mode_selected
+        assert win.leave_measurement_mode()
+    finally:
+        win.close()
+        qt_app.processEvents()

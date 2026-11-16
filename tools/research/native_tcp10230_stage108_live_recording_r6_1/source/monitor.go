@@ -285,16 +285,21 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		c.Samples += uint64(sample.Samples)
 		c.rates[sample.Rate] = true
 		c.NonFiniteSamples += uint64(sample.NonFinite)
-		if c.seen && c.lastIndex != sample.Index && typ == typeADC {
+		if c.seen && c.lastIndex != sample.Index {
+			// Source TMVKThread stores 8 ADC + 2 TACH channels. Its 64-sample
+			// tachometer packets also carry a sample index: a TACH gap must
+			// reach the SAME live evidence/error indicator as an ADC gap.
 			c.SequenceDiscontinuities++
+			label := fmt.Sprintf("ADC%d", sample.Channel+1)
+			if typ == typeTach { label = fmt.Sprintf("TACH%d", sample.Channel-7) }
 			if c.SequenceDiscontinuities <= 3 {
-				m.warn(fmt.Sprintf("ADC%d sample sequence discontinuity: expected %d, got %d", sample.Channel+1, c.lastIndex, sample.Index))
+				m.warn(fmt.Sprintf("%s sample sequence discontinuity: expected %d, got %d", label, c.lastIndex, sample.Index))
 			}
 		}
 		c.lastIndex = sample.Index + uint32(sample.Samples)
 		c.seen = true
 		if sample.NonFinite > 0 && c.NonFiniteSamples <= uint64(sample.NonFinite) {
-			m.warn(fmt.Sprintf("channel %d contains non-finite ADC values", sample.Channel+1))
+			m.warn(fmt.Sprintf("channel %d contains non-finite ADC/TACH values", sample.Channel+1))
 		}
 		if typ == typeADC && m.liveBin != nil {
 			if e := m.liveBin.adcFrame(f, *sample); e != nil {
