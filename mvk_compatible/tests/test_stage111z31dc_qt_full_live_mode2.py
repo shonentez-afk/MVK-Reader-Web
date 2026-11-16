@@ -50,6 +50,10 @@ def test_real_qt_all_four_live_pages_share_one_source_core_and_no_device_write(
         assert not win.original_measure_controls.buttons["bWriteAdc"].isEnabled()
         win._begin_live_capture()
         assert win._source_mode2_runtime.receipt()["mode2_phase"]=="CONNECTING"
+        win._invalidate_native_live_status("Нет текущего подтверждённого состояния")
+        assert win._source_mode2_runtime.receipt()["mode2_phase"]=="CONNECTING"
+        assert win._source_mode2_runtime.receipt()[
+            "original_faults"]["event_count"]==0
         root,st,_=make_preview(tmp_path)
         preview=load_live_preview(root,st,now=now())
         assert preview is not None
