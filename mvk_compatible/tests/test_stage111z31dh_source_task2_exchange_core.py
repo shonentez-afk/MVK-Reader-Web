@@ -113,6 +113,8 @@ def test_incoming_denied_triggers_real_source_exception_route_and_retry_plan():
     # Original Task2 retries only after failure and explicit new connect.
     with pytest.raises(ValueError):
         x.before_next_source_read()
+    assert x.receipt()["source_connection_phase_simulated"]=="WAITING_RETRY"
+    x.begin_next_retry_attempt()
     x.tcp_connected_in_offline_model()
     assert x.before_next_source_read() is None
     x.receive(registers())
@@ -129,6 +131,7 @@ def test_source_typed_network_fault_requeues_once_on_initial_pause():
     assert first.local_wait_ms==250
     assert first.source_requeues_set_rate
     assert x.receipt()["command_list"]["pending_count"]==2
+    x.begin_next_retry_attempt()
     x.tcp_connected_in_offline_model()
     x.receive(registers())
     x.before_next_source_read()
@@ -153,6 +156,34 @@ def test_failed_source_frame_refuses_replay_and_stop_discards_tlist():
     assert x.receipt()["command_list"]["queue_closed"]
     with pytest.raises(ValueError):
         x.tcp_connected_in_offline_model()
+    assert x.receipt()["device_commands_sent"]==0
+
+
+def test_source_connect_timeout_before_socket_success_has_real_retry_semantics():
+    x=OriginalTask2OfflineExchange()
+    x.start()
+    assert x.receipt()["source_connection_phase_simulated"]=="CONNECTING"
+    first=x.source_transport_failure("connect_timeout")
+    assert first.local_wait_ms==250
+    assert first.source_requeues_set_rate
+    assert x.receipt()["source_connection_phase_simulated"]=="WAITING_RETRY"
+    with pytest.raises(ValueError):
+        x.tcp_connected_in_offline_model()  # cannot skip modeled wait
+    x.begin_next_retry_attempt()
+    # Second failed Connect before a successful TCP socket grows backoff.
+    second=x.source_transport_failure("connect_timeout")
+    assert second.local_wait_ms==350
+    assert not second.source_requeues_set_rate
+    assert x.receipt()["command_list"]["pending_count"]==2
+    x.begin_next_retry_attempt()
+    x.tcp_connected_in_offline_model()
+    assert x.receipt()["source_connection_phase_simulated"]=="CONNECTED"
+    assert x.receipt()["source_retry"]["source_pause_current_centiseconds"]==25
+    assert x.before_next_source_read() is None
+    x.receive(registers())
+    assert x.before_next_source_read() is not None
+    assert x.before_next_source_read() is not None
+    assert x.before_next_source_read() is None
     assert x.receipt()["device_commands_sent"]==0
 
 
