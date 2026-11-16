@@ -2598,6 +2598,8 @@ class MainWindow(QMainWindow):
         """
         if not self._live_active:
             raise ValueError("Исходная запись требует реального активного приёмника")
+        if self._measurement_exit_requested:
+            raise ValueError("Новая запись запрещена: измерение завершается")
         plan=self.original_shell.live_file_plan
         writer=self._source_live_writer
         was_active=bool(writer.receipt()[
