@@ -161,6 +161,14 @@ class OriginalMeasureControls:
             self.render()
             return
         self.window._source_live_view_frozen=self.state.frozen
+        # Source _Unit128:0084DEA4 toggles TMVKThread.FreezeUpdate;
+        # with read-only Go this MUST remain a local ProcessBufferChunk
+        # model. Its state follows the real user click, while full RAW
+        # ingestion is never paused by the provisional Qt button.
+        trace=getattr(self.window,"_source_mode2_runtime",None)
+        if trace is not None and trace.capture_started and not trace.finished:
+            trace.set_source_preview_freeze(self.state.frozen)
+            self.window._sync_source_mode2_runtime()
         self.render()
         if not self.state.frozen and self.window._live_active:
             # Render the NEWEST verified ring after thaw; never replay
