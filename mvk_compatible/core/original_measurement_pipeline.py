@@ -81,7 +81,7 @@ class MeasurementOperatorPolicy:
 def measurement_operator_policy(*,ui_mode:str,mode2_selected:bool,
         capture_active:bool,technical_ui:bool,
         native_archive_available:bool,has_channels:bool,
-        has_values:bool)->MeasurementOperatorPolicy:
+        has_values:bool,stop_requested:bool=False)->MeasurementOperatorPolicy:
     """One Core policy for original visibility + actual compatible actions.
 
     mode2_selected is a user choice BEFORE any socket, never proof of
@@ -91,19 +91,22 @@ def measurement_operator_policy(*,ui_mode:str,mode2_selected:bool,
         raise ValueError("Unknown source measurement UI mode")
     if any(type(v) is not bool for v in (
             mode2_selected,capture_active,technical_ui,
-            native_archive_available,has_channels,has_values)):
+            native_archive_available,has_channels,has_values,
+            stop_requested)):
         raise ValueError("Measurement evidence must use strict booleans")
     if capture_active and not mode2_selected:
         raise ValueError("Native receiver cannot precede original Mode2")
     if (ui_mode=="live") != capture_active:
         raise ValueError("Native live UI and receiver state disagree")
+    if stop_requested and not (capture_active and mode2_selected):
+        raise ValueError("Stopping source Mode2 requires an active capture")
     offline=(ui_mode=="offline" and not mode2_selected)
     native=offline and native_archive_available
     return MeasurementOperatorPolicy(
         panel_visible=mode2_selected or capture_active or (
             offline and technical_ui),
-        freeze_preview_enabled=capture_active,
-        rate_inspection_enabled=capture_active or offline,
+        freeze_preview_enabled=capture_active and not stop_requested,
+        rate_inspection_enabled=(capture_active and not stop_requested) or offline,
         local_table_enabled=native,
         local_adc_enabled=offline and has_channels,
         local_values_enabled=native and has_channels and has_values,
