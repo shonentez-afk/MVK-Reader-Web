@@ -270,6 +270,16 @@ class OriginalVisualSkin:
         w.menuBar().setVisible(enabled)
         w.statusBar().setVisible(enabled)
         w.note.setVisible(enabled)
+        # F12 is a reversible entry into the compatible research workspace.
+        # Closing it must restore the ACTUAL original window, not leave an
+        # engineering dock, a secondary tab strip or the auxiliary toolbar
+        # covering the native PaintBox and shifting its axis geometry.
+        if not enabled:
+            w.wave_inspector.hide()
+            w.spec_inspector.hide()
+            w.compat_toolbar.hide()
+            w.research_tabs_action.setChecked(False)
+            w.task_subpages.tabBar().hide()
         w.wave_advanced_button.setVisible(enabled)
         w.spec_advanced_button.setVisible(enabled)
         # The original pnView is 48px tall, not 64px. Its extra
