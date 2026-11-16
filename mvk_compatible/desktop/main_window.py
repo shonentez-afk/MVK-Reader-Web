@@ -2664,10 +2664,19 @@ class MainWindow(QMainWindow):
         # Direct programmatic QA entry follows the same Delphi Mode2
         # visibility transition as the actual Measurement button.
         self.enter_measurement_mode()
+        if self._source_mode2_runtime.finished and self._measurement_mode_selected:
+            # Mode2 remains visible after a refused/failed Native run.
+            # A new, separately approved attempt requires a FRESH Core
+            # command/fault/session identity; no old source writes carry over.
+            self._source_mode2_runtime=OriginalMode2RuntimeTrace()
+            self._source_mode2_runtime.enter_mode2()
         self._source_mode2_runtime.native_started()
         self._sync_source_mode2_runtime()
-        # enter_measurement_mode already parked the previous verified
-        # session BEFORE clearing it. Never overwrite that with None here.
+        # The prior verified archive can have been re-opened after a
+        # failed read while the original Mode2 tabs stay visible. Park
+        # that accepted source again before a separately approved retry.
+        if (self._live_prior_session is None and self.session is not None):
+            self._live_prior_session=self.session
         self._offline_flow=None  # Never mix verified offline evidence with LIVE preview
         self._source_view_time=None
         self._source_wave_readout=None
