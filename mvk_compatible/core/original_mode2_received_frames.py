@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from struct import unpack_from
+from .original_mode2_status_cells import SOURCE_INDEX_ADDR
 
 SOURCE = "IDR_TMVKTHREAD_00807F74_00808019_00808617_RX_SIM_ONLY"
 TYPE_IDENTITY = 0x00000001
@@ -93,6 +94,11 @@ class OriginalSourceReadFramer:
         self.ack_observed = 0
         self.denied_observed = 0
         self.register_frames_with_blocks = 0
+        # Track ONLY source-backed 14×2 16-bit words, not a fabricated
+        # 0x4000 register image or the 0xFFFFFFFF Delphi UNKNOWN value.
+        self._status_word_halves:dict[int,int] = {}
+        self.source_statuscells0_observed: int | None = None
+        self.source_stage3_confirmed_by_valid_register = False
         self.source_data_processed = 0
         self.source_data_drained = 0
         self.unknown_drained = 0
@@ -187,6 +193,7 @@ class OriginalSourceReadFramer:
             if count>(body_words-5):
                 raise OriginalSourceRxError("Source PARAM descriptor count too large")
             pos=28
+            status_updates:dict[int,int]={}
             for _ in range(count):
                 if pos+4>n:
                     raise OriginalSourceRxError("Truncated source PARAM descriptor")
@@ -195,13 +202,34 @@ class OriginalSourceReadFramer:
                 words=desc>>16
                 if not words or words&1 or addr+words>REGISTER_WORDS or pos+2*words>n:
                     raise OriginalSourceRxError("Source 00808485 invalid PARAM block")
+                if not self.frozen:
+                    # Source _Unit125:0080850F reads into shared form
+                    # buffer and only then 00805D08 compares StatusCells.
+                    # No source processing of PARAM payload when frozen.
+                    for source_addr in SOURCE_INDEX_ADDR:
+                        for reg in (source_addr,source_addr+1):
+                            if addr<=reg<addr+words:
+                                status_updates[reg]=unpack_from(
+                                    "<H",frame,pos+2*(reg-addr))[0]
                 pos+=2*words
             if pos!=n:
                 raise OriginalSourceRxError("Source PARAM frame contains trailing bytes")
+            self._status_word_halves.update(status_updates)
+            lo=self._status_word_halves.get(SOURCE_INDEX_ADDR[0])
+            hi=self._status_word_halves.get(SOURCE_INDEX_ADDR[0]+1)
+            if lo is not None and hi is not None:
+                self.source_statuscells0_observed=lo | (hi<<16)
             if count:
                 self.register_frames_with_blocks+=1
                 if self.stage==0:
                     self.stage=1
+                # Original 0080872D uses unsigned StatusCells[0]>0.
+                # Our RX simulator suppresses an unobserved FF sentinel;
+                # only TWO actually received words can confirm Stage3.
+                if (self.source_statuscells0_observed is not None and
+                        self.source_statuscells0_observed>0):
+                    self.stage=3
+                    self.source_stage3_confirmed_by_valid_register=True
             return SourceReceivedFrame(typ,n,"PARAM",bool(count and not self.frozen),
                                        self.stage,register_block_count=count)
         self.unknown_drained+=1
@@ -217,6 +245,12 @@ class OriginalSourceReadFramer:
             "freeze_update": self.frozen,
             "total_complete_frames": self.total_frames,
             "frames_with_register_blocks": self.register_frames_with_blocks,
+            "source_statuscells0_two_halves_observed":
+                self.source_statuscells0_observed is not None,
+            "source_statuscells0_raw_uint32":self.source_statuscells0_observed,
+            "source_stage3_confirmed_only_by_observed_register":
+                self.source_stage3_confirmed_by_valid_register,
+            "unobserved_source_FFFFFFFF_sentinel_not_a_go_measurement":True,
             "source_buffer_chunks_processed": self.source_data_processed,
             "source_buffer_chunks_drained": self.source_data_drained,
             "source_unknown_types_drained": self.unknown_drained,
