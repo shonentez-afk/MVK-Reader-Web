@@ -2685,7 +2685,9 @@ class MainWindow(QMainWindow):
             capture_started=self._live_active,
             status=self._native_live_status if self._live_active else None,
             failure=self._measurement_connection_error,
-            stop_requested=self._measurement_exit_requested)
+            stop_requested=self._measurement_exit_requested,
+            source_system_error_latched=(
+                self._source_mode2_runtime.status_cells.system_error_latched))
 
     def source_write_toggle(self,kind):
         """Original button -> actual selected local write window.
@@ -2698,6 +2700,9 @@ class MainWindow(QMainWindow):
             raise ValueError("Исходная запись требует реального активного приёмника")
         if self._measurement_exit_requested:
             raise ValueError("Новая запись запрещена: измерение завершается")
+        if self._source_mode2_runtime.status_cells.system_error_latched:
+            raise ValueError(
+                "Исходная Stage3 системная ошибка не разрешает новую запись")
         plan=self.original_shell.live_file_plan
         writer=self._source_live_writer
         was_active=bool(writer.receipt()[
