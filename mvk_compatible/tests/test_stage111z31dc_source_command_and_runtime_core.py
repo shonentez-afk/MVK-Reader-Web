@@ -20,8 +20,8 @@ from .test_stage111z31cz_source_write_stages_core import source_status, RUN
 
 def test_source_command_fifo_memory_records_and_rate_only_if_changed():
     queue=OriginalMode2CommandQueue()
-    assert queue.source_rate_code==DEFAULT_RATE_CODE==309
-    assert queue.set_rate(309) is None
+    assert queue.source_rate_code==DEFAULT_RATE_CODE==0x309
+    assert queue.set_rate(0x309) is None
     a=queue.queue_command(7,0x11223344,0x99abcdef)
     b=queue.set_rate(0x4321)
     c=queue.queue_command(-1,0,0xffffffff)
@@ -64,7 +64,7 @@ def test_rate_change_rejects_invalid_source_code_without_fake_hz():
     assert not queue.pending
     with pytest.raises(ValueError):
         queue.take_one(3)
-    assert queue.receipt()["five_original_rate_tags_independently_verified"] is False
+    assert queue.receipt()["five_original_rate_tags_independently_verified"] is True
 
 
 def test_source_and_native_faults_have_disjoint_provenance():
@@ -92,6 +92,11 @@ def test_mode2_tabs_before_native_then_exact_single_run_stop_and_finish():
     assert trace.receipt()["source_ui_before_tcp"]
     assert trace.receipt()["original_queue"]["pending_count"]==0
     assert trace.native_started()["mode2_phase"]=="CONNECTING"
+    initial=trace.command_model.pending
+    assert len(initial)==1
+    assert (initial[0].cmd,initial[0].addr,initial[0].data)==(1,0x0e,65536)
+    assert trace.receipt()["source_initial_rate_queued_offline"]
+    assert trace.receipt()["hardware_commands_sent"]==0
     healthy=source_status(
         session=RUN,adc_samples=512,tach_samples=64,frames=42,raw=82000,aux=1)
     receipt=trace.observe_native(healthy)
