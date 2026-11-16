@@ -3075,7 +3075,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             "Оригинальная запись: проверенные локальные интервалы сохранены "
             f"({report['files_written']} файлов, {report['windows']} окон). "
-            ("Go подтвердил границы кадров; " if
+            +("Go подтвердил границы кадров; " if
              report.get("verified_frame_boundaries") else
              "Границы по периодическому статусу; ")
             +"не исходные Delphi BIN/CSV.")
