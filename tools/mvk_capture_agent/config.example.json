@@ -1,0 +1,9 @@
+{
+  "poll_seconds": 1.0,
+  "screenshot": true,
+  "ui_automation": false,
+  "memory_read": false,
+  "save_raw_memory": false,
+  "watches": [],
+  "max_controls": 400
+}
