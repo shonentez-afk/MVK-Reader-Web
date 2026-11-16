@@ -50,6 +50,7 @@ class OriginalTask2OfflineExchange:
             source_rate_tag=SOURCE_DEFAULT_MENU_TAG)
         self.started = False
         self.connected = False
+        self.connection_phase = "IDLE"
         self.stopped = False
         self.freeze_update = False
         self.seen_ack = 0
@@ -74,14 +75,19 @@ class OriginalTask2OfflineExchange:
         if self.started or self.stopped:
             raise ValueError("Source Task2 already started or terminated")
         self.started = True
+        # Source Thread.Execute starts a Connect attempt while Stage0.
+        # This phase must exist independently of an accepted TCP socket.
+        self.connection_phase = "CONNECTING"
         self.queue.set_rate(SOURCE_DEFAULT_MENU_TAG)
         self._remember("SOURCE_MODE2_MRATE1CLICK", tag=SOURCE_DEFAULT_MENU_TAG)
         return self.receipt()
 
     def tcp_connected_in_offline_model(self):
-        if not self.started or self.stopped or self.connected:
+        if (not self.started or self.stopped or self.connected or
+                self.connection_phase!="CONNECTING"):
             raise ValueError("Cannot simulate source TCP connection")
         self.connected = True
+        self.connection_phase = "CONNECTED"
         # Each new TCP client begins with Stage0 and a new receive framer;
         # the TList queue persists over source reconnect attempts.
         self.receiver = OriginalSourceReadFramer(
@@ -90,6 +96,15 @@ class OriginalTask2OfflineExchange:
         self.retry_plan.connected()
         self.last_source_error = None
         self._remember("SOURCE_TCP_CONNECTED_STAGE0")
+        return self.receipt()
+
+    def begin_next_retry_attempt(self):
+        """Simulate end of source waiting/sleep, without a timer or TCP."""
+        if (not self.started or self.stopped or self.connected or
+                self.connection_phase!="WAITING_RETRY"):
+            raise ValueError("No source Task2 retry is waiting")
+        self.connection_phase="CONNECTING"
+        self._remember("SOURCE_RETRY_ATTEMPT_BEGINS_OFFLINE")
         return self.receipt()
 
     def select_original_rate(self, rate_tag: int):
@@ -159,8 +174,8 @@ class OriginalTask2OfflineExchange:
         return frames
 
     def _source_failure(self, kind: str, *, internal: bool):
-        if not self.connected or self.stopped:
-            raise ValueError("Source Task2 failure without connection")
+        if self.stopped or self.connection_phase not in ("CONNECTING","CONNECTED"):
+            raise ValueError("Source Task2 failure without an attempt")
         if internal:
             if kind not in SOURCE_INTERNAL_ERROR_ROUTES:
                 raise ValueError("Not a source internal failure")
@@ -170,6 +185,7 @@ class OriginalTask2OfflineExchange:
                 raise ValueError("Unverified source network failure")
             self.faults.record_source_exception(kind)
         self.connected=False
+        self.connection_phase="WAITING_RETRY"
         self.last_source_error=kind
         # On source network exception the old Client is freed, stage is
         # reset, TList remains. 008089D8 invokes 00809364 directly
@@ -193,6 +209,7 @@ class OriginalTask2OfflineExchange:
             return self.receipt()
         self.stopped=True
         self.connected=False
+        self.connection_phase="STOPPED"
         self.queue.shutdown()
         self.faults.finish()
         self._remember("SOURCE_OPERATOR_STOP")
@@ -205,6 +222,8 @@ class OriginalTask2OfflineExchange:
             "source_task": 2,
             "source_started": self.started,
             "source_tcp_connected_simulated": self.connected,
+            "source_connection_phase_simulated": self.connection_phase,
+            "source_connect_timeout_can_fail_before_tcp": True,
             "original_stage_simulated": self.receiver.stage,
             "original_sample_rate_tag": self.queue.source_rate_code,
             "freeze_update_processing_simulated": self.freeze_update,
