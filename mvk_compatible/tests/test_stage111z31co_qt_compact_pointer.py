@@ -192,7 +192,11 @@ def test_real_compact_operator_viewport_pointers_original_taborder_and_fft(
             assert QApplication.focusWidget() is after,(
                 before.objectName(),QApplication.focusWidget())
             _visible_pointer(win,after)
-        assert scroll.value()==0
+        # Qt ensureWidgetVisible(yMargin=6) may leave 3px of scroll to
+        # expose the Envelope focus outline. The ORIGINAL top button is
+        # fully visible: do not assert an unrelated pixel-exact scrollbar 0.
+        assert scroll.value()<=6
+        _visible_pointer(win,win.spec_envelope_button)
 
         # A physical body-click opens the source popup; it cannot silently
         # cycle scales. Explicit selection changes ONLY the view.
