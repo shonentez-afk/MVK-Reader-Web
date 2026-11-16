@@ -1,6 +1,10 @@
 """Source Mode2 acceptance on REAL Qt widgets, no physical TCP call."""
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+
 import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
@@ -12,6 +16,36 @@ from .test_stage111z31cr_connected_core import source_test_transport
 from ..core.original_runtime_tabs import ORIGINAL_LIVE_VISIBLE
 from ..core.original_connected_status import UNKNOWN
 from ..desktop.main_window import MainWindow
+
+
+def _capture_source_mode2(win,phase):
+    """Normal operator Qt screenshot; synthetic, NO original or device bytes."""
+    root=os.environ.get("MVK_SOURCE_OPERATOR_QA_DIR")
+    if not root:
+        return
+    root=Path(root)
+    root.mkdir(parents=True,exist_ok=True)
+    image=win.grab()
+    assert image.save(str(root/(phase+".png")),"PNG")
+    status=win.measurement_connection_display()
+    payload={
+        "source":"STAGE111Z31CS_IDR_MODE2_BEFORE_TCP",
+        "phase":phase,
+        "source_mode2_selected":status.selected,
+        "native_go_started":status.capture_started,
+        "validated_transport":status.transport_verified,
+        "connection_indicator":status.indicator,
+        "connection_phase":status.phase,
+        "original_user_screenshot_embedded":False,
+        "device_commands_sent":False,
+        "native_window_physical_px":[image.width(),image.height()],
+        "device_pixel_ratio":win.devicePixelRatioF(),
+        "visible_source_tabs":win.original_visual_skin.snapshot()[
+            "visible_source_tabs"],
+    }
+    (root/(phase+".json")).write_text(
+        json.dumps(payload,ensure_ascii=False,indent=2)+"\n",
+        encoding="utf-8")
 
 
 def test_actual_original_measure_button_enters_five_tabs_before_tcp(
@@ -57,6 +91,7 @@ def test_actual_original_measure_button_enters_five_tabs_before_tcp(
         assert win.original_shell.status_table.item(0,1).text()==UNKNOWN
         assert not win.original_shell.status_page.property(
             "sourceNativeTransportConnected")
+        _capture_source_mode2(win,"13_cs_measure_pressed_without_tcp")
         # Exactly the original second Mode2 click hides extra tabs, but
         # NEVER terminates a Go recorder without its stop protocol.
         win.original_visual_skin.reveal_page(0)
@@ -105,6 +140,7 @@ def test_actual_qt_status_waiting_connected_refused_and_failed_source_mode(
         assert panel.status.text()=="Ошибка соединения с прибором"
         assert panel.bad_indicator.isVisible()
         assert not panel.indicator.isVisible()
+        _capture_source_mode2(win,"14_cs_instrument_connection_refused")
         win._end_live_capture(False)
         settle(qt_app)
         assert win._measurement_mode_selected
