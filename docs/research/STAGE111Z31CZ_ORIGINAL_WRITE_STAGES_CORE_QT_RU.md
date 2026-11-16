@@ -88,3 +88,10 @@
 обработки ошибок и переходов/TCP с прибором, подлинной структуры
 TACH-файлов и точного Delphi CSV. Без этого нельзя утверждать, что
 оригинальное измерение полностью восстановлено.
+
+
+## Stage111Z31CZ — результаты приёмки 16.11.2026
+
+Принятая версия исходного кода: a70dc2407d8064ea87e0f4e5eab910fb99f1ea13. [GitHub Actions #43828808656](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43828808656) — 4/4 SUCCESS, Linux Core 2023 PASS /118 SKIP; Windows Core 2221 PASS /7 SKIP; Qt smoke 49 PASS; offscreen Qt DPI100 25 PASS и DPI150 169 PASS; native Win32 QPA 25 PASS на каждом DPI. Native R6.1 go test/vet PASS; Windows EXE с встроенным Go прошёл SHA сверку. [Автономный Windows ZIP #14208870923](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43828808656/artifacts/14208870923), ZIP 69 114 834 байта, EXE 69 113 484 байта, SHA256 EXE 3922e9d8899700e02291558887cfd71daa549650bba1d40516f2503274f067fd, истекает 30.11.2026. [Визуальные receipts DPI100/DPI150 #14207862677](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43828808656/artifacts/14207862677), до 23.11.2026.
+
+Первый прогон fc06c1ce отклонил локальный writer по KeyError: samples: старый архивный тестовый EXPORT_AUDIT не обязан иметь поле samples для каждого ADC. Это был дефект нового кода, не теста; исправлен в a70dc240: вместо необязательного аудита, размер полной исходной последовательности повторно проверяется через OfflineMeasurementFlow.source_record().sample_count. После исправления все Linux/Windows/Qt/Go шаги PASS. Предыдущие тесты НЕ ослаблялись. Доменная граница: исходный Delphi WriteData и WriteValues аппаратно не запускаются, UI сохраняет локальные выбранные интервалы только после принятого Native RAW и ZIP.
