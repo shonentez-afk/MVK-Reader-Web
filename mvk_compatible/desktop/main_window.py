@@ -2507,7 +2507,12 @@ class MainWindow(QMainWindow):
         if tick is None:
             return
         receipt=tick.receipt()
-        active=tabs.currentWidget()
+        # Pages is a QTabBar, NOT QTabWidget: the page body is the
+        # OriginalRootShell's QStackedWidget, whose pages are routed
+        # from this source tab. Publish both the active tab receipt and
+        # the real mounted body receipt without creating shadow widgets.
+        tabs.setProperty('sourceOriginalInterfaceTickReceipt',receipt)
+        active=self.original_shell.stack.currentWidget()
         if active is not None:
             active.setProperty('sourceOriginalInterfaceTickReceipt',receipt)
         if controls.panel.isVisible():
