@@ -2485,6 +2485,8 @@ class MainWindow(QMainWindow):
                 self.original_shell.status_page,
                 self.original_shell.file_page):
             widget.setProperty('sourceOriginalMode2RuntimeReceipt',receipt)
+            widget.setProperty('sourceOriginalReceivedProtocolEvidence',
+                               receipt['original_receive_protocol'])
 
     def _source_interface_tick(self):
         """Source 0084F7C8: 20ms ONLY the active source tab + pnMeasure.
