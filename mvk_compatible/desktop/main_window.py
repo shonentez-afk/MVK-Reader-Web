@@ -24,6 +24,7 @@ from ..core import OfflineSession
 from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_connected_status import connected_system_status
+from ..core.original_measurement_mode import source_connection_display
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
@@ -124,6 +125,8 @@ class MainWindow(QMainWindow):
         self._offline_flow=None  # One autonomous File/Signal/Spectrum/Status source
         self._native_dialog=None  # Stage111Z.25: integrated verified Go recorder controller
         self._live_active=False
+        self._measurement_mode_selected=False  # original Mode2 click, before any socket
+        self._measurement_connection_error=False  # separate source StatusIsError candidate
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._native_live_status=None  # validated Go read-only transport, never device STATUS
@@ -2446,11 +2449,64 @@ class MainWindow(QMainWindow):
             self.original_shell.sync_availability()
             self.original_shell.measure_controls.sync_source()
 
+    def enter_measurement_mode(self):
+        """Original Delphi Mode2: five pages and pnMeasure BEFORE TCP.
+
+        IDR _Unit128:00846D24..00846D84 shows UI; 00846DCC only
+        afterwards constructs TMVKThread. The separate Native Go dialog
+        still requires explicit operator permission before any connect.
+        """
+        if self._measurement_mode_selected:
+            return False
+        self._measurement_mode_selected=True
+        self._measurement_connection_error=False
+        self._native_live_status=None
+        # Do not display stale values/graphs from an earlier offline file
+        # as though they had arrived from this not-yet-connected device.
+        self.session=None
+        self._offline_flow=None
+        self._live_preview=None
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self.wave_plot.clear_source_tqgr_series()
+        self.wave_plot.clear()
+        self.spec_plot.clear_source_tqgr_series()
+        self.spec_plot.clear()
+        self.original_shell.sync_file_session(None,())
+        self._set_active(False)
+        # The source calls TPageControl.SetActivePage(PageStatus).
+        self.original_visual_skin.reveal_page(2)
+        self.original_shell.measure_controls.render()
+        self.original_shell.refresh_status()
+        return True
+
+    def leave_measurement_mode(self):
+        """Second Mode2 click: cannot bypass the Native recorder's stop."""
+        if self._live_active or not self._measurement_mode_selected:
+            return False
+        self._measurement_mode_selected=False
+        self._measurement_connection_error=False
+        self._native_live_status=None
+        self.original_visual_skin.reveal_page(0)
+        self.original_shell.measure_controls.render()
+        self.original_shell.refresh_status()
+        return True
+
+    def measurement_connection_display(self):
+        return source_connection_display(
+            selected=(self._measurement_mode_selected or self._live_active),
+            capture_started=self._live_active,
+            status=self._native_live_status if self._live_active else None,
+            failure=self._measurement_connection_error)
+
     def _begin_live_capture(self):
         self._reset_visible_original_pair()
         """Preview is a separate, explicitly unverified mode, never a ZIP session."""
         if self._live_active:
             return
+        # Direct programmatic QA entry follows the same Delphi Mode2
+        # visibility transition as the actual Measurement button.
+        self.enter_measurement_mode()
         self._live_prior_session=self.session
         self._offline_flow=None  # Never mix verified offline evidence with LIVE preview
         self._source_view_time=None
@@ -2461,6 +2517,7 @@ class MainWindow(QMainWindow):
         self.original_shell.clear_source_view_time()
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._live_active=True
+        self._measurement_connection_error=False
         self._native_live_status=None
         self._live_preview=None
         self.session=None
@@ -2531,6 +2588,7 @@ class MainWindow(QMainWindow):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
+        self._measurement_connection_error=False
         self.original_shell.measure_controls.render()
         if self.original_status_mode.currentIndex()==0:
             self.original_shell.refresh_status()
@@ -2540,6 +2598,11 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._native_live_status=None
+        # An absent pending Go status is not yet a physical connection
+        # failure. Malformed/rejected data is a separate error.
+        detail=str(reason).lower()
+        self._measurement_connection_error=any(word in detail for word in (
+            "rejected","invalid","ошибка","failed"))
         self.original_shell.measure_controls.render()
         if self.original_status_mode.currentIndex()==0:
             self.original_shell.refresh_status()
@@ -2651,6 +2714,12 @@ class MainWindow(QMainWindow):
             return
         self._live_active=False
         self._native_live_status=None
+        # On FAILED connection the original Mode2 UI is still selected
+        # and its bottom-right indicator must display failure. A successful
+        # verified archive export transitions back to an offline workflow.
+        self._measurement_connection_error=not bool(exported)
+        if exported:
+            self._measurement_mode_selected=False
         self.original_shell.measure_controls.end_live()
         self._live_preview=None
         self._pagestatus_snapshot=None
@@ -2670,10 +2739,10 @@ class MainWindow(QMainWindow):
         self._full_spectrum=None
         self._spectrum_summary=None
         self._set_active(False)
-        # The operator's original IDLE state exposes only PageStart.
-        # A live PageFile/Status selection must not survive as an
-        # extra source tab after the recorder disconnects.
-        self.original_visual_skin.reveal_page(0)
+        # The source keeps Mode2 tabs visible if the connection failed.
+        # Only a second operator click or accepted archive leaves Mode2.
+        self.original_visual_skin.reveal_page(
+            2 if self._measurement_mode_selected else 0)
         self._sync_spectrum_summary_primary()
         if exported:
             # The dialog calls archiveReady AFTER this state transition.
