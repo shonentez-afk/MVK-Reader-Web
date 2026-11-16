@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from .original_mode2_status_cells import source_status_cell0_error
 
 SOURCE="ORIGINAL_IDP_00846D24_00807A98_DFM_96_DPI_MODE2_V1"
 SOURCE_DFM_DPI=96
@@ -40,6 +41,7 @@ class LiveTransportHealth:
     data_integrity_alert:bool
     packet_age_s:float|None
     received_operation_denied:bool=False
+    source_system_error_observed:bool=False
 
     def receipt(self):
         return {
@@ -52,6 +54,7 @@ class LiveTransportHealth:
             "native_packet_silence":self.stream_silent,
             "native_data_integrity_alert":self.data_integrity_alert,
             "native_operation_denied_received":self.received_operation_denied,
+            "source_statuscells0_system_error_observed":self.source_system_error_observed,
             "original_dsp_or_firmware_fields_inferred":False,
             "instrument_commands_issued":False,
         }
@@ -75,6 +78,10 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
     if type(denied) is not int or denied<0:
         raise ValueError("Invalid passive source operation-denied counter")
     operation_denied=denied>0
+    # Source 0080872D uses unsigned StatusCells[0]>0. On our read-only
+    # Go side, check ONLY a genuinely observed 32-bit register: the
+    # original Delphi 0xFFFFFFFF initialization is NOT a device reply.
+    system_error=source_status_cell0_error(snapshot)
     age=snapshot.get("seconds_since_last_packet")
     if age is not None and (
             type(age) not in (float,int) or
@@ -86,8 +93,8 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
     channels=snapshot.get("channels")
     if channels is None:
         return LiveTransportHealth(
-            0,raw_invalid,0,0,silent,raw_invalid>0 or operation_denied,
-            None if age is None else float(age),operation_denied)
+            0,raw_invalid,0,0,silent,raw_invalid>0 or operation_denied or system_error,
+            None if age is None else float(age),operation_denied,system_error)
     if not isinstance(channels,list) or len(channels)!=10:
         raise ValueError("Source Mode2 expects ten validated Native channels")
     gaps=0
@@ -105,8 +112,8 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
         nonfinite+=ch["nonfinite_samples"]
     return LiveTransportHealth(
         10,raw_invalid,gaps,nonfinite,silent,
-        raw_invalid>0 or gaps>0 or nonfinite>0 or operation_denied,
-        None if age is None else float(age),operation_denied)
+        raw_invalid>0 or gaps>0 or nonfinite>0 or operation_denied or system_error,
+        None if age is None else float(age),operation_denied,system_error)
 
 
 def original_dpi_geometry(device_pixel_ratio:float)->dict:
