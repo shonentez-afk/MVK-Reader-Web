@@ -320,7 +320,9 @@ class OriginalMeasureControls:
         writer=getattr(self.window,"_source_live_writer",None)
         source_ready=bool(live and writer is not None
                           and writer.trustworthy
-                          and not self.window._measurement_exit_requested)
+                          and not self.window._measurement_exit_requested
+                          and not (trace is not None and
+                                   trace.status_cells.system_error_latched))
         source_plan=getattr(
             getattr(self.window,"original_shell",None),
             "live_file_plan",None)
@@ -360,10 +362,19 @@ class OriginalMeasureControls:
                 read_proof.get("denial_seen") and
                 not self.window._measurement_exit_requested and
                 not self.window._measurement_connection_error)
+            source_cells=trace.status_cells.receipt() if trace is not None else {}
+            system_error=bool(
+                source_cells.get("source_system_error_latched_until_new_capture"))
+            code=source_cells.get("source_statuscells0_uint32")
+            error_text=(
+                f"Системная ошибка прибора (0x{code:08X})"
+                if system_error and isinstance(code,int) and code>0
+                else "Системная ошибка прибора (ранее подтверждена)")
             self.status.setText(
-                "Прибор: отказ операции (наш клиент команд не отправлял)"
+                error_text if system_error
+                else "Прибор: отказ операции (наш клиент команд не отправлял)"
                 if denied else state_view.text)
-            bad=(state_view.indicator=="bad" or denied)
+            bad=(state_view.indicator=="bad" or denied or system_error)
             self.bad_indicator.setStyleSheet("color:#cc3636")
             self.bad_indicator.setVisible(bad)
             self.indicator.setVisible(not bad)
@@ -376,7 +387,9 @@ class OriginalMeasureControls:
                 "Статус подтверждённого пассивного Native R6.1. "
                 "Он не является приборным регистром StatusIsError. "
                 "ACK/отказ входящего протокола не являются результатом "
-                "нашей SetRate: исходящие команды выключены.")
+                "нашей SetRate: исходящие команды выключены. "
+                "Системная ошибка StatusCells[0] выводится только при "
+                "полученных из Go двух валидных 16-битных регистрах.")
         else:
             self.status.setText(
                 "Просмотр сохранённого измерения" if offline
