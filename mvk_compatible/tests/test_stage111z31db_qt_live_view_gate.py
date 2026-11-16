@@ -84,6 +84,15 @@ def test_qt_invalid_transport_and_stop_prevent_queued_preview(
         assert win.request_measurement_stop()
         assert owner.calls==1
         assert win._measurement_exit_requested
+        assert win.measurement_connection_display().phase=="STOPPING"
+        assert not win.measurement_connection_display().transport_verified
+        panel=win.original_measure_controls
+        assert not panel.freeze.isEnabled()
+        assert not panel.rate.isEnabled()
+        assert not panel.buttons["bWriteAdc"].isEnabled()
+        assert not panel.buttons["bWriteValues"].isEnabled()
+        with pytest.raises(ValueError, match="завершается"):
+            win.source_write_toggle("data")
         assert not win.wave_plot.listDataItems()
         assert not win.spec_plot.listDataItems()
         # Late positive Go statuses and previews must remain disallowed.
