@@ -101,6 +101,16 @@ def test_original_global_toolbar_source_geometry_and_live_preview_freeze(
         qt_app.processEvents()
         assert not win._live_active
         assert panel.state.mode=="idle"
+        # Source Mode2 continues to display 5 pages + pnMeasure if Go
+        # fails to connect. Only a second Measurement click resets them.
+        assert panel.panel.isVisible()
+        assert win._measurement_mode_selected
+        assert panel.bad_indicator.isVisible()
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==[
+            "PageStart","PageStatus","PageAdc","PageSpectrum","PageFile"]
+        assert win.leave_measurement_mode()
+        qt_app.processEvents()
         assert not panel.panel.isVisible()
         assert not win._source_live_view_frozen
     finally:

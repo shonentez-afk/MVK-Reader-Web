@@ -182,8 +182,15 @@ def test_original_connected_five_pages_system_grid_and_live_status_integrity(
         win._end_live_capture(False)
         settle(qt_app)
         assert win.original_visual_skin.snapshot()[
-            "visible_source_tabs"]==["PageStart"]
+            "visible_source_tabs"]==list(ORIGINAL_LIVE_VISIBLE)
+        assert win._measurement_mode_selected
         assert win.original_measure_controls.state.mode=="idle"
+        assert win.original_measure_controls.panel.isVisible()
+        assert win.original_measure_controls.bad_indicator.isVisible()
+        assert win.leave_measurement_mode()
+        settle(qt_app)
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==["PageStart"]
         assert not win.original_measure_controls.panel.isVisible()
     finally:
         win.close()
