@@ -55,3 +55,30 @@ def test_unknown_command_never_becomes_a_device_write_plan():
         plan_verified_source_rate_command(unrelated)
     with pytest.raises(TypeError):
         plan_verified_source_rate_command(None)
+
+
+def test_original_win32_indy_cardinal_write_has_little_endian_stream_bytes():
+    """IDR 007F3E58 AConvert=False and 007D8968 ToBytes(LongWord).
+
+    Source-proof covers ONLY per-call Uint32 bytes, never packet boundaries
+    or accepted physical device operation.
+    """
+    queue=OriginalMode2CommandQueue()
+    cmd=queue.set_rate(309+1)
+    plan=plan_verified_source_rate_command(cmd)
+    wire=plan.indy_uint32_stream_bytes()
+    assert len(wire)==36  # nine 4-byte Write UInt32 calls
+    assert wire[:8]==bytes.fromhex("0d 0c 80 ff 24 00 00 00")
+    assert wire[28:32]==bytes.fromhex("0e 00 02 00")
+    assert wire[32:36]==bytes.fromhex("36 01 00 00")
+    assert tuple(int.from_bytes(wire[i:i+4],"little")
+                 for i in range(0,len(wire),4))==plan.all_words
+    receipt=plan.receipt()
+    assert receipt["source_uint32_write_overload_address"]=="007F3E58"
+    assert receipt["source_uint32_to_bytes_address"]=="007D8968"
+    assert receipt["source_win32_uint32_stream_byte_order"]=="little-endian"
+    assert receipt["source_uint32_stream_endianness_verified"]
+    assert receipt["source_uint32_stream_length_bytes"]==36
+    assert not receipt["tcp_packet_bytes_verified"]
+    assert not receipt["device_reply_ack_proven"]
+    assert not receipt["network_or_device_calls_made"]
