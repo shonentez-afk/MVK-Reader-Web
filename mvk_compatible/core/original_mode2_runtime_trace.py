@@ -83,9 +83,11 @@ class OriginalMode2RuntimeTrace:
                 raise ValueError("Native run changed in original Mode2")
             self.session_id = sid
         frames = status["frames_decoded"]
-        if frames < self.frames_decoded:
+        if frames < self.frames_decoded and self.session_id is not None:
             raise ValueError("Native decoded-frame count rolled back")
-        self.frames_decoded = frames
+        # Sparse old synthetic UI receipts have no run identity; never
+        # pretend their counters belong to one monotonic physical session.
+        self.frames_decoded = max(self.frames_decoded, frames)
         if self.stop_requested:
             self.phase = "STOPPING"
         elif status["phase"] == "REFUSED":
