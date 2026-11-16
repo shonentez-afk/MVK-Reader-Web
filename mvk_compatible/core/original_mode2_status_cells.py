@@ -123,6 +123,7 @@ class OriginalStatusCellsEvidence:
         self.source_param_count=0
         self.status_changes=0
         self.new_system_error=False
+        self.system_error_latched=False
 
     def observe_native(self,status:dict)->dict:
         found=parse_source_cells(status)
@@ -146,12 +147,16 @@ class OriginalStatusCellsEvidence:
                 for before,after in zip(old,found))
         elif any(x.valid for x in found):
             self.status_changes+=sum(int(x.valid) for x in found)
-        previous=bool(self.available and self.cells[0].valid and self.cells[0].value>0)
         self.available=True
         self.cells=found
         self.source_param_count=status["source_rx_nonempty_parameter_frames"]
         self.new_system_error=bool(
-            found[0].valid and found[0].value>0 and not previous)
+            found[0].valid and found[0].value>0 and
+            not self.system_error_latched)
+        if self.new_system_error:
+            # Source 0080871B skips further Stage3 handling once set;
+            # a later zero raw code does not by itself reset that Stage.
+            self.system_error_latched=True
         return self.receipt()
 
     def receipt(self)->dict:
@@ -175,6 +180,7 @@ class OriginalStatusCellsEvidence:
             "source_statuscells0_nonzero_observed":fault,
             "new_source_system_error_from_go_register":self.new_system_error,
             "source_stage3_condition_from_observed_register":fault,
+            "source_system_error_latched_until_new_capture":self.system_error_latched,
             "source_original_stage3_uses_unsigned_comparison":True,
             "original_tmkvthread_stage3_actually_observed":False,
             "original_15_pagestatus_fields_equal_these_14":False,
