@@ -2541,6 +2541,9 @@ class MainWindow(QMainWindow):
         if dlg.stop_capture() is not True:
             return False
         self._measurement_exit_requested=True
+        # Freeze the view on request, not only after QProcess exits.
+        # A late queued preview must never repopulate these graphs.
+        self._invalidate_live_preview("Остановка измерения запрошена")
         self.original_shell.measure_controls.status.setText(
             "Завершение приёма")
         return True
@@ -2726,6 +2729,13 @@ class MainWindow(QMainWindow):
             return
         self._native_live_status=snapshot
         self._measurement_connection_error=False
+        # Once the operator requests stop, a later valid Go status must
+        # not reactivate the preview or show a green connected indicator.
+        if self._measurement_exit_requested:
+            self._invalidate_live_preview("Запрошена остановка измерения")
+            self.original_shell.measure_controls.render()
+            self.original_shell.refresh_status()
+            return evidence
         if snapshot.get("phase")=="RECORDING":
             try:
                 self._source_live_writer.observe(snapshot)
@@ -2756,6 +2766,9 @@ class MainWindow(QMainWindow):
             return
         self._native_live_status=None
         self._source_live_writer.invalidate(str(reason))
+        # An invalid status immediately invalidates all provisional
+        # waveform/spectrum bytes, even when the next Qt signal is delayed.
+        self._invalidate_live_preview(str(reason))
         self.original_shell.update_live_file_status(
             None,reason=str(reason))
         # An absent pending Go status is not yet a physical connection
@@ -2770,6 +2783,13 @@ class MainWindow(QMainWindow):
 
     def _receive_live_preview(self, preview):
         if not self._live_active:
+            return
+        from ..core.original_live_view_gate import gate_live_preview
+        decision=gate_live_preview(
+            self._native_live_status,preview,
+            stop_requested=self._measurement_exit_requested)
+        if not decision.allowed:
+            self._invalidate_live_preview(decision.reason)
             return
         try:
             # Never show a preview not associated with the ONE trusted
