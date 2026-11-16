@@ -1073,7 +1073,15 @@ class OriginalRootShell:
         self._live_file_status=None
         self._live_file_reason=""
         self.file_page.setProperty("sourceLiveFilePlanReceipt",None)
-        if self._file_flow is None:
+        if self._file_flow is None or self.window.session is None:
+            # refresh_file_workbench clears SPEC/VALUES but intentionally
+            # does not own cbFileChannels. Clear all three original lists
+            # when a cancelled capture has no verified offline session.
+            blocked=self.file_channels.blockSignals(True)
+            try:
+                self.file_channels.clear()
+            finally:
+                self.file_channels.blockSignals(blocked)
             self.refresh_file_workbench()
 
     def apply_verified_live_file_plan(self,plan,flow):
@@ -1096,7 +1104,11 @@ class OriginalRootShell:
                     item.setCheckState(Qt.Checked if chosen else Qt.Unchecked)
         finally:
             self.file_channels.blockSignals(blocked)
-        self.refresh_file_workbench()
+        # One accepted Native ZIP MUST display its authenticated SPEC
+        # and 24+43 VALUES from the same tick, not the fallback single
+        # "no source" row. Core revalidates source SHA, ADC and tick here.
+        verified_status=None if flow.direct_bin else flow.status_snapshot()
+        self.refresh_file_workbench(verified_status=verified_status)
         self.file_page.setProperty("sourceAppliedLiveFilePlanReceipt",receipt)
         return receipt
 

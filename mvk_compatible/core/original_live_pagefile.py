@@ -167,10 +167,17 @@ def live_pagefile_channel_rows(status:dict|None):
     for n,ch in enumerate(channels,1):
         name=(f"АЦП {n}" if n<=8 else f"Тахометр {n-8}")
         samples=ch.get("samples")
-        if type(samples) is not int or samples<0:
+        # Synthetic transport-only receipts may authenticate the 8+2
+        # channel ordering WITHOUT providing per-channel RAW counters.
+        # Missing is UNKNOWN, never an implicit zero or failed TCP.
+        # Real Go status validated by validate_live_status supplies both.
+        if samples is not None and (
+                type(samples) is not int or samples<0):
             raise ValueError("Unverified Native source sample count")
         rates=ch.get("sample_rates_hz")
-        if (not isinstance(rates,list) or len(rates)>3 or
+        if rates is None:
+            rates=[]
+        elif (not isinstance(rates,list) or len(rates)>3 or
                 any(type(r) is not int or r<=0 or r>1_000_000
                     for r in rates)):
             raise ValueError("Unverified Native source Fs")
@@ -178,6 +185,8 @@ def live_pagefile_channel_rows(status:dict|None):
             label="нет новых пакетов"
         elif ch["sequence_discontinuities"] or ch["nonfinite_samples"]:
             label="ошибка потока"
+        elif samples is None:
+            label="счётчик ещё не получен"
         elif samples==0:
             label="нет отсчётов"
         else:
@@ -185,6 +194,7 @@ def live_pagefile_channel_rows(status:dict|None):
         if n>8:
             label+="; TACH RAW не подтверждён"
         frequency=(str(rates[0])+" Гц" if len(rates)==1 else UNKNOWN)
+        amount=UNKNOWN if samples is None else str(samples)
         result.append(
-            f"{name} · {samples} отсчётов · {frequency} · {label}")
+            f"{name} · {amount} отсчётов · {frequency} · {label}")
     return tuple(result)

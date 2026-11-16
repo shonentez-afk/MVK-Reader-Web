@@ -106,3 +106,34 @@ def test_selected_native_archive_reuses_sha_checked_offline_flow(tmp_path):
     assert accepted.values[0] is False
     assert report["unsupported_original_tach_channels"]==[2]
     assert not report["hardware_write_commands_sent"]
+
+
+def test_sparse_transport_evidence_keeps_unknown_counters_not_fake_zero():
+    status={
+        "phase":"RECORDING",
+        "invalid_frames":0,
+        "channels":[
+            {"channel":i,"type":"ADC" if i<=8 else "TACH",
+             "sequence_discontinuities":0,"nonfinite_samples":0}
+            for i in range(1,11)],
+    }
+    rows=live_pagefile_channel_rows(status)
+    assert len(rows)==10
+    assert all("— отсчётов" in row for row in rows)
+    assert all("0 отсчётов" not in row for row in rows)
+    assert all("счётчик ещё не получен" in row for row in rows)
+
+
+def test_non_numeric_present_native_counts_still_rejected():
+    status={
+        "phase":"RECORDING",
+        "invalid_frames":0,
+        "channels":[
+            {"channel":i,"type":"ADC" if i<=8 else "TACH",
+             "samples":12, "sample_rates_hz":[65536],
+             "sequence_discontinuities":0,"nonfinite_samples":0}
+            for i in range(1,11)],
+    }
+    status["channels"][0]["samples"]=True
+    with pytest.raises(ValueError):
+        live_pagefile_channel_rows(status)
