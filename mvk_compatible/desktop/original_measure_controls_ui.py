@@ -250,7 +250,8 @@ class OriginalMeasureControls:
             technical_ui=technical,
             native_archive_available=bool(
                 flow is not None and not flow.direct_bin),
-            has_channels=has_channels,has_values=has_values)
+            has_channels=has_channels,has_values=has_values,
+            stop_requested=bool(self.window._measurement_exit_requested))
         self.panel.setVisible(policy.panel_visible)
         self.panel.setProperty(
             "sourceRuntimeMeasurePanelVisible",policy.panel_visible)
@@ -290,7 +291,8 @@ class OriginalMeasureControls:
         # as before. This does not enable TMVKThread device writes.
         writer=getattr(self.window,"_source_live_writer",None)
         source_ready=bool(live and writer is not None
-                          and writer.trustworthy)
+                          and writer.trustworthy
+                          and not self.window._measurement_exit_requested)
         source_plan=getattr(
             getattr(self.window,"original_shell",None),
             "live_file_plan",None)
