@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from .original_connected_status import connected_system_status
 from .original_mode2_rx_evidence import OriginalMode2ReceiveEvidence
 from .original_mode2_retry_timing import OriginalSourceRetryPlan
+from .original_mode2_wire_word_candidate import plan_verified_source_rate_command
 from .original_mode2_command_queue import (
     OriginalMode2CommandQueue, OriginalMode2FaultRoutes,
 )
@@ -54,6 +55,7 @@ class OriginalMode2RuntimeTrace:
         self._event_total = 0
         self.finished = False
         self.source_initial_rate_queued_offline = False
+        self.source_initial_rate_write_calls_dry_run: dict | None = None
 
     def _event(self, name: str):
         self._event_total += 1
@@ -115,6 +117,18 @@ class OriginalMode2RuntimeTrace:
         # SetRate queue: ACK from the device cannot certify that we sent
         # a command, because the Native Go client sends none.
         source_rx=self.receive_evidence.observe_native(status)
+        # Source 00807E92..00807F67 takes ONE command from TList only
+        # at Stage=1. The received nonempty PARAM frame is the precise
+        # source stage prerequisite. Simulate the original nine Win32
+        # UInt32 Write arguments, without actually writing any bytes.
+        if (source_rx["original_source_stage_candidate_from_rx"]==1 and
+                self.source_initial_rate_write_calls_dry_run is None and
+                self.command_model.pending):
+            source_command=self.command_model.take_one(1)
+            if source_command is not None:
+                self.source_initial_rate_write_calls_dry_run=(
+                    plan_verified_source_rate_command(source_command).receipt())
+                self._event("SOURCE_STAGE1_SET_RATE_DISPATCH_DRY_RUN")
         if source_rx["new_denial_observed_this_snapshot"]:
             self._event("PASSIVE_RX_OPERATION_DENIED")
         if self.stop_requested:
@@ -212,6 +226,9 @@ class OriginalMode2RuntimeTrace:
             "original_timer_behavior_reproduced": False,
             "original_queue": self.command_model.receipt(),
             "original_receive_protocol": self.receive_evidence.receipt(),
+            "source_initial_rate_write_calls_dry_run":
+                self.source_initial_rate_write_calls_dry_run,
+            "source_initial_write_calls_physically_sent": False,
             "original_retry_plan_only": self.source_retry_plan.receipt(),
             "source_initial_rate_queued_offline":
                 self.source_initial_rate_queued_offline,
