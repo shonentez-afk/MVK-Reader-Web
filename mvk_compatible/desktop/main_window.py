@@ -24,6 +24,8 @@ from ..core import OfflineSession
 from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_connected_status import connected_system_status
+from ..core.original_live_write_stages import OriginalLiveWriteLedger
+from .original_write_export_worker import SourceWriteWindowExportWorker
 from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
 )
@@ -135,6 +137,10 @@ class MainWindow(QMainWindow):
         self._native_live_status=None  # validated Go read-only transport, never device STATUS
         self._live_prior_session=None
         self._pending_native_pagefile_plan=None  # set only by accepted Native event
+        self._source_live_writer=OriginalLiveWriteLedger()
+        self._pending_source_write_ledger=None
+        self._source_writer_export_worker=None
+        self._source_writer_last_export=None
         self._live_control_states=[]
         self._pagestatus_snapshot=None
         self._source_view_time=None
@@ -2496,6 +2502,8 @@ class MainWindow(QMainWindow):
         # Mode2, BEFORE the original TMVKThread.create/socket step.
         # Compatible Native R6.1 capture retains its full RAW independently.
         self._pending_native_pagefile_plan=None
+        self._source_live_writer=OriginalLiveWriteLedger()
+        self._pending_source_write_ledger=None
         self.original_shell.begin_live_file_plan()
         self.spec_core_triplet.setText('Нет подтверждённого спектра нового сеанса')
         self._reset_dsp_tach_panel('нет проверенных регистров нового сеанса')
@@ -2549,6 +2557,8 @@ class MainWindow(QMainWindow):
         self._measurement_exit_requested=False
         self._native_live_status=None
         self._pending_native_pagefile_plan=None
+        self._source_live_writer=OriginalLiveWriteLedger()
+        self._pending_source_write_ledger=None
         self.original_shell.clear_live_file_plan()
         self.original_visual_skin.reveal_page(0)
         self.original_shell.measure_controls.render()
@@ -2575,6 +2585,22 @@ class MainWindow(QMainWindow):
             status=self._native_live_status if self._live_active else None,
             failure=self._measurement_connection_error)
 
+    def source_write_toggle(self,kind):
+        """Original button -> actual selected local write window.
+
+        This receives ONLY already-validated Go stream sample counters,
+        never sends the Delphi SetRate/device command. Real byte ranges
+        are materialized after this exact session is SHA-accepted.
+        """
+        if not self._live_active:
+            raise ValueError("Исходная запись требует реального активного приёмника")
+        plan=self.original_shell.live_file_plan
+        receipt=self._source_live_writer.toggle(kind,plan)
+        self.original_shell.measure_controls.render()
+        self.original_shell.file_selection_status.setText(
+            self.original_shell._file_selection_status())
+        return receipt
+
     def _begin_live_capture(self):
         self._reset_visible_original_pair()
         """Preview is a separate, explicitly unverified mode, never a ZIP session."""
@@ -2594,6 +2620,9 @@ class MainWindow(QMainWindow):
         self.original_shell.clear_source_view_time()
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._live_active=True
+        # One source WriteData/WriteValues recorder per real Native Go run.
+        # Original stages start idle=2; no device writes ever.
+        self._source_live_writer=OriginalLiveWriteLedger()
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
         self._native_live_status=None
@@ -2674,6 +2703,18 @@ class MainWindow(QMainWindow):
             return
         self._native_live_status=snapshot
         self._measurement_connection_error=False
+        if snapshot.get("phase")=="RECORDING":
+            try:
+                self._source_live_writer.observe(snapshot)
+            except (ValueError,TypeError,KeyError):
+                # Sparse legacy test receipts are valid passive TCP
+                # evidence but cannot arm a 10-bank recording. Keep their
+                # PageStatus trust unchanged; fail CLOSED only the writer.
+                self._source_live_writer.invalidate(
+                    "Нет полной проверки счётчиков 10 каналов")
+        elif snapshot.get("phase")=="REFUSED":
+            self._source_live_writer.invalidate(
+                "Native отказал в принятии измерения")
         if not evidence.connection_verified or evidence.data_integrity_alert:
             # A successful TCP JSON update does not make an old preview
             # current; fail closed on silence, stale or invalid frames.
@@ -2691,6 +2732,7 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._native_live_status=None
+        self._source_live_writer.invalidate(str(reason))
         self.original_shell.update_live_file_status(
             None,reason=str(reason))
         # An absent pending Go status is not yet a physical connection
@@ -2809,6 +2851,13 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._live_active=False
+        # Preserve ONLY completed windows, pinned to this real Native
+        # session's last validated ten-channel counters and AUX ticks.
+        # If the Go capture/export fails, pending output is refused.
+        self._source_live_writer.finish(accepted=bool(exported))
+        self._pending_source_write_ledger=(
+            self._source_live_writer
+            if exported and self._source_live_writer.windows else None)
         self._native_live_status=None
         # Core owns the exit policy; Qt merely applies it. A physical
         # connection is NEVER inferred from visible tabs or a parked ZIP.
@@ -2899,6 +2948,54 @@ class MainWindow(QMainWindow):
             "Проверенный Native ZIP открыт; исходный выбор 10/43/73 "
             "применён только к будущему локальному экспорту. "
             f"Выбрано АЦП: {len(receipt['applied_selected_adc'])}.")
+        ledger=self._pending_source_write_ledger
+        self._pending_source_write_ledger=None
+        if ledger is not None and ledger.windows:
+            self._start_source_write_export(ledger,path)
+
+    def _start_source_write_export(self,ledger,path):
+        """Real local files from SAME trusted ZIP, off Qt GUI thread."""
+        if (self.session is None or self._offline_flow is None or
+                Path(self.session.path).resolve()!=Path(path).resolve()):
+            self.statusBar().showMessage(
+                "Исходная запись не экспортирована: ZIP другого сеанса")
+            return
+        worker=self._source_writer_export_worker
+        if worker is not None and worker.isRunning():
+            self.statusBar().showMessage(
+                "Запись локальных интервалов уже выполняется")
+            return
+        worker=SourceWriteWindowExportWorker(
+            ledger,self._offline_flow,Path(path).parent,self)
+        self._source_writer_export_worker=worker
+        self._source_writer_last_export=None
+        worker.ready.connect(self._source_write_export_ready)
+        worker.failed.connect(self._source_write_export_failed)
+        worker.finished.connect(self._source_write_export_done)
+        self.statusBar().showMessage(
+            f"SHA-проверка и локальный экспорт {len(ledger.windows)} "
+            "выбранных исходных интервалов; прибору ничего не отправлено")
+        worker.start()
+
+    def _source_write_export_ready(self,report):
+        self._source_writer_last_export=report
+        self.statusBar().showMessage(
+            "Оригинальная запись: проверенные локальные интервалы сохранены "
+            f"({report['files_written']} файлов, {report['windows']} окон). "
+            "Не исходные Delphi BIN/CSV.")
+
+    def _source_write_export_failed(self,message):
+        self._source_writer_last_export={
+            "failed_closed":True,"reason":str(message),
+            "hardware_command_sent":False}
+        self.statusBar().showMessage(
+            "Исходные интервалы записи отклонены: "+str(message))
+
+    def _source_write_export_done(self):
+        worker=self._source_writer_export_worker
+        if worker is not None and not worker.isRunning():
+            self._source_writer_export_worker=None
+            worker.deleteLater()
 
     def open_native_capture(self):
         """Use the already hardware-tested recorder; never send MVK commands."""
@@ -5780,6 +5877,14 @@ class MainWindow(QMainWindow):
 
 
     def closeEvent(self,event):
+        worker=self._source_writer_export_worker
+        if worker is not None and worker.isRunning():
+            QMessageBox.warning(
+                self,"Сохранение проверенных интервалов",
+                "Сначала завершите запись локальных интервалов; "
+                "исходный RAW и ZIP не изменяются.")
+            event.ignore()
+            return
         if self._native_dialog is not None and self._native_dialog.is_busy():
             QMessageBox.warning(self,'Запись ещё выполняется',
                 'Сначала завершите Native R6.1 и дождитесь проверенного экспорта. '

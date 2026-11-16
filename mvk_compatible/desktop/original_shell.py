@@ -1139,14 +1139,25 @@ class OriginalRootShell:
         if (self.live_file_plan is not None
                 and self.window._measurement_mode_selected):
             receipt=self.live_file_plan.receipt()
+            source_writer=getattr(self.window,"_source_live_writer",None)
+            status=(source_writer.receipt() if source_writer is not None
+                    else None)
+            prefix=(
+                f"WriteDataStage={status['write_data_stage']} · "
+                f"WriteValuesStage={status['write_values_stage']} · "
+                f"закрытых интервалов {status['completed_window_count']}. "
+                if status is not None else "")
             return (
                 "Исходная запись Mode2: 10 каналов, 43 SPEC, 73 VALUES. "
                 f"Выбрано АЦП {len(receipt['selected_adc_indices'])}, "
                 f"TACH {len(receipt['selected_tach_indices'])}, "
                 f"SPEC {len(receipt['selected_spec_indices'])}, "
                 f"VALUES {len(receipt['selected_value_indices'])}. "
-                "Go Native сохраняет полный RAW; фильтр применяется "
-                "только к новому проверенному локальному экспорту.")
+                +prefix+
+                "Go Native сохраняет полный RAW; при нажатии «Запись» "
+                "фиксируются проверенные отсчёты и AUX-типы одного сеанса. "
+                "После принятия ZIP автоматически создаются локальные "
+                "записи; устройству команды не отправляются.")
         if self.file_record_selection is None:
             return "Чек-листы записи: загрузите проверенное измерение"
         chosen=self.file_record_selection.report()

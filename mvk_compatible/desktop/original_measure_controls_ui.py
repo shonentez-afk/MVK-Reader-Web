@@ -85,15 +85,18 @@ class OriginalMeasureControls:
         self.buttons["bWriteAdc"].clicked.connect(
             self._export_checked_adcs)
         self.buttons["bWriteAdc"].setToolTip(
-            "Исходный _Unit128:0084E914 переключает TMVKThread.WriteData. "
-            "Здесь — безопасное сохранение выбранных исходных "
-            "BIN/TSXML из готового файла, без аппаратных команд.")
+            "Оригинал: _Unit128:0084E914 -> WriteData -> 10 флагов. "
+            "При LIVE эта кнопка фиксирует границы подтверждённых "
+            "отсчётов Go; после успешной проверки архива записываются "
+            "выбранные локальные Float32, не исходные Delphi файлы. "
+            "RAW сохраняется полностью, команды прибору не отправляются.")
         self.buttons["bWriteValues"].clicked.connect(
             lambda:self._save_verified_table(filtered=True))
         self.buttons["bWriteValues"].setToolTip(
-            "Исходный _Unit128:0084E988 переключает "
-            "TMVKThread.WriteValues. Здесь — только локальный CSV "
-            "из выбранных подтверждённых VALUES/SPEC и тика.")
+            "Оригинал: _Unit128:0084E988 -> WriteValues -> 43/24/43/6 "
+            "маски. При LIVE эта кнопка фиксирует границы реально "
+            "подтверждённых AUX-тиков; после принятия Native ZIP создаётся "
+            "локальный проверенный CSV, а не исходный Delphi WriteValues.")
         self.status=QLabel("Без подтверждённого источника",self.panel)
         self.status.setObjectName("lbStatus")
         self.status.setWordWrap(True)
@@ -162,6 +165,8 @@ class OriginalMeasureControls:
             self.window._render_live_spectrum()
 
     def _export_checked_adcs(self):
+        if self.state.mode=="live" and self.window._live_active:
+            return self._toggle_live_write("data")
         if (self.state.mode!="offline" or
                 self.window.session is None or
                 self.window._live_active):
@@ -170,7 +175,24 @@ class OriginalMeasureControls:
         # NEVER try to toggle TMVKThread.WriteData.
         return self.window.original_shell._export_selected_file_source()
 
+    def _toggle_live_write(self,kind):
+        """One REAL source button action, no extra research controls."""
+        try:
+            receipt=self.window.source_write_toggle(kind)
+        except (ValueError,KeyError,RuntimeError,TypeError) as exc:
+            # No modal dialog can implicitly approve device commands.
+            self.window.statusBar().showMessage(
+                "Исходная запись отклонена: "+str(exc))
+            self.render()
+            return None
+        self.render()
+        if receipt is not None:
+            self.panel.setProperty("sourceOriginalWriteStageReceipt",receipt)
+        return receipt
+
     def _save_verified_table(self,*,filtered):
+        if filtered and self.state.mode=="live" and self.window._live_active:
+            return self._toggle_live_write("values")
         if (self.state.mode!="offline" or
                 self.window.session is None or self.window._live_active):
             return
@@ -262,10 +284,40 @@ class OriginalMeasureControls:
         # show the actually observed sample rate as read-only.
         self.buttons["bWriteTable"].setEnabled(
             policy.local_table_enabled)
+        # Original Delphi start/stop buttons are now linked to the
+        # actual read-only Native session's verified counters. In a
+        # synthetic preview without trusted transport, keep DISABLED
+        # as before. This does not enable TMVKThread device writes.
+        writer=getattr(self.window,"_source_live_writer",None)
+        source_ready=bool(live and writer is not None
+                          and writer.trustworthy)
+        source_plan=getattr(
+            getattr(self.window,"original_shell",None),
+            "live_file_plan",None)
+        source_has_data=bool(
+            source_plan is not None and any(source_plan.channels))
+        source_has_values=bool(
+            source_has_data and source_plan is not None and
+            (any(source_plan.spec) or any(source_plan.values)))
+        data_requested=bool(
+            writer is not None and writer.receipt()["write_data_requested"])
+        values_requested=bool(
+            writer is not None and writer.receipt()["write_values_requested"])
         self.buttons["bWriteAdc"].setEnabled(
-            policy.local_adc_enabled)
+            policy.local_adc_enabled or
+            (source_ready and (source_has_data or data_requested)))
         self.buttons["bWriteValues"].setEnabled(
-            policy.local_values_enabled)
+            policy.local_values_enabled or
+            (source_ready and (source_has_values or values_requested)))
+        self.buttons["bWriteAdc"].setText(
+            "Завершить запись сигнала" if live and data_requested
+            else "Запись сигнала")
+        self.buttons["bWriteValues"].setText(
+            "Завершить запись значений" if live and values_requested
+            else "Запись значений")
+        self.panel.setProperty(
+            "sourceOriginalWriteStageReceipt",
+            writer.receipt() if writer is not None else None)
         if requested or live:
             state_view=self.window.measurement_connection_display()
             self.status.setText(state_view.text)
