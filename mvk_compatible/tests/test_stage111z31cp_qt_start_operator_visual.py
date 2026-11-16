@@ -15,7 +15,7 @@ import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLabel,QPushButton,QLineEdit
+from PySide6.QtWidgets import QLabel,QPushButton,QLineEdi,QFileDialogt
 
 from .test_desktop_qt import qt_app
 from .test_stage111z31cc_qt_graph_layout_cursor import settle

@@ -2670,6 +2670,10 @@ class MainWindow(QMainWindow):
         self._full_spectrum=None
         self._spectrum_summary=None
         self._set_active(False)
+        # The operator's original IDLE state exposes only PageStart.
+        # A live PageFile/Status selection must not survive as an
+        # extra source tab after the recorder disconnects.
+        self.original_visual_skin.reveal_page(0)
         self._sync_spectrum_summary_primary()
         if exported:
             # The dialog calls archiveReady AFTER this state transition.
