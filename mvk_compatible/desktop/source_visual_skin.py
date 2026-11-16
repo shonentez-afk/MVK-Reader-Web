@@ -477,9 +477,10 @@ class OriginalVisualSkin:
         if page is None:
             page="PageStart"
         live=bool(self.window._live_active)
+        requested=bool(self.window._measurement_mode_selected)
         expected=original_runtime_visible_pages(
             has_measurement=ready,technical=self.technical,
-            current_page=page,live=live)
+            current_page=page,live=live,measurement_requested=requested)
         self._visibility_guard=True
         try:
             for i in range(self.root.count()):
@@ -489,7 +490,7 @@ class OriginalVisualSkin:
             self._visibility_guard=False
         receipt=original_runtime_tab_contract(
             has_measurement=ready,technical=self.technical,
-            current_page=page,live=live)
+            current_page=page,live=live,measurement_requested=requested)
         self.root.setProperty("sourceRuntimeVisibilityReceipt",receipt)
         return current_index
 

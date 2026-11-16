@@ -22,7 +22,7 @@ from ..core.original_measure_controls import (
     OriginalMeasureState,DFM_BUTTONS,DFM_MEASURE_HEIGHT,
     TABLE_PREFIX,export_verified_table_csv,
 )
-from ..core.original_connected_status import connected_system_status
+from ..core.original_measurement_mode import source_connection_display
 from ..core.original_pagefile_recording import OriginalPageFileSelection
 
 
@@ -97,13 +97,21 @@ class OriginalMeasureControls:
         self.status.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
         self.status.setMinimumWidth(72)
         lay.addWidget(self.status,1)
-        self.indicator=QLabel("●",self.panel)
+        # Two independent source images: green when validated; red on
+        # an actual error. The missing connection never gets a green icon.
+        self.status_icons=QWidget(self.panel)
+        self.status_icons.setObjectName("pnSourceStatusIcons")
+        self.status_icons.setFixedSize(33,41)
+        self.indicator=QLabel("○",self.status_icons)
         self.indicator.setObjectName("imStatusGood")
-        self.indicator.setFixedSize(33,41)
+        self.indicator.setGeometry(0,0,33,41)
         self.indicator.setAlignment(Qt.AlignCenter)
-        self.indicator.setToolTip(
-            "Круг не означает доказанное подключение исходной TMVKThread.")
-        lay.addWidget(self.indicator,0)
+        self.bad_indicator=QLabel("●",self.status_icons)
+        self.bad_indicator.setObjectName("imStatusBad")
+        self.bad_indicator.setGeometry(0,0,33,41)
+        self.bad_indicator.setAlignment(Qt.AlignCenter)
+        self.bad_indicator.hide()
+        lay.addWidget(self.status_icons,0)
         self.render()
 
     def sync_source(self):
@@ -195,7 +203,8 @@ class OriginalMeasureControls:
         state=self.state
         mode=state.mode
         live=(mode=="live")
-        offline=(mode=="offline")
+        requested=bool(self.window._measurement_mode_selected)
+        offline=(mode=="offline" and not requested)
         # Original pnMeasure design-time Visible=False and the accepted
         # operator PageSpectrum archive screenshot shows ONLY pnView time,
         # not the 53px five-button device toolbar. In a connected Native
@@ -203,7 +212,7 @@ class OriginalMeasureControls:
         # it is available only when F12 enables compatible technical UI.
         skin=getattr(self.window,"original_visual_skin",None)
         technical=bool(skin is None or skin.technical)
-        show_source_measure=bool(live or (offline and technical))
+        show_source_measure=bool(requested or live or (offline and technical))
         self.panel.setVisible(show_source_measure)
         self.panel.setProperty(
             "sourceRuntimeMeasurePanelVisible",show_source_measure)
@@ -217,9 +226,9 @@ class OriginalMeasureControls:
             self.freeze.blockSignals(False)
         self.freeze.setText("Продолжить приём" if state.frozen
                             else "Пауза приема")
-        self.rate.setEnabled(mode!="idle")
+        self.rate.setEnabled(live or offline)
         self.rate_menu.clear()
-        hz=state.observed_sample_rate_hz
+        hz=state.observed_sample_rate_hz if (live or offline) else None
         self.rate.setText("ЧД "+str(hz)+" Гц" if hz else "ЧД —")
         seen=self.rate_menu.addAction(
             f"ЧД {hz} Гц" if hz else "ЧД —")
@@ -241,19 +250,23 @@ class OriginalMeasureControls:
             offline and has_channels)
         self.buttons["bWriteValues"].setEnabled(
             is_native and has_channels and has_values)
-        if live:
-            proof=connected_system_status(
-                getattr(self.window,"_native_live_status",None))
-            self.status.setText(
-                "Подключен к прибору" if proof.connection_verified
-                else "Ожидание данных прибора")
-            connected=proof.connection_verified
-        elif offline:
-            self.status.setText("Просмотр сохранённого измерения")
-            connected=False
+        if requested or live:
+            state_view=self.window.measurement_connection_display()
+            self.status.setText(state_view.text)
+            bad=(state_view.indicator=="bad")
+            self.bad_indicator.setStyleSheet("color:#cc3636")
+            self.bad_indicator.setVisible(bad)
+            self.indicator.setVisible(not bad)
+            self.indicator.setText(
+                "●" if state_view.transport_verified else "○")
+            self.indicator.setStyleSheet(
+                "color:#459a4c" if state_view.transport_verified
+                else "color:#888888")
         else:
-            self.status.setText("Нет подключения к прибору")
-            connected=False
-        self.indicator.setText("●" if connected else "○")
-        self.indicator.setStyleSheet(
-            "color:#459a4c" if connected else "color:#777777")
+            self.status.setText(
+                "Просмотр сохранённого измерения" if offline
+                else "Нет подключения к прибору")
+            self.indicator.setText("○")
+            self.indicator.setStyleSheet("color:#888888")
+            self.bad_indicator.hide()
+            self.indicator.show()

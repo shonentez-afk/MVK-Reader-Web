@@ -771,7 +771,8 @@ class OriginalRootShell:
         finally:self.status_tabs.blockSignals(False)
         flow=None
         error=None
-        if self.window._live_active and index==0:
+        if (self.window._measurement_mode_selected
+                or self.window._live_active) and index==0:
             # The source screenshot's system table has 15 original labels;
             # validated passive Go status knows the TCP transport only.
             # A frame count is NOT the device calculation counter.
@@ -790,7 +791,9 @@ class OriginalRootShell:
                 "sourceNativeTransportConnected",model.connection_verified)
             self.status_page.setProperty(
                 "sourceOriginalSystemRowsVerified",0)
-        elif self.window.session is not None and not self.window._live_active:
+        elif (self.window.session is not None
+                and not self.window._measurement_mode_selected
+                and not self.window._live_active):
             try:
                 flow=self.window._current_offline_flow()
                 flow.require_session(self.window.session)
@@ -1207,10 +1210,13 @@ class OriginalRootShell:
 
 
     def sync_availability(self) -> None:
+        # Source Mode2 exposes and enables ADC/Spectrum pages immediately,
+        # regardless of whether the device has answered the TCP attempt.
+        selected=bool(self.window._measurement_mode_selected)
         self.navigation.setTabEnabled(
-            3, self.window.tabs.isTabEnabled(1))
+            3,self.window.tabs.isTabEnabled(1) or selected)
         self.navigation.setTabEnabled(
-            4, self.window.tabs.isTabEnabled(2))
+            4,self.window.tabs.isTabEnabled(2) or selected)
         skin=getattr(self.window,"original_visual_skin",None)
         if skin is not None:
             skin.update_runtime_tabs()

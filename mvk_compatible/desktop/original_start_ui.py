@@ -74,9 +74,8 @@ class OriginalStartController:
             b.setProperty("sourceOperatorCaptionEvidence",
                           "original-idle-screenshot-20261116")
             b.setProperty("sourceSafeCoreRoutePreserved",True)
-            b.setToolTip(
-                f"Original _Unit128 {name}: DFM ({x},{y},{w},{h}), "
-                f"Mode{route}; иконка Qt-кандидат, не исходный BMP.")
+            # No forensic DFM coordinates in the normal operator UI.
+            b.setToolTip(subtitle or title)
             self.buttons[name]=b
             if name=="bTaskConfigCalib":
                 b.setEnabled(False)
@@ -89,8 +88,7 @@ class OriginalStartController:
                 b.clicked.connect(
                     lambda _=False:self.open_config_mode(6))
             elif name=="bTaskConfigIP":
-                b.setToolTip(
-                    "Исходный Mode4 ConfigIP · локальный файл, без прибора")
+                b.setToolTip(subtitle or title)
                 b.clicked.connect(
                     lambda _=False:self.open_config_mode(4))
 
@@ -305,17 +303,27 @@ class OriginalStartController:
         return self.navigation.currentIndex()
 
     def open_capture_dialog(self):
-        """Only show consent-gated Native dialog; absolutely no auto-start."""
+        """Mode2 selects five pages before a TCP connection is attempted.
+
+        Original _Unit128 00848E78 -> 00846D24..00846D84 -> 00846DCC:
+        SetTabVisible/pnMeasure happens BEFORE TMVKThread constructor.
+        Operator consent for the separate passive Go capture is unchanged.
+        """
+        if self.window._measurement_mode_selected:
+            if self.window._live_active:
+                # Never kill an active recorder by closing source tabs.
+                self.window.open_native_capture()
+                return False
+            return self.window.leave_measurement_mode()
         if not self.commit_ip():
             return False
         self.workspace.source_route("bTaskConnect")
+        self.window.enter_measurement_mode()
         self.window.open_native_capture()
         dialog=getattr(self.window,"_native_dialog",None)
         if dialog is not None:
             dialog.device_ip.setText(self.workspace.device_ipv4)
             if self.workspace.library_path is not None:
                 dialog.output_path.setText(str(self.workspace.directory()))
-        self.status.setText(
-            "Открыт диалог Native R6.1: требуется явное разрешение "
-            "оператора; приёмник ещё не запущен")
+        self.status.setText("Режим измерения: ожидание подключения")
         return True
