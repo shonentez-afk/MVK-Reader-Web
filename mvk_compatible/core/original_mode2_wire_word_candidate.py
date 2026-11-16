@@ -1,8 +1,11 @@
 """IDR _Unit125.pas 0080937C: NON-TRANSMITTING source word-call plan.
 
-Reconstructs TIdIOHandler.Write UInt32 *call arguments* from disassembly,
-NOT proven TCP bytes. The Indy byte-order argument ECX=0 does not alone
-prove on-wire byte order. Never feed these to device/Native/any socket.
+Reconstructs TIdIOHandler.Write UInt32 *call arguments* from disassembly.
+Additional PRIVATE _Unit123.pas 007F3E58 proves AConvert=False bypasses
+byte swap, and _Unit116.pas 007D8968 ToBytes(LongWord) copies a DWORD
+into four bytes on Win32: little-endian UInt32 stream bytes are source-
+verified. This does NOT prove TCP packet boundaries, replies, handshake or
+safe instrument transactions. No IO in this file: NEVER send to hardware.
 
 - 0080937C..008093FA: eight sequential TIdIOHandler.Write calls.
 - 00807F2F..00807F52: queue command calls 0080937C with ECX=2,
@@ -48,6 +51,15 @@ class SourceWordCallPlan:
     def all_words(self) -> tuple[int, ...]:
         return self.header_words + self.additional_words
 
+    def indy_uint32_stream_bytes(self) -> bytes:
+        """Pure offline byte concatenation of AConvert=False UInt32 calls.
+
+        Source 007F3E58 (Indy Cardinal Write) bypasses conversion when
+        ECX=0; ToBytes(LongWord) 007D8968 copies the 32-bit value in
+        Win32 memory order. Does NOT open sockets or model TCP frames.
+        """
+        return b"".join(word.to_bytes(4, "little") for word in self.all_words)
+
     def receipt(self) -> dict:
         return {
             "source": SOURCE,
@@ -57,6 +69,12 @@ class SourceWordCallPlan:
             "write_argument_uint32_hex": tuple(
                 f"0x{w:08X}" for w in self.all_words),
             "source_32bit_write_arguments_reconstructed": True,
+            "source_uint32_write_overload_address": "007F3E58",
+            "source_uint32_to_bytes_address": "007D8968",
+            "source_win32_uint32_stream_byte_order": "little-endian",
+            "source_uint32_stream_endianness_verified": True,
+            "source_uint32_stream_bytes_hex": self.indy_uint32_stream_bytes().hex(),
+            "source_uint32_stream_length_bytes": 4 * len(self.all_words),
             "network_byte_order_proven": False,
             "tcp_packet_bytes_verified": False,
             "device_reply_ack_proven": False,
