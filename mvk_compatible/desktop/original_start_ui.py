@@ -18,18 +18,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt,QSize
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFileDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,
-    QPushButton,QSizePolicy,QStyle,QWidget,
+    QPushButton,QSizePolicy,QWidget,
 )
 
 from ..core.original_start_workbench import (
     OriginalStartWorkspace,START_BUTTONS,START_IP_DEFAULT,
     START_LIBRARY_DEFAULT,START_IP_RECT,START_LIBRARY_RECT,
+    START_OPERATOR_CAPTIONS,START_OPERATOR_IP_LABEL,
+    START_OPERATOR_LIBRARY_LABEL,START_OPERATOR_REFERENCE,
 )
 from ..core.original_ui_form_contract import ORIGINAL_TASK_BUTTONS
 from .source_visual_skin import SourceStartBackdrop
+from .source_start_command import SourceStartCommandButton
 
 
 class OriginalStartController:
@@ -48,38 +51,31 @@ class OriginalStartController:
         self.host.setMinimumWidth(0)
         self.host.setMinimumHeight(494)
         self.host.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
-        captions={
-            "bTaskConnect":"Подключение к прибору",
-            "bTaskConfigCh":"Настройка каналов",
-            "bTaskView":"Просмотр измерений",
-            "bTaskConfigIP":"Настройка IP",
-            "bTaskConfigCalib":"Калибровка",
-        }
-        images={
-            "bTaskConnect":QStyle.SP_DriveNetIcon,
-            "bTaskConfigCh":QStyle.SP_FileDialogDetailedView,
-            "bTaskView":QStyle.SP_DialogOpenButton,
-            "bTaskConfigIP":QStyle.SP_ComputerIcon,
-            "bTaskConfigCalib":QStyle.SP_FileDialogContentsView,
-        }
+        # The real original idle screenshot establishes both title and
+        # smaller description. Core MODE dispatch is independent of text.
+        captions=START_OPERATOR_CAPTIONS
+        self.host.setProperty("sourceTaskCaptionsReference",
+                              START_OPERATOR_REFERENCE)
         self.buttons={}
         expected={x[0]:x for x in ORIGINAL_TASK_BUTTONS}
         for name,x,y,w,h,image,tab,route in START_BUTTONS:
             # Original DFM is the same source as previous core contract.
             if expected[name]!=(name,x,y,w,h,image):
                 raise ValueError("Source original PageStart DFM geometry drift")
-            b=QPushButton(captions[name],self.host)
+            title,subtitle=captions[name]
+            b=SourceStartCommandButton(title,subtitle,image,self.host)
             b.setObjectName(name)
             b.setGeometry(x,y,w,h)
             b.setProperty("originalDfmLogicalRect",(x,y,w,h))
             b.setProperty("originalDfmImageName",image)
             b.setProperty("originalDfmTabOrder",tab)
             b.setProperty("originalHandlerMode",route)
-            b.setIcon(b.style().standardIcon(images[name]))
-            b.setIconSize(QSize(32,32))
+            b.setProperty("sourceOperatorCaptionEvidence",
+                          "original-idle-screenshot-20261116")
+            b.setProperty("sourceSafeCoreRoutePreserved",True)
             b.setToolTip(
                 f"Original _Unit128 {name}: DFM ({x},{y},{w},{h}), "
-                f"Mode{route}; иконка системная, не исходная.")
+                f"Mode{route}; иконка Qt-кандидат, не исходный BMP.")
             self.buttons[name]=b
             if name=="bTaskConfigCalib":
                 b.setEnabled(False)
@@ -97,9 +93,11 @@ class OriginalStartController:
                 b.clicked.connect(
                     lambda _=False:self.open_config_mode(4))
 
-        ip_caption=QLabel("IP-адрес МВК:",self.host)
+        ip_caption=QLabel(START_OPERATOR_IP_LABEL,self.host)
         ip_caption.setObjectName("lbStartSourceIP")
         ip_caption.setGeometry(29,208,124,24)
+        ip_caption.setStyleSheet(
+            "QLabel#lbStartSourceIP {font: 12px Tahoma; color: #171717;}")
         self.ip_edit=QLineEdit(self.host)
         self.ip_edit.setObjectName("edIpAddr")
         self.ip_edit.setGeometry(*START_IP_RECT)
@@ -109,9 +107,11 @@ class OriginalStartController:
             "прибора. Числовой IPv4 проверяется при явном выборе захвата.")
         self.ip_edit.editingFinished.connect(self.commit_ip)
 
-        caption=QLabel("Каталог записей (исходный edLibraryPath):",self.host)
+        caption=QLabel(START_OPERATOR_LIBRARY_LABEL,self.host)
         caption.setObjectName("lbStartLibrary")
         caption.setGeometry(29,252,320,22)
+        caption.setStyleSheet(
+            "QLabel#lbStartLibrary {font: 12px Tahoma; color: #171717;}")
         self.library_edit=QLineEdit(self.host)
         self.library_edit.setObjectName("edLibraryPath")
         self.library_edit.setGeometry(*START_LIBRARY_RECT)

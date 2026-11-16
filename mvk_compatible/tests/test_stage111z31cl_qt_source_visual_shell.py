@@ -53,7 +53,10 @@ def test_source_first_window_has_no_second_qt_chrome_and_real_dfm_start(
         assert host.property("sourceBackgroundOriginalDfmGeometry")
         assert not host.property("sourceContainsPublishedVendorImageData")
         assert host.logo.objectName()=="imLogo"
-        assert host.logo.geometry().getRect()==(3,568,432,120)
+        assert host.logo.property("originalDfmLogicalRect")==(
+            3,568,432,120)
+        assert host.logo.geometry().getRect()==(
+            3,min(568,max(0,host.height()-120)),432,120)
         assert host.y()<=5
         assert host.width()>=840
         assert host.height()>=494

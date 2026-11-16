@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QRect, QPoint
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPixmap
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog, QLabel, QPushButton, QStyle, QWidget, QToolButton,
 )
@@ -61,6 +61,11 @@ _COMMAND_FALLBACK={
 }
 _START_RIGHT_DESIGN_WIDTH=257
 _START_LOGO_RECT=(3,568,432,120)
+# Independently painted fallback colours from the actual idle PageStart
+# comparison, NOT original bitmap bytes. The original DFM can be opted
+# into privately and always overrides this procedural approximation.
+_START_FALLBACK_PALETTE=("#fbfeff","#e7f8ff","#ccefff","#8cdaff")
+
 
 
 class SourceStartBackdrop(QWidget):
@@ -79,21 +84,22 @@ class SourceStartBackdrop(QWidget):
         self.setProperty("sourceOriginalBitmapParityVerified",False)
         self.setProperty("sourceBackgroundOriginalDfmGeometry",True)
         self.setProperty("sourceContainsPublishedVendorImageData",False)
-        # Source original imLogo contains the operator's VAST logo.
-        # Approximate text only; the exact private PNG is loaded locally.
-        self.logo=QLabel("ВАСТ",self)
+        # Original imLogo remains private. Procedural approximate logo is
+        # shown in short native DPI150 windows instead of being clipped.
+        self.logo=QLabel(self)
         self.logo.setObjectName("imLogo")
         self.logo.setGeometry(*_START_LOGO_RECT)
-        self.logo.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
-        self.logo.setStyleSheet(
-            "QLabel#imLogo {background: transparent; color: #766449;"
-            " font-size: 27px; font-weight: bold; padding-left: 12px;}")
+        self.logo.setAlignment(Qt.AlignLeft|Qt.AlignTop)
+        self.logo.setPixmap(self._make_fallback_logo())
         self.logo.setToolTip(
             "Оригинальный imLogo 432×120 не включён в сборку. "
             "Только локальная копия mvkform.dfm может показать точный ресурс.")
         self.logo.setProperty("originalDfmLogicalRect",_START_LOGO_RECT)
         self.logo.setProperty("originalAssetLoadedPrivately",False)
         self.logo.lower()
+        self.setProperty("sourceBlueReferenceCandidate",True)
+        self.setProperty("sourceLogoResponsiveToShortWindow",True)
+        self.setProperty("sourceOperatorScreenshotPixelParityVerified",False)
         candidate=os.environ.get("MVKVIEW_PRIVATE_SOURCE_DFM","")
         if candidate:
             # Explicit opt-in only. Wrong or missing paths are NOT searched
@@ -102,6 +108,44 @@ class SourceStartBackdrop(QWidget):
                 self.load_private_original_dfm(candidate)
             except (OSError,ValueError):
                 pass
+
+    @staticmethod
+    def _make_fallback_logo():
+        """Only a Qt-drawn preview; the actual original logo stays private."""
+        pixmap=QPixmap(432,120)
+        pixmap.fill(Qt.transparent)
+        painter=QPainter(pixmap)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing,True)
+            painter.setPen(QPen(QColor("#e51d2b"),3))
+            line=[QPoint(3,69),QPoint(20,69),QPoint(27,55),
+                  QPoint(33,80),QPoint(40,42),QPoint(49,69),
+                  QPoint(260,69)]
+            for begin,end in zip(line,line[1:]):
+                painter.drawLine(begin,end)
+            font=QFont("Tahoma")
+            font.setPixelSize(32)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor("#141414"))
+            painter.drawText(55,57,"ВАСТ")
+            font.setPixelSize(12)
+            font.setBold(False)
+            painter.setFont(font)
+            painter.drawText(54,88,"©2021 ООО «АССОЦИАЦИЯ ВАСТ»")
+        finally:
+            painter.end()
+        return pixmap
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        # Source DFM preferred y=568 is preserved at full-height. When
+        # native Qt DPI150 reduces the client below 688 logical pixels,
+        # keep logo visible without changing its *source DFM* metadata.
+        x,y,w,h=_START_LOGO_RECT
+        actual_y=min(y,max(0,self.height()-h))
+        self.logo.setGeometry(x,actual_y,w,h)
+        self.setProperty("sourceLogoActualQtTop",actual_y)
 
     @property
     def original_pictures_loaded_privately(self):
@@ -148,16 +192,24 @@ class SourceStartBackdrop(QWidget):
                 painter.drawPixmap(QRect(left,0,right,height),
                                    self._private_pictures["imBackR"])
             else:
-                # Source DFM imBackL/imBackR have warm pale-yellow/amber
-                # images. Gradient approximates those colors, not pixels.
-                main=QLinearGradient(0,0,0,max(1,height))
-                main.setColorAt(0,QColor("#fffefb"))
-                main.setColorAt(1,QColor("#ffefcc"))
-                painter.fillRect(QRect(0,0,left,height),QBrush(main))
-                edge=QLinearGradient(left,0,width,0)
-                edge.setColorAt(0,QColor("#fff4dc"))
-                edge.setColorAt(1,QColor("#ffda88"))
-                painter.fillRect(QRect(left,0,right,height),QBrush(edge))
+                # Real original idle Tasks image is WHITE/CYAN, NOT amber.
+                # No vendor bitmap bytes are stored in public code.
+                gradient=QLinearGradient(0,0,max(1,width),0)
+                gradient.setColorAt(0,QColor(_START_FALLBACK_PALETTE[0]))
+                gradient.setColorAt(.58,QColor(_START_FALLBACK_PALETTE[1]))
+                gradient.setColorAt(1,QColor(_START_FALLBACK_PALETTE[2]))
+                painter.fillRect(QRect(0,0,width,height),QBrush(gradient))
+                tile=18
+                for xx in range(left,width,tile):
+                    progress=(xx-left)/max(1,right)
+                    visibility=min(.72,max(0.,(progress-.08)/.92))
+                    for yy in range(0,height,tile):
+                        if ((xx-left)//tile+yy//tile)%2==0:
+                            colour=QColor(255,255,255,round(205*visibility))
+                        else:
+                            colour=QColor(42,170,240,round(32*visibility))
+                        painter.fillRect(QRect(xx,yy,min(tile,width-xx),
+                                               min(tile,height-yy)),colour)
         finally:
             painter.end()
 
@@ -230,12 +282,32 @@ class OriginalVisualSkin:
         self.home.setProperty("sourcePageStartHasNoExtraTopPadding",True)
         self.start.host.setProperty("sourceViewFaithful",True)
 
+    @staticmethod
+    def _source_tasks_tab_icon():
+        icon=QPixmap(24,24)
+        icon.fill(Qt.transparent)
+        painter=QPainter(icon)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing,True)
+            painter.setPen(QPen(QColor("#363636"),1.4))
+            # Approximate black source task-pointer outline, not BWHand bytes.
+            points=[QPoint(2,5),QPoint(8,9),QPoint(10,3),QPoint(13,5),
+                    QPoint(13,10),QPoint(17,8),QPoint(20,11),
+                    QPoint(20,17),QPoint(16,20),QPoint(10,17),QPoint(5,12)]
+            for a,b in zip(points,points[1:]+points[:1]):
+                painter.drawLine(a,b)
+        finally:
+            painter.end()
+        return QIcon(icon)
+
     def _source_icons(self):
         style=self.window.style()
         for index,page in enumerate(ORIGINAL_ROOT_PAGES):
             standard=getattr(QStyle,_TAB_FALLBACK[page.object_name],
                              QStyle.SP_FileIcon)
-            self.root.setTabIcon(index,style.standardIcon(standard))
+            self.root.setTabIcon(index,
+                self._source_tasks_tab_icon() if page.object_name=="PageStart"
+                else style.standardIcon(standard))
             self.root.setTabToolTip(index,
                 f"Оригинальная страница {page.object_name}, "
                 f"ImageName={page.image_name}; значок Qt — приближение.")

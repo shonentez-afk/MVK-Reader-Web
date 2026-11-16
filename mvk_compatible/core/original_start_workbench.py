@@ -23,6 +23,25 @@ START_BUTTONS=(
     ("bTaskConfigIP",370,105,458,86,"EditNet",2,4),
     ("bTaskConfigCalib",370,193,458,86,"EditCalib",3,5),
 )
+# Verified by the user's visible original idle PageStart screenshot 2026-11-16.
+# Translation strings are runtime evidence; Delphi DFM '$' is a placeholder.
+# These labels never select a different Mode or issue any device command.
+START_OPERATOR_CAPTIONS = {
+    "bTaskConnect": ("Измерение", ""),
+    "bTaskView": ("Загрузка сигнала из файла", ""),
+    "bTaskConfigCh": (
+        "Настройка параметров измерительных каналов",
+        "Коэффициенты передачи датчиков, частотные полосы и др."),
+    "bTaskConfigIP": (
+        "Настройка системных параметров",
+        "IP-адрес, маска подсети, настройки Modbus/TCP"),
+    "bTaskConfigCalib": ("Калибровка", ""),
+}
+START_OPERATOR_IP_LABEL = "IP-адрес прибора:"
+START_OPERATOR_LIBRARY_LABEL = "Папка хранения результатов измерений:"
+START_OPERATOR_REFERENCE = "OPERATOR_ORIGINAL_IDLE_TASKS_20261116_COMPARISON"
+assert set(START_OPERATOR_CAPTIONS)=={row[0] for row in START_BUTTONS}
+
 LIBRARY_SUFFIXES=frozenset((".zip",".bin",".tsxml"))
 MAX_LIBRARY_FILES=256
 MAX_SOURCE_SIZE=2*1024**3
