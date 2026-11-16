@@ -23,6 +23,10 @@ from ..core.original_measure_controls import (
     TABLE_PREFIX,export_verified_table_csv,
 )
 from ..core.original_measurement_mode import source_connection_display
+from ..core.original_mode2_rate_menu_source import (
+    SOURCE_DEFAULT_MENU_TAG, original_rate_menu_items,
+    source_initial_rate_provenance,
+)
 from ..core.original_measurement_pipeline import measurement_operator_policy
 from ..core.original_mode2_live_health import original_dpi_geometry
 from ..core.original_pagefile_recording import OriginalPageFileSelection
@@ -72,10 +76,10 @@ class OriginalMeasureControls:
         self.rate_menu.setObjectName("popSampleRate")
         self.rate.setMenu(self.rate_menu)
         self.rate.setToolTip(
-            "Оригинал конструирует 5 пунктов из gvar_008D2F7C и вызывает "
-            "TMVKThread.SetRate. Их значения из IDP/runtime ещё не "
-            "подтверждены. Здесь показывается только проверенная Fs "
-            "открытого файла или Native LIVE, без установки прибору.")
+            "Оригинальные 5 частот 65536/32768/8192/2048/512 Гц "
+            "точно прочитаны из IDP; исходный SetRate пока разрешён "
+            "только в автономной модели. На кнопке показывается только "
+            "реально наблюдаемая Fs Native/архива; изменения прибору нет.")
         self.buttons["bWriteTable"].clicked.connect(
             lambda:self._save_verified_table(filtered=False))
         self.buttons["bWriteTable"].setToolTip(
@@ -277,12 +281,28 @@ class OriginalMeasureControls:
         self.rate_menu.clear()
         hz=state.observed_sample_rate_hz if (live or offline) else None
         self.rate.setText("ЧД "+str(hz)+" Гц" if hz else "ЧД —")
-        seen=self.rate_menu.addAction(
-            f"ЧД {hz} Гц" if hz else "ЧД —")
-        seen.setEnabled(False)
-        # Do not display developer placeholders in the source operator menu.
-        # There is no verified Native SetRate write path; therefore only
-        # show the actually observed sample rate as read-only.
+        # Reproduce the FIVE real TMenuItem captions/Tag values in exact
+        # Source Insert(0) order. The independent original thread code
+        # was 0x309; mRate1Click initially selects Items[0] = 65536.
+        # Disabled actions are intentional: Go is passive/read-only and
+        # changing a Qt menu must NOT pretend to configure the instrument.
+        trace=getattr(self.window,"_source_mode2_runtime",None)
+        selected=(
+            trace.command_model.source_rate_code
+            if trace is not None and trace.source_initial_rate_queued_offline
+            else SOURCE_DEFAULT_MENU_TAG)
+        for option in original_rate_menu_items():
+            action=self.rate_menu.addAction(option.caption)
+            action.setCheckable(True)
+            action.setChecked(option.tag==selected)
+            action.setProperty("sourceOriginalRateTag",option.tag)
+            action.setProperty("sourceOriginalRateMenuIndex",option.position)
+            action.setProperty("sourceRateChangesDisabledForNative",True)
+            action.setEnabled(False)
+        self.rate_menu.setProperty(
+            "sourceOriginalRateMenuProvenance",source_initial_rate_provenance())
+        self.rate_menu.setProperty("sourceObservedNativeHz",hz)
+        self.rate_menu.setProperty("sourceSelectedOriginalRateTag",selected)
         self.buttons["bWriteTable"].setEnabled(
             policy.local_table_enabled)
         # Original Delphi start/stop buttons are now linked to the
