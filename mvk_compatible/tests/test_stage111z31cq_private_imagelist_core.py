@@ -89,7 +89,16 @@ def test_missing_duplicate_malformed_and_oversized_original_icon_refused():
         source_task_icons_from_dfm(b"x" * (12 * 1024 * 1024 + 1))
     with pytest.raises(ValueError, match="collection"):
         source_task_icons_from_dfm(b"object mvkform: Tmvkform\r\nend\r\n")
-    fake = synthetic_task_dfm().replace(b"89504E47", b"00000000", 1)
+    # Corrupt the FIRST Gears Image.Data, NOT the earlier private
+    # imBackL TPicture PNG (which this icon parser intentionally ignores).
+    marker = (b"        Name = 'Gears'\r\n"
+              b"        SourceImages = <\r\n"
+              b"          item\r\n"
+              b"            Image.Data = {\r\n"
+              b"              ")
+    raw = synthetic_task_dfm()
+    offset = raw.index(marker) + len(marker)
+    fake = raw[:offset] + b"00000000" + raw[offset + 8:]
     with pytest.raises(ValueError, match="Invalid"):
         source_task_icons_from_dfm(fake)
 
