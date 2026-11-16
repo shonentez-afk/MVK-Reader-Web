@@ -108,11 +108,13 @@ def test_real_qt_all_four_live_pages_share_one_source_core_and_no_device_write(
         assert not win.spec_plot.listDataItems()
         assert owner.calls==1
         win._end_live_capture(False)
-        assert win._source_mode2_runtime.receipt()["mode2_phase"]=="STOPPED_WITHOUT_ARCHIVE"
-        assert win._measurement_mode_selected
+        assert not win._measurement_mode_selected
         assert win.session is None
-        assert win.leave_measurement_mode()
-        assert win._source_mode2_runtime.receipt()["mode2_phase"]=="IDLE"
+        done=win._source_mode2_runtime.receipt()
+        assert done["mode2_phase"]=="IDLE"
+        assert done["last_events"][-2][1]=="NATIVE_COMPLETE"
+        assert done["last_events"][-2][2]=="STOPPED_WITHOUT_ARCHIVE"
+        assert done["last_events"][-1][1]=="MEASURE_OFF_AFTER_NATIVE"
         assert win.original_visual_skin.snapshot()["visible_source_tabs"]==[
             "PageStart"]
     finally:
@@ -189,5 +191,25 @@ def test_mode2_failed_reconnect_uses_fresh_queue_and_parks_valid_archive(
     finally:
         if win._live_active:
             win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()
+
+
+def test_original_write_export_completion_status_is_real_string_not_call(qt_app):
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    try:
+        win._source_write_export_ready({
+            "files_written":2, "windows":1,
+            "verified_frame_boundaries":True})
+        text=win.statusBar().currentMessage()
+        assert "2 файлов" in text
+        assert "Go подтвердил границы кадров" in text
+        win._source_write_export_ready({
+            "files_written":1, "windows":1,
+            "verified_frame_boundaries":False})
+        assert "Границы по периодическому статусу" in (
+            win.statusBar().currentMessage())
+    finally:
         win.close()
         qt_app.processEvents()
