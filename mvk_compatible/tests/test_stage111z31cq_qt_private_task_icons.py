@@ -115,7 +115,12 @@ def test_default_operator_idle_source_cyan_has_original_gradient_boundaries(
     try:
         host = win.original_start_controller.host
         image = host.grab().toImage()
-        y = min(host.height() - 1, 400)
+        # Original DFM PageStart places the fallback logo at y=max(0,
+        # height-120). On GitHub's compact native DPI150 viewport, y=400
+        # overlaps the footer image and samples its ochre/red pixels.
+        # y=310 is clear of controls (last directory field ends at y=300)
+        # and stays above the responsive footer even at height=494.
+        y = min(host.height() - 1, 310)
         x0 = max(1, int(host.width() * .06))
         x1 = min(host.width() - 260, int(host.width() * .73))
         c0 = image.pixelColor(x0, y)
