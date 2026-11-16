@@ -43,17 +43,15 @@ def test_original_20ms_timer_starts_disabled_and_dispatches_one_page():
 
 
 def test_dispatcher_exact_source_order_and_toolbar_visibility_gate():
-    assert list(SOURCE_ACTIVE_PAGE_HANDLERS.items())==[
-        ("PageConfig","008472D0"),("PageStatus","008475BC"),
-        ("PageAdc","00847EAC"),("PageSpectrum","00848148"),
-        ("PageFile","0084845C"),("PageCalib","00848688"),
-        ("PageStart",None),
-    ] or {
-        "PageStart":None,"PageConfig":"008472D0",
-        "PageStatus":"008475BC","PageAdc":"00847EAC",
-        "PageSpectrum":"00848148","PageFile":"0084845C",
+    assert SOURCE_ACTIVE_PAGE_HANDLERS == {
+        "PageStart":None,
+        "PageConfig":"008472D0",
+        "PageStatus":"008475BC",
+        "PageAdc":"00847EAC",
+        "PageSpectrum":"00848148",
+        "PageFile":"0084845C",
         "PageCalib":"00848688",
-    }==SOURCE_ACTIVE_PAGE_HANDLERS
+    }
     clock=OriginalMode2InterfaceTimer()
     clock.start()
     without=clock.tick("PageSpectrum",False).receipt()
