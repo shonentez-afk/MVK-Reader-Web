@@ -183,3 +183,16 @@ def test_long_live_fault_trace_is_bounded_and_rate_failure_is_atomic():
     assert queue.source_rate_code==DEFAULT_RATE_CODE
     assert len(queue.pending)==256
     assert queue.shutdown()["pending_discarded"]==256
+
+
+def test_waiting_for_first_native_json_is_not_a_rejected_device_connection():
+    trace=OriginalMode2RuntimeTrace()
+    trace.enter_mode2()
+    trace.native_started()
+    assert trace.awaiting_native_status()["mode2_phase"]=="CONNECTING"
+    assert trace.receipt()["original_faults"]["event_count"]==0
+    assert trace.receipt()["last_events"][-1][1]=="NATIVE_STATUS_PENDING"
+    trace.observe_native(source_status(session=RUN,frames=30,raw=50000))
+    trace.awaiting_native_status()
+    assert trace.receipt()["mode2_phase"]=="STATUS_REJECTED"
+    assert trace.receipt()["original_faults"]["event_count"]==1
