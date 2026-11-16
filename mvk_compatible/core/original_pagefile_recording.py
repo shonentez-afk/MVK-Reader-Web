@@ -29,6 +29,9 @@ import zipfile
 from .offline_export import BIN_NAME_RE,require_members
 from .offline_measurement_flow import OfflineMeasurementFlow
 from .original_file_workbench import source_file_workbench
+from .native_r6_tach_evidence import (
+    read_tach_evidence,validate_tach_evidence,FILENAME as TACH_AUDIT,
+)
 
 SOURCE="IDR_PAGEFILE_10_CHANNEL_2_TAB_OFFLINE_FUNCTIONAL_STAGE111Z31BR"
 CHANNEL_COUNT=10
@@ -76,8 +79,14 @@ class OriginalPageFileSelection:
         if not isinstance(flow,OfflineMeasurementFlow):
             raise ValueError("Source-bound measurement required")
         flow.source_record()
-        channels=tuple(i+1 in flow.available_channels if i<8 else False
-                       for i in range(CHANNEL_COUNT))
+        native_tach=(
+            None if flow.direct_bin else read_tach_evidence(flow.session.path))
+        available_tach=(
+            set() if native_tach is None else
+            set(native_tach.safe_native_channels))
+        channels=tuple(
+            i+1 in (flow.available_channels if i<8 else available_tach)
+            for i in range(CHANNEL_COUNT))
         native=not flow.direct_bin
         return cls(channels,
                    (True,)*SPEC_COUNT if native else (False,)*SPEC_COUNT,
@@ -101,8 +110,8 @@ class OriginalPageFileSelection:
             raise ValueError("Original PageFile list index outside source")
         if checked:
             if (group=="channels" and
-                    (index>=8 or index+1 not in flow.available_channels)):
-                raise ValueError("No verified ADC/TACH raw stream for this flag")
+                    not OriginalPageFileSelection.for_flow(flow).channels[index]):
+                raise ValueError("No verified contiguous ADC/TACH source for this flag")
             if group=="spec" and flow.direct_bin:
                 raise ValueError("Original SPEC cannot be inferred from BIN")
             if group=="values" and (
@@ -121,8 +130,10 @@ class OriginalPageFileSelection:
         if any(self.channels[i] for i in range(8)
                if i+1 not in flow.available_channels):
             raise ValueError("A selected ADC was absent from the source")
-        if self.channels[8] or self.channels[9]:
-            raise ValueError("Original TACH1/2 do not have native RAW stream")
+        supported=OriginalPageFileSelection.for_flow(flow).channels
+        if any(requested and not available
+               for requested,available in zip(self.channels,supported)):
+            raise ValueError("Selected ADC/TACH stream is not SHA-verified")
         if flow.direct_bin and (any(self.spec) or any(self.values)):
             raise ValueError("BIN source does not contain authenticated DSP")
         if any(self.values[ADC_VALUE_COUNT+BAND_VALUE_COUNT:]):
@@ -136,6 +147,9 @@ class OriginalPageFileSelection:
             "original_spec_flag_count":SPEC_COUNT,
             "original_value_flag_count":VALUE_COUNT,
             "selected_adcs":[i+1 for i in self.checked("channels") if i<8],
+            "selected_tachs":[i-7 for i in self.checked("channels") if i>=8],
+            "native_tach_source_raw_uncalibrated":True,
+            "original_tach_bin_tsxml_equivalence_verified":False,
             "selected_spec_indices":list(self.checked("spec")),
             "selected_value_indices":list(self.checked("values")),
             "original_live_thread_writer_restored":False,
@@ -231,8 +245,9 @@ def export_selected_original_pagefile(
         raise ValueError("Original PageFile selection model required")
     selection.validate(flow)
     selected=[i+1 for i in selection.checked("channels") if i<8]
-    if not selected:
-        raise ValueError("At least one actual verified ADC must be selected")
+    selected_tach=[i-7 for i in selection.checked("channels") if i>=8]
+    if not selected and not selected_tach:
+        raise ValueError("At least one SHA-verified ADC or Native TACH required")
     folder=Path(parent_folder).absolute()
     if folder.is_symlink() or not folder.is_dir():
         raise ValueError("Output parent must be a real existing local folder")
@@ -280,7 +295,25 @@ def export_selected_original_pagefile(
                         with z.open(filename) as fp:
                             manifest_items.append(
                                 _copy_stream(fp,target/filename,digest))
-            if any(selection.spec) or any(selection.values):
+                if selected_tach:
+                    # TACH1/2 are the original packet Float32 bytes only:
+                    # NEVER emit original BIN/TSXML or calibrated RPM.
+                    evidence=validate_tach_evidence(z,audit)
+                    if evidence is None:
+                        raise ValueError("Source has no TACH evidence bank")
+                    for number in selected_tach:
+                        channel=evidence.channels[number-1]
+                        if not channel.safe_local_raw_export:
+                            raise ValueError("TACH stream is not contiguous/verified")
+                        with z.open(channel.filename) as fp:
+                            manifest_items.append(
+                                _copy_stream(fp,target/channel.filename,
+                                             channel.digest))
+                    with z.open(TACH_AUDIT) as fp:
+                        manifest_items.append(
+                            _copy_stream(fp,target/TACH_AUDIT,
+                                         expected[TACH_AUDIT]))
+            if selected and (any(selection.spec) or any(selection.values)):
                 status=flow.status_snapshot()
                 if status is None:
                     raise ValueError("Verified source DSP snapshot is absent")
@@ -315,7 +348,13 @@ def export_selected_original_pagefile(
             "device_io_executed":False,
             "source_kind":"BIN_TSXML" if flow.direct_bin else "NATIVE_R6_ZIP",
             "source_bin_sha256":flow.source_record()["source_bin_sha256"],
-            "selected_channels":selected,
+            "selected_channels":selected+[
+                n+8 for n in selected_tach],
+            "selected_adc_channels":selected,
+            "selected_native_tach_channels":selected_tach,
+            "native_tach_input_domain":"DEVICE_TACH_INPUT_FLOAT32_UNSCALED"
+                if selected_tach else None,
+            "original_tach_tsxml_generated":False,
             "source_pagefile_checklists":selection.report(),
             "source_pagefile_settings":{
                 "cbFileWriteXml":options.write_tsxml,
@@ -333,7 +372,9 @@ def export_selected_original_pagefile(
         return {
             "source":SOURCE,"output_folder":str(target),
             "files_written":len(manifest_items)+1,
-            "selected_channels":selected,
+            "selected_channels":selected+[
+                n+8 for n in selected_tach],
+            "selected_native_tach_channels":selected_tach,
             "selected_result_rows":len(raw_rows),
             "source_files_copied_without_resampling":True,
             "device_io_executed":False,

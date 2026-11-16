@@ -10,6 +10,7 @@ calculation, callback and automated test interfaces.
 """
 from __future__ import annotations
 
+import zipfile
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
@@ -43,6 +44,7 @@ from ..core.original_pagefile_recording import (
     TACH_RESULT_COUNT,ORIGINAL_DFM_FILE_ADC_HEIGHT,
 )
 from ..core.original_pagestatus_source import TACH_FIELDS
+from ..core.native_r6_tach_evidence import read_tach_evidence
 from ..core.original_live_pagefile import (
     OriginalLiveFilePlan,live_pagefile_channel_rows,
 )
@@ -841,6 +843,27 @@ class OriginalRootShell:
         self.status_note.setText(
             ("Источник отклонён: "+error+" · " if error else "")+
             result.model.note)
+        # Source tcStatus modes 13/14 are TACH1/TACH2, NOT ADC graphs.
+        # Native source proves only unswapped Float32 packet bytes and
+        # sample rate; it does NOT authenticate original tachometer RPM,
+        # physical units, Delphi DSP values or original BIN/TSXML.
+        tach_receipt=None
+        if index in (13,14) and flow is not None and not flow.direct_bin:
+            try:
+                evidence=read_tach_evidence(flow.session.path)
+                if evidence is not None:
+                    tach_receipt=evidence.channels[index-13].receipt()
+            except (ValueError,OSError,KeyError,zipfile.BadZipFile):
+                tach_receipt=None
+        self.status_page.setProperty("sourceNativeTachReceipt",tach_receipt)
+        if tach_receipt is not None and tach_receipt["present"]:
+            self.status_note.setText(
+                self.status_note.text()+" · "
+                +f"TACH{index-12}: Native неотмасштабированный Float32, "
+                +f"{tach_receipt['samples']} отсчётов, "
+                +f"{tach_receipt['rate_hz']} Гц; "
+                +"проверены исходный RAW и SHA256, "
+                +"обороты/калибровка НЕ подтверждены.")
         self.status_plot.clear()
         verified_chart=result.chart_visible and error is None
         if verified_chart:
@@ -1131,6 +1154,7 @@ class OriginalRootShell:
             "Исходный cbFileChannels: 10 флагов (8 АЦП + 2 TACH); "
             "cbFileSpec: 43; cbFileValues: 24+43+6. "
             f"Выбрано ADC {len(chosen['selected_adcs'])}, "
+            f"TACH raw {len(chosen['selected_tachs'])}, "
             f"SPEC {len(chosen['selected_spec_indices'])}, "
             f"VALUES {len(chosen['selected_value_indices'])}. "
             "Сохранение локальное, исходный TMVKThread НЕ запускается.")
@@ -1341,6 +1365,8 @@ class OriginalRootShell:
         """Populate ORIGINAL ten check flags, verified ADC only, never TACH fake."""
         self._file_flow=flow
         self.file_record_selection=None
+        self.file_page.setProperty("sourceAppliedLiveFilePlanReceipt",None)
+        self.file_page.setProperty("sourceNativeTachExportEvidence",None)
         blocked=self.file_channels.blockSignals(True)
         try:
             self.file_channels.clear()
@@ -1356,11 +1382,26 @@ class OriginalRootShell:
             self.file_record_selection=OriginalPageFileSelection.for_flow(flow)
             source_by_adc={ch.adc:ch for ch in getattr(session,
                                                        "channel_files",())}
+            native_tach=(None if flow.direct_bin
+                         else read_tach_evidence(flow.session.path))
+            self.file_page.setProperty(
+                "sourceNativeTachExportEvidence",
+                native_tach.receipt() if native_tach is not None else None)
             for i in range(CHANNEL_COUNT):
                 adc=i+1
                 if i>=8:
-                    name=f"TACH{i-7} · исходный канал без проверенного RAW"
-                    enabled=False
+                    ch=(native_tach.channels[i-8]
+                        if native_tach is not None else None)
+                    if ch is not None and ch.present:
+                        name=(f"TACH{i-7} · {ch.samples} raw Float32 @ "
+                              f"{ch.sample_rate_hz} Гц; "
+                              "БЕЗ физической калибровки / TSXML")
+                        if not ch.continuous:
+                            name+=" · разрыв/смена частоты; экспорт запрещён"
+                        enabled=ch.safe_local_raw_export
+                    else:
+                        name=f"TACH{i-7} · не записан / исходные RAW отсутствуют"
+                        enabled=False
                 elif adc not in channels:
                     name=f"АЦП{adc} · в исходной записи отсутствует"
                     enabled=False

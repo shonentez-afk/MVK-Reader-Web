@@ -382,6 +382,10 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 	var framesPer [8]uint64
 	var samplesPer [8]uint64
 	var statusCounts [8]map[string]int
+	// Source ten-channel writer: two TACH channels are copied exactly from
+	// validated raw Float32 payload, NEVER from ADC gain or DSP values.
+	// Files are explicitly Native-unscaled forensic evidence, not TSXML.
+	tach := newTachRawDumper()
 	var serial string
 	var calibrated bool
 	var gotIdentity bool
@@ -402,6 +406,9 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 				_ = f.Close()
 			}
 		}
+		// On any rejected source the temporary TACH files are never
+		// published, but their handles must still be released.
+		_ = tach.closeFiles()
 	}()
 	for {
 		// Only the bytes already marked as an incomplete terminal frame in the
@@ -508,7 +515,12 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 			framesPer[ch]++
 			samplesPer[ch] += 256
 		case typeTach:
-			// headers + samples validated above. Tachometer BIN/TSXML is a separate future stage.
+			// TACH channels 9/10: exact unswapped, unscaled 64xFloat32
+			// payload bytes per authenticated original TCP frame. Never
+			// name them original BIN, nor infer sensor calibration.
+			if e = tach.add(stage, f, sampleHeader); e != nil {
+				return rep, fmt.Errorf("TACH forensic stream: %w", e)
+			}
 		case typeParam:
 			blocks, e := decodeBlocks(buf)
 			if e != nil {
@@ -629,6 +641,12 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 	}
 	destTime = destTime.In(time.FixedZone("operator offset", offsetMin*60))
 	gen := make(map[string]string)
+	// R5.1 frame manifest and complete RAW SHA were compared above;
+	// TACH evidence now shares the same atomic reconstructed directory
+	// as ADC, but has its OWN explicit non-original format contract.
+	tachFiles, tachErr := tach.finish(stage, strings.ToLower(sum.RawSHA))
+	if tachErr != nil { return rep, tachErr }
+	for name, digest := range tachFiles { gen[name] = digest }
 	for ch := 0; ch < 8; ch++ {
 		name := saved[ch]
 		xml, e := tsxml(name, ch, serial, rate[ch], gains[ch], samplesPer[ch], destTime)
@@ -688,6 +706,8 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 	rep.TableRows = len(tableRows)
 	rep.ClockOffset = formatOffset(offsetMin)
 	rep.Provenance = []string{"Exporter processes only saved local RAW/frames/summary; it never opens a network socket or sends commands.", "INPUT VALIDATED: R5/R5.1 raw SHA256, every frame vs frames.csv, first full 16384-word register snapshot.", "BIN: calibrated raw Float32 * per-channel current-session Float32 gain; equality with MVKView BIN of these same sessions NOT available.", "TSXML: exact observed field schema, but capture PC end time and host timezone are reconstructed, NOT original MVKView recording control metadata.", "VALUES/TABLE: source field labels from original MVKView CSV; register values from session AUX4700; numeric formatting/status text approximated, not claimed byte-for-byte.", "TIMELINE: R5/R5.1 TCP Read host timestamps from frames.csv, not DSP timestamp or synchronized sample-time clock.", "ADC7/ADC8 may have sensor status 0x400 in supplied live samples; retain numeric BIN for forensic use but do NOT describe as valid healthy sensors.", "Failure policy: one malformed frame / sample discontinuity / changing gain / wrong provenance => no completed export directory."}
+	rep.Provenance = append(rep.Provenance,
+		"TACH1/TACH2: exact original 284-byte application-frame Float32 payloads saved separately as Native UNSCALED forensic streams; source RAW SHA and output hashes checked, sample-index gaps/rate changes recorded; NO original TACH BIN/TSXML or physical-calibration equivalence asserted.")
 	if rep.IgnoredTerminalBytes > 0 {
 		rep.Provenance = append(rep.Provenance, fmt.Sprintf("Exactly %d bytes of a monitor-declared partial terminal frame excluded from BIN/CSV; retained unchanged in source RAW and SHA256.", rep.IgnoredTerminalBytes))
 	}

@@ -170,8 +170,8 @@ def pack_completed_export(root: str | Path) -> Path:
     if audit.get("source_raw_sha256") != status["source_raw_sha256"]:
         raise ValueError("Аудит и исходный RAW относятся к разным сеансам")
     manifest = audit.get("output_file_sha256")
-    if not isinstance(manifest, dict) or len(manifest) != 19:
-        raise ValueError("Неполный оригинальный манифест 8 BIN/TSXML + VALUES/TABLE/TIMELINE")
+    if not isinstance(manifest, dict) or not 19<=len(manifest)<=22:
+        raise ValueError("Неполный Native манифест ADC и необязательного TACH RAW")
     names = sorted(manifest)
     bins = [n for n in names if re.fullmatch(
         r"MVK\d+-ADC[1-8]-\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}\.bin", n)]
@@ -179,9 +179,22 @@ def pack_completed_export(root: str | Path) -> Path:
         raise ValueError("В экспортном манифесте отсутствует один из 8 ADC")
     if not all(n + ".tsxml" in manifest for n in bins):
         raise ValueError("Отсутствуют TSXML для всех восьми ADC")
+    base_names=(
+        {x for bin_name in bins for x in (bin_name,bin_name+".tsxml")}
+        |{"VALUES_ALL_ADC_RECONSTRUCTED.csv",
+          "TABLE_LAST_AUX_RECONSTRUCTED.csv","TIMELINE.json"})
     if not {"VALUES_ALL_ADC_RECONSTRUCTED.csv", "TABLE_LAST_AUX_RECONSTRUCTED.csv",
             "TIMELINE.json"} <= manifest.keys():
         raise ValueError("Отсутствуют таблицы/временная шкала")
+    extra=set(manifest)-base_names
+    allowed_extra={"TACH_RAW_SOURCE_AUDIT.json",
+                   "TACH1_NATIVE_UNCALIBRATED.f32",
+                   "TACH2_NATIVE_UNCALIBRATED.f32"}
+    if not extra <= allowed_extra or (extra and
+            "TACH_RAW_SOURCE_AUDIT.json" not in extra):
+        raise ValueError("TACH evidence missing source audit or unexpected Native file")
+    if len(manifest)!=len(base_names)+len(extra):
+        raise ValueError("Source Native ZIP member count does not match manifest")
     total = 0
     for name in names:
         if Path(name).name != name or "/" in name or "\\" in name:

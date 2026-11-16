@@ -134,7 +134,8 @@ class OriginalLiveFilePlan:
             i+1 for i in range(8)
             if self.channels[i] and not available.channels[i])
         unsupported_tach=tuple(
-            i-7 for i in range(8,10) if self.channels[i])
+            i-7 for i in range(8,10)
+            if self.channels[i] and not available.channels[i])
         unavailable_tach_values=tuple(
             i-(ADC_VALUE_COUNT+BAND_VALUE_COUNT)+1
             for i in range(ADC_VALUE_COUNT+BAND_VALUE_COUNT,VALUE_COUNT)
@@ -143,6 +144,7 @@ class OriginalLiveFilePlan:
             "source":SOURCE,
             "verified_source_bin_rechecked":True,
             "applied_selected_adc":selected.report()["selected_adcs"],
+            "applied_selected_native_tach":selected.report()["selected_tachs"],
             "unavailable_adc":list(unavailable_adc),
             "unsupported_original_tach_channels":list(unsupported_tach),
             "unsupported_tach_value_indices":list(unavailable_tach_values),

@@ -29,6 +29,7 @@ from .calibration_candidate import resolve_f_range
 from .storage_f_range_idr_candidate import (prepare_original_fft_input,DOMAIN_CALIBRATED_BIN)
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate, _delphi_integration_power)
+from .native_r6_tach_evidence import validate_tach_evidence
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
 MAX_ARCHIVE_MB = 1024
@@ -86,6 +87,9 @@ def require_members(z: zipfile.ZipFile) -> tuple[list[str], dict]:
         channel_audit = next((c.get('bin_sha256') for c in audit.get('channels',[]) if c.get('adc')==n),None)
         if manifest.get(name) != channel_audit:
             raise ValueError(f'Нарушена контрольная сумма BIN АЦП{n} в манифесте')
+    # Optional read-only 9th/10th source channels must be SHA-checked
+    # and explicitly tagged UNSCALED. Legacy 19-file exports remain valid.
+    validate_tach_evidence(z,audit)
     return [adc_map[n] for n in range(1,9)], audit
 
 
