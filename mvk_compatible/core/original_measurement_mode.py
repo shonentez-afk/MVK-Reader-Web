@@ -39,9 +39,11 @@ class SourceConnectionDisplay:
 
 def source_connection_display(*,selected:bool,capture_started:bool=False,
         status:dict|None=None,failure:bool=False,
-        stop_requested:bool=False)->SourceConnectionDisplay:
+        stop_requested:bool=False,
+        source_system_error_latched:bool=False)->SourceConnectionDisplay:
     if (type(selected) is not bool or type(capture_started) is not bool
-            or type(failure) is not bool or type(stop_requested) is not bool):
+            or type(failure) is not bool or type(stop_requested) is not bool
+            or type(source_system_error_latched) is not bool):
         raise ValueError("Source Mode2/state arguments must be booleans")
     if capture_started and not selected:
         raise ValueError("Recorder cannot precede Mode2 selection")
@@ -72,6 +74,12 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
             True,True,False,
             "Ожидание данных прибора","waiting","CONNECTING")
     proof=connected_system_status(status)
+    if source_system_error_latched:
+        # Original TMVKThread Stage3 does not return to Stage1 in-place.
+        # A later Go register reading 0 cannot silently clear this error.
+        return SourceConnectionDisplay(
+            True,True,proof.connection_verified,
+            "Системная ошибка прибора","bad","SYSTEM_ERROR")
     if proof.stream_silent:
         return SourceConnectionDisplay(
             True,True,False,
