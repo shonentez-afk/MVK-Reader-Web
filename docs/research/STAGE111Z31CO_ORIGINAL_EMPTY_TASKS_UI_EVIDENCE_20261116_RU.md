@@ -1,3 +1,5 @@
+> **СОСТОЯНИЕ ОБНОВЛЕНО (16.11.2026):** исходное изображение теперь присутствует в присланном оператором **составном сравнении**, но отдельного PNG оригинала одинакового с Qt разрешения пока нет. На основе этого composite выполнен полноценный Qt+Core пакет **Stage111Z31CP**, production SHA `2d4c55fb2baca2774a52da0f51d5af48d342f5f1`, [4/4 Actions SUCCESS](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43795018198). Прежние временные подписи/жёлтый фон/белые карточки исправлены; **это не доказательство original bitmap parity**. [Отчёт CP](STAGE111Z31CP_ORIGINAL_IDLE_TASKS_CORE_QT_NATIVE_RU.md). Исходные BMP/logo/icons не опубликованы, аппаратный Mode2 без оператора не запускался.
+
 # MVKView 1.0.47 — аудит стартового экрана «Задачи» (без измерения)
 
 Дата: 16 ноября 2026. Источники: три файла отчета Nemotron, предоставленные оператором: `mvk_original_empty_ui_manifest(1).json`, `mvk_original_empty_ui_report(1).md`, `mvk_original_empty_ui_unknowns(1).md`; проверенный актуальный код `MVK-Reader-Web` ветки `research/stage111-mvkview-desktop-20261029`.
