@@ -330,6 +330,10 @@ class MainWindow(QMainWindow):
         # the existing three internal, fully functional archive/DSP tabs.
         self.original_shell=install_original_shell(self,layout)
         self.original_visual_skin=OriginalVisualSkin(self,view_menu)
+        # Source tcAnyChange 0084F7BD dispatches the active page
+        # immediately on tab change, not only at the next 20ms tick.
+        self.original_root_tabs.currentChanged.connect(
+            lambda *_:self._source_interface_tick())
         self.statusBar().showMessage('Открыть локальное измерение или выбрать «Запись с прибора · Native R6.1»')
 
     def _calculated_tab(self):
@@ -2817,6 +2821,9 @@ class MainWindow(QMainWindow):
         self.refresh_calc()
         self.tabs.setCurrentIndex(1)
         self.statusBar().showMessage('LIVE PREVIEW — единственный TCP-клиент Go R6.1, данные ещё не приняты')
+        # Source Mode2 entry 00846EE4 calls 00847248 once directly
+        # after TMVKThread.Create/SetRate, before the periodic timer.
+        self._source_interface_tick()
 
     def _receive_native_live_status(self,snapshot):
         """Display only live transport proof from the already-running Go owner."""
