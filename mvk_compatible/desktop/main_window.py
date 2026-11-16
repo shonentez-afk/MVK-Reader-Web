@@ -2808,7 +2808,11 @@ class MainWindow(QMainWindow):
             return
         self._native_live_status=None
         self._source_live_writer.invalidate(str(reason))
-        self._source_mode2_runtime.status_rejected()
+        if (str(reason)=="Нет текущего подтверждённого состояния"
+                and self._source_mode2_runtime.session_id is None):
+            self._source_mode2_runtime.awaiting_native_status()
+        else:
+            self._source_mode2_runtime.status_rejected()
         self._sync_source_mode2_runtime()
         # An invalid status immediately invalidates all provisional
         # waveform/spectrum bytes, even when the next Qt signal is delayed.
