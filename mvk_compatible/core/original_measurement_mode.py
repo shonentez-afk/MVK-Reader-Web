@@ -76,6 +76,13 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
         return SourceConnectionDisplay(
             True,True,False,
             "Нет новых данных прибора","bad","SILENT")
+    if proof.connection_verified and proof.source_system_error_observed:
+        # Original _Unit125:0080872D tests unsigned StatusCells[0]>0.
+        # This UI condition requires BOTH physical register words valid;
+        # the Delphi 0xFFFFFFFF initialization is not a Go observation.
+        return SourceConnectionDisplay(
+            True,True,True,
+            "Системная ошибка прибора","bad","SYSTEM_ERROR")
     if proof.connection_verified and proof.data_integrity_alert:
         return SourceConnectionDisplay(
             True,True,True,
