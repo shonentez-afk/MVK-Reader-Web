@@ -71,13 +71,23 @@ func TestTachAbsentExplicitAndNeverInventRaw(t *testing.T) {
     out:=filepath.Join(t.TempDir(),"export")
     report,err:=export(raw,csvFile,summary,out,0)
     if err!=nil {t.Fatal(err)}
-    audit:=readTachAudit(t,out)
-    for _,row:=range audit.Channels {
-        if row.Present || row.Frames!=0 || row.Filename!="" || row.Samples!=0 {
-            t.Fatalf("fabricated missing TACH: %+v",row)
+    // No original TACH packet means no sidecar and NO new output file.
+    // This retains the established, byte-verified Stage107 19-file layout.
+    if _,err:=os.Stat(filepath.Join(out,tachEvidenceName));!os.IsNotExist(err) {
+        t.Fatal("a no-TACH capture generated an invented source audit")
+    }
+    for _,name:=range []string{
+        "TACH1_NATIVE_UNCALIBRATED.f32",
+        "TACH2_NATIVE_UNCALIBRATED.f32",
+    } {
+        if _,err:=os.Stat(filepath.Join(out,name));!os.IsNotExist(err) {
+            t.Fatalf("a no-TACH capture generated invented %s",name)
         }
     }
-    if len(report.GeneratedFiles)!=20 {t.Fatalf("unexpected source archive count %d",len(report.GeneratedFiles))}
+    if len(report.GeneratedFiles)!=19 {
+        t.Fatalf("legacy 19-file Native export contract changed: %d",
+            len(report.GeneratedFiles))
+    }
 }
 
 func TestTachGapIsAuditedNotFakeContinuousWaveform(t *testing.T) {

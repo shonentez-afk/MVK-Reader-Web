@@ -116,6 +116,13 @@ func (t *tachRawDumper) add(stage string, f Frame, h SampleHeader) error {
 func (t *tachRawDumper) finish(stage, rawSHA string) (map[string]string,error) {
     if err := t.closeFiles(); err != nil { return nil,err }
     if len(rawSHA) != 64 { return nil,errors.New("untrusted RAW SHA256 for TACH evidence") }
+    // A capture with NO TACH frames must preserve the existing verified
+    // 19-file Native export contract byte-for-byte. New TACH evidence and
+    // its audit sidecar exist only when an actual original TCP TACH packet
+    // was present. Never synthesize a "missing" TACH output file.
+    if !t.records[0].Present && !t.records[1].Present {
+        return map[string]string{},nil
+    }
     evidence := TachRawEvidence{
         Schema: tachEvidenceSchema,
         SourceRawSHA256: rawSHA,
