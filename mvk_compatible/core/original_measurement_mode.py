@@ -64,6 +64,14 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
             True,True,False,
             "Ожидание данных прибора","waiting","CONNECTING")
     proof=connected_system_status(status)
+    if proof.stream_silent:
+        return SourceConnectionDisplay(
+            True,True,False,
+            "Нет новых данных прибора","bad","SILENT")
+    if proof.connection_verified and proof.data_integrity_alert:
+        return SourceConnectionDisplay(
+            True,True,True,
+            "Ошибки входного потока","bad","STREAM_ERRORS")
     if proof.connection_verified:
         return SourceConnectionDisplay(
             True,True,True,
@@ -76,6 +84,14 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
         return SourceConnectionDisplay(
             True,True,False,
             "Нет актуальных данных прибора","bad","STALE")
+    if proof.transport_phase=="VERIFYING":
+        return SourceConnectionDisplay(
+            True,True,False,
+            "Проверка записи","waiting","VERIFYING")
+    if proof.transport_phase=="COMPLETED":
+        return SourceConnectionDisplay(
+            True,True,False,
+            "Запись завершена · проверка архива","waiting","COMPLETED")
     return SourceConnectionDisplay(
         True,True,False,
         "Ожидание данных прибора","waiting",proof.transport_phase)

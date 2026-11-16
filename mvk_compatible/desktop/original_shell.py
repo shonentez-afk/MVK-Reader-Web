@@ -772,6 +772,17 @@ class OriginalRootShell:
         flow=None
         error=None
         if (self.window._measurement_mode_selected
+                or self.window._live_active):
+            # Native provenance belongs to the selected Mode2 run and
+            # survives switching between all fifteen original status tabs.
+            # No Go counter is copied into Delphi DSP/firmware cells.
+            live_evidence=connected_system_status(
+                getattr(self.window,"_native_live_status",None))
+            self.status_page.setProperty(
+                "sourceNativeLiveQualityReceipt",live_evidence.receipt())
+        else:
+            self.status_page.setProperty("sourceNativeLiveQualityReceipt",None)
+        if (self.window._measurement_mode_selected
                 or self.window._live_active) and index==0:
             # The source screenshot's system table has 15 original labels;
             # validated passive Go status knows the TCP transport only.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from .native_r6_live_status import SCHEMA
+from .original_mode2_live_health import live_transport_health
 
 SOURCE="ORIGINAL_CONNECTED_SYSTEM_STATUS_VISIBLE_SCREEN_20261116"
 SYSTEM_STATUS_KEYS=(
@@ -41,6 +42,12 @@ class ConnectedSystemStatus:
     connection_verified:bool
     transport_phase:str
     frame_count:int|None
+    stream_silent:bool=False
+    data_integrity_alert:bool=False
+    native_channel_count:int=0
+    native_invalid_frames:int=0
+    native_sequence_gaps:int=0
+    native_nonfinite_samples:int=0
     provenance:str=SOURCE
 
     @property
@@ -54,6 +61,12 @@ class ConnectedSystemStatus:
             "connected_readonly_transport_verified":self.connection_verified,
             "transport_phase":self.transport_phase,
             "transport_frames":self.frame_count,
+            "native_channels_observed":self.native_channel_count,
+            "native_stream_silent":self.stream_silent,
+            "native_data_integrity_alert":self.data_integrity_alert,
+            "native_invalid_frames":self.native_invalid_frames,
+            "native_sequence_gaps":self.native_sequence_gaps,
+            "native_nonfinite_samples":self.native_nonfinite_samples,
             "original_modbus_or_device_commands_issued":False,
         }
 
@@ -68,6 +81,7 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
         phase="NO_NATIVE_EVIDENCE"
         connected=False
         frame_count=None
+        health=live_transport_health(None)
     else:
         if (not isinstance(native_status,dict)
                 or native_status.get("schema")!=SCHEMA
@@ -84,11 +98,25 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
             raise ValueError("Validated Native freshness bit missing")
         phase=native_status["phase"]
         frame_count=count
-        connected=phase=="RECORDING" and count>0 and not stale
+        health=live_transport_health(native_status)
+        # A freshly-written JSON file is not proof that data are still
+        # arriving. The Go transport can keep reporting old frame totals
+        # after its last instrument packet. Keep the source lamp non-green
+        # when packet silence crosses the Native watchdog threshold.
+        connected=(
+            phase=="RECORDING" and count>0
+            and not stale and not health.stream_silent)
     # Never fill serial, firmware, errors, DSP MD5 or Modbus counters
     # using Go capture elapsed_seconds/frames_decoded/raw_bytes.
     rows=tuple((caption,UNKNOWN) for _,caption in SYSTEM_STATUS_KEYS)
-    return ConnectedSystemStatus(rows,connected,phase,frame_count)
+    return ConnectedSystemStatus(
+        rows,connected,phase,frame_count,
+        stream_silent=health.stream_silent,
+        data_integrity_alert=health.data_integrity_alert,
+        native_channel_count=health.channels_observed,
+        native_invalid_frames=health.invalid_frames,
+        native_sequence_gaps=health.sequence_gaps,
+        native_nonfinite_samples=health.nonfinite_samples)
 
 
 assert len(SYSTEM_STATUS_KEYS)==15

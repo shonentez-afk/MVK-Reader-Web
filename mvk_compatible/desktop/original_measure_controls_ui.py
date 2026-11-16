@@ -24,6 +24,7 @@ from ..core.original_measure_controls import (
 )
 from ..core.original_measurement_mode import source_connection_display
 from ..core.original_measurement_pipeline import measurement_operator_policy
+from ..core.original_mode2_live_health import original_dpi_geometry
 from ..core.original_pagefile_recording import OriginalPageFileSelection
 
 
@@ -233,6 +234,12 @@ class OriginalMeasureControls:
             "sourceRuntimeMeasurePanelVisible",policy.panel_visible)
         self.panel.setProperty(
             "sourceOriginalMeasureCorePolicy",policy.receipt())
+        # Source mvkform.dfm uses PixelsPerInch=96. Qt owns the actual
+        # scaling; do not resize the DFM logical button rectangles at
+        # Windows 150 percent (144 physical DPI).
+        self.panel.setProperty(
+            "sourceOriginalDfmDpiReceipt",
+            original_dpi_geometry(self.panel.devicePixelRatioF()))
         self.panel.setProperty(
             "sourceOfflineMeasureCommandsRemainLocalOnly",True)
         self.freeze.setEnabled(policy.freeze_preview_enabled)
@@ -271,6 +278,9 @@ class OriginalMeasureControls:
             self.indicator.setStyleSheet(
                 "color:#459a4c" if state_view.transport_verified
                 else "color:#888888")
+            self.status.setToolTip(
+                "Статус подтверждённого пассивного Native R6.1. "
+                "Он не является приборным регистром StatusIsError.")
         else:
             self.status.setText(
                 "Просмотр сохранённого измерения" if offline
