@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .original_connected_status import connected_system_status
 from .original_mode2_rx_evidence import OriginalMode2ReceiveEvidence
+from .original_mode2_status_cells import OriginalStatusCellsEvidence
 from .original_mode2_retry_timing import OriginalSourceRetryPlan
 from .original_mode2_received_frames import OriginalSourceReadFramer
 from .original_mode2_wire_word_candidate import plan_verified_source_rate_command
@@ -46,6 +47,7 @@ class OriginalMode2RuntimeTrace:
         self.command_model = OriginalMode2CommandQueue()
         self.fault_routes = OriginalMode2FaultRoutes()
         self.receive_evidence=OriginalMode2ReceiveEvidence()
+        self.status_cells=OriginalStatusCellsEvidence()
         self.source_retry_plan=OriginalSourceRetryPlan()
         self.phase = "IDLE"
         self.capture_started = False
@@ -123,11 +125,15 @@ class OriginalMode2RuntimeTrace:
         # SetRate queue: ACK from the device cannot certify that we sent
         # a command, because the Native Go client sends none.
         source_rx=self.receive_evidence.observe_native(status)
+        source_cells=self.status_cells.observe_native(status)
+        if source_cells['new_source_system_error_from_go_register']:
+            self._event('SOURCE_STATUSCELLS0_SYSTEM_ERROR_CONFIRMED')
         # Source 00807E92..00807F67 takes ONE command from TList only
         # at Stage=1. The received nonempty PARAM frame is the precise
         # source stage prerequisite. Simulate the original nine Win32
         # UInt32 Write arguments, without actually writing any bytes.
         if (source_rx["original_source_stage_candidate_from_rx"]==1 and
+                not source_cells['source_system_error_latched_until_new_capture'] and
                 self.source_initial_rate_write_calls_dry_run is None and
                 self.command_model.pending):
             source_command=self.command_model.take_one(1)
@@ -142,6 +148,11 @@ class OriginalMode2RuntimeTrace:
         elif status["phase"] == "REFUSED":
             self.phase = "REFUSED"
             self.fault_routes.record_native_fault("REFUSED")
+        elif source_cells['source_system_error_latched_until_new_capture']:
+            # The real Delphi Stage3 has no automatic transition to Stage1
+            # when a later status register returns to zero. Separate this
+            # *read-only observed candidate* from actual TMVKThread status.
+            self.phase = 'SYSTEM_ERROR'
         elif proof.stream_silent:
             self.phase = "SILENT"
             self.fault_routes.record_native_fault("NO_PACKET")
@@ -247,6 +258,10 @@ class OriginalMode2RuntimeTrace:
             "original_timer_behavior_reproduced": False,
             "original_queue": self.command_model.receipt(),
             "original_receive_protocol": self.receive_evidence.receipt(),
+            "original_status_cells_14": self.status_cells.receipt(),
+            "original_stage3_system_error_condition_latched":
+                self.status_cells.system_error_latched,
+            "original_delphi_stage3_physically_verified":False,
             "source_initial_rate_write_calls_dry_run":
                 self.source_initial_rate_write_calls_dry_run,
             "source_initial_write_calls_physically_sent": False,
