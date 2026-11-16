@@ -131,8 +131,9 @@ class OriginalMode2CommandQueue:
             raise ValueError("Cannot model SetRate after source shutdown")
         if source_rate_code == self._rate_code:
             return None
+        entry = self.queue_command(RATE_COMMAND, RATE_ADDRESS, source_rate_code)
         self._rate_code = source_rate_code
-        return self.queue_command(RATE_COMMAND, RATE_ADDRESS, source_rate_code)
+        return entry
 
     def take_one(self, source_stage: int) -> OriginalCommandRecord | None:
         """Source 00807E8F processes 1 FIFO item at Stage==1 per loop."""
@@ -174,7 +175,16 @@ class OriginalMode2FaultRoutes:
 
     def __init__(self):
         self._events: list[dict] = []
+        self._seen = 0
         self._closed = False
+
+    def _append(self, record):
+        # A live 900ms monitor can run for hours; never grow an
+        # unbounded log of repeated disconnect/stale notifications.
+        self._seen += 1
+        self._events.append(record)
+        if len(self._events) > 64:
+            self._events.pop(0)
 
     def record_source_exception(self, kind: str) -> dict:
         if self._closed or kind not in SOURCE_EXCEPTION_ROUTES:
@@ -185,7 +195,7 @@ class OriginalMode2FaultRoutes:
             "source_handler_address": address, "localization_key": localization,
             "native_error_equivalence_proven": False,
         }
-        self._events.append(record)
+        self._append(record)
         return dict(record)
 
     def record_source_internal_error(self, kind: str) -> dict:
@@ -197,7 +207,7 @@ class OriginalMode2FaultRoutes:
             "source_internal_not_delphi_exception": True,
             "native_error_equivalence_proven": False,
         }
-        self._events.append(record)
+        self._append(record)
         return dict(record)
 
     def record_native_fault(self, kind: str) -> dict:
@@ -211,7 +221,7 @@ class OriginalMode2FaultRoutes:
             "kind": kind, "source": "MVK_R6_NATIVE_READ_ONLY",
             "matched_to_delphi_exception": False,
         }
-        self._events.append(record)
+        self._append(record)
         return dict(record)
 
     def finish(self):
@@ -222,7 +232,8 @@ class OriginalMode2FaultRoutes:
             "source": SOURCE,
             "source_exception_routes_verified": len(SOURCE_EXCEPTION_ROUTES),
             "source_internal_routes_verified": len(SOURCE_INTERNAL_ERROR_ROUTES),
-            "event_count": len(self._events),
+            "event_count": self._seen,
+            "events_retained": len(self._events),
             "events": tuple(dict(x) for x in self._events),
             "closed": self._closed,
             "native_error_equivalence_proven": False,
