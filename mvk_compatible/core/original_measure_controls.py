@@ -26,6 +26,7 @@ from pathlib import Path
 
 from .offline_measurement_flow import OfflineMeasurementFlow
 from .native_r6_live_preview import LivePreview
+from .original_mode2_rate_menu_source import SOURCE_RATE_MENU_TAGS
 from .original_pagefile_recording import (
     OriginalPageFileSelection,ADC_VALUE_COUNT,BAND_VALUE_COUNT,SPEC_COUNT,
 )
@@ -129,7 +130,9 @@ class OriginalMeasureState:
             "observed_sample_rate_hz":self.observed_sample_rate_hz,
             "observed_rates_per_adc":list(self.observed_rates_per_adc),
             "original_sample_rate_menu_entries":ORIGINAL_RATE_RADIO_ITEMS,
-            "original_sample_rate_menu_values_verified":False,
+            "original_sample_rate_menu_values_verified":True,
+            "source_original_rate_menu_tags":list(SOURCE_RATE_MENU_TAGS),
+            "original_hardware_rate_setting_verified":False,
             "original_thread_freeze_flag_set":False,
             "original_thread_write_adc_flag_set":False,
             "original_thread_write_values_flag_set":False,
