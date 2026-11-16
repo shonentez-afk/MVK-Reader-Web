@@ -20,7 +20,7 @@ def _preview(tmp_path):
     from .test_stage111z26b_live_preview import make_preview,now
     from mvk_compatible.core.native_r6_live_preview import load_live_preview
     root,status,_=make_preview(tmp_path)
-    return load_live_preview(root,status,now=now())
+    return status,load_live_preview(root,status,now=now())
 
 
 def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_path,qt_app):
@@ -38,7 +38,8 @@ def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_
     assert not window.tick.isEnabled()
     assert not window.task_metrics_button.isEnabled()
     assert "LIVE" in window.note.text()
-    preview=_preview(tmp_path)
+    status,preview=_preview(tmp_path)
+    window._receive_native_live_status(status)
     window._receive_live_preview(preview)
     assert len(window.wave_plot.listDataItems())==1
     assert len(window.spec_plot.listDataItems())==1
@@ -91,7 +92,9 @@ def test_live_completion_disables_preview_until_verified_archive(tmp_path,qt_app
     from .test_offline_core import fixture_zip
     window=MainWindow()
     window._begin_live_capture()
-    window._receive_live_preview(_preview(tmp_path))
+    status,preview=_preview(tmp_path)
+    window._receive_native_live_status(status)
+    window._receive_live_preview(preview)
     window._end_live_capture(True)
     assert window.session is None
     assert not window._live_active
