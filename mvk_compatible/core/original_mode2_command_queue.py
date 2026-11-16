@@ -1,6 +1,6 @@
 """Source-derived TMVKThread command FIFO, STRICTLY OFFLINE AND NON-TRANSMITTING.
 
-Private local references: _Unit125.pas 008060B0/0080618E (initial 309),
+Private local references: _Unit125.pas 008060B0/0080618E (initial 0x309),
 00809330 (12-byte Cmd/Addr/Data TList.Add), 00809288 (Get(0), Delete(0)),
 00809364 (QueueCommand(1, 0x0e, MvkSampleRate)), 00809400 (only if
 changed), Execute 00807E8F..00807F67 (take only at Stage==1). The
@@ -14,8 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import struct
 
+from .original_mode2_rate_menu_source import (
+    SOURCE_THREAD_INITIAL_CODE,
+)
+
 SOURCE = "IDR_TMVKTHREAD_00809330_00809288_00809364_00809400_OFFLINE"
-DEFAULT_RATE_CODE = 309
+DEFAULT_RATE_CODE = SOURCE_THREAD_INITIAL_CODE  # 0x309 == 777, NOT decimal 309
 RATE_COMMAND = 1
 RATE_ADDRESS = 0x0e
 COMMAND_STRUCT_BYTES = 12
@@ -157,6 +161,8 @@ class OriginalMode2CommandQueue:
         return {
             "source": SOURCE,
             "default_internal_rate_code": DEFAULT_RATE_CODE,
+            "default_source_immediate_hex": "0x309",
+            "source_default_is_not_decimal_309": True,
             "current_internal_rate_code": self._rate_code,
             "five_original_rate_tags_independently_verified": False,
             "pending_count": len(self._pending),
