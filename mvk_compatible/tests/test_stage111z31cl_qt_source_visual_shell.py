@@ -137,7 +137,8 @@ def test_f12_technical_view_keeps_original_client_reachable(qt_app):
     w=MainWindow();w.show();settle(qt_app)
     try:
         skin=w.original_visual_skin
-        assert skin.toggle_action.shortcut().toString()=="F12"
+        assert skin.toggle_action.shortcut().toString()==""  # operator only
+        assert not skin.snapshot()["developer_ui_shortcut_installed"]
         assert any(a.shortcut().toString()=="Ctrl+O"
                    for a in w.actions())
         assert not w.menuBar().isVisible()

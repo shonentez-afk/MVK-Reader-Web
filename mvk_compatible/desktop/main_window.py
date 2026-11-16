@@ -6,6 +6,7 @@ Delphi MVKView parity is IN PROGRESS: FFT and AC remain labelled candidates.
 """
 from __future__ import annotations
 from pathlib import Path
+import os
 from contextlib import nullcontext
 from fractions import Fraction
 from hashlib import sha256
@@ -283,11 +284,12 @@ class MainWindow(QMainWindow):
         view_menu=self.menuBar().addMenu('Вид')
         research_menu=view_menu.addMenu('Исследование')
         details=QAction('Дополнительные настройки графиков',self)
-        details.setShortcut('Ctrl+D')
         details.triggered.connect(self._toggle_current_research)
         research_menu.addAction(details)
-        # Ctrl+D remains actionable even while source-mode hides menubar.
-        self.addAction(details)
+        if os.environ.get("MVKVIEW_DEVELOPER_UI","")=="1":
+            details.setShortcut('Ctrl+D')
+            self.addAction(details)
+        # No research shortcut in the ordinary original-style executable.
         research_tabs=QAction('Вкладки технического анализа',self)
         research_tabs.setCheckable(True)
         research_tabs.setChecked(False)

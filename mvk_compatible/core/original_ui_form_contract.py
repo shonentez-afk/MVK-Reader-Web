@@ -41,7 +41,7 @@ ORIGINAL_CHANNEL_TAB_HEIGHT = 36
 ORIGINAL_ROOT_PAGES = (
     OriginalPage("PageStart", "BWHand", "Задачи"),
     OriginalPage("PageConfig", "BWGear", "Настройка"),
-    OriginalPage("PageStatus", "BWTable", "Расчётные данные"),
+    OriginalPage("PageStatus", "BWTable", "Расчетные данные"),
     OriginalPage("PageAdc", "BWOsc", "Временной сигнал"),
     OriginalPage("PageSpectrum", "BWSpec", "Спектр"),
     OriginalPage("PageFile", "BWEdit", "Параметры записи"),

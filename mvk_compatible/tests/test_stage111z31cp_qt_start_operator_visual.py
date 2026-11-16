@@ -138,9 +138,17 @@ def test_real_empty_original_start_look_and_clickable_core_modes(
         assert win.original_config_panel.source_mode==6
         win.original_root_tabs.setCurrentIndex(0)
         settle(qt_app)
+        native_dialogs=[]
+        monkeypatch.setattr(
+            QFileDialog,"getOpenFileName",
+            lambda *args,**kw:(native_dialogs.append(
+                args[3]) or ("","")))
         QTest.mouseClick(start.buttons["bTaskView"],Qt.LeftButton)
         settle(qt_app)
-        assert win.original_root_tabs.currentIndex()==5
+        assert len(native_dialogs)==1
+        assert native_dialogs[0].startswith(
+            "Двоичные файлы временного сигнала")
+        assert win.original_root_tabs.currentIndex()==0
         assert win.session is None
         win.original_root_tabs.setCurrentIndex(0)
         settle(qt_app)

@@ -268,6 +268,11 @@ class OriginalVisualSkin:
         self.window=window
         self.source=SOURCE
         self.technical=False
+        # Normal operator execution has NO research hotkeys, panels or
+        # menu actions. An explicit developer process may opt in using
+        # MVKVIEW_DEVELOPER_UI=1, never a hidden in-app F12 toggle.
+        self.developer_enabled=(os.environ.get(
+            "MVKVIEW_DEVELOPER_UI","")=="1")
         self.home=window.task_subpages.widget(0)
         self.start=window.original_start_controller
         self.root=window.original_root_tabs
@@ -283,17 +288,22 @@ class OriginalVisualSkin:
         self.toggle_action.setObjectName(
             "actionToggleSourceCompatibleTechnicalUI")
         self.toggle_action.setCheckable(True)
-        self.toggle_action.setShortcut("F12")
         self.toggle_action.toggled.connect(self._configure_visibility)
-        # A shortcut on QMainWindow remains usable when the menu is hidden.
-        window.addAction(self.toggle_action)
-        view_menu.addAction(self.toggle_action)
+        if self.developer_enabled:
+            self.toggle_action.setShortcut("F12")
+            window.addAction(self.toggle_action)
+            view_menu.addAction(self.toggle_action)
+        # In normal operator mode it exists as a testable QObject only.
+        # It has no shortcut, no menu, and cannot be reached with F12.
 
         private=QAction(
             "Открыть оригинальные изображения из локального DFM…",window)
         private.setObjectName("actionLoadPrivateSourceDfmPictures")
         private.triggered.connect(self.choose_private_dfm)
-        view_menu.addAction(private)
+        if self.developer_enabled:
+            view_menu.addAction(private)
+        # Real icons can also be loaded without any developer UI via
+        # MVKVIEW_PRIVATE_SOURCE_DFM as a one-time local opt-in.
         self.private_action=private
         window.source_visual_skin=self
 
@@ -391,6 +401,8 @@ class OriginalVisualSkin:
 
     def _configure_visibility(self,enabled:bool):
         enabled=bool(enabled)
+        # Programmatic QA may still switch this for legacy regression
+        # coverage, but ordinary Qt users have no reachable action.
         self.technical=enabled
         w=self.window
         w.menuBar().setVisible(enabled)
@@ -536,6 +548,7 @@ class OriginalVisualSkin:
             "start_private_background_palette_accepted":(
                 self.start.host.private_blue_backgrounds_compatible),
             "technical":self.technical,
+            "developer_ui_shortcut_installed":self.developer_enabled,
             "menu_visible":self.window.menuBar().isVisible(),
             "statusbar_visible":self.window.statusBar().isVisible(),
             "source_both_graphs_enabled":True,

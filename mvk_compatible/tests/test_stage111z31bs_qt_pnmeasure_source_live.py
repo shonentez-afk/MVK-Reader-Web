@@ -77,12 +77,12 @@ def test_original_global_toolbar_source_geometry_and_live_preview_freeze(
         panel.freeze.click()
         assert win._source_live_view_frozen
         assert panel.state.frozen
-        assert "Возобновить" in panel.freeze.text()
+        assert "Продолжить приём" in panel.freeze.text()
         win._receive_live_preview(_preview())
         assert observed==[]  # live decoder continues; Qt view frozen
         assert panel.state.observed_sample_rate_hz==65536
         assert "65536" in panel.rate.text()
-        assert "пауза экрана" in panel.status.text()
+        assert panel.status.text()=="Ожидание данных прибора"
         capture_synthetic_ui_if_requested(
             win,qt_app,"22_bs_original_pnmeasure_live_preview_freeze")
         panel.freeze.click()
@@ -133,7 +133,7 @@ def test_source_toolbar_offline_table_values_and_original_file_selection(
         assert panel.buttons["bWriteValues"].isEnabled()
         assert panel.state.observed_sample_rate_hz is not None
         assert all(not x.isEnabled() for x in panel.rate_menu.actions())
-        assert "ОФЛАЙН" in panel.status.text()
+        assert panel.status.text()=="Просмотр сохранённого измерения"
         assert panel.state.report()["original_thread_write_adc_flag_set"] is False
         capture_synthetic_ui_if_requested(
             win,qt_app,"23_bs_original_pnmeasure_native_zip_offline")
@@ -213,7 +213,7 @@ def test_source_toolbar_direct_single_only_has_real_adc_local_export(
         assert not panel.buttons["bWriteValues"].isEnabled()
         assert panel.buttons["bWriteAdc"].isEnabled()
         assert not panel.freeze.isEnabled()
-        assert "DSP нет" in panel.status.text()
+        assert panel.status.text()=="Просмотр сохранённого измерения"
         assert panel.rate_menu.actions()[0].isEnabled() is False
     finally:
         win.close()

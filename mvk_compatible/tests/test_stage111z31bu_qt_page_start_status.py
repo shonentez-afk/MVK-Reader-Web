@@ -76,8 +76,18 @@ def test_original_start_page_source_5_rectangles_ip_folder_and_real_navigation(
         host.findChild(QPushButton,"bTaskConfigCh").click()
         assert win.original_root_tabs.currentIndex()==1
         win.original_root_tabs.setCurrentIndex(0)
+        opened=[]
+        monkeypatch.setattr(
+            QFileDialog,"getOpenFileName",
+            staticmethod(lambda *args,**kw:(
+                opened.append((args,kw)) or ("",""))))
         host.findChild(QPushButton,"bTaskView").click()
-        assert win.original_root_tabs.currentIndex()==5
+        assert len(opened)==1
+        assert opened[0][0][1]=="Открытие"
+        assert "Двоичные файлы временного сигнала" in opened[0][0][3]
+        # Cancel leaves current source page and file context unchanged.
+        assert win.original_root_tabs.currentIndex()==0
+        assert win.session is None
 
         # No network action is allowed without an explicit operator step.
         win.original_root_tabs.setCurrentIndex(0)
