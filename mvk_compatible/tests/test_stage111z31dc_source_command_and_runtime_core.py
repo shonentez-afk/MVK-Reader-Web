@@ -62,8 +62,14 @@ def test_rate_change_rejects_invalid_source_code_without_fake_hz():
             queue.set_rate(bad)
     assert queue.source_rate_code==DEFAULT_RATE_CODE
     assert not queue.pending
+    # Source TMVKThread Stage3 is a real terminal system-error state:
+    # no FIFO record is sent, but the stage itself is NOT malformed.
+    assert queue.take_one(3) is None
+    waiting=queue.set_rate(65536)
+    assert queue.take_one(3) is None
+    assert queue.pending==(waiting,)
     with pytest.raises(ValueError):
-        queue.take_one(3)
+        queue.take_one(4)
     assert queue.receipt()["five_original_rate_tags_independently_verified"] is True
 
 
