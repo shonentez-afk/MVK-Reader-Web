@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._native_live_status=None  # validated Go read-only transport, never device STATUS
         self._live_prior_session=None
+        self._pending_native_pagefile_plan=None  # set only by accepted Native event
         self._live_control_states=[]
         self._pagestatus_snapshot=None
         self._source_view_time=None
@@ -2491,6 +2492,11 @@ class MainWindow(QMainWindow):
         self.spec_plot.clear()
         self.wave_line=None
         self.original_shell.sync_file_session(None,())
+        # Source PageFile's 10+43+73 checklists exist immediately in
+        # Mode2, BEFORE the original TMVKThread.create/socket step.
+        # Compatible Native R6.1 capture retains its full RAW independently.
+        self._pending_native_pagefile_plan=None
+        self.original_shell.begin_live_file_plan()
         self.spec_core_triplet.setText('Нет подтверждённого спектра нового сеанса')
         self._reset_dsp_tach_panel('нет проверенных регистров нового сеанса')
         for table in (self.metrics,self.oct_table):
@@ -2542,6 +2548,8 @@ class MainWindow(QMainWindow):
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
         self._native_live_status=None
+        self._pending_native_pagefile_plan=None
+        self.original_shell.clear_live_file_plan()
         self.original_visual_skin.reveal_page(0)
         self.original_shell.measure_controls.render()
         self.original_shell.refresh_status()
@@ -2550,6 +2558,14 @@ class MainWindow(QMainWindow):
         # using the normal offline Core before showing its old values.
         if parked is not None and self.session is None:
             self.open_archive(parked.path)
+        elif self.session is not None and self._offline_flow is not None:
+            # Last verified source was restored after a failed connection;
+            # do not leave provisional PageFile checkboxes on archive view.
+            self.original_shell.sync_file_session(
+                self.session,self._offline_flow.available_channels,
+                flow=self._offline_flow)
+        else:
+            self.original_shell.refresh_file_workbench()
         return True
 
     def measurement_connection_display(self):
@@ -2588,6 +2604,9 @@ class MainWindow(QMainWindow):
         # File page is tied to the previous verified ZIP: hide it as soon
         # as this separate, not-yet-accepted live source is entered.
         self.original_shell.sync_file_session(None,())
+        # Keep live operator checkbox choices made before TCP started:
+        # the original source does not erase these when thread starts.
+        self.original_shell.begin_live_file_plan()
         self._bind_only_verified_channels(tuple(range(1,9)))
         self._set_active(True)
         self.original_shell.measure_controls.begin_live()
@@ -2646,11 +2665,19 @@ class MainWindow(QMainWindow):
             return
         try:
             evidence=connected_system_status(snapshot)
+            # One immutable Mode2 selection is bound to ONE Native run.
+            # New session IDs or broken channel counts are rejected before
+            # Qt accepts the purported device transport status.
+            self.original_shell.update_live_file_status(snapshot)
         except (ValueError,TypeError,KeyError):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
         self._measurement_connection_error=False
+        if not evidence.connection_verified or evidence.data_integrity_alert:
+            # A successful TCP JSON update does not make an old preview
+            # current; fail closed on silence, stale or invalid frames.
+            self._invalidate_live_preview("Live transport not trustworthy")
         self.original_shell.measure_controls.render()
         # Original tmInterfaceUpdate dispatches the ACTIVE source page.
         # Go emits an authenticated status event at a slower rate than
@@ -2664,6 +2691,8 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._native_live_status=None
+        self.original_shell.update_live_file_status(
+            None,reason=str(reason))
         # An absent pending Go status is not yet a physical connection
         # failure. Malformed/rejected data is a separate error.
         detail=str(reason).lower()
@@ -2791,6 +2820,17 @@ class MainWindow(QMainWindow):
         self._measurement_mode_selected=completion.keep_mode2
         self.original_start_controller.sync_measurement_button()
         self._measurement_exit_requested=False
+        if exported:
+            # NativeCaptureDialog emits captureEnded(True) BEFORE
+            # archiveReady(path). Only that exact verified result may
+            # receive the user's source PageFile selection.
+            self._pending_native_pagefile_plan=(
+                self.original_shell.live_file_plan)
+        if not completion.keep_mode2:
+            self.original_shell.clear_live_file_plan()
+        else:
+            self.original_shell.update_live_file_status(
+                None,reason="Подключение завершилось без принятого архива")
         self.original_shell.measure_controls.end_live()
         self._live_preview=None
         self._pagestatus_snapshot=None
@@ -2833,6 +2873,33 @@ class MainWindow(QMainWindow):
             self.spec_hint.setText('Откройте локальное проверенное измерение')
             self.statusBar().showMessage('LIVE не принят; архив не подменён предварительными данными')
 
+    def _accept_native_capture_archive(self,path):
+        """Bind the source PageFile masks to this accepted SHA-checked ZIP.
+
+        The independently verified Go export remains unfiltered. Operator
+        checkboxes affect only a later explicit local PageFile export.
+        A manual File->Open cannot claim the previous live session plan.
+        """
+        plan=self._pending_native_pagefile_plan
+        self._pending_native_pagefile_plan=None
+        self.open_archive(path)
+        if (plan is None or self.session is None
+                or self._offline_flow is None):
+            return
+        if Path(self.session.path).resolve()!=Path(path).resolve():
+            return
+        try:
+            receipt=self.original_shell.apply_verified_live_file_plan(
+                plan,self._offline_flow)
+        except (OSError,ValueError,KeyError,RuntimeError) as exc:
+            self.statusBar().showMessage(
+                "PageFile: выбор записи отклонён: "+str(exc))
+            return
+        self.statusBar().showMessage(
+            "Проверенный Native ZIP открыт; исходный выбор 10/43/73 "
+            "применён только к будущему локальному экспорту. "
+            f"Выбрано АЦП: {len(receipt['applied_selected_adc'])}.")
+
     def open_native_capture(self):
         """Use the already hardware-tested recorder; never send MVK commands."""
         from .native_capture_dialog import NativeCaptureDialog
@@ -2841,7 +2908,7 @@ class MainWindow(QMainWindow):
             self._native_dialog.activateWindow()
             return
         dlg=NativeCaptureDialog(self)
-        dlg.archiveReady.connect(self.open_archive)
+        dlg.archiveReady.connect(self._accept_native_capture_archive)
         dlg.captureStarted.connect(self._begin_live_capture)
         dlg.captureEnded.connect(self._end_live_capture)
         dlg.statusReady.connect(self._receive_native_live_status)

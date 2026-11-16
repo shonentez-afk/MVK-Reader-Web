@@ -43,6 +43,9 @@ from ..core.original_pagefile_recording import (
     TACH_RESULT_COUNT,ORIGINAL_DFM_FILE_ADC_HEIGHT,
 )
 from ..core.original_pagestatus_source import TACH_FIELDS
+from ..core.original_live_pagefile import (
+    OriginalLiveFilePlan,live_pagefile_channel_rows,
+)
 from ..core.original_view_time_source import source_view_time, source_linked_caption
 
 from ..core.original_ui_form_contract import (
@@ -483,6 +486,9 @@ class OriginalRootShell:
             QTableWidget, "fileSourceMetadata")
         self.file_tick=self.file_page.findChild(QSpinBox,"fileValuesTick")
         self.file_record_selection=None
+        self.live_file_plan=None  # Source Mode2 checkbox owner, NOT Go RAW config
+        self._live_file_status=None
+        self._live_file_reason=""
         self.file_export_button=self.file_page.findChild(
             QPushButton,"pageFileExportSelectedSource")
         self.file_action_tabs=self.file_page.findChild(
@@ -983,7 +989,129 @@ class OriginalRootShell:
         if self.window.tick.value()!=tick:
             self.window.tick.setValue(tick)  # one authoritative Core refresh
 
+    def begin_live_file_plan(self):
+        """Show original PageFile's 10/43/73 flags BEFORE Native TCP.
+
+        Source _Unit128:00846D24 first reveals PageFile and then starts
+        TMVKThread. The compatible Go receiver remains independent.
+        """
+        if self.live_file_plan is None:
+            self.live_file_plan=OriginalLiveFilePlan()
+        self._live_file_status=None
+        self._live_file_reason="Ожидание подключения к прибору"
+        self._render_live_file_plan()
+        return self.live_file_plan.receipt()
+
+    def update_live_file_status(self,status=None,*,reason=""):
+        """Render a single validated Go status across all original flags.
+
+        A new session identifier cannot inherit checkboxes from a different
+        capture. No preview, DSP or TACH RAW is synthesized here.
+        """
+        if self.live_file_plan is None:
+            return None
+        if status is not None:
+            self.live_file_plan=self.live_file_plan.bind_status(status)
+            # Validate all ten ordered channels before touching Qt widgets.
+            live_pagefile_channel_rows(status)
+        self._live_file_status=status
+        self._live_file_reason=reason
+        self._render_live_file_plan()
+        return self.file_page.property("sourceLiveFilePlanReceipt")
+
+    def _render_live_file_plan(self):
+        plan=self.live_file_plan
+        if plan is None:
+            return
+        labels=live_pagefile_channel_rows(self._live_file_status)
+        for group,widget,count in (
+            ("channels",self.file_channels,CHANNEL_COUNT),
+            ("spec",self.file_spec,SPEC_COUNT),
+            ("values",self.file_values,VALUE_COUNT),
+        ):
+            blocked=widget.blockSignals(True)
+            try:
+                widget.clear()
+                for i in range(count):
+                    if group=="channels":
+                        title=labels[i]
+                    elif group=="spec":
+                        title=f"SPEC {i+1} · приборное значение ожидается"
+                    elif i<ADC_VALUE_COUNT:
+                        title=f"VALUE ADC {i+1} · проверенный результат ожидается"
+                    elif i<ADC_VALUE_COUNT+BAND_VALUE_COUNT:
+                        title=f"BAND {i-ADC_VALUE_COUNT+1} · результат ожидается"
+                    else:
+                        title=f"TACH VALUE {i-ADC_VALUE_COUNT-BAND_VALUE_COUNT+1} · не восстановлено"
+                    item=self._checked_item(
+                        title,i,getattr(plan,group)[i],True)
+                    if group=="channels":
+                        item.setData(Qt.UserRole,i+1)
+                    widget.addItem(item)
+            finally:
+                widget.blockSignals(blocked)
+        self._sync_file_tick_from_model(1)
+        self.file_tick.setEnabled(False)
+        self.file_export_button.setEnabled(False)
+        self.file_summary.setText(
+            "Измерение · исходные 10 каналов (8 АЦП + 2 TACH). "
+            "Native R6.1 записывает RAW независимо от выбора этих флагов.")
+        self.file_source_evidence.setText(
+            "LIVE · выбранные флаги применяются только к последующему "
+            "проверенному локальному экспорту; приборные команды не отправлены.")
+        self.file_selection_status.setText(self._file_selection_status())
+        for button in self.file_action_buttons.values():
+            button.setEnabled(False)
+        receipt=plan.receipt()
+        receipt["connected_status_evidence_accepted"]=self._live_file_status is not None
+        receipt["operator_status_reason"]=self._live_file_reason
+        self.file_page.setProperty("sourceLiveFilePlanReceipt",receipt)
+
+    def clear_live_file_plan(self):
+        """Dispose source capture checkboxes without losing accepted ZIP."""
+        self.live_file_plan=None
+        self._live_file_status=None
+        self._live_file_reason=""
+        self.file_page.setProperty("sourceLiveFilePlanReceipt",None)
+        if self._file_flow is None:
+            self.refresh_file_workbench()
+
+    def apply_verified_live_file_plan(self,plan,flow):
+        """Carry operator choices into a SHA-revalidated Native ZIP only.
+
+        This is invoked by the actual Native capture archiveReady handler;
+        independent File->Open never inherits another run's checkboxes.
+        """
+        if not isinstance(plan,OriginalLiveFilePlan):
+            raise ValueError("Native PageFile selection must belong to this capture")
+        if self.live_file_plan is not None:
+            raise ValueError("Cannot bind an offline ZIP while Mode2 still active")
+        selection,receipt=plan.apply_to_verified_flow(flow)
+        self.file_record_selection=selection
+        blocked=self.file_channels.blockSignals(True)
+        try:
+            for i,chosen in enumerate(selection.channels):
+                item=self.file_channels.item(i)
+                if item is not None:
+                    item.setCheckState(Qt.Checked if chosen else Qt.Unchecked)
+        finally:
+            self.file_channels.blockSignals(blocked)
+        self.refresh_file_workbench()
+        self.file_page.setProperty("sourceAppliedLiveFilePlanReceipt",receipt)
+        return receipt
+
     def _file_selection_status(self):
+        if (self.live_file_plan is not None
+                and self.window._measurement_mode_selected):
+            receipt=self.live_file_plan.receipt()
+            return (
+                "Исходная запись Mode2: 10 каналов, 43 SPEC, 73 VALUES. "
+                f"Выбрано АЦП {len(receipt['selected_adc_indices'])}, "
+                f"TACH {len(receipt['selected_tach_indices'])}, "
+                f"SPEC {len(receipt['selected_spec_indices'])}, "
+                f"VALUES {len(receipt['selected_value_indices'])}. "
+                "Go Native сохраняет полный RAW; фильтр применяется "
+                "только к новому проверенному локальному экспорту.")
         if self.file_record_selection is None:
             return "Чек-листы записи: загрузите проверенное измерение"
         chosen=self.file_record_selection.report()
@@ -997,6 +1125,27 @@ class OriginalRootShell:
 
     def _file_checked_changed(self,widget,item):
         """A real user toggles the ORIGINAL source check-list by its index."""
+        if (self.live_file_plan is not None
+                and self.window._measurement_mode_selected and item is not None):
+            group=("channels" if widget is self.file_channels else
+                   "spec" if widget is self.file_spec else
+                   "values" if widget is self.file_values else None)
+            if group is None:return
+            index=item.data(Qt.UserRole+1)
+            if type(index) is not int:return
+            try:
+                self.live_file_plan=self.live_file_plan.set_checked(
+                    group,index,item.checkState()==Qt.Checked)
+            except ValueError:
+                original=getattr(self.live_file_plan,group)
+                blocked=widget.blockSignals(True)
+                try:
+                    item.setCheckState(
+                        Qt.Checked if original[index] else Qt.Unchecked)
+                finally:
+                    widget.blockSignals(blocked)
+            self._render_live_file_plan()
+            return
         if (self.file_record_selection is None or self._file_flow is None
                 or self.window.session is None or
                 self.window._live_active or item is None):
@@ -1090,6 +1239,10 @@ class OriginalRootShell:
         try:
             self.file_spec.clear()
             self.file_values.clear()
+            if (self.live_file_plan is not None
+                    and self.window._measurement_mode_selected):
+                self._render_live_file_plan()
+                return
             if self._file_flow is None or self.window.session is None:
                 self._sync_file_tick_from_model(1)
                 self.file_summary.setText(
