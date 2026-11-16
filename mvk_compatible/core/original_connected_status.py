@@ -48,6 +48,7 @@ class ConnectedSystemStatus:
     native_invalid_frames:int=0
     native_sequence_gaps:int=0
     native_nonfinite_samples:int=0
+    source_system_error_observed:bool=False
     provenance:str=SOURCE
 
     @property
@@ -67,6 +68,8 @@ class ConnectedSystemStatus:
             "native_invalid_frames":self.native_invalid_frames,
             "native_sequence_gaps":self.native_sequence_gaps,
             "native_nonfinite_samples":self.native_nonfinite_samples,
+            "source_statuscells0_real_system_error":self.source_system_error_observed,
+            "source_system_error_from_14_not_15_table":True,
             "original_modbus_or_device_commands_issued":False,
         }
 
@@ -116,7 +119,8 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
         native_channel_count=health.channels_observed,
         native_invalid_frames=health.invalid_frames,
         native_sequence_gaps=health.sequence_gaps,
-        native_nonfinite_samples=health.nonfinite_samples)
+        native_nonfinite_samples=health.nonfinite_samples,
+        source_system_error_observed=health.source_system_error_observed)
 
 
 assert len(SYSTEM_STATUS_KEYS)==15
