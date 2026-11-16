@@ -2487,6 +2487,8 @@ class MainWindow(QMainWindow):
             widget.setProperty('sourceOriginalMode2RuntimeReceipt',receipt)
             widget.setProperty('sourceOriginalReceivedProtocolEvidence',
                                receipt['original_receive_protocol'])
+            widget.setProperty('sourceOriginalStatusCells14Receipt',
+                               receipt['original_status_cells_14'])
 
     def _source_interface_tick(self):
         """Source 0084F7C8: 20ms ONLY the active source tab + pnMeasure.
@@ -2853,6 +2855,13 @@ class MainWindow(QMainWindow):
         self._native_live_status=snapshot
         self._measurement_connection_error=False
         self._sync_source_mode2_runtime()
+        system_latched=self._source_mode2_runtime.status_cells.system_error_latched
+        # A real source 0x1006 system fault cannot be forgotten merely
+        # because the next passive Go snapshot carries a cleared code:
+        # original TMVKThread.Stage=3 remains latched until a new thread.
+        if system_latched:
+            self._source_live_writer.invalidate(
+                "Подтверждена системная ошибка StatusCells[0]")
         # Once the operator requests stop, a later valid Go status must
         # not reactivate the preview or show a green connected indicator.
         if self._measurement_exit_requested:
@@ -2860,7 +2869,7 @@ class MainWindow(QMainWindow):
             self.original_shell.measure_controls.render()
             self.original_shell.refresh_status()
             return evidence
-        if snapshot.get("phase")=="RECORDING":
+        if snapshot.get("phase")=="RECORDING" and not system_latched:
             try:
                 self._source_live_writer.observe(snapshot)
             except (ValueError,TypeError,KeyError):
@@ -2872,7 +2881,8 @@ class MainWindow(QMainWindow):
         elif snapshot.get("phase")=="REFUSED":
             self._source_live_writer.invalidate(
                 "Native отказал в принятии измерения")
-        if not evidence.connection_verified or evidence.data_integrity_alert:
+        if (not evidence.connection_verified or evidence.data_integrity_alert
+                or system_latched):
             # A successful TCP JSON update does not make an old preview
             # current; fail closed on silence, stale or invalid frames.
             self._invalidate_live_preview("Live transport not trustworthy")
@@ -2913,6 +2923,10 @@ class MainWindow(QMainWindow):
 
     def _receive_live_preview(self, preview):
         if not self._live_active:
+            return
+        if self._source_mode2_runtime.status_cells.system_error_latched:
+            self._invalidate_live_preview(
+                "Source Stage3: системная ошибка регистра 0x1006")
             return
         from ..core.original_live_view_gate import gate_live_preview
         decision=gate_live_preview(
