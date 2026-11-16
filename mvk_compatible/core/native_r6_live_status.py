@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 
 from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
+from .original_mode2_status_cells import parse_source_cells
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
 FILENAME = "MVK_NATIVE_LIVE_STATUS.json"
@@ -96,6 +97,12 @@ def validate_live_status(payload: dict, *, expected_run: str,
         counts=[_positive_int(payload[key], key) for key in SOURCE_RX_FIELDS]
         if sum(counts)>payload["frames_decoded"]:
             raise ValueError("Native live status: RX counters exceed decoded frames")
+    # The same passive Go monitor exposes 14 IDP-verified StatusCells.
+    # Each DWORD requires *two* observed uint16 register words; a missing
+    # cell is null/UNKNOWN, never the source Delphi FF init sentinel.
+    status_cells=parse_source_cells(payload)
+    source_system_error=bool(status_cells and status_cells[0].valid
+                             and status_cells[0].value>0)
     elapsed = payload.get("elapsed_seconds")
     if type(elapsed) not in (float, int) or not 0 <= elapsed < 365*24*3600:
         raise ValueError("Native live status: invalid elapsed time")
@@ -127,6 +134,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
         safe.append(record)
     result = dict(payload)
     result["channels"] = safe
+    result["source_system_error_observed"] = source_system_error
     result["snapshot_age_s"] = age
     result["snapshot_stale"] = age > 5.0 and result["phase"] in ("CONNECTING", "RECORDING")
     result["quality_alert"] = (
@@ -134,6 +142,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
         result["snapshot_stale"] or
         (silent is not None and silent > 4.0) or
         (all(source_fields) and payload[SOURCE_RX_FIELDS[2]]>0) or
+        source_system_error or
         any(ch["quality"] in ("ОШИБКА ПОТОКА", "DSP: ПРЕДУПРЕЖДЕНИЕ") for ch in safe))
     return result
 
