@@ -414,6 +414,21 @@ class OriginalVisualSkin:
         w.original_shell.view_panel.setFixedHeight(64 if enabled else 48)
         for item in self.start.technical_widgets:
             item.setVisible(enabled)
+        # The source status and recording pages do not have an extra
+        # developer CSV bar, provenance notes or compatibility summaries.
+        shell=w.original_shell
+        for control in (
+                shell.status_export,shell.status_note,shell.status_cursor,
+                shell.file_page.findChild(QWidget,"sourceFileActionBar"),
+                shell.file_page.findChild(QWidget,"sourceFileSummary"),
+                shell.file_page.findChild(QWidget,"pageFileToggleSourceDetails"),
+                shell.file_page.findChild(QWidget,"fileSourceMetadata"),
+                shell.file_page.findChild(QWidget,"sourcePageFileSelectionState"),
+                shell.file_page.findChild(QWidget,"sourceFileEvidence"),
+                shell.file_page.findChild(QWidget,"sourceFileOfflineCaptureNote"),
+        ):
+            if control is not None:
+                control.setVisible(enabled)
         # Qt-only PageStart header/note must not move source buttons
         # even if a user requests research tools through F12.
         for name in ("taskHomeHeading","taskSessionSummary",

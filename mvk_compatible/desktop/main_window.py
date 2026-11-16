@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
 from ..core import OfflineSession
 from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
+from ..core.original_connected_status import connected_system_status
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
@@ -124,6 +125,7 @@ class MainWindow(QMainWindow):
         self._live_active=False
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
+        self._native_live_status=None  # validated Go read-only transport, never device STATUS
         self._live_prior_session=None
         self._live_control_states=[]
         self._pagestatus_snapshot=None
@@ -2457,6 +2459,7 @@ class MainWindow(QMainWindow):
         self.original_shell.clear_source_view_time()
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._live_active=True
+        self._native_live_status=None
         self._live_preview=None
         self.session=None
         self._source_envelope_menu_fs=None
@@ -2515,6 +2518,29 @@ class MainWindow(QMainWindow):
         self.refresh_calc()
         self.tabs.setCurrentIndex(1)
         self.statusBar().showMessage('LIVE PREVIEW — единственный TCP-клиент Go R6.1, данные ещё не приняты')
+
+    def _receive_native_live_status(self,snapshot):
+        """Display only live transport proof from the already-running Go owner."""
+        if not self._live_active:
+            return
+        try:
+            evidence=connected_system_status(snapshot)
+        except (ValueError,TypeError,KeyError):
+            self._invalidate_native_live_status("Live status source rejected")
+            return
+        self._native_live_status=snapshot
+        self.original_shell.measure_controls.render()
+        if self.original_status_mode.currentIndex()==0:
+            self.original_shell.refresh_status()
+        return evidence
+
+    def _invalidate_native_live_status(self,reason):
+        if not self._live_active:
+            return
+        self._native_live_status=None
+        self.original_shell.measure_controls.render()
+        if self.original_status_mode.currentIndex()==0:
+            self.original_shell.refresh_status()
 
     def _receive_live_preview(self, preview):
         if not self._live_active:
@@ -2622,6 +2648,7 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._live_active=False
+        self._native_live_status=None
         self.original_shell.measure_controls.end_live()
         self._live_preview=None
         self._pagestatus_snapshot=None
@@ -2669,6 +2696,8 @@ class MainWindow(QMainWindow):
         dlg.archiveReady.connect(self.open_archive)
         dlg.captureStarted.connect(self._begin_live_capture)
         dlg.captureEnded.connect(self._end_live_capture)
+        dlg.statusReady.connect(self._receive_native_live_status)
+        dlg.statusInvalid.connect(self._invalidate_native_live_status)
         dlg.previewReady.connect(self._receive_live_preview)
         dlg.previewInvalid.connect(self._invalidate_live_preview)
         self._native_dialog=dlg

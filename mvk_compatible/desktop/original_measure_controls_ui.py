@@ -20,8 +20,9 @@ from PySide6.QtWidgets import (
 
 from ..core.original_measure_controls import (
     OriginalMeasureState,DFM_BUTTONS,DFM_MEASURE_HEIGHT,
-    ORIGINAL_RATE_RADIO_ITEMS,TABLE_PREFIX,export_verified_table_csv,
+    TABLE_PREFIX,export_verified_table_csv,
 )
+from ..core.original_connected_status import connected_system_status
 from ..core.original_pagefile_recording import OriginalPageFileSelection
 
 
@@ -43,11 +44,11 @@ class OriginalMeasureControls:
         lay.addWidget(self.controls,0)
         self.buttons={}
         names={
-            "bFreezeUpdate":"Пауза",
-            "bSampleRate":"Частота",
-            "bWriteTable":"Таблица CSV",
-            "bWriteAdc":"АЦП · локально",
-            "bWriteValues":"VALUES · CSV",
+            "bFreezeUpdate":"Пауза приема",
+            "bSampleRate":"ЧД —",
+            "bWriteTable":"Запись таблицы",
+            "bWriteAdc":"Запись сигнала",
+            "bWriteValues":"Запись значений",
         }
         for name,x,y,w,h,tag,order in DFM_BUTTONS:
             btn=QPushButton(names[name],self.controls)
@@ -214,21 +215,18 @@ class OriginalMeasureControls:
             self.freeze.setChecked(live and state.frozen)
         finally:
             self.freeze.blockSignals(False)
-        self.freeze.setText("Возобновить" if state.frozen else "Пауза")
+        self.freeze.setText("Продолжить приём" if state.frozen
+                            else "Пауза приема")
         self.rate.setEnabled(mode!="idle")
         self.rate_menu.clear()
         hz=state.observed_sample_rate_hz
-        self.rate.setText("Fs: "+str(hz)+" Гц" if hz else "Частота: —")
+        self.rate.setText("ЧД "+str(hz)+" Гц" if hz else "ЧД —")
         seen=self.rate_menu.addAction(
-            f"Подтверждённая Fs: {hz} Гц" if hz else
-            "Fs: нет проверенного источника")
+            f"ЧД {hz} Гц" if hz else "ЧД —")
         seen.setEnabled(False)
-        missing=self.rate_menu.addAction(
-            f"Исходное меню: {ORIGINAL_RATE_RADIO_ITEMS} "
-            "Tag из gvar_008D2F7C (не исследованы)")
-        missing.setEnabled(False)
-        self.rate_menu.addAction(
-            "Управление TMVKThread.SetRate недоступно").setEnabled(False)
+        # Do not display developer placeholders in the source operator menu.
+        # There is no verified Native SetRate write path; therefore only
+        # show the actually observed sample rate as read-only.
         flow=getattr(self.window,"_offline_flow",None)
         is_native=bool(offline and flow is not None
                        and not flow.direct_bin)
@@ -244,18 +242,18 @@ class OriginalMeasureControls:
         self.buttons["bWriteValues"].setEnabled(
             is_native and has_channels and has_values)
         if live:
+            proof=connected_system_status(
+                getattr(self.window,"_native_live_status",None))
             self.status.setText(
-                "LIVE R6.1 · только просмотр" +
-                (" · пауза экрана" if state.frozen else
-                 " · приёмник продолжает запись"))
+                "Подключен к прибору" if proof.connection_verified
+                else "Ожидание данных прибора")
+            connected=proof.connection_verified
         elif offline:
-            self.status.setText(
-                "ОФЛАЙН · таблицы/файлы" +
-                (" · DSP нет" if not is_native else
-                 " · VALUES проверены"))
+            self.status.setText("Просмотр сохранённого измерения")
+            connected=False
         else:
-            self.status.setText("Без подключённого прибора/файла")
-        self.indicator.setText(
-            "●" if live else "○")
+            self.status.setText("Нет подключения к прибору")
+            connected=False
+        self.indicator.setText("●" if connected else "○")
         self.indicator.setStyleSheet(
-            "color:#b38a17" if live else "color:#777777")
+            "color:#459a4c" if connected else "color:#777777")

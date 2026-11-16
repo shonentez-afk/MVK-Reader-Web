@@ -40,6 +40,10 @@ class ExportPackWorker(QThread):
 
 class NativeCaptureDialog(QDialog):
     archiveReady = Signal(str)
+    # Source-validated Go JSON transport status, never a device STATUS
+    # snapshot or a second TCP connection.
+    statusReady = Signal(object)
+    statusInvalid = Signal(str)
     captureStarted = Signal()
     captureEnded = Signal(bool)
     previewReady = Signal(object)
@@ -205,13 +209,16 @@ class NativeCaptureDialog(QDialog):
                 self.log.appendPlainText("Live статус не подтверждён: " + message)
                 self._live_last_error = message
             self.live_quality.setText("Live-индикатор недостоверен. RAW продолжает писаться Native R6.1.")
+            self.statusInvalid.emit(message)
             self.previewInvalid.emit("Статус потока не проверен: "+message)
             return
         if snapshot is None:
             self.live_quality.setText("Ожидание локального состояния Native R6.1; нет второй сети.")
+            self.statusInvalid.emit("Нет текущего подтверждённого состояния")
             self.previewInvalid.emit("Ожидание подтверждённого статуса Native R6.1")
             return
         self._live_last_error = None
+        self.statusReady.emit(snapshot)
         target = max(1, snapshot["target_seconds"])
         elapsed = snapshot["elapsed_seconds"]
         self.progress.setValue(min(100, max(0, round(100 * elapsed / target))))

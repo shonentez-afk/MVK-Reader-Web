@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
+    QAbstractItemView, QCheckBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton,
     QSplitter, QStackedWidget, QTabBar, QTabWidget, QTableWidget,
     QHeaderView, QSpinBox, QSlider, QLineEdit, QFileDialog,
     QTableWidgetItem, QListWidgetItem, QStyle, QVBoxLayout, QWidget,
@@ -25,7 +25,13 @@ from .original_measure_controls_ui import OriginalMeasureControls
 from .original_calibration_ui import build_original_calibration_page, OriginalCalibrationPanel
 from ..core.original_offline_view_state import OriginalOfflineView, PAGES, HORIZONTAL_HZ
 import pyqtgraph as pg
-from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
+from ..core.original_pagestatus_source import (
+    MODE_NAMES,ORIGINAL_OPERATOR_STATUS_TABS,StatusTable,
+    source_pagestatus_table,
+)
+from ..core.original_connected_status import (
+    connected_system_status,SYSTEM_STATUS_HEADERS,SOURCE as CONNECTED_SOURCE,
+)
 from ..core.original_status_workbench import (
     ORIGINAL_STATUS_GRIDS,source_status_projection,export_verified_status_csv,
 )
@@ -333,7 +339,7 @@ def _status_page(parent: QWidget) -> QWidget:
     tabs.setExpanding(False)
     tabs.setUsesScrollButtons(True)
     tabs.setFixedHeight(36)
-    for caption in MODE_NAMES:
+    for caption in ORIGINAL_OPERATOR_STATUS_TABS:
         tabs.addTab(caption)
     layout.addWidget(tabs)
     split=QSplitter(Qt.Horizontal,page)
@@ -354,10 +360,25 @@ def _status_page(parent: QWidget) -> QWidget:
     for name in ORIGINAL_STATUS_GRIDS:
         grid=_readonly_grid(name,table_host)
         grid.verticalHeader().setDefaultSectionSize(20)
+        grid.verticalHeader().setVisible(False)
+        grid.setSelectionBehavior(QAbstractItemView.SelectRows)
+        grid.setSelectionMode(QAbstractItemView.SingleSelection)
         grid.setAlternatingRowColors(True)
+        grid.setStyleSheet(
+            "QTableWidget {font: 12px Tahoma; alternate-background-color:"
+            " #eef5f5; background:white; gridline-color:#e3ebeb;}"
+            "QTableWidget::item:selected{background:#376c9c;color:white;}")
         grid.horizontalHeader().setStretchLastSection(True)
         table_host.addWidget(grid)
         grids[name]=grid
+        if name=="tabStatus":
+            grid.setColumnCount(2)
+            grid.setHorizontalHeaderLabels(SYSTEM_STATUS_HEADERS)
+            grid.horizontalHeader().setSectionResizeMode(
+                0,QHeaderView.Interactive)
+            grid.horizontalHeader().setSectionResizeMode(
+                1,QHeaderView.Stretch)
+            grid.setColumnWidth(0,440)
     split.addWidget(plot)
     split.addWidget(table_host)
     split.setChildrenCollapsible(False)
@@ -750,7 +771,26 @@ class OriginalRootShell:
         finally:self.status_tabs.blockSignals(False)
         flow=None
         error=None
-        if self.window.session is not None and not self.window._live_active:
+        if self.window._live_active and index==0:
+            # The source screenshot's system table has 15 original labels;
+            # validated passive Go status knows the TCP transport only.
+            # A frame count is NOT the device calculation counter.
+            native_status=getattr(self.window,"_native_live_status",None)
+            model=connected_system_status(native_status)
+            live_table=StatusTable(
+                0,ORIGINAL_OPERATOR_STATUS_TABS[0],
+                model.headers,model.rows,
+                "Из пассивного приёмника подтверждено состояние потока; "
+                "системные регистры прибора ещё не получены.",
+                provenance=CONNECTED_SOURCE)
+            from ..core.original_status_workbench import OriginalStatusProjection
+            result=OriginalStatusProjection(
+                live_table,ORIGINAL_STATUS_GRIDS[0],False,None,None,None)
+            self.status_page.setProperty(
+                "sourceNativeTransportConnected",model.connection_verified)
+            self.status_page.setProperty(
+                "sourceOriginalSystemRowsVerified",0)
+        elif self.window.session is not None and not self.window._live_active:
             try:
                 flow=self.window._current_offline_flow()
                 flow.require_session(self.window.session)
