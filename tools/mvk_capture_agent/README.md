@@ -1,4 +1,4 @@
-# MVKView Capture Agent 0.1.0
+# MVKView Capture Agent 0.2.0
 
 A **local, target-restricted Windows observer** for the operator's original
 `mvkview.exe` / Delphi `Tmvkform` window. Its purpose is to create a
@@ -77,9 +77,8 @@ capture has no snapshot atomicity guarantee and does not provide x87 registers.
 Use **Capture now** after enabling the GUI check box for manual memory watches,
 or `mvk_capture_snapshot(include_memory=true)` from a local MCP host.
 
-The x32dbg Stage111Z31R capture scripts already in `MVK-Reader-Web` remain the
-correct advanced option for original EIP/register/stack/Power/Y validation. Import
-their existing *logs* through this agent after explicit operator approval.
+For legacy evidence, x32dbg Z31R log import remains available. Optional
+Frida tracing captures selected x86 calculation checkpoints without x32dbg.
 
 ## MCP connection (local-only)
 
@@ -112,8 +111,8 @@ recording. The synthetic tests do not require original software or hardware.
 
 ## Limitations: intentionally NOT yet implemented
 
-- No live x32dbg register capture or automated EIP breakpoints; logs are imported
-  after capture. No automatic Frida/DLL injection.
+- No x32dbg automation. Optional Frida hooks collect six verified checkpoints
+  when separately authorized; this is NOT a complete execution trace.
 - UIA may expose only a small fraction of Delphi VCL controls. Some popup menus
   may not be own-process Windows HWNDs and may be missed by target-only imaging.
 - Screenshots are best-effort on the current interactive desktop; minimize/secure
@@ -127,9 +126,63 @@ recording. The synthetic tests do not require original software or hardware.
 
 - Process name is fixed to `mvkview.exe` and root Win32 class to `Tmvkform`.
   The selected PID/HWND are rechecked continuously. On loss, recording stops.
-- No modification of the original process or Windows settings.
+- Default UI-only mode does not modify the original process. Optional Frida
+  instrumentation temporarily changes original process RAM but not its disk image.
 - No screenshot of other applications through whole-desktop fallback.
 - ZIP manifest includes size and SHA256 of each evidence file.
 - No publishing raw capture into repository; operator decides what to share.
 - Successful tests prove the **capture tool's synthetic contract**, not MVKView
   computational equivalence or operation with a connected measurement device.
+
+## Version 0.2 - automatic original GetSpectrum trace without x32dbg
+
+The new **opt-in Frida mode** observes six source-verified x86 execution
+checkpoints in the already-running original `mvkview.exe`, automatically.
+No x32dbg, manual breakpoints, F9, register screenshots, or script execution
+in a debugger are necessary.
+
+1. Start the original MVKView **outside x32dbg** and **open a saved measurement manually**.
+   Do not connect to a physical device.
+2. Launch the new `MVKCaptureAgent.exe` and select its original window.
+3. Tick **Automatically trace original GetSpectrum with Frida** and the
+   separate **I understand Frida ...** acknowledgement. Optional:
+   **Also record bounded pre-FFT/Y array candidates** (local up to 16 MiB).
+4. Tick the ordinary capture consent, click **Start capture**, and check
+   `frida_ready=True`. If the six original opcode signatures do not match,
+   tracing fails before any inline interception is installed.
+5. Open the original Spectrum tab; switch safe display modes in the original.
+   The observer will automatically record checkpoint hits, x86 general-purpose
+   registers, sampled 60-byte parameters, stack/storage contexts, and (if
+   explicitly enabled) candidate pre-FFT / Y Float32 arrays.
+6. Click **Stop** and **Export ZIP**. Keep the ZIP local and share only data
+   you explicitly intend to share.
+
+**Frida changes executable instructions in process MEMORY temporarily.** It
+never modifies the original PE on disk, but instrumentation can slow down or
+crash the target. Test on a saved offline measurement, and stop immediately
+if the original app misbehaves. This is not a pure read-only mode.
+
+The current six checkpoints were previously investigated using source-derived
+x32dbg Z31R signatures (VA 007D14AA, 007D14B8, 007D153D, 007D154B,
+007D17E7, 007D1900). The agent computes module-relative addresses and
+checks all opcode signatures before installing any hook. It also validates
+that the selected local original executable is PE32 x86 with ImageBase
+0x00400000. The executable SHA256 is logged locally for evidence provenance.
+
+Instrumentation is OFF by default. It is never activated by a normal UI
+capture, nor by MCP without a separate explicit acknowledgement. All internal
+buffers are bounded and labelled **candidate; parity unverified** until linked
+to exactly the same original window, BIN, channel, mode and FFT settings.
+
+From MCP, use `mvk_capture_start` with `acknowledge_local_capture=true`,
+`auto_trace=true` and `acknowledge_instrumentation=true`; optionally use
+`trace_arrays=true`. Then `mvk_capture_status`, `mvk_capture_stop`,
+`mvk_capture_export`.
+
+This release does NOT claim to capture every Delphi function or every CPU
+instruction. It does not autonomously click all controls: automated, hardware-
+safe UI traversal remains a separate engineering task. No device control,
+no full x87 register state, and no original-Win32 1:1 parity are claimed.
+
+The default non-intrusive mode from v0.1 remains available. The old x32dbg
+import feature is optional for legacy captures and is not needed for this mode.

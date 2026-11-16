@@ -10,14 +10,17 @@ def run_gui():
     from tkinter import ttk, messagebox, filedialog
     service = CaptureService()
     root = tk.Tk()
-    root.title("MVKView Capture Agent 0.1 - local observation")
-    root.geometry("785x475")
-    root.minsize(650, 410)
+    root.title("MVKView Capture Agent 0.2 - automated internal trace")
+    root.geometry("875x580")
+    root.minsize(690, 470)
     actions = queue.Queue()
     name = tk.StringVar(value="No target selected")
     config = tk.StringVar(value="")
     consent = tk.BooleanVar(value=False)
     deep = tk.BooleanVar(value=False)
+    trace = tk.BooleanVar(value=False)
+    arrays = tk.BooleanVar(value=False)
+    trace_consent = tk.BooleanVar(value=False)
     state = tk.StringVar(value="Idle - observer not running")
     records = {}
 
@@ -38,6 +41,9 @@ def run_gui():
     ttk.Button(settings, text="Browse", command=lambda: select_config()).pack(side="right")
     ttk.Checkbutton(main, text="I authorize local observation of the chosen MVKView window and local evidence storage", variable=consent).pack(anchor="w", pady=4)
     ttk.Checkbutton(main, text="Include explicitly configured read-only memory watches on manual snapshots", variable=deep).pack(anchor="w", pady=2)
+    ttk.Checkbutton(main, text="Automatically trace original GetSpectrum with Frida (no x32dbg)", variable=trace).pack(anchor="w", pady=2)
+    ttk.Checkbutton(main, text="Also record bounded pre-FFT/Y array candidates (up to 16 MiB)", variable=arrays).pack(anchor="w", pady=2)
+    ttk.Checkbutton(main, text="I understand Frida temporarily modifies MVKView process memory and might interrupt execution", variable=trace_consent).pack(anchor="w", pady=3)
     buttons = ttk.Frame(main)
     buttons.pack(fill="x", pady=(8, 7))
     ttk.Button(buttons, text="Start capture", command=lambda: launch("start")).pack(side="left", padx=(0, 8))
@@ -95,6 +101,12 @@ def run_gui():
             if name.get() not in records:
                 messagebox.showwarning("Target", "Select a discovered original MVKView window")
                 return
+            if trace.get() and not trace_consent.get():
+                messagebox.showwarning("Frida consent", "Frida changes runtime code. Confirm its separate consent checkbox.")
+                return
+            if arrays.get() and not trace.get():
+                messagebox.showwarning("Array capture", "Enable Frida trace before recording arrays")
+                return
         busy = True
         state.set("Working: " + action)
         selected = records.get(name.get())
@@ -104,7 +116,9 @@ def run_gui():
             try:
                 if action == "start":
                     outcome = service.start(acknowledge_local_capture=True,
-                                            pid=selected["pid"], config_path=configured)
+                                            pid=selected["pid"], config_path=configured,
+                                            auto_trace=trace.get(), trace_arrays=arrays.get(),
+                                            acknowledge_instrumentation=trace_consent.get())
                 elif action == "snapshot":
                     outcome = service.snapshot(include_memory=read_watches)
                 elif action == "stop":

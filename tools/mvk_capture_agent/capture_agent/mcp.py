@@ -9,10 +9,12 @@ from . import __version__
 TOOLS = [
     {"name": "mvk_capture_discover", "description": "Read-only discovery of original MVKView.exe windows.",
      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
-    {"name": "mvk_capture_start", "description": "Begin local read-only observation of MVKView; requires explicit operator acknowledgement.",
+    {"name": "mvk_capture_start", "description": "Begin user-consented MVKView observation; optional Frida runtime instrumentation requires separate acknowledgement.",
      "inputSchema": {"type": "object", "properties": {
          "acknowledge_local_capture": {"type": "boolean"},
-         "config_path": {"type": "string"}, "pid": {"type": "integer", "minimum": 1}},
+         "config_path": {"type": "string"}, "pid": {"type": "integer", "minimum": 1},
+         "auto_trace": {"type": "boolean"}, "trace_arrays": {"type": "boolean"},
+         "acknowledge_instrumentation": {"type": "boolean"}},
          "required": ["acknowledge_local_capture"], "additionalProperties": False}},
     {"name": "mvk_capture_snapshot", "description": "Read-only UI screenshot and optional allowlisted memory reads; no GUI actions.",
      "inputSchema": {"type": "object", "properties": {
@@ -50,7 +52,7 @@ def handle(service: CaptureService, message):
         return result(rid, {"protocolVersion": "2025-06-18",
                             "capabilities": {"tools": {"listChanged": False}},
                             "serverInfo": {"name": "mvk-capture-agent", "version": __version__},
-                            "instructions": "Local user-consented, target-bound MVKView observation. No mouse clicks, no device commands, no debugger writes, no cloud upload."})
+                            "instructions": "User-consented, target-bound MVKView recording; optional Frida modifies runtime code in memory, never the EXE on disk. No UI clicks, device commands or cloud upload."})
     if method == "ping":
         return result(rid, {})
     if method == "tools/list":

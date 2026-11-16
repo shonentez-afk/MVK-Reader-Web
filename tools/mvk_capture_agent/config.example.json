@@ -5,5 +5,7 @@
   "memory_read": false,
   "save_raw_memory": false,
   "watches": [],
-  "max_controls": 400
+  "max_controls": 400,
+  "auto_trace": false,
+  "trace_arrays": false
 }

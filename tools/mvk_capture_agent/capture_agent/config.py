@@ -64,6 +64,8 @@ class CaptureConfig:
     save_raw_memory: bool = False
     watches: tuple[MemoryWatch, ...] = ()
     max_controls: int = 400
+    auto_trace: bool = False
+    trace_arrays: bool = False
 
     @staticmethod
     def defaults() -> "CaptureConfig":
@@ -83,7 +85,8 @@ class CaptureConfig:
         if not isinstance(data, dict):
             raise CaptureError("Configuration must be a JSON object")
         allowed = {"output_dir", "poll_seconds", "screenshot", "ui_automation",
-                   "memory_read", "save_raw_memory", "watches", "max_controls"}
+                   "memory_read", "save_raw_memory", "watches", "max_controls",
+                   "auto_trace", "trace_arrays"}
         if set(data) - allowed:
             raise CaptureError("Unexpected configuration keys: " + ", ".join(sorted(set(data)-allowed)))
         default = cls.defaults()
@@ -96,7 +99,8 @@ class CaptureConfig:
         controls = data.get("max_controls", 400)
         if type(controls) is not int or not 10 <= controls <= 1000:
             raise CaptureError("max_controls must be 10..1000")
-        for flag in ("screenshot", "ui_automation", "memory_read", "save_raw_memory"):
+        for flag in ("screenshot", "ui_automation", "memory_read", "save_raw_memory",
+                     "auto_trace", "trace_arrays"):
             if type(data.get(flag, getattr(default, flag))) is not bool:
                 raise CaptureError(f"{flag} must be boolean")
         raw_watches = data.get("watches", [])
@@ -113,8 +117,11 @@ class CaptureConfig:
             raise CaptureError("save_raw_memory requires memory_read=true")
         if watches and not mem:
             raise CaptureError("watches require memory_read=true")
+        if data.get("trace_arrays", False) and not data.get("auto_trace", False):
+            raise CaptureError("trace_arrays requires auto_trace=true")
         return cls(out, float(seconds), data.get("screenshot", True),
-                   data.get("ui_automation", False), mem, raw, watches, controls)
+                   data.get("ui_automation", False), mem, raw, watches, controls,
+                   data.get("auto_trace", False), data.get("trace_arrays", False))
 
     def safe_dict(self):
         result = asdict(self)

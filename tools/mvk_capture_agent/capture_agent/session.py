@@ -1,6 +1,6 @@
 """Single-target capture, timeline correlation, and consent enforcement."""
 from __future__ import annotations
-from collections import deque
+from dataclasses import replace
 import hashlib
 import json
 import queue
@@ -12,13 +12,15 @@ from .memory import MemoryReader
 from .store import EvidenceStore
 from .windows import WindowsBackend
 from .debugger_import import import_debugger_log
+from .frida_trace import FridaTraceObserver
 
 MAX_WIN_EVENTS = 50000
 
 
 class CaptureSession:
     def __init__(self, config: CaptureConfig, backend, target: dict,
-                 observer_factory=WinEventObserver, memory_factory=MemoryReader):
+                 observer_factory=WinEventObserver, memory_factory=MemoryReader,
+                 tracer_factory=FridaTraceObserver):
         self.config = config
         self.backend = backend
         self.target = dict(target)
@@ -26,6 +28,10 @@ class CaptureSession:
         self.hwnd = int(target["hwnd"])
         self.observer_factory = observer_factory
         self.memory_factory = memory_factory
+        self.tracer_factory = tracer_factory
+        self.tracer = None
+        self.trace_info = None
+        self.trace_events = 0
         self.incoming = queue.Queue(maxsize=4096)
         self.stop_signal = threading.Event()
         self.worker = None
@@ -47,13 +53,28 @@ class CaptureSession:
         self.status_label = "capturing"
         self.store.event("capture_started", {"target_pid": self.pid,
                                              "target_hwnd": self.hwnd,
-                                             "observation_only": True})
+                                             "observation_only": not self.config.auto_trace})
         self.snapshot(reason="initial", memory=False)
         self.observer = self.observer_factory(self.pid, self.incoming)
         try:
             self.observer.start()
         except CaptureError as exc:
             self.store.event("win_event_unavailable", {"error": str(exc)})
+        if self.config.auto_trace:
+            self.tracer = self.tracer_factory(self.pid, self.incoming,
+                self.target["executable"], full_arrays=self.config.trace_arrays)
+            try:
+                self.trace_info = self.tracer.start()
+                self.store.event("frida_instrumentation_ready", self.trace_info)
+            except (CaptureError, OSError, ValueError) as exc:
+                self.store.event("frida_instrumentation_rejected", {"reason": str(exc)})
+                if self.observer:
+                    self.observer.stop()
+                if self.tracer:
+                    self.tracer.stop()
+                self.status_label = "failed"
+                self.store.close("failed")
+                raise CaptureError("Automatic trace startup failed: " + str(exc)) from exc
         self.worker = threading.Thread(target=self._loop, name="MVK-Capture", daemon=True)
         self.worker.start()
         return self.status()
@@ -67,7 +88,9 @@ class CaptureSession:
                     event = self.incoming.get(timeout=min(max(0.05, next_poll-elapsed), 0.3))
                 except queue.Empty:
                     event = None
-                if event is not None and self.events_seen < MAX_WIN_EVENTS:
+                if event is not None and event.get("source") == "frida":
+                    self._record_trace(event)
+                elif event is not None and self.events_seen < MAX_WIN_EVENTS:
                     self.events_seen += 1
                     self.store.event("win_event", event)
                     if event.get("event") in {"OBJECT_SHOW", "OBJECT_HIDE",
@@ -93,7 +116,27 @@ class CaptureSession:
             self.stop_signal.set()
             if self.observer:
                 self.observer.stop()
+            if self.tracer:
+                self.tracer.stop()
             self.store.close("failed")
+
+    def _record_trace(self, event):
+        if not self.store or self.store._closed:
+            return
+        payload = dict(event.get("payload") or {})
+        if not payload or self.trace_events >= 5000:
+            return
+        binary = event.get("binary")
+        if binary:
+            # Frida attaches to known x86 sites; these bytes are untrusted
+            # candidates until matched to the original BIN and mode.
+            name = payload.get("site", "raw") + "_" + payload.get("array_type", "sample")
+            stored = self.store.raw(name, binary)
+            payload["binary"] = {"file": stored, "size": len(binary),
+                                 "sha256": hashlib.sha256(binary).hexdigest(),
+                                 "source_parity_verified": False}
+        self.trace_events += 1
+        self.store.event("frida_trace", payload)
 
     def snapshot(self, reason="manual", memory=False, screenshot=True,
                  only_if_changed=False):
@@ -153,9 +196,18 @@ class CaptureSession:
         self.stop_signal.set()
         if self.observer:
             self.observer.stop()
+        if self.tracer:
+            self.tracer.stop()
         if self.worker and self.worker is not threading.current_thread():
             self.worker.join(timeout=3)
         with self._lock:
+            for _ in range(512):
+                try:
+                    event = self.incoming.get_nowait()
+                except queue.Empty:
+                    break
+                if event.get("source") == "frida":
+                    self._record_trace(event)
             self.store.close("failed" if self.status_label == "failed" else "stopped")
             if self.status_label != "failed":
                 self.status_label = "stopped"
@@ -168,7 +220,11 @@ class CaptureSession:
                 "events": self.store.meta["events"] if self.store else 0,
                 "snapshots": self.store.meta["snapshots"] if self.store else 0,
                 "last_error": self.last_error,
-                "win_events_seen": self.events_seen}
+                "win_events_seen": self.events_seen,
+                "automatic_internal_trace": bool(self.config.auto_trace),
+                "frida_ready": bool(self.trace_info),
+                "frida_trace_events": self.trace_events,
+                "frida_dropped": self.tracer.dropped if self.tracer else 0}
 
 
 class CaptureService:
@@ -185,7 +241,10 @@ class CaptureService:
     def discover(self):
         return self._backend().targets()
 
-    def start(self, *, acknowledge_local_capture=False, config_path=None, pid=None):
+    def start(self, *, acknowledge_local_capture=False, config_path=None, pid=None,
+              auto_trace=False, trace_arrays=False, acknowledge_instrumentation=False):
+        if type(auto_trace) is not bool or type(trace_arrays) is not bool:
+            raise CaptureError("auto_trace and trace_arrays must be bool")
         if acknowledge_local_capture is not True:
             raise CaptureError("Start requires acknowledge_local_capture=true from the operator")
         with self._lock:
@@ -199,6 +258,14 @@ class CaptureService:
             if len(matches) != 1:
                 raise CaptureError(f"Expected exactly one chosen Tmvkform, found {len(matches)}")
             config = CaptureConfig.load(config_path)
+            trace_requested = auto_trace or config.auto_trace
+            array_requested = trace_arrays or config.trace_arrays
+            if array_requested and not trace_requested:
+                raise CaptureError("Array capture requires auto trace")
+            if trace_requested and acknowledge_instrumentation is not True:
+                raise CaptureError("Frida modifies target RAM; explicit acknowledge_instrumentation=true required")
+            if trace_requested:
+                config = replace(config, auto_trace=True, trace_arrays=array_requested)
             session = CaptureSession(config, self._backend(), matches[0])
             session.start()
             self.session = session

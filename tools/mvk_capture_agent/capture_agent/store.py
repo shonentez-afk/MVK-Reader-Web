@@ -52,6 +52,7 @@ class EvidenceStore:
                      "safety": {"automatic_ui_actions": False,
                                 "device_commands": False,
                                 "debugger_attach_or_breakpoints": False,
+                                "frida_runtime_code_interception": bool(config.get("auto_trace")),
                                 "automatic_cloud_upload": False}}
         self._write_json("session.json", self.meta)
 
