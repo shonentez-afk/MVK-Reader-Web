@@ -163,8 +163,14 @@ class OriginalTask2OfflineExchange:
                 # Source 0080807B for Task2 logs; does not set Stage2.
                 self._remember("SOURCE_INCOMING_ACK_UNATTRIBUTED")
             elif f.kind=="PARAM" and f.register_block_count:
-                self._remember("SOURCE_RECEIVED_PARAM_STAGE1",
-                               register_blocks=f.register_block_count)
+                if f.source_stage==3:
+                    self._remember(
+                        "SOURCE_STATUSCELLS0_STAGE3_SYSTEM_ERROR",
+                        source_code=self.receiver.source_statuscells0_observed,
+                        register_blocks=f.register_block_count)
+                else:
+                    self._remember("SOURCE_RECEIVED_PARAM_STAGE1",
+                                   register_blocks=f.register_block_count)
             elif f.kind in ("ADC","TACH"):
                 self._remember("SOURCE_BUFFER_CHUNK",
                                channel=f.channel,
@@ -225,6 +231,10 @@ class OriginalTask2OfflineExchange:
             "source_connection_phase_simulated": self.connection_phase,
             "source_connect_timeout_can_fail_before_tcp": True,
             "original_stage_simulated": self.receiver.stage,
+            "source_statuscells0_raw_uint32_simulated":
+                self.receiver.source_statuscells0_observed,
+            "source_stage3_requires_observed_register":
+                self.receiver.source_stage3_confirmed_by_valid_register,
             "original_sample_rate_tag": self.queue.source_rate_code,
             "freeze_update_processing_simulated": self.freeze_update,
             "buffer_chunks_processed_simulated":
