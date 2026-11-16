@@ -146,6 +146,13 @@ class OriginalMode2RuntimeTrace:
         self._event("MEASURE_OFF_BEFORE_TCP")
         return self.receipt()
 
+    def leave_after_native(self):
+        if not self.finished or self.capture_started or self.phase == "IDLE":
+            raise ValueError("Source Mode2 can leave only after Native finishes")
+        self.phase = "IDLE"
+        self._event("MEASURE_OFF_AFTER_NATIVE")
+        return self.receipt()
+
     def receipt(self) -> dict:
         return {
             "source": SOURCE,
