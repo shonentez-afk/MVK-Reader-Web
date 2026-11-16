@@ -2544,8 +2544,8 @@ class MainWindow(QMainWindow):
         # Freeze the view on request, not only after QProcess exits.
         # A late queued preview must never repopulate these graphs.
         self._invalidate_live_preview("Остановка измерения запрошена")
-        self.original_shell.measure_controls.status.setText(
-            "Завершение приёма")
+        self.original_shell.measure_controls.render()
+        self.original_shell.refresh_status()
         return True
 
     def leave_measurement_mode(self):
@@ -2586,7 +2586,8 @@ class MainWindow(QMainWindow):
             selected=(self._measurement_mode_selected or self._live_active),
             capture_started=self._live_active,
             status=self._native_live_status if self._live_active else None,
-            failure=self._measurement_connection_error)
+            failure=self._measurement_connection_error,
+            stop_requested=self._measurement_exit_requested)
 
     def source_write_toggle(self,kind):
         """Original button -> actual selected local write window.
