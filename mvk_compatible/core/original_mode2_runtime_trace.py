@@ -76,6 +76,8 @@ class OriginalMode2RuntimeTrace:
         # reaches this Core; use the same system-status proof as the GUI.
         proof = connected_system_status(status)
         sid = status.get("session_id")
+        if sid is None and self.session_id is not None:
+            raise ValueError("Bound Native run lost source session identity")
         if sid is not None:
             if not isinstance(sid, str) or not sid:
                 raise ValueError("Native session identity invalid")
