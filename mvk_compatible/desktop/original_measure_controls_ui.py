@@ -342,8 +342,20 @@ class OriginalMeasureControls:
             writer.receipt() if writer is not None else None)
         if requested or live:
             state_view=self.window.measurement_connection_display()
-            self.status.setText(state_view.text)
-            bad=(state_view.indicator=="bad")
+            # Native Go is passive: an incoming DENIED is a real instrument
+            # reply, but never an ACK/error for a command sent by this app.
+            trace=getattr(self.window,"_source_mode2_runtime",None)
+            read_proof=(
+                trace.receive_evidence.receipt() if trace is not None
+                else {})
+            denied=bool(
+                read_proof.get("denial_seen") and
+                not self.window._measurement_exit_requested and
+                not self.window._measurement_connection_error)
+            self.status.setText(
+                "Прибор: отказ операции (наш клиент команд не отправлял)"
+                if denied else state_view.text)
+            bad=(state_view.indicator=="bad" or denied)
             self.bad_indicator.setStyleSheet("color:#cc3636")
             self.bad_indicator.setVisible(bad)
             self.indicator.setVisible(not bad)
@@ -354,7 +366,9 @@ class OriginalMeasureControls:
                 else "color:#888888")
             self.status.setToolTip(
                 "Статус подтверждённого пассивного Native R6.1. "
-                "Он не является приборным регистром StatusIsError.")
+                "Он не является приборным регистром StatusIsError. "
+                "ACK/отказ входящего протокола не являются результатом "
+                "нашей SetRate: исходящие команды выключены.")
         else:
             self.status.setText(
                 "Просмотр сохранённого измерения" if offline
