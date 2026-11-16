@@ -17,9 +17,10 @@ SOURCE="SOURCE_DERIVED_ORIGINAL_TABS_INITIAL_AND_ARCHIVE_STAGE111Z31CL"
 PAGES=tuple(p.object_name for p in ORIGINAL_ROOT_PAGES)
 ORIGINAL_IDLE_VISIBLE=("PageStart",)
 ORIGINAL_ARCHIVE_VISIBLE=("PageStart","PageAdc","PageSpectrum")
-# Direct operator Win32 screenshot 2026-11-16: five main tabs are visible
-# while the original is CONNECTED to the instrument. This is distinct
-# from ordinary offline archive viewing, where only three tabs are shown.
+# _Unit128 from original IDR mvkview.idp: bTaskConnectClick 00848E78
+# sets Mode2. 00846D24..00846D5C calls SetTabVisible, 00846D79..
+# 00846D84 makes pnMeasure visible, all BEFORE 00846DCC creates
+# TMVKThread. Device connection success is *not* required for 5 tabs.
 ORIGINAL_LIVE_VISIBLE=(
     "PageStart","PageStatus","PageAdc","PageSpectrum","PageFile")
 _SOURCE_ROUTE_PAGES=frozenset(PAGES)
@@ -27,15 +28,20 @@ _SOURCE_ROUTE_PAGES=frozenset(PAGES)
 
 def original_runtime_visible_pages(
         *, has_measurement:bool, technical:bool=False,
-        current_page:str="PageStart",live:bool=False) -> tuple[str,...]:
+        current_page:str="PageStart",live:bool=False,
+        measurement_requested:bool=False) -> tuple[str,...]:
     if (type(has_measurement) is not bool
-            or type(technical) is not bool or type(live) is not bool):
+            or type(technical) is not bool or type(live) is not bool
+            or type(measurement_requested) is not bool):
         raise ValueError("Runtime tab visibility needs strict booleans")
     if not isinstance(current_page,str) or current_page not in PAGES:
         raise ValueError("Current original DFM page is required")
     if technical:
         return PAGES
-    visible=set(ORIGINAL_LIVE_VISIBLE if live else (
+    # live means the read-only Go process was launched, *not* actual
+    # device connection. Selected Mode2 must already show these pages.
+    mode2=live or measurement_requested
+    visible=set(ORIGINAL_LIVE_VISIBLE if mode2 else (
         ORIGINAL_ARCHIVE_VISIBLE if has_measurement
         else ORIGINAL_IDLE_VISIBLE))
     # An EXPLICIT source PageStart operation can enter e.g. Config or
@@ -48,19 +54,27 @@ def original_runtime_visible_pages(
 
 def original_runtime_tab_contract(
         *,has_measurement:bool,technical:bool=False,
-        current_page:str="PageStart",live:bool=False)->dict:
+        current_page:str="PageStart",live:bool=False,
+        measurement_requested:bool=False)->dict:
     visible=original_runtime_visible_pages(
         has_measurement=has_measurement,technical=technical,
-        current_page=current_page,live=live)
+        current_page=current_page,live=live,
+        measurement_requested=measurement_requested)
+    mode2=live or measurement_requested
     return {
         "source":SOURCE,"all_form_pages":PAGES,
         "visible":visible,"visible_count":len(visible),
-        "startup_only_one_tab":not has_measurement and not technical
-            and current_page=="PageStart",
-        "archive_only_three_default":has_measurement and not live
+        "startup_only_one_tab":not has_measurement and not mode2
+            and not technical and current_page=="PageStart",
+        "archive_only_three_default":has_measurement and not mode2
             and not technical and current_page in ORIGINAL_ARCHIVE_VISIBLE,
-        "connected_original_five_tabs":live and not technical
+        # Historical key kept for existing tests; it means selected Mode2.
+        "connected_original_five_tabs":mode2 and not technical
             and current_page in ORIGINAL_LIVE_VISIBLE,
+        "mode2_selected_before_connection":measurement_requested,
+        "native_recorder_started":live,
+        "measurement_toolbar_visible_from_source_mode2":mode2,
+        "device_connection_verified_by_tabs":False,
         "live_source_connected_verified_by_preview":False,
         "technical_mode_is_source_original":False,
         "all_seven_handlers_remain_mounted":True,
