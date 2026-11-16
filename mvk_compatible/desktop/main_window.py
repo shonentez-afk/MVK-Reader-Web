@@ -25,6 +25,7 @@ from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_connected_status import connected_system_status
 from ..core.original_live_write_stages import OriginalLiveWriteLedger
+from ..core.original_mode2_runtime_trace import OriginalMode2RuntimeTrace
 from .original_write_export_worker import SourceWriteWindowExportWorker
 from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
@@ -138,6 +139,7 @@ class MainWindow(QMainWindow):
         self._live_prior_session=None
         self._pending_native_pagefile_plan=None  # set only by accepted Native event
         self._source_live_writer=OriginalLiveWriteLedger()
+        self._source_mode2_runtime=OriginalMode2RuntimeTrace()
         self._pending_source_write_ledger=None
         self._source_writer_export_worker=None
         self._source_writer_last_export=None
@@ -2459,6 +2461,20 @@ class MainWindow(QMainWindow):
             self.original_shell.sync_availability()
             self.original_shell.measure_controls.sync_source()
 
+    def _sync_source_mode2_runtime(self):
+        """Project the SAME read-only source Core receipt on existing Qt pages.
+
+        No additional engineering panel and no instrument command sender.
+        """
+        if getattr(self,'original_shell',None) is None:
+            return
+        receipt=self._source_mode2_runtime.receipt()
+        for widget in (
+                self.original_shell.measure_controls.panel,
+                self.original_shell.status_page,
+                self.original_shell.file_page):
+            widget.setProperty('sourceOriginalMode2RuntimeReceipt',receipt)
+
     def enter_measurement_mode(self):
         """Original Delphi Mode2: five pages and pnMeasure BEFORE TCP.
 
@@ -2469,6 +2485,8 @@ class MainWindow(QMainWindow):
         if self._measurement_mode_selected:
             return False
         self._measurement_mode_selected=True
+        self._source_mode2_runtime=OriginalMode2RuntimeTrace()
+        self._source_mode2_runtime.enter_mode2()
         self.original_start_controller.sync_measurement_button()
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
@@ -2523,6 +2541,7 @@ class MainWindow(QMainWindow):
         self.original_visual_skin.reveal_page(2)
         self.original_shell.measure_controls.render()
         self.original_shell.refresh_status()
+        self._sync_source_mode2_runtime()
         return True
 
     def request_measurement_stop(self):
@@ -2541,6 +2560,8 @@ class MainWindow(QMainWindow):
         if dlg.stop_capture() is not True:
             return False
         self._measurement_exit_requested=True
+        self._source_mode2_runtime.request_stop()
+        self._sync_source_mode2_runtime()
         # Freeze the view on request, not only after QProcess exits.
         # A late queued preview must never repopulate these graphs.
         self._invalidate_live_preview("Остановка измерения запрошена")
@@ -2555,6 +2576,11 @@ class MainWindow(QMainWindow):
         parked=self._live_prior_session
         self._live_prior_session=None
         self._measurement_mode_selected=False
+        if self._source_mode2_runtime.finished:
+            self._source_mode2_runtime.leave_after_native()
+        else:
+            self._source_mode2_runtime.exit_before_native()
+        self._sync_source_mode2_runtime()
         self.original_start_controller.sync_measurement_button()
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
@@ -2638,6 +2664,8 @@ class MainWindow(QMainWindow):
         # Direct programmatic QA entry follows the same Delphi Mode2
         # visibility transition as the actual Measurement button.
         self.enter_measurement_mode()
+        self._source_mode2_runtime.native_started()
+        self._sync_source_mode2_runtime()
         # enter_measurement_mode already parked the previous verified
         # session BEFORE clearing it. Never overwrite that with None here.
         self._offline_flow=None  # Never mix verified offline evidence with LIVE preview
@@ -2727,11 +2755,13 @@ class MainWindow(QMainWindow):
             # New session IDs or broken channel counts are rejected before
             # Qt accepts the purported device transport status.
             self.original_shell.update_live_file_status(snapshot)
+            self._source_mode2_runtime.observe_native(snapshot)
         except (ValueError,TypeError,KeyError):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
         self._measurement_connection_error=False
+        self._sync_source_mode2_runtime()
         # Once the operator requests stop, a later valid Go status must
         # not reactivate the preview or show a green connected indicator.
         if self._measurement_exit_requested:
@@ -2769,6 +2799,8 @@ class MainWindow(QMainWindow):
             return
         self._native_live_status=None
         self._source_live_writer.invalidate(str(reason))
+        self._source_mode2_runtime.status_rejected()
+        self._sync_source_mode2_runtime()
         # An invalid status immediately invalidates all provisional
         # waveform/spectrum bytes, even when the next Qt signal is delayed.
         self._invalidate_live_preview(str(reason))
@@ -2897,6 +2929,8 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._live_active=False
+        self._source_mode2_runtime.complete(accepted=bool(exported))
+        self._sync_source_mode2_runtime()
         # Preserve ONLY completed windows, pinned to this real Native
         # session's last validated ten-channel counters and AUX ticks.
         # If the Go capture/export fails, pending output is refused.
