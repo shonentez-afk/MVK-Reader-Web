@@ -184,7 +184,15 @@ func (c *frameMarkController) poll(m *Monitor,at time.Time) {
 }
 
 func (c *frameMarkController) finalize(m *Monitor) error {
-    if c==nil || len(c.records)==0 && c.next==1 {return nil}
+    if c==nil {return nil}
+    if len(c.records)==0 && c.next==1 {
+        // A command may have arrived after the FINAL complete packet.
+        // It still deserves an explicit rejected receipt, not a missing
+        // audit that the operator could mistake for an empty session.
+        _,err:=os.Lstat(c.pendingName())
+        if errors.Is(err,os.ErrNotExist) {return nil}
+        if err!=nil {return err}
+    }
     // The final event cannot silently use the previous 900ms status
     // count. Pending requests without an incoming complete frame are
     // explicitly REJECTED (they cannot be exported as selected windows).

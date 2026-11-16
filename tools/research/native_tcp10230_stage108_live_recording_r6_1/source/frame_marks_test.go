@@ -137,3 +137,31 @@ func TestNoRequestsPreserveHistoricalNativeCaptureLayout(t *testing.T) {
         t.Fatal("empty mark audit file fabricated")
     }
 }
+
+
+func TestPendingOperatorRequestAfterLastFrameGetsExplicitRefusal(t *testing.T) {
+    m,c:=markFixture(t)
+    now:=time.Now()
+    if err:=m.ProcessChunk(syntheticFrame(0,0,1.25).Raw,now);err!=nil {
+        t.Fatal(err)
+    }
+    queueMark(t,c,1,"data_begin")
+    // No further decoded frame: no "fake" operator start count.
+    report,_,err:=m.Finalize("STOPPED_BY_USER")
+    if err!=nil {t.Fatal(err)}
+    if report.FrameMarkCount!=1 || report.FrameMarksSHA256=="" {
+        t.Fatal("end-of-capture pending command must be audited as rejected")
+    }
+    data,err:=os.ReadFile(filepath.Join(m.dir,frameMarkAuditName))
+    if err!=nil {t.Fatal(err)}
+    var doc frameMarkAudit
+    if err=json.Unmarshal(data,&doc);err!=nil {t.Fatal(err)}
+    if len(doc.Requests)!=1 || doc.Requests[0].Applied ||
+       doc.Requests[0].Boundary!="NO_FRAME_NO_MARK" ||
+       doc.Requests[0].Reason!="no next complete frame before capture end" {
+        t.Fatalf("pending source event was silently accepted: %+v",doc.Requests)
+    }
+    if !report.ReadOnly || report.RawBytes==0 {
+        t.Fatal("rejected operator mark may never stop full read-only RAW")
+    }
+}

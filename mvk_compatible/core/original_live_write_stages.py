@@ -152,7 +152,11 @@ class OriginalLiveWriteLedger:
 
     @property
     def trustworthy(self):
-        return self._last is not None and not self.finished
+        # An operator frame-mark failure is terminal for this run.
+        # A later good TCP status must not silently re-arm the same
+        # source recording buttons with an unusable pending mark log.
+        return (self._last is not None and not self.finished
+                and not self.frame_marks_failed)
 
     def observe(self,payload):
         try:
@@ -179,6 +183,8 @@ class OriginalLiveWriteLedger:
         return self.receipt()
 
     def invalidate(self,reason:str):
+        if self.frame_marks_required:
+            self.frame_marks_failed=True
         self._last=None
         if self._active_data is not None or self._active_values is not None:
             self.errors.append("Активная запись не подтверждена: "+str(reason))

@@ -187,3 +187,32 @@ def test_legacy_synthetic_non_device_writer_keeps_explicit_poll_mode(
     result=export_source_write_windows(ledger,flow,run)
     assert not result["verified_frame_boundaries"]
     assert result["native_mark_requests"]==0
+
+
+def test_marked_writer_cannot_rearm_after_bad_packet_even_if_network_recovers():
+    writer=OriginalLiveWriteLedger()
+    first=source_status()
+    writer.observe(first)
+    plan=OriginalLiveFilePlan().bind_status(first)
+    writer.toggle("data",plan)
+    writer.register_native_frame_mark({
+        "source":"MVK_NATIVE_LOCAL_FRAME_MARK_REQUEST_V1",
+        "sequence":1,"session_id":RUN,"event":"data_begin",
+        "queued_local_only":True,"device_commands_sent":False,
+    },plan)
+    with pytest.raises(ValueError):
+        writer.observe(source_status(
+            adc_samples=512,aux=1,frames=30,raw=45000,
+            packets_bad=True))
+    assert writer.frame_marks_failed
+    assert writer.data_stage==2
+    assert not writer.trustworthy
+    # A new valid receiver status may verify transport but MUST NOT make
+    # the old source write channel selection safe again in the same run.
+    writer.observe(source_status(
+        adc_samples=768,aux=1,frames=40,raw=60000))
+    assert not writer.trustworthy
+    with pytest.raises(ValueError):
+        writer.toggle("data",plan)
+    assert writer.frame_marks_required
+    assert not writer.frame_marks_verified

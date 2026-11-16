@@ -119,6 +119,13 @@ def test_frame_marker_inbox_failure_stops_source_buttons_fail_closed(
         assert receipt["completed_window_count"]==0
         assert not receipt["write_data_requested"]
         assert not panel.buttons["bWriteAdc"].isEnabled()
+        # Fail-closed for the WHOLE Native run: recovered transport alone
+        # cannot quietly resurrect broken local operator frame marks.
+        win._receive_native_live_status(source_status(
+            adc_samples=512,frames=30,raw=45000))
+        qt_app.processEvents()
+        assert not panel.buttons["bWriteAdc"].isEnabled()
+        assert win._source_live_writer.frame_marks_failed
         win._end_live_capture(False)
         assert win._pending_source_write_ledger is None
     finally:
