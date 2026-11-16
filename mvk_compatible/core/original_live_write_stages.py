@@ -349,10 +349,10 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                             "reason":"No verified incoming sample"})
                             continue
                         if ch<=8:
-                            flow.select(channel=ch).source_record()
+                            record=flow.select(channel=ch).source_record()
                             name=files[ch-1]
                             expected=provenance[name]
-                            count=audit["channels"][ch-1]["samples"]
+                            count=record["sample_count"]
                             label=f"DATA{number:02d}_ADC{ch}_NATIVE_CALIBRATED.f32"
                         else:
                             if tach is None or not tach.channels[ch-9].safe_local_raw_export:
