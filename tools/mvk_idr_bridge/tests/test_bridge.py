@@ -24,6 +24,7 @@ class StaticTests(unittest.TestCase):
 class BuildTests(unittest.TestCase):
     def setUp(self):
         self.d=tempfile.TemporaryDirectory(); self.root=Path(self.d.name)
+        self.sessions=[]
         self.idp=self.root/'demo.idp'
         import struct
         header=b'IDR proj v.3'+struct.pack('<11I',2014,0x401000,0x400000,0x800000,0x10000,
@@ -41,7 +42,10 @@ class BuildTests(unittest.TestCase):
 end
 """)
         self.db=self.root/'index.sqlite';self.out=self.root/'out'
-    def tearDown(self):self.d.cleanup()
+    def tearDown(self):
+        for session in self.sessions:
+            session.close()
+        self.d.cleanup()
     def test_header(self):
         h=idp_header(self.idp)
         self.assertEqual(h['delphi_version'],2014)
@@ -66,6 +70,7 @@ end
         self.assertEqual(b['source_counts']['functions'],2)
         self.assertEqual(b['source_counts']['events_resolved'],1)
         s=IDRService(self.db,self.src)
+        self.sessions.append(s)
         self.assertEqual(s.stats()['counts']['linked_calls'],1)
         self.assertEqual(s.component('bStart')['matches'][0]['caption'],'Измерение')
         self.assertEqual(s.event_chain('bStart')['chains'][0]['event']['handler_address'],'00401200')
@@ -81,6 +86,7 @@ end
     def test_readonly(self):
         build(self.idp,self.src,self.db,self.out)
         srv=IDRService(self.db)
+        self.sessions.append(srv)
         with self.assertRaises(sqlite3.OperationalError):srv.c.execute("DROP TABLE events")
     def test_mcp_no_actions(self):
         self.assertTrue(all('click' not in t['name'] and 'attach' not in t['name'] for t in tool_specs()))

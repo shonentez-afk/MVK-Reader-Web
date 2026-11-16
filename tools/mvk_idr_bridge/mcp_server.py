@@ -30,7 +30,11 @@ class IDRService:
         self.c=sqlite3.connect('file:'+str(self.db).replace('\\','/')+'?mode=ro',uri=True)
         self.c.row_factory=sqlite3.Row
         if not self.c.execute("SELECT 1 FROM sqlite_master WHERE name='functions'").fetchone():
+            self.c.close()
             raise ValueError('Database is not MVK IDR Bridge')
+
+    def close(self):
+        self.c.close()
 
     def rows(self,sql,args=(),limit=100):
         return [dict(r) for r in self.c.execute(sql+' LIMIT ?',tuple(args)+(limit,)).fetchall()]
