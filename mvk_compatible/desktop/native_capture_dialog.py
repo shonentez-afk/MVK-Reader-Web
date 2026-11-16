@@ -444,18 +444,19 @@ class NativeCaptureDialog(QDialog):
 
     def stop_capture(self):
         if self._mode != "capture" or self._capture_root is None:
-            return
+            return False
         try:
             request_graceful_stop(self._capture_root)
         except FileExistsError:
             pass
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Остановка", str(exc))
-            return
+            return False
         self.stop_button.setEnabled(False)
         self.status_label.setText(
             "Запрошена штатная остановка. Native проверяет RAW и завершает экспорт. "
             "Принудительное завершение процесса не используется.")
+        return True
 
     def open_result(self):
         if self._zip is not None:

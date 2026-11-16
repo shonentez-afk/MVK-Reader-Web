@@ -122,3 +122,49 @@ def test_actual_qt_status_waiting_connected_refused_and_failed_source_mode(
     finally:
         win.close()
         settle(qt_app)
+
+
+def test_original_second_mode2_click_graceful_native_stop_no_device_tcp(
+        qt_app):
+    win=MainWindow()
+    win.show()
+    settle(qt_app)
+    class FakeGo:
+        _mode="capture"
+        count=0
+        def stop_capture(self):
+            self.count+=1
+            return True
+    fake=FakeGo()
+    try:
+        win.enter_measurement_mode()
+        win._begin_live_capture()
+        win._native_dialog=fake
+        win.original_visual_skin.reveal_page(0)
+        settle(qt_app)
+        QTest.mouseClick(
+            win.original_start_controller.buttons["bTaskConnect"],
+            Qt.LeftButton)
+        settle(qt_app)
+        assert fake.count==1
+        assert win._measurement_exit_requested
+        assert win._live_active and win._measurement_mode_selected
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==list(ORIGINAL_LIVE_VISIBLE)
+        # Repeated clicks cannot send another asynchronous stop.
+        QTest.mouseClick(
+            win.original_start_controller.buttons["bTaskConnect"],
+            Qt.LeftButton)
+        assert fake.count==1
+        win._end_live_capture(False)
+        settle(qt_app)
+        assert not win._live_active
+        assert not win._measurement_mode_selected
+        assert not win._measurement_exit_requested
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==["PageStart"]
+        assert not win.original_measure_controls.panel.isVisible()
+    finally:
+        win._native_dialog=None
+        win.close()
+        settle(qt_app)

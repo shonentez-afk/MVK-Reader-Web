@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
         self._live_active=False
         self._measurement_mode_selected=False  # original Mode2 click, before any socket
         self._measurement_connection_error=False  # separate source StatusIsError candidate
+        self._measurement_exit_requested=False
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._native_live_status=None  # validated Go read-only transport, never device STATUS
@@ -2460,6 +2461,7 @@ class MainWindow(QMainWindow):
             return False
         self._measurement_mode_selected=True
         self._measurement_connection_error=False
+        self._measurement_exit_requested=False
         self._native_live_status=None
         # Do not display stale values/graphs from an earlier offline file
         # as though they had arrived from this not-yet-connected device.
@@ -2480,12 +2482,33 @@ class MainWindow(QMainWindow):
         self.original_shell.refresh_status()
         return True
 
+    def request_measurement_stop(self):
+        """Source second click requests the same owner's graceful stop.
+
+        Original 00846B48-00846B5C resets Mode2 via 00847040. Native Go
+        uses its existing local stop-request file, NEVER QProcess.kill or
+        a device command; the tabs remain until QProcess completion.
+        """
+        if not self._live_active:
+            return self.leave_measurement_mode()
+        dlg=self._native_dialog
+        if (dlg is None or getattr(dlg,"_mode",None)!="capture"
+                or self._measurement_exit_requested):
+            return False
+        if dlg.stop_capture() is not True:
+            return False
+        self._measurement_exit_requested=True
+        self.original_shell.measure_controls.status.setText(
+            "Завершение приёма")
+        return True
+
     def leave_measurement_mode(self):
-        """Second Mode2 click: cannot bypass the Native recorder's stop."""
+        """Second Mode2 click before recording: reset to idle."""
         if self._live_active or not self._measurement_mode_selected:
             return False
         self._measurement_mode_selected=False
         self._measurement_connection_error=False
+        self._measurement_exit_requested=False
         self._native_live_status=None
         self.original_visual_skin.reveal_page(0)
         self.original_shell.measure_controls.render()
@@ -2518,6 +2541,7 @@ class MainWindow(QMainWindow):
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._live_active=True
         self._measurement_connection_error=False
+        self._measurement_exit_requested=False
         self._native_live_status=None
         self._live_preview=None
         self.session=None
@@ -2717,9 +2741,11 @@ class MainWindow(QMainWindow):
         # On FAILED connection the original Mode2 UI is still selected
         # and its bottom-right indicator must display failure. A successful
         # verified archive export transitions back to an offline workflow.
-        self._measurement_connection_error=not bool(exported)
-        if exported:
+        self._measurement_connection_error=(
+            not bool(exported) and not self._measurement_exit_requested)
+        if exported or self._measurement_exit_requested:
             self._measurement_mode_selected=False
+        self._measurement_exit_requested=False
         self.original_shell.measure_controls.end_live()
         self._live_preview=None
         self._pagestatus_snapshot=None

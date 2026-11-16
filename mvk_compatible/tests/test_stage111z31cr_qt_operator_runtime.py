@@ -169,7 +169,8 @@ def test_original_connected_five_pages_system_grid_and_live_status_integrity(
         win._receive_native_live_status(
             source_test_transport(frames=401,stale=True))
         assert win.original_measure_controls.status.text()==(
-            "Ожидание данных прибора")
+            "Нет актуальных данных прибора")
+        assert win.original_measure_controls.bad_indicator.isVisible()
         assert not shell.status_page.property("sourceNativeTransportConnected")
         win._invalidate_native_live_status("synthetic no status")
         assert win._native_live_status is None

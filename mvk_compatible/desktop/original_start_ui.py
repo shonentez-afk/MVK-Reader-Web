@@ -310,11 +310,8 @@ class OriginalStartController:
         Operator consent for the separate passive Go capture is unchanged.
         """
         if self.window._measurement_mode_selected:
-            if self.window._live_active:
-                # Never kill an active recorder by closing source tabs.
-                self.window.open_native_capture()
-                return False
-            return self.window.leave_measurement_mode()
+            # Native Go has a tested, file-backed graceful stop protocol.
+            return self.window.request_measurement_stop()
         if not self.commit_ip():
             return False
         self.workspace.source_route("bTaskConnect")
