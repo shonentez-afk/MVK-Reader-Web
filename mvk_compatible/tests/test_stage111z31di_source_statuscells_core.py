@@ -192,3 +192,69 @@ def test_native_live_status_rejects_fake_cells_and_detects_real_system_fault():
     bad[SOURCE_STATUS_FIELD][0]["valid"]=False
     with pytest.raises(ValueError):
         validate_live_status(bad,expected_run=bad["session_id"],now=now())
+
+
+def _param_status0(value:int, address:int=0x1006)->bytes:
+    from struct import pack
+    # One valid 2-word register descriptor, real little-endian UInt32.
+    return (pack("<II5I",0xFF800C0D,36,0,0,0,0,1)
+            +pack("<I",0x00020000|address)+pack("<I",value))
+
+
+def test_source_received_frame_actually_enters_stage3_with_valid_status0():
+    from ..core.original_mode2_received_frames import OriginalSourceReadFramer
+    rx=OriginalSourceReadFramer()
+    assert rx.receipt()["source_statuscells0_raw_uint32"] is None
+    assert rx.feed(_param_status0(0))[0].source_stage==1
+    assert not rx.receipt()["source_stage3_confirmed_only_by_observed_register"]
+    second=rx.feed(_param_status0(0x20))
+    assert second[0].source_stage==3
+    assert rx.receipt()["source_stage3_confirmed_only_by_observed_register"]
+    assert rx.receipt()["source_statuscells0_raw_uint32"]==0x20
+    # Source Stage3 does not deassert on a later zero in same thread.
+    assert rx.feed(_param_status0(0))[0].source_stage==3
+
+
+def test_source_received_fragmented_status0_needs_both_register_halves():
+    from ..core.original_mode2_received_frames import OriginalSourceReadFramer
+    from struct import pack
+    rx=OriginalSourceReadFramer()
+    a=(pack("<II5I",0xFF800C0D,36,0,0,0,0,1)
+       +pack("<I",0x00021005)+bytes([0,0,1,0]))
+    b=(pack("<II5I",0xFF800C0D,36,0,0,0,0,1)
+       +pack("<I",0x00021007)+bytes([0,0,0,0]))
+    assert rx.feed(a)[0].source_stage==1
+    assert rx.receipt()["source_statuscells0_raw_uint32"] is None
+    assert rx.feed(b)[0].source_stage==3
+    assert rx.receipt()["source_statuscells0_raw_uint32"]==1
+
+
+def test_original_task2_stage3_disables_queue_even_when_connected():
+    from ..core.original_mode2_task2_exchange import OriginalTask2OfflineExchange
+    run=OriginalTask2OfflineExchange()
+    run.start()
+    run.tcp_connected_in_offline_model()
+    rx=run.receive(_param_status0(0x40))
+    assert rx[0].source_stage==3
+    assert run.receipt()["original_stage_simulated"]==3
+    assert run.receipt()["source_statuscells0_raw_uint32_simulated"]==0x40
+    assert run.receipt()["source_stage3_requires_observed_register"]
+    assert run.before_next_source_read() is None
+    assert run.receipt()["command_list"]["pending_count"]==1
+    assert run.receipt()["source_dry_run_write_call_plans"]==0
+    assert run.receipt()["device_commands_sent"]==0
+    assert run.receipt()["last_source_events"][-1]["event"]==(
+        "SOURCE_STATUSCELLS0_STAGE3_SYSTEM_ERROR")
+    run.stop()
+    assert run.receipt()["command_list"]["queue_closed"]
+
+
+def test_source_freeze_drops_statuscell_update_but_keeps_packet_framing():
+    from ..core.original_mode2_received_frames import OriginalSourceReadFramer
+    rx=OriginalSourceReadFramer()
+    rx.freeze(True)
+    assert rx.feed(_param_status0(0x10))[0].source_stage==1
+    assert rx.receipt()["source_statuscells0_raw_uint32"] is None
+    rx.freeze(False)
+    assert rx.feed(_param_status0(0x10))[0].source_stage==3
+    assert rx.receipt()["source_statuscells0_raw_uint32"]==0x10
