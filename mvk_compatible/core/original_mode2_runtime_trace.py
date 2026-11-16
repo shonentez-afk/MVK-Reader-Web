@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from .original_connected_status import connected_system_status
+from .original_mode2_rx_evidence import OriginalMode2ReceiveEvidence
 from .original_mode2_command_queue import (
     OriginalMode2CommandQueue, OriginalMode2FaultRoutes,
 )
@@ -41,6 +42,7 @@ class OriginalMode2RuntimeTrace:
     def __init__(self):
         self.command_model = OriginalMode2CommandQueue()
         self.fault_routes = OriginalMode2FaultRoutes()
+        self.receive_evidence=OriginalMode2ReceiveEvidence()
         self.phase = "IDLE"
         self.capture_started = False
         self.stop_requested = False
@@ -107,6 +109,12 @@ class OriginalMode2RuntimeTrace:
         # Sparse old synthetic UI receipts have no run identity; never
         # pretend their counters belong to one monotonic physical session.
         self.frames_decoded = max(self.frames_decoded, frames)
+        # Actual Go receive counters are separate from the DRY-RUN
+        # SetRate queue: ACK from the device cannot certify that we sent
+        # a command, because the Native Go client sends none.
+        source_rx=self.receive_evidence.observe_native(status)
+        if source_rx["new_denial_observed_this_snapshot"]:
+            self._event("PASSIVE_RX_OPERATION_DENIED")
         if self.stop_requested:
             self.phase = "STOPPING"
         elif status["phase"] == "REFUSED":
@@ -201,6 +209,7 @@ class OriginalMode2RuntimeTrace:
             "native_qt_status_poll_ms": 900,
             "original_timer_behavior_reproduced": False,
             "original_queue": self.command_model.receipt(),
+            "original_receive_protocol": self.receive_evidence.receipt(),
             "source_initial_rate_queued_offline":
                 self.source_initial_rate_queued_offline,
             "source_selected_sample_rate_code": (
