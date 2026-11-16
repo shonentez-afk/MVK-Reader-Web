@@ -19,9 +19,10 @@ from .test_stage111z31bj_qt_visible_file_workbench import (
     capture_synthetic_ui_if_requested)
 from ..core.native_r6_live_preview import LivePreview,PreviewADC
 from ..core.original_measure_controls import DFM_BUTTONS
+from .test_stage111z31cz_source_write_stages_core import source_status,RUN
 
 
-def _preview(session="SYNTHETIC-ONLY-LIVE",rate=65536):
+def _preview(session=RUN,rate=65536):
     samples=np.sin(2*np.pi*120*np.arange(4096)/rate).astype("<f4")
     adc=PreviewADC(
         number=1,rate_hz=rate,first_index=0,next_index=4096,
@@ -70,6 +71,8 @@ def test_original_global_toolbar_source_geometry_and_live_preview_freeze(
         assert not panel.buttons["bWriteTable"].isEnabled()
         assert not panel.state.report()["device_commands_sent"]
         observed=[]
+        verified=source_status(adc_samples=4096,frames=900,raw=10000)
+        win._receive_native_live_status(verified)
         monkeypatch.setattr(win,"_render_live_wave",
                             lambda:observed.append("wave"))
         monkeypatch.setattr(win,"_render_live_spectrum",
@@ -82,13 +85,17 @@ def test_original_global_toolbar_source_geometry_and_live_preview_freeze(
         assert observed==[]  # live decoder continues; Qt view frozen
         assert panel.state.observed_sample_rate_hz==65536
         assert "65536" in panel.rate.text()
-        assert panel.status.text()=="Ожидание данных прибора"
+        assert panel.status.text()=="Подключен к прибору"
         capture_synthetic_ui_if_requested(
             win,qt_app,"22_bs_original_pnmeasure_live_preview_freeze")
         panel.freeze.click()
         assert observed==["wave","spectrum"]
         assert not win._source_live_view_frozen
         assert not panel.state.frozen
+        changed=verified | {"channels":[
+            (ch | {"sample_rates_hz":[32000]}) if ch["channel"]==1 else ch
+            for ch in verified["channels"]]}
+        win._receive_native_live_status(changed)
         win._receive_live_preview(_preview(rate=32000))
         assert observed[-2:]==["wave","spectrum"]
         assert len(observed)==4
