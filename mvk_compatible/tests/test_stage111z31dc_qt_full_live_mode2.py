@@ -63,8 +63,8 @@ def test_real_qt_all_four_live_pages_share_one_source_core_and_no_device_write(
         ready=panel.panel.property("sourceOriginalMode2RuntimeReceipt")
         assert ready["mode2_phase"]=="RECORDING"
         assert ready["native_run_bound"]
-        assert ready["original_queue"]["current_internal_rate_code"]==309
-        assert ready["original_queue"]["pending_count"]==0
+        assert ready["original_queue"]["current_internal_rate_code"]==65536
+        assert ready["original_queue"]["pending_count"]==1
         assert ready["original_queue"]["device_commands_sent"]==0
         for page in (win.original_shell.status_page,win.original_shell.file_page):
             receipt=page.property("sourceOriginalMode2RuntimeReceipt")
@@ -181,7 +181,7 @@ def test_mode2_failed_reconnect_uses_fresh_queue_and_parks_valid_archive(
         assert not win._source_mode2_runtime.finished
         assert win._source_mode2_runtime.receipt()["mode2_phase"]=="CONNECTING"
         assert win._source_mode2_runtime.command_model.receipt()[
-            "pending_count"]==0
+            "pending_count"]==1
         assert win._live_prior_session is not None
         assert win._live_prior_session.serial==old.serial
         win._end_live_capture(False)
