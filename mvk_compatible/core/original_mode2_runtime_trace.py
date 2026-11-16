@@ -108,6 +108,19 @@ class OriginalMode2RuntimeTrace:
         self._event("NATIVE_STATUS")
         return self.receipt()
 
+    def awaiting_native_status(self):
+        """No Go JSON yet is a WAIT, not a spurious Delphi TCP fault."""
+        if not self.capture_started or self.finished:
+            return self.receipt()
+        if self.session_id is not None:
+            # The source was previously bound to a real run: a missing
+            # status is no longer initial connecting/waiting evidence.
+            return self.status_rejected()
+        if not self.stop_requested:
+            self.phase = "CONNECTING"
+        self._event("NATIVE_STATUS_PENDING")
+        return self.receipt()
+
     def status_rejected(self):
         if not self.capture_started or self.finished:
             return self.receipt()
