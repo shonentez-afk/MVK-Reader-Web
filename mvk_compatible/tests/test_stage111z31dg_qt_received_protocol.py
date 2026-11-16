@@ -44,7 +44,14 @@ def test_actual_source_live_tabs_show_receipts_and_received_denial_warning(
             "sourceOriginalReceivedProtocolEvidence")==source
         assert win.original_measure_controls.panel.property(
             "sourceOriginalReceivedProtocolEvidence")==source
-        assert win._source_mode2_runtime.command_model.pending[0].data==65536
+        assert win._source_mode2_runtime.command_model.pending==()
+        assert len(win._source_mode2_runtime.command_model.taken)==1
+        assert win._source_mode2_runtime.command_model.taken[0].data==65536
+        assert win._source_mode2_runtime.receipt()[
+            "source_initial_rate_write_calls_dry_run"][
+                "write_argument_uint32_hex"][-1]=="0x00010000"
+        assert not win._source_mode2_runtime.receipt()[
+            "source_initial_write_calls_physically_sent"]
         assert win.original_measure_controls.status.text()=="Подключен к прибору"
 
         with_denial=with_receipt(source_status(
