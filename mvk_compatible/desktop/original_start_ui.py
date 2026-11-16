@@ -293,13 +293,16 @@ class OriginalStartController:
         return mode
 
     def open_file_page(self):
+        """Original bTaskView Mode1 opens the native BIN file dialog.
+
+        The 2026-11-16 operator screenshot shows a Windows 'Открытие'
+        file picker filtered to temporal-signal BIN. It does NOT first
+        navigate to PageFile. Cancel keeps the previous source page;
+        accepted BIN/TSXML/ZIP is decoded by the existing verified Core.
+        """
         self.workspace.source_route("bTaskView")
-        skin=getattr(self.window,"original_visual_skin",None)
-        if skin is not None:
-            skin.reveal_page(5)
-        else:
-            self.navigation.setCurrentIndex(5)
-        return 5
+        self.window.choose_archive()
+        return self.navigation.currentIndex()
 
     def open_capture_dialog(self):
         """Only show consent-gated Native dialog; absolutely no auto-start."""

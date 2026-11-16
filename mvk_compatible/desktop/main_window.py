@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
         self._source_envelope_menu_fs=None  # Verified selected offline ADC Fs; never from neighboring ZIP
         self._source_original_envelope_receipt=None
         self._spec_loaded_sample_rate_hz=None
-        self.setWindowTitle('ТПО МВК')
+        self.setWindowTitle('ТПО МВК 1.0.47')
         self.resize(1360,850)
         self.setMinimumSize(960,580)
         pg.setConfigOptions(antialias=False,useOpenGL=False)
@@ -2731,11 +2731,18 @@ class MainWindow(QMainWindow):
         if self._live_active:
             self.statusBar().showMessage('Пока Native записывает RAW, архив открывать нельзя. Сначала завершите сеанс.')
             return
+        # The original "Загрузка сигнала из файла" button immediately
+        # opens Windows common file dialog (observed 16.11.2026).
+        # Prefer BIN as the native Delphi filter; keep validated Native ZIP
+        # and TSXML selectable, not requiring a research PageFile hop.
+        home=self.original_start_controller.workspace.library_path
+        initial=str(home) if home is not None else ''
         path,_=QFileDialog.getOpenFileName(
-            self,'Локальные измерения MVK (без подключения к прибору)','',
-            'MVK измерения (*.zip *.bin *.tsxml);;'
+            self,'Открытие',initial,
+            'Двоичные файлы временного сигнала (*.bin);;'
+            'Файлы измерений MVK (*.bin *.tsxml *.zip);;'
             'Экспорт Native R6.1 (*.zip);;'
-            'BIN с парным TSXML (*.bin *.tsxml)')
+            'Все поддерживаемые файлы (*.bin *.tsxml *.zip)')
         if path:self.open_archive(path)
 
     def _bind_only_verified_channels(self,channels,*,selected_channel=None):

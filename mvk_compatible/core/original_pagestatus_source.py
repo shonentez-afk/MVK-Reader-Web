@@ -41,6 +41,17 @@ MODE_NAMES = (
     "13 · Тахоканал 1",
     "14 · Тахоканал 2",
 )
+# Observed Win32 original live PageStatus tab text. MODE_NAMES above
+# remain stable internal, indexed Core dispatch keys; these are the
+# REAL operator-facing tab captions, without research indices/prefixes.
+ORIGINAL_OPERATOR_STATUS_TABS=(
+    "Состояние системы","Контроль",
+    "Все каналы (СКЗ)","Все каналы (пик)",
+    "Все каналы (пик-пик)",
+    *(f"АЦП {i}" for i in range(1,9)),
+    "Тахометр 1","Тахометр 2",
+)
+assert len(ORIGINAL_OPERATOR_STATUS_TABS)==15
 UNAVAILABLE = "—"
 
 
