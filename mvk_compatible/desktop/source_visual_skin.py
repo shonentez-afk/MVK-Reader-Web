@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from ..core.original_pagestart_private_pictures import (
     source_start_pictures_from_dfm,
 )
+from ..core.original_private_imagelist import source_task_icons_from_dfm
 from ..core.original_runtime_tabs import (
     original_runtime_visible_pages,original_runtime_tab_contract,
 )
@@ -61,10 +62,12 @@ _COMMAND_FALLBACK={
 }
 _START_RIGHT_DESIGN_WIDTH=257
 _START_LOGO_RECT=(3,568,432,120)
-# Independently painted fallback colours from the actual idle PageStart
-# comparison, NOT original bitmap bytes. The original DFM can be opted
-# into privately and always overrides this procedural approximation.
-_START_FALLBACK_PALETTE=("#fbfeff","#e7f8ff","#ccefff","#8cdaff")
+# Reference: the operator's raw 1920x1020 144-DPI original idle screenshot:
+# left RGB ~252/254/255, center ~224/245/255, x1536 ~205/239/255.
+# The older private DFM happens to contain AMBER TBitmap palettes, despite
+# the observed original runtime being cyan. ImageList icons from that DFM
+# still match; incompatible backgrounds MUST NOT supersede runtime evidence.
+_START_FALLBACK_PALETTE=("#fcfeff","#ccefff")
 
 
 
@@ -80,6 +83,8 @@ class SourceStartBackdrop(QWidget):
         super().__init__(parent)
         self.setObjectName("SourcePageStartLauncher")
         self._private_pictures={}
+        self._private_task_icons={}
+        self._private_blue_backgrounds_compatible=False
         self._original_assets_loaded=False
         self.setProperty("sourceOriginalBitmapParityVerified",False)
         self.setProperty("sourceBackgroundOriginalDfmGeometry",True)
@@ -100,6 +105,8 @@ class SourceStartBackdrop(QWidget):
         self.setProperty("sourceBlueReferenceCandidate",True)
         self.setProperty("sourceLogoResponsiveToShortWindow",True)
         self.setProperty("sourceOperatorScreenshotPixelParityVerified",False)
+        self.setProperty("sourcePrivateDfmPaletteAcceptedForBackground",False)
+        self.setProperty("sourceOriginalIconCollectionLoaded",False)
         candidate=os.environ.get("MVKVIEW_PRIVATE_SOURCE_DFM","")
         if candidate:
             # Explicit opt-in only. Wrong or missing paths are NOT searched
@@ -151,6 +158,22 @@ class SourceStartBackdrop(QWidget):
     def original_pictures_loaded_privately(self):
         return self._original_assets_loaded
 
+    @property
+    def private_task_icons(self):
+        """Only transient QPixmaps; no originals ever leave this process."""
+        return dict(self._private_task_icons)
+
+    @property
+    def private_blue_backgrounds_compatible(self):
+        return self._private_blue_backgrounds_compatible
+
+    @staticmethod
+    def _looks_like_observed_blue_background(pixmap):
+        img=pixmap.toImage()
+        color=img.pixelColor(img.width()//2,img.height()//2)
+        return (color.blue()>=color.red()+5 and
+                color.blue()>=color.green()+2)
+
     def load_private_original_dfm(self,path):
         """One explicit local DFM; no writing/copying/private file logging."""
         p=Path(path)
@@ -167,8 +190,29 @@ class SourceStartBackdrop(QWidget):
                     or pixmap.width()>4096 or pixmap.height()>4096):
                 raise ValueError("Original TPicture dimensions out of bounds")
             pixmaps[name]=pixmap
+        # Read original task images strictly from the LOCAL file. If this
+        # older DFM has no image collection, preserve compatible fallbacks.
+        icons={}
+        try:
+            for name,private in source_task_icons_from_dfm(stream).items():
+                pm=QPixmap()
+                if not pm.loadFromData(private.data,"PNG"):
+                    raise ValueError("Invalid in-memory icon PNG")
+                icons[name]=pm
+        except ValueError:
+            icons={}
         self._private_pictures=pixmaps
+        self._private_task_icons=icons
         self._original_assets_loaded=True
+        # DFM alone does NOT establish that its fixed, amber BMPs match
+        # the user's actual CYAN runtime. Do not undo the blue PageStart
+        # when this earlier source file has the incompatible palette.
+        self._private_blue_backgrounds_compatible=all(
+            self._looks_like_observed_blue_background(pixmaps[name])
+            for name in ("imBackL","imBackR"))
+        self.setProperty("sourcePrivateDfmPaletteAcceptedForBackground",
+                         self._private_blue_backgrounds_compatible)
+        self.setProperty("sourceOriginalIconCollectionLoaded",bool(icons))
         self.logo.setPixmap(pixmaps["imLogo"])
         self.logo.setAlignment(Qt.AlignLeft|Qt.AlignTop)
         self.logo.setToolTip(
@@ -186,29 +230,31 @@ class SourceStartBackdrop(QWidget):
             height=max(0,self.height())
             right=min(_START_RIGHT_DESIGN_WIDTH,width)
             left=width-right
-            if self._original_assets_loaded:
+            if (self._original_assets_loaded and
+                    self._private_blue_backgrounds_compatible):
                 painter.drawPixmap(QRect(0,0,left,height),
                                    self._private_pictures["imBackL"])
                 painter.drawPixmap(QRect(left,0,right,height),
                                    self._private_pictures["imBackR"])
             else:
-                # Real original idle Tasks image is WHITE/CYAN, NOT amber.
-                # No vendor bitmap bytes are stored in public code.
-                gradient=QLinearGradient(0,0,max(1,width),0)
+                # The operator's full original screenshot shows a uniform
+                # cyan/white gradient LEFT and checkerboard only on the
+                # right (actual 144-DPI window, not the older amber DFM).
+                gradient=QLinearGradient(0,0,max(1,left),0)
                 gradient.setColorAt(0,QColor(_START_FALLBACK_PALETTE[0]))
-                gradient.setColorAt(.58,QColor(_START_FALLBACK_PALETTE[1]))
-                gradient.setColorAt(.82,QColor(_START_FALLBACK_PALETTE[2]))
-                gradient.setColorAt(1,QColor(_START_FALLBACK_PALETTE[3]))
-                painter.fillRect(QRect(0,0,width,height),QBrush(gradient))
+                gradient.setColorAt(1,QColor(_START_FALLBACK_PALETTE[1]))
+                painter.fillRect(QRect(0,0,left,height),QBrush(gradient))
+                painter.fillRect(QRect(left,0,right,height),
+                                 QColor(_START_FALLBACK_PALETTE[1]))
                 tile=18
                 for xx in range(left,width,tile):
                     progress=(xx-left)/max(1,right)
-                    visibility=min(.72,max(0.,(progress-.50)/.50))
+                    visibility=min(.72,max(0.,(progress-.25)/.75))
                     for yy in range(0,height,tile):
                         if ((xx-left)//tile+yy//tile)%2==0:
-                            colour=QColor(255,255,255,round(205*visibility))
+                            colour=QColor(255,255,255,round(185*visibility))
                         else:
-                            colour=QColor(42,170,240,round(32*visibility))
+                            colour=QColor(42,170,240,round(35*visibility))
                         painter.fillRect(QRect(xx,yy,min(tile,width-xx),
                                                min(tile,height-yy)),colour)
         finally:
@@ -306,12 +352,19 @@ class OriginalVisualSkin:
         for index,page in enumerate(ORIGINAL_ROOT_PAGES):
             standard=getattr(QStyle,_TAB_FALLBACK[page.object_name],
                              QStyle.SP_FileIcon)
+            private_icon=self.start.host.private_task_icons.get("BWHand")
+            original_tab=(page.object_name=="PageStart"
+                          and private_icon is not None)
             self.root.setTabIcon(index,
-                self._source_tasks_tab_icon() if page.object_name=="PageStart"
-                else style.standardIcon(standard))
+                QIcon(private_icon) if original_tab
+                else (self._source_tasks_tab_icon()
+                      if page.object_name=="PageStart"
+                      else style.standardIcon(standard)))
             self.root.setTabToolTip(index,
                 f"Оригинальная страница {page.object_name}, "
-                f"ImageName={page.image_name}; значок Qt — приближение.")
+                f"ImageName={page.image_name}; "
+                + ("иконка загружена из локального DFM."
+                   if original_tab else "значок Qt — приближение."))
         commands={}
         for name in _COMMAND_FALLBACK:
             widget=self.window.findChild(QWidget,name)
@@ -430,13 +483,20 @@ class OriginalVisualSkin:
             return False
         try:
             self.start.host.load_private_original_dfm(path)
+            self.start.apply_private_icons()
+            self._source_icons()
         except (OSError,ValueError) as exc:
             # Do not include the private filesystem path in any audit log.
             self.window.statusBar().showMessage(
                 "Локальные TImage не распознаны: "+str(exc))
             return False
         self.window.statusBar().showMessage(
-            "imBackL, imBackR, imLogo: локальные оригинальные изображения загружены")
+            "Локальные DFM изображения прочитаны: "
+            + ("синий фон и " if self.start.host.private_blue_backgrounds_compatible
+               else "сохранён голубой фон экрана; ")
+            + ("оригинальные иконки и " if self.start.host.private_task_icons
+               else "")
+            + "логотип подключены без публикации.")
         return True
 
     def snapshot(self):
@@ -455,6 +515,10 @@ class OriginalVisualSkin:
             "start_logo_rect":_START_LOGO_RECT,
             "start_private_images_loaded":(
                 self.start.host.original_pictures_loaded_privately),
+            "start_private_icons_loaded":bool(
+                self.start.host.private_task_icons),
+            "start_private_background_palette_accepted":(
+                self.start.host.private_blue_backgrounds_compatible),
             "technical":self.technical,
             "menu_visible":self.window.menuBar().isVisible(),
             "statusbar_visible":self.window.statusBar().isVisible(),

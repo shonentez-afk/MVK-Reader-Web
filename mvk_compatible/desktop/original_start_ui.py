@@ -19,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QFileDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,
     QPushButton,QSizePolicy,QWidget,
@@ -184,7 +185,24 @@ class OriginalStartController:
             obsolete=home.findChild(QWidget,name)
             if obsolete is not None:
                 obsolete.hide()
+        self.apply_private_icons()
         window.original_start_controller=self
+
+    def apply_private_icons(self):
+        """Install only transient private DFM icons on real Qt buttons."""
+        icons=self.host.private_task_icons
+        names={row[0]:row[5] for row in START_BUTTONS}
+        installed=[]
+        for name,button in self.buttons.items():
+            pixmap=icons.get(names[name])
+            if pixmap is None:
+                continue
+            button.setIcon(QIcon(pixmap))
+            button.setProperty("sourceOriginalCommandBitmapProvided",True)
+            button.setProperty("sourceTaskCommandImageCandidate",False)
+            button.setProperty("sourceIconLoadedOnlyInMemory",True)
+            installed.append(name)
+        return tuple(installed)
 
     def commit_ip(self):
         try:
