@@ -204,3 +204,77 @@ def test_original_second_mode2_click_graceful_native_stop_no_device_tcp(
         win._native_dialog=None
         win.close()
         settle(qt_app)
+
+
+def test_mode2_parked_verified_zip_is_not_live_and_restores_on_failure(
+        tmp_path,qt_app):
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.show()
+    settle(qt_app)
+    try:
+        archive=fixture_zip(tmp_path)
+        win.open_archive(archive)
+        assert win.session is not None
+        serial=win.session.serial
+        assert win._live_prior_session is None
+        assert win.enter_measurement_mode()
+        settle(qt_app)
+        # The archive is retained for recovery ONLY. It must not appear
+        # as new instrument DSP/TACH, even before Native capture starts.
+        assert win._live_prior_session is not None
+        assert win._live_prior_session.serial==serial
+        assert win.session is None
+        assert win._offline_flow is None
+        assert "нет проверенных регистров нового сеанса" in (
+            win.dsp_tach_status.text())
+        assert win.original_status_table.item(0,1).text()==UNKNOWN
+        assert win.original_measure_controls.status.text()==(
+            "Ожидание подключения к прибору")
+        assert not win.original_shell.status_page.property(
+            "sourceNativeTransportConnected")
+        win._begin_live_capture()
+        assert win._live_prior_session is not None
+        assert win.session is None
+        win._end_live_capture(False)
+        settle(qt_app)
+        # Failure keeps five Mode2 tabs and a RED indicator, but the
+        # previous verified archive is reopened by the offline Core.
+        assert win._measurement_mode_selected
+        assert win.session is not None and win.session.serial==serial
+        assert win.original_measure_controls.status.text()==(
+            "Ошибка соединения с прибором")
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==list(ORIGINAL_LIVE_VISIBLE)
+        assert win._live_prior_session is None
+        assert win.leave_measurement_mode()
+        settle(qt_app)
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==["PageStart","PageAdc","PageSpectrum"]
+    finally:
+        win.close()
+        settle(qt_app)
+
+
+def test_mode2_second_click_before_tcp_restores_previous_verified_archive(
+        tmp_path,qt_app):
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.show()
+    settle(qt_app)
+    try:
+        archive=fixture_zip(tmp_path)
+        win.open_archive(archive)
+        serial=win.session.serial
+        assert win.enter_measurement_mode()
+        assert win.session is None
+        assert win.leave_measurement_mode()
+        settle(qt_app)
+        assert win.session is not None and win.session.serial==serial
+        assert win._live_prior_session is None
+        assert win.measurement_connection_display().phase=="IDLE"
+        assert win.original_visual_skin.snapshot()[
+            "visible_source_tabs"]==["PageStart","PageAdc","PageSpectrum"]
+    finally:
+        win.close()
+        settle(qt_app)

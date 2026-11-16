@@ -24,7 +24,9 @@ from ..core import OfflineSession
 from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_connected_status import connected_system_status
-from ..core.original_measurement_mode import source_connection_display
+from ..core.original_measurement_mode import (
+    source_connection_display,capture_completion_policy,
+)
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
@@ -2463,18 +2465,44 @@ class MainWindow(QMainWindow):
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
         self._native_live_status=None
+        # Park the last VERIFIED offline source before Mode2 clears the
+        # visible session. Never treat it as evidence of this new device.
+        self._live_prior_session=self.session
         # Do not display stale values/graphs from an earlier offline file
         # as though they had arrived from this not-yet-connected device.
         self.session=None
         self._offline_flow=None
         self._live_preview=None
+        self._pagestatus_snapshot=None
+        self._source_view_time=None
+        self._source_wave_readout=None
+        self._source_spectrum_readout=None
+        self._source_spectrum_gain=None
+        self._spec_source_h_view=None
+        self._source_envelope_menu_fs=None
+        self._sync_original_envelope_menu_ui()
+        self.original_shell.clear_source_view_time()
         self._full_spectrum=None
         self._spectrum_summary=None
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
         self.spec_plot.clear_source_tqgr_series()
         self.spec_plot.clear()
+        self.wave_line=None
         self.original_shell.sync_file_session(None,())
+        self.spec_core_triplet.setText('Нет подтверждённого спектра нового сеанса')
+        self._reset_dsp_tach_panel('нет проверенных регистров нового сеанса')
+        for table in (self.metrics,self.oct_table):
+            for row in range(table.rowCount()):
+                for col in range(table.columnCount()):
+                    self._cell(table,row,col,'—')
+        self.oct_plot.clear()
+        for label,widget in self.status_fields.values():
+            widget.setText(label+': нет проверенного AUX нового сеанса')
+        self.sensor_bit_details.setText('Нет подтверждённых исходных битов нового сеанса')
+        self.calc_source.setText('Ожидание проверенных данных прибора')
+        self.calc_status.setText('Нет подключения к прибору')
+        self._refresh_source_pagestatus()
         self._set_active(False)
         # The source calls TPageControl.SetActivePage(PageStatus).
         self.original_visual_skin.reveal_page(2)
@@ -2506,6 +2534,8 @@ class MainWindow(QMainWindow):
         """Second Mode2 click before recording: reset to idle."""
         if self._live_active or not self._measurement_mode_selected:
             return False
+        parked=self._live_prior_session
+        self._live_prior_session=None
         self._measurement_mode_selected=False
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
@@ -2513,6 +2543,11 @@ class MainWindow(QMainWindow):
         self.original_visual_skin.reveal_page(0)
         self.original_shell.measure_controls.render()
         self.original_shell.refresh_status()
+        # A cancelled dialog or second click before TCP must not destroy
+        # a previously accepted ZIP/BIN. Revalidate the original path
+        # using the normal offline Core before showing its old values.
+        if parked is not None and self.session is None:
+            self.open_archive(parked.path)
         return True
 
     def measurement_connection_display(self):
@@ -2530,7 +2565,8 @@ class MainWindow(QMainWindow):
         # Direct programmatic QA entry follows the same Delphi Mode2
         # visibility transition as the actual Measurement button.
         self.enter_measurement_mode()
-        self._live_prior_session=self.session
+        # enter_measurement_mode already parked the previous verified
+        # session BEFORE clearing it. Never overwrite that with None here.
         self._offline_flow=None  # Never mix verified offline evidence with LIVE preview
         self._source_view_time=None
         self._source_wave_readout=None
@@ -2738,13 +2774,14 @@ class MainWindow(QMainWindow):
             return
         self._live_active=False
         self._native_live_status=None
-        # On FAILED connection the original Mode2 UI is still selected
-        # and its bottom-right indicator must display failure. A successful
-        # verified archive export transitions back to an offline workflow.
-        self._measurement_connection_error=(
-            not bool(exported) and not self._measurement_exit_requested)
-        if exported or self._measurement_exit_requested:
-            self._measurement_mode_selected=False
+        # Core owns the exit policy; Qt merely applies it. A physical
+        # connection is NEVER inferred from visible tabs or a parked ZIP.
+        completion=capture_completion_policy(
+            exported=exported,
+            operator_exit_requested=self._measurement_exit_requested,
+            has_parked_archive=self._live_prior_session is not None)
+        self._measurement_connection_error=completion.connection_error
+        self._measurement_mode_selected=completion.keep_mode2
         self._measurement_exit_requested=False
         self.original_shell.measure_controls.end_live()
         self._live_preview=None
@@ -2775,10 +2812,12 @@ class MainWindow(QMainWindow):
             # Until then NO provisional plotted bytes count as accepted.
             self.title.setText('Native R6.1 · проверенный архив готовится к открытию')
             self.statusBar().showMessage('LIVE завершён; только сейчас можно открыть SHA-verified ZIP')
-        elif old is not None:
-            # Restore the previously verified session, not a copied preview.
+        elif completion.reopen_prior_archive and old is not None:
+            # Re-open the previous verified ZIP/BIN via the same checked
+            # offline Core; never copy a former LIVE preview or fake status.
             self.open_archive(old.path)
         else:
+            self._reset_dsp_tach_panel('нет проверенных регистров после LIVE')
             self.title.setText('Сеанс не выбран')
             self.task_session_summary.setText('LIVE завершён без принятого архива. RAW остаётся у оператора.')
             self.note.setText('LIVE завершён; исходный RAW/диагностика не изменены')

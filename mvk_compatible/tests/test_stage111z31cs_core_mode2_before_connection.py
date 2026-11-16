@@ -8,7 +8,7 @@ Provenance _Unit128.pas reconstructed by IDR mvkview.idp:
 from __future__ import annotations
 import pytest
 from ..core.original_measurement_mode import (
-    source_connection_display,SOURCE,
+    source_connection_display,capture_completion_policy,SOURCE,
 )
 from ..core.original_runtime_tabs import (
     ORIGINAL_LIVE_VISIBLE,ORIGINAL_IDLE_VISIBLE,
@@ -97,3 +97,36 @@ def test_missing_or_invalid_capture_evidence_never_activates_green_indicator():
     ):
         with pytest.raises(ValueError):
             source_connection_display(**kw)
+
+
+@pytest.mark.parametrize(
+    "exported,exit_requested,parked,expected",
+    (
+        (False,False,False,(True,True,False,False)),
+        (False,False,True, (True,True,True,False)),
+        (False,True, True, (False,False,True,False)),
+        (False,True, False,(False,False,False,False)),
+        (True,False,True, (False,False,False,True)),
+        (True,True, True, (False,False,False,True)),
+    ),
+)
+def test_capture_exit_restores_only_verified_offline_archive(
+        exported,exit_requested,parked,expected):
+    policy=capture_completion_policy(
+        exported=exported,operator_exit_requested=exit_requested,
+        has_parked_archive=parked)
+    assert (
+        policy.keep_mode2,policy.connection_error,
+        policy.reopen_prior_archive,policy.accepted_new_archive)==expected
+    assert not policy.receipt()["verified_connection_implied"]
+    assert not policy.receipt()["device_commands_issued"]
+
+
+def test_capture_exit_rejects_ambiguous_boolean_provenance():
+    for key in ("exported","operator_exit_requested","has_parked_archive"):
+        args=dict(exported=False,operator_exit_requested=False,
+                  has_parked_archive=False)
+        for bad in (None,1,"false"):
+            args[key]=bad
+            with pytest.raises(ValueError):
+                capture_completion_policy(**args)

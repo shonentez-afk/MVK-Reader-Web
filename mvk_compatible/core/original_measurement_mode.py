@@ -79,3 +79,46 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
     return SourceConnectionDisplay(
         True,True,False,
         "Ожидание данных прибора","waiting",proof.transport_phase)
+
+
+@dataclass(frozen=True)
+class CaptureCompletionPolicy:
+    """Compatible archive provenance after Native capture ends.
+
+    This is a Qt/Core safety policy, NOT an undocumented original
+    TMVKThread/device command. A verified archived ZIP may be reopened,
+    but a failed connection must never be shown as a successful one.
+    """
+    keep_mode2:bool
+    connection_error:bool
+    reopen_prior_archive:bool
+    accepted_new_archive:bool
+
+    def receipt(self):
+        return {
+            "source":"COMPATIBLE_NATIVE_CAPTURE_ARCHIVE_RECOVERY",
+            "keep_original_mode2_tabs":self.keep_mode2,
+            "verified_connection_implied":False,
+            "reopen_only_previously_verified_archive":self.reopen_prior_archive,
+            "accepted_new_export":self.accepted_new_archive,
+            "device_commands_issued":False,
+        }
+
+
+def capture_completion_policy(*,exported:bool,
+        operator_exit_requested:bool,has_parked_archive:bool)->CaptureCompletionPolicy:
+    """Do not lose a verified offline session on Mode2 or failed TCP.
+
+    Mode2 remains visible on a failed connection until the operator
+    explicitly exits; a successful export leaves Mode2 and is accepted
+    only by the existing archiveReady -> OfflineSession.open flow.
+    """
+    if any(type(v) is not bool for v in (
+            exported,operator_exit_requested,has_parked_archive)):
+        raise ValueError("Capture completion evidence must be booleans")
+    return CaptureCompletionPolicy(
+        keep_mode2=not exported and not operator_exit_requested,
+        connection_error=not exported and not operator_exit_requested,
+        reopen_prior_archive=not exported and has_parked_archive,
+        accepted_new_archive=exported,
+    )
