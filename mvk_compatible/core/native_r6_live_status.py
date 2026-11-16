@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import re
 
+from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
+
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
 FILENAME = "MVK_NATIVE_LIVE_STATUS.json"
 PHASES = frozenset({"CONNECTING", "RECORDING", "VERIFYING", "COMPLETED", "REFUSED"})
@@ -84,6 +86,16 @@ def validate_live_status(payload: dict, *, expected_run: str,
     for key in ("raw_bytes", "frames_decoded", "invalid_frames", "aux4700_updates",
                 "full_register_snapshots", "warning_count", "target_seconds"):
         _positive_int(payload.get(key), key)
+    # New read-only Go producer publishes the three counters atomically.
+    # Old statuses lacking all three remain valid but UNKNOWN; a partial
+    # set, rollback, or synthetic overcount cannot claim Delphi readiness.
+    source_fields=[key in payload for key in SOURCE_RX_FIELDS]
+    if any(source_fields) and not all(source_fields):
+        raise ValueError("Native live status: partial source RX evidence")
+    if all(source_fields):
+        counts=[_positive_int(payload[key], key) for key in SOURCE_RX_FIELDS]
+        if sum(counts)>payload["frames_decoded"]:
+            raise ValueError("Native live status: RX counters exceed decoded frames")
     elapsed = payload.get("elapsed_seconds")
     if type(elapsed) not in (float, int) or not 0 <= elapsed < 365*24*3600:
         raise ValueError("Native live status: invalid elapsed time")
@@ -121,6 +133,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
         result["capture_only"] or result["invalid_frames"] > 0 or
         result["snapshot_stale"] or
         (silent is not None and silent > 4.0) or
+        (all(source_fields) and payload[SOURCE_RX_FIELDS[2]]>0) or
         any(ch["quality"] in ("ОШИБКА ПОТОКА", "DSP: ПРЕДУПРЕЖДЕНИЕ") for ch in safe))
     return result
 
