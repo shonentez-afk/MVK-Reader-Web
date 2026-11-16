@@ -1,3 +1,5 @@
+# MVKView Capture Agent 0.4.0
+
 ## 0.3.0 — Popup capture repair from real MVKView evidence (2026-11-16)
 
 Validated against user-supplied MVK_CAPTURE_20261116T074819Z_12c686.zip (private; NOT committed):
@@ -27,7 +29,7 @@ operator validation after synthetic CI.
 
 ---
 
-# MVKView Capture Agent 0.3.0
+## Overview
 
 A **local, target-restricted Windows observer** for the operator's original
 `mvkview.exe` / Delphi `Tmvkform` window. Its purpose is to create a
@@ -41,8 +43,11 @@ reproducible evidence record for MVKView Compatible development.
   screen coordinates, visible/enabled status, other windows owned by the PID.
 - WinEvent out-of-context observer (show/hide/focus/select/invoke/value changes).
   Hooks are PID-filtered and do **not** inject code into the original process.
-- Window-specific PNG screenshots, including separately owned popup windows
-  when Windows exposes them; no whole-screen fallback that could capture other apps.
+- Window-specific PNG screenshots. On known original Win32 popup menus
+  (`#32768`) that return a solid black per-window bitmap, an optional bounded
+  screen-region capture is attempted **only** after verifying foreground PID,
+  target ownership, physical DWM bounds, and 3 interior hit-test points.
+  Failure is recorded in JSON rather than saving a black PNG; no whole-screen capture.
 - Manually enabled, bounded `ReadProcessMemory` watches: up to 16 named
   addresses, 1 MiB per watch, 2 MiB in total, read-only, little-endian deterministic
   decoding. Memory capture is **OFF by default**. No registers are obtained through
@@ -215,3 +220,20 @@ no full x87 register state, and no original-Win32 1:1 parity are claimed.
 
 The default non-intrusive mode from v0.1 remains available. The old x32dbg
 import feature is optional for legacy captures and is not needed for this mode.
+
+## 0.4 — real Windows v0.3 popup failure correction (2026-11-16)
+
+The operator's second ZIP `MVK_CAPTURE_20261116T082624Z_becc7a.zip`
+contained 314 WinEvents, 25 UI snapshots, and 9 genuine `#32768` menu windows.
+All 9 menu-only screenshots were black (one unique RGB color) despite valid
+PNG and SHA256; `ImageGrab.grab(window=HWND)` cannot paint the Delphi popups
+in this environment. The 3 observed pages were Spectrum, Time Signal, Tasks.
+
+Version 0.4 validates popup pixels and, after strict foreground/PID/occlusion
+guards, uses a narrow physical screen rectangle obtained from DWM for only that
+menu. Fallback can fail closed; errors are preserved in `popup_capture_failures`.
+Following a Delphi `TTabSheet` OBJECT_SHOW, it also takes an additional
+`page_settled` screenshot after 0.9 s to avoid blank transient plot frames.
+This behavior remains **UNVERIFIED on the user's original Windows instance**.
+Tests use mocks, not the original process. The capture tool still cannot
+list menu items programmatically; the validated image is the visual evidence.

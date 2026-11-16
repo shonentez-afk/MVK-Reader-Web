@@ -85,6 +85,7 @@ class CaptureSession:
     def _loop(self):
         try:
             next_poll = time.monotonic() + self.config.poll_seconds
+            page_settle_due = None
             while not self.stop_signal.is_set():
                 elapsed = time.monotonic()
                 try:
@@ -95,7 +96,13 @@ class CaptureSession:
                     self._record_trace(event)
                 elif event is not None and self.events_seen < MAX_WIN_EVENTS:
                     self.events_seen += 1
-                    self.store.event("win_event", self._annotate_win_event(event))
+                    annotated = self._annotate_win_event(event)
+                    self.store.event("win_event", annotated)
+                    # In the real original the plot needs time to repaint on a
+                    # Delphi TTabSheet change. Immediate images can be blank.
+                    if (annotated.get("event") == "OBJECT_SHOW" and
+                            annotated.get("control_class") == "TTabSheet"):
+                        page_settle_due = time.monotonic() + 0.9
                     if event.get("event") in {"OBJECT_SHOW", "OBJECT_HIDE",
                          "OBJECT_SELECTION", "OBJECT_INVOKED", "OBJECT_FOCUS"}:
                         now = time.monotonic()
@@ -104,6 +111,12 @@ class CaptureSession:
                             # Read state and image after notification, not in WinEvent callback.
                             self.snapshot(reason="win_event", memory=False,
                                           screenshot=True, only_if_changed=True)
+                if page_settle_due is not None and time.monotonic() >= page_settle_due:
+                    page_settle_due = None
+                    # Force a settled screenshot even when a no-image poll has
+                    # already written the same Win32 tree digest.
+                    self.snapshot(reason="page_settled", memory=False,
+                                  screenshot=True, only_if_changed=False)
                 if time.monotonic() >= next_poll:
                     self.backend.check_target(self.pid, self.hwnd)
                     self.snapshot(reason="poll", memory=False, screenshot=False,
@@ -215,6 +228,7 @@ class CaptureSession:
                     detail["screenshot"] = self.store.screenshot(
                         self.backend, self.pid, self.hwnd)
                     popups = []
+                    popup_capture_failures = []
                     for window in visible_popups:
                         handle = window["hwnd"]
                         try:
@@ -222,10 +236,14 @@ class CaptureSession:
                             popups.append({"hwnd": handle,
                                            "class_name": window.get("class_name"),
                                            "screenshot": capture})
-                        except (CaptureError, OSError, TypeError, ValueError):
-                            continue
+                        except (CaptureError, OSError, TypeError, ValueError) as exc:
+                            popup_capture_failures.append({"hwnd": handle,
+                                "class_name": window.get("class_name"),
+                                "reason": str(exc)[:300]})
                     if popups:
                         detail["additional_process_windows"] = popups
+                    if popup_capture_failures:
+                        detail["popup_capture_failures"] = popup_capture_failures
                 except (CaptureError, OSError, TypeError, ValueError) as exc:
                     detail["screenshot_error"] = str(exc)[:300]
             if memory:

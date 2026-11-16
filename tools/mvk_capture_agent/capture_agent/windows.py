@@ -47,6 +47,14 @@ class WindowsBackend:
         k.CloseHandle.restype = wintypes.BOOL
         k.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
         k.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        # Target-bound visible popup fallback requires verified foreground and
+        # physical DWM bounds, never a whole-desktop screenshot.
+        u.GetForegroundWindow.argtypes = []
+        u.GetForegroundWindow.restype = wintypes.HWND
+        u.WindowFromPoint.argtypes = [wintypes.POINT]
+        u.WindowFromPoint.restype = wintypes.HWND
+        u.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        u.GetAncestor.restype = wintypes.HWND
         dpi = getattr(u, "GetDpiForWindow", None)
         if dpi is not None:
             dpi.argtypes = [wintypes.HWND]
@@ -178,9 +186,59 @@ class WindowsBackend:
         except Exception as exc:
             return {"error": f"{type(exc).__name__}: {exc}"[:300]}
 
+    @staticmethod
+    def _image_is_solid(image):
+        """A full black PrintWindow bitmap is not proof of popup contents."""
+        rgb = image.convert("RGB")
+        return all(lo == hi for lo, hi in rgb.getextrema())
+
+    def _physical_window_rect(self, hwnd):
+        """DWM returns physical pixels; GetWindowRect may be DPI-virtualized."""
+        dwm = self.ctypes.WinDLL("dwmapi", use_last_error=True)
+        getter = dwm.DwmGetWindowAttribute
+        getter.argtypes = [self.wt.HWND, self.wt.DWORD,
+                           self.ctypes.c_void_p, self.wt.DWORD]
+        getter.restype = self.ctypes.c_long
+        r = self.wt.RECT()
+        hr = getter(int(hwnd), 9, self.ctypes.byref(r), self.ctypes.sizeof(r))
+        if hr != 0:
+            raise CaptureError(f"Physical popup bounds unavailable (DWM HRESULT={hr})")
+        return [int(r.left), int(r.top), int(r.right), int(r.bottom)]
+
+    def _grab_verified_popup(self, pid, hwnd, grabber):
+        """Bounded *visible* menu pixels only; refuse non-target overlays.
+
+        The original Delphi menu is an independent class #32768 surface.
+        PIL's window=HWND/PrintWindow returns all-black for this popup on the
+        supplied real Windows 150% DPI session. A narrowly bounded screen crop
+        is allowed only while MVKView has focus AND every sampled interior
+        pixel hit-tests to this specific PID and popup root. Never grab the
+        full desktop, and never fall back if those guards fail.
+        """
+        if self._class(hwnd) != "#32768" or not self.u.IsWindowVisible(int(hwnd)):
+            raise CaptureError("Screen-region fallback is only for visible original menus")
+        fg = self.u.GetForegroundWindow()
+        if not fg or self.pid_for_hwnd(fg) != pid:
+            raise CaptureError("Popup screen crop refused: MVKView is not foreground")
+        x1, y1, x2, y2 = self._physical_window_rect(hwnd)
+        width, height = x2 - x1, y2 - y1
+        if not 32 <= width <= 1100 or not 32 <= height <= 1100 or width * height > 900000:
+            raise CaptureError("Popup physical bounds outside strict size limits")
+        for qx, qy in ((.24,.25),(.50,.50),(.76,.75)):
+            point = self.wt.POINT(x1+int(width*qx), y1+int(height*qy))
+            hit = self.u.WindowFromPoint(point)
+            if not hit or self.pid_for_hwnd(hit) != pid:
+                raise CaptureError("Popup crop refused: another application's window overlaps")
+            top = self.u.GetAncestor(hit, 2)  # GA_ROOT
+            if int(hit) != int(hwnd) and int(top or 0) != int(hwnd):
+                raise CaptureError("Popup crop refused: visible pixels do not belong to selected menu")
+        image = grabber.grab(bbox=(x1,y1,x2,y2), all_screens=True,
+                             include_layered_windows=True)
+        if not image or image.width < 32 or image.height < 32 or self._image_is_solid(image):
+            raise CaptureError("Popup bounded screen capture still empty/uniform")
+        return image
+
     def screenshot(self, pid, hwnd, path):
-        # A dropdown can live in a separate top-level HWND owned by the same
-        # original process. Capture that HWND, never a generic screen rectangle.
         originals = [t for t in self.targets() if t["pid"] == pid]
         if len(originals) != 1 or not self.u.IsWindow(int(hwnd)) or self.pid_for_hwnd(hwnd) != pid:
             raise CaptureError("Screenshot target no longer belongs to original MVKView")
@@ -190,9 +248,13 @@ class WindowsBackend:
             from PIL import ImageGrab
         except ImportError as exc:
             raise CaptureError("Screenshot requires Pillow: py -m pip install pillow") from exc
-        # This captures the chosen HWND, never the whole desktop or overlapping apps.
         image = ImageGrab.grab(window=int(hwnd))
         if not image or image.width < 32 or image.height < 32:
             raise CaptureError("Window screenshot was empty")
+        method = "window"
+        if self._class(hwnd) == "#32768" and self._image_is_solid(image):
+            image = self._grab_verified_popup(pid, hwnd, ImageGrab)
+            method = "bounded_visible_menu_foreground_verified"
         image.save(path, "PNG")
-        return {"width": image.width, "height": image.height}
+        return {"width": image.width, "height": image.height,
+                "capture_method": method}

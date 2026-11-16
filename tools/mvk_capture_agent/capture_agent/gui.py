@@ -10,7 +10,7 @@ def run_gui():
     from tkinter import ttk, messagebox, filedialog
     service = CaptureService()
     root = tk.Tk()
-    root.title("MVKView Capture Agent 0.3 - repaired popup capture")
+    root.title("MVKView Capture Agent 0.4 - bounded popup capture")
     root.geometry("875x580")
     root.minsize(690, 470)
     actions = queue.Queue()

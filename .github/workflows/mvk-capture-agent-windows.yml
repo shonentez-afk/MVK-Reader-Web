@@ -5,6 +5,7 @@ on:
       - 'feature/mvk-capture-agent-v1-20261116'
       - 'feature/mvk-capture-agent-v2-20261116'
       - 'feature/mvk-capture-agent-v3-20261116'
+      - 'feature/mvk-capture-agent-v4-20261116'
     paths:
       - 'tools/mvk_capture_agent/**'
       - '.github/workflows/mvk-capture-agent-windows.yml'
@@ -19,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install image regression test dependencies
+        run: python -m pip install pillow
       - name: Offline unit tests
         working-directory: tools/mvk_capture_agent
         run: python -m unittest discover -v -s tests -p 'test_*.py'
@@ -43,7 +46,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --console --collect-all frida --add-data "capture_agent/frida_trace.js:capture_agent" --name MVKCaptureMCP app_mcp.py
       - uses: actions/upload-artifact@v4
         with:
-          name: MVK-Capture-Agent-Windows-v0.3
+          name: MVK-Capture-Agent-Windows-v0.4
           path: |
             tools/mvk_capture_agent/dist/MVKCaptureAgent.exe
             tools/mvk_capture_agent/dist/MVKCaptureMCP.exe
