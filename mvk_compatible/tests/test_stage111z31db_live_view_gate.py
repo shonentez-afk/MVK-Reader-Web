@@ -68,3 +68,20 @@ def test_boolean_stop_flag_is_not_coerced(tmp_path):
     status, preview = _pair(tmp_path)
     with pytest.raises(ValueError):
         gate_live_preview(status,preview,stop_requested=1)
+
+
+def test_source_mode2_stop_display_is_not_connected_or_green(tmp_path):
+    from ..core.original_measurement_mode import source_connection_display
+    status,_ = _pair(tmp_path)
+    running=source_connection_display(
+        selected=True,capture_started=True,status=status)
+    assert running.transport_verified
+    stopping=source_connection_display(
+        selected=True,capture_started=True,status=status,stop_requested=True)
+    assert stopping.phase=="STOPPING"
+    assert stopping.indicator=="waiting"
+    assert not stopping.transport_verified
+    assert stopping.text=="Завершение приёма"
+    with pytest.raises(ValueError):
+        source_connection_display(
+            selected=True,capture_started=False,stop_requested=True)
