@@ -20,7 +20,7 @@ def test_exact_eight_source_uint32_writer_call_arguments_are_stable():
 
 def test_source_set_rate_writer_ninth_word_is_data_but_not_socket_bytes():
     model=OriginalMode2CommandQueue()
-    assert model.set_rate(309) is None
+    assert model.set_rate(0x309) is None
     command=model.set_rate(101)
     plan=plan_verified_source_rate_command(command)
     assert len(plan.all_words)==RATE_COMMAND_WRITES==9
@@ -64,13 +64,13 @@ def test_original_win32_indy_cardinal_write_has_little_endian_stream_bytes():
     or accepted physical device operation.
     """
     queue=OriginalMode2CommandQueue()
-    cmd=queue.set_rate(309+1)
+    cmd=queue.set_rate(0x309+1)
     plan=plan_verified_source_rate_command(cmd)
     wire=plan.indy_uint32_stream_bytes()
     assert len(wire)==36  # nine 4-byte Write UInt32 calls
     assert wire[:8]==bytes.fromhex("0d 0c 80 ff 24 00 00 00")
     assert wire[28:32]==bytes.fromhex("0e 00 02 00")
-    assert wire[32:36]==bytes.fromhex("36 01 00 00")
+    assert wire[32:36]==bytes.fromhex("0a 03 00 00")
     assert tuple(int.from_bytes(wire[i:i+4],"little")
                  for i in range(0,len(wire),4))==plan.all_words
     receipt=plan.receipt()
