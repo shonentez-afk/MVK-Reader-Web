@@ -145,3 +145,45 @@ def test_real_qt_failed_source_status_keeps_exception_provenance_separate(
     finally:
         win.close()
         qt_app.processEvents()
+
+
+def test_mode2_failed_reconnect_uses_fresh_queue_and_parks_valid_archive(
+        qt_app,tmp_path):
+    from ..desktop.main_window import MainWindow
+    from .test_offline_core import fixture_zip
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        prior=fixture_zip(tmp_path)
+        win.open_archive(prior)
+        old=win.session
+        assert old is not None
+        assert win.enter_measurement_mode()
+        win._begin_live_capture()
+        first_trace=win._source_mode2_runtime
+        win._end_live_capture(False)
+        assert win._measurement_mode_selected
+        assert first_trace.finished
+        assert win.session is not None
+        assert win.session.serial==old.serial
+        # A second approved attempt while Mode2 remains on screen must
+        # never reuse first run's source command queue or 10-channel
+        # recording windows. The accepted old ZIP must remain recoverable.
+        win._begin_live_capture()
+        assert win._source_mode2_runtime is not first_trace
+        assert not win._source_mode2_runtime.finished
+        assert win._source_mode2_runtime.receipt()["mode2_phase"]=="CONNECTING"
+        assert win._source_mode2_runtime.command_model.receipt()[
+            "pending_count"]==0
+        assert win._live_prior_session is not None
+        assert win._live_prior_session.serial==old.serial
+        win._end_live_capture(False)
+        assert win.session is not None
+        assert win.session.serial==old.serial
+        assert win.leave_measurement_mode()
+    finally:
+        if win._live_active:
+            win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()
