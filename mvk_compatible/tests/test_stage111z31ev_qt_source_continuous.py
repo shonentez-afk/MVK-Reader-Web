@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 pytest.importorskip("PySide6")
 from .test_desktop_qt import qt_app
-from .test_stage111z26_native_live_status import fixture_state
+from .test_stage111z26_native_live_status import fixture_state, now
+from ..core.native_r6_live_status import validate_live_status
 
 
 def test_native_capture_dialog_original_unbounded_mode_is_first_choice(
@@ -19,8 +20,13 @@ def test_native_capture_dialog_original_unbounded_mode_is_first_choice(
         assert not dialog.source_rate_tx.isChecked()
         # Feed an independently verified-style local JSON snapshot ONLY:
         # no Go subprocess, socket, or hardware is started.
-        snapshot=fixture_state()
-        snapshot["target_seconds"]=0
+        # The real dialog receives a validated Core projection, not a
+        # raw producer JSON fixture; the latter has no quality/staleness
+        # attributes and must never bypass validation in production.
+        state=fixture_state()
+        state["target_seconds"]=0
+        snapshot=validate_live_status(
+            state,expected_run=state["session_id"],now=now())
         monkeypatch.setattr(
             native_ui,"load_capture_live_status",
             lambda *args,**kwargs:snapshot)
