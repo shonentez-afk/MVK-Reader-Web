@@ -286,7 +286,7 @@ class NativeCaptureDialog(QDialog):
                       "BIN не может считаться проверенным; экспорт будет отклонён.")
         if snapshot.get("source_tcp_multi_socket"):
             label += (" · ПЕРЕПОДКЛЮЧЕНИЕ: TCP-сеансов "
-                      f"{snapshot[\"source_tcp_connection_count\"]}; "
+                      f"{snapshot['source_tcp_connection_count']}; "
                       "отдельные RAW, единый BIN не допускается.")
         self.live_quality.setText(label)
         for i, ch in enumerate(snapshot["channels"]):
