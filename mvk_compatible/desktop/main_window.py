@@ -3208,7 +3208,8 @@ class MainWindow(QMainWindow):
     def source_rate_selected(self,rate:int):
         """Source mRate1Click; same Go socket, only if separately authorized."""
         dlg=self._native_dialog
-        if dlg is None or not self._live_active or not dlg.source_rate_tx_active():
+        if (dlg is None or not self._live_active or
+                not getattr(dlg,"source_rate_tx_active",lambda:False)()):
             self.statusBar().showMessage("Источник ЧД доступен только в разрешённом активном измерении")
             return False
         from PySide6.QtWidgets import QMessageBox
