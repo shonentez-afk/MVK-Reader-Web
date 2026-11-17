@@ -74,9 +74,22 @@ class ChannelBuffer:
         ):
             raise ValueError("Unverified or inconsistent Native channel receipt")
         if self.available and total == self.end:
-            if digest != self.last_sha or next_index != self.next_device_index:
-                raise ValueError("Same Native counter but different data or device index")
-            return False
+            if next_index != self.next_device_index:
+                raise ValueError("Same Native counter but different device index")
+            if digest == self.last_sha:
+                return False
+            # The operator may raise FFT N while no new packet arrives.
+            # A longer verified IPC window at the SAME end is legitimate
+            # only if its overlap is byte-for-byte identical to our history.
+            overlap=min(self.available,len(samples))
+            if not np.array_equal(self.latest(overlap),samples[-overlap:]):
+                raise ValueError("Same Native counter but different data")
+            if len(samples)<=self.available:
+                return False
+            self.available=0
+            self._append(np.asarray(samples,dtype="<f4"),total)
+            self.last_sha=digest
+            return True
         if self.available and total < self.end:
             raise ValueError("Native capture counter regressed within session")
         delta = total-self.end if self.available else len(samples)
