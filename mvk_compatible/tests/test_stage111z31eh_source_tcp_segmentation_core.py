@@ -91,15 +91,20 @@ def test_duplicate_or_foreign_original_run_refused(tmp_path):
 
 def test_qt_capture_spec_requires_independent_approval_for_reconnect(tmp_path):
     from ..core.native_r6_bridge import CaptureSpec
-    with pytest.raises(ValueError,match="разрешения SetRate"):
-        CaptureSpec("192.168.0.30","192.168.0.5",10,128,tmp_path,
-                    source_auto_reconnect=True).validate()
-    spec=CaptureSpec("192.168.0.30","192.168.0.5",10,128,tmp_path,
-                     source_rate_tx=True,source_auto_reconnect=True)
-    root=spec.create_root()
-    args=spec.native_args(root)
+    passive=CaptureSpec("192.168.0.30","192.168.0.5",10,128,tmp_path,
+                        source_auto_reconnect=True)
+    args=passive.native_args(passive.create_root())
     assert "-source-task2-reconnect=true" in args
     assert "-source-task2-reconnect-approved=true" in args
-    assert "-source-setrate-tx=true" in args
-    assert "-source-setrate-tx-approved=true" in args
+    assert "-source-setrate-tx=true" not in args
+    assert "-source-setrate-tx-approved=true" not in args
     assert "-approve=true" in args
+    both=CaptureSpec("192.168.0.30","192.168.0.5",10,128,tmp_path,
+                     source_rate_tx=True,source_auto_reconnect=True)
+    written=both.native_args(both.create_root())
+    assert "-source-task2-reconnect=true" in written
+    assert "-source-setrate-tx=true" in written
+    assert "-source-setrate-tx-approved=true" in written
+    with pytest.raises(ValueError,match="переподключения"):
+        CaptureSpec("192.168.0.30","192.168.0.5",10,128,tmp_path,
+                    source_auto_reconnect=1).validate()

@@ -62,7 +62,9 @@ func validIPv4(ip string) bool {
 }
 
 func liveCapture(ctx context.Context, m *Monitor, ip string, seconds int, maxBytes uint64, nic *LocalNIC) (string, error) {
-	if m.sourceTask2TX != nil {
+	// Original Task2 retry is independent of hardware SetRate.
+	// Passive reconnect requires its own explicit operator approval.
+	if m.sourceTask2TX != nil || m.sourceAfterRAWReconnect {
 		return sourceTask2CaptureInitialRetry(ctx,m,ip,seconds,maxBytes,nic)
 	}
 	return liveCaptureAddressOnNIC(ctx, m, net.JoinHostPort(ip, strconv.Itoa(instrumentPort)), seconds, maxBytes, nic)
@@ -171,7 +173,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			}
 			if ne, ok := e.(net.Error); ok && ne.Timeout() {
 				m.publishLiveStatus("RECORDING", false, "")
-				if m.sourceTask2TX!=nil && time.Since(lastPacket)>=5*time.Second {
+				if (m.sourceTask2TX!=nil || m.sourceAfterRAWReconnect) && time.Since(lastPacket)>=5*time.Second {
 					return "SOURCE_READ_TIMEOUT",fmt.Errorf("original Task2 read timeout 5000ms")
 				}
 				continue
@@ -308,8 +310,8 @@ func mainInner() int {
 			return 2
 		}
 	}
-	if *sourceReconnect && (!*sourceReconnectApproved || !*sourceTX || !*sourceTXApproval || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
-		fmt.Println("Original Task2 retry after RAW requires independent operator confirmation and approved source SetRate")
+	if *sourceReconnect && (!*sourceReconnectApproved || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
+		fmt.Println("Task2 TCP retry requires its own explicit consent, live status and local stop; SetRate approval is separate")
 		return 2
 	}
 	if *sourceTX && (!*sourceTXApproval || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
@@ -376,8 +378,15 @@ func mainInner() int {
 		m.summary.Mode="LIVE_SOURCE_SET_RATE_APPROVED"
 		m.sourceTask2TX=newSourceLiveTask2TX()
 		m.sourceTCP=&sourceTCPLedger{}
-		m.sourceAfterRAWReconnect=*sourceReconnect
 		fmt.Println("Original MVKView Task2 SetRate ENABLED with separate operator approval; only 5 verified rates")
+	}
+	if *sourceReconnect {
+		m.sourceAfterRAWReconnect=true
+		if m.sourceTCP==nil {m.sourceTCP=&sourceTCPLedger{}}
+		if !*sourceTX {
+			m.summary.Mode="LIVE_TASK2_PASSIVE_RECONNECT_APPROVED"
+			fmt.Println("Source Task2 TCP retry approved, passive receive only: NO device SetRate")
+		}
 	}
 	if *frameMarks {
 		marks, err := newFrameMarkController(*out, dir)

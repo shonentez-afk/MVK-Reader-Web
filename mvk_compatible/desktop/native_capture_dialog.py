@@ -169,15 +169,12 @@ class NativeCaptureDialog(QDialog):
             "сохранять каждый TCP-сеанс как отдельный RAW с SHA256")
         self.source_auto_reconnect.setObjectName("r6OriginalTask2ReconnectAfterRAW")
         self.source_auto_reconnect.setChecked(False)
-        self.source_auto_reconnect.setEnabled(False)
+        # Separate opt-in source TCP connection; never toggles SetRate.
+        self.source_auto_reconnect.setEnabled(True)
         self.source_auto_reconnect.setToolTip(
-            "Отдельное разрешение: после разрыва Go может повторно соединяться "
-            "с тем же IP и отправлять разрешённую SetRate. "
-            "RAW по разным сокетам разделяются; общий BIN запрещён.")
-        self.source_rate_tx.toggled.connect(self.source_auto_reconnect.setEnabled)
-        self.source_rate_tx.toggled.connect(
-            lambda checked: self.source_auto_reconnect.setChecked(False)
-            if not checked else None)
+            "Без отдельного разрешения SetRate команды прибору не передаются. "
+            "Повторные TCP-подключения возможны только с отдельным согласием; "
+            "все сокеты хранятся отдельными SHA256 RAW, общий BIN запрещён.")
         root.addWidget(self.source_auto_reconnect)
 
         actions = QHBoxLayout()
@@ -518,8 +515,10 @@ class NativeCaptureDialog(QDialog):
              "Это может изменить частоту прибора. Flash/Reboot исключены. "
              if spec.source_rate_tx else
              "Пассивный режим: клиент только читает. ")+
-            ("ПОСЛЕ РАЗРЫВА возможны повторные TCP-подключения и SetRate; "
-             "каждый сеанс будет отдельным RAW, единый BIN не создаётся. "
+            ("ПОСЛЕ РАЗРЫВА возможны повторные TCP-подключения "
+             + ("с отдельно разрешённой SetRate; " if spec.source_rate_tx
+                else "БЕЗ исходящих команд SetRate; ")
+             + "каждый сеанс будет отдельным RAW, единый BIN не создаётся. "
              if spec.source_auto_reconnect else "")+
             "Сам TCP Connect может влиять на прибор. Подтвердите производственный допуск.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)

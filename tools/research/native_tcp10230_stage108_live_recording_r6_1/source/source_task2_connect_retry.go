@@ -30,13 +30,16 @@ func sourceTask2CaptureInitialRetry(ctx context.Context,m *Monitor,ip string,
 // TCP sockets without contacting an instrument or changing port 10230 live.
 func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
  seconds int,maxBytes uint64,nic *LocalNIC)(string,error){
- if m.sourceTask2TX==nil{return "",errors.New("source Task2 TX state missing")}
+ // Original Task2 TCP retry does not itself require SetRate writes.
+ if m.sourceTask2TX==nil && !m.sourceAfterRAWReconnect{
+  return "",errors.New("source Task2 TCP retry not approved")
+ }
  // Original Task2 retry is bounded by thread termination, not a
  // mandatory wall clock. Unbounded GUI sessions pass seconds==0.
  var deadline time.Time
  if seconds>0 {deadline=time.Now().Add(time.Duration(seconds)*time.Second)}
  ticks:=25.0
- if m.sourceOperatorRateChan==nil{
+ if m.sourceTask2TX!=nil && m.sourceOperatorRateChan==nil{
   ch:=make(chan string,16)
   m.sourceOperatorRateChan=ch
   go sourceOperatorRateLines(os.Stdin,ch)
@@ -50,7 +53,7 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
   }
   reason,err:=liveCaptureAddressOnNIC(ctx,m,addr,remaining,maxBytes,nic)
   if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
-  if m.captureOnly || m.sourceTask2TX.writeFault!=""{return reason,err}
+  if m.captureOnly || (m.sourceTask2TX!=nil && m.sourceTask2TX.writeFault!=""){return reason,err}
   if reason!="CONNECT_FAILED" && reason!="REMOTE_DISCONNECTED" &&
     reason!="SOURCE_READ_TIMEOUT" && reason!="SOCKET_READ_FAILED"{
    return reason,err
@@ -63,7 +66,7 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
   m.summary.SourceInitialRetryAttempts++
   if m.summary.RawBytes>0{m.summary.SourceTCPReconnectAfterRAW++}
   m.note(fmt.Sprintf("Task2 new socket attempt %d after %v; retained RAW=%d bytes; source TX=%d",
-   m.summary.SourceInitialRetryAttempts,wait,m.summary.RawBytes,m.sourceTask2TX.sentBytes))
+   m.summary.SourceInitialRetryAttempts,wait,m.summary.RawBytes,m.sourceSentBytes()))
   m.publishLiveStatus("CONNECTING",true,"")
   timer:=time.NewTimer(wait)
   select{

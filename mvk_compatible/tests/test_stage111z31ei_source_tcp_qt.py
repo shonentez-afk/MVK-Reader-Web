@@ -47,14 +47,30 @@ def test_qt_separate_operator_consent_for_reconnect_defaults_off(qt_app):
     try:
         assert not dlg.source_rate_tx.isChecked()
         assert not dlg.source_auto_reconnect.isChecked()
-        assert not dlg.source_auto_reconnect.isEnabled()
-        dlg.source_rate_tx.setChecked(True)
         assert dlg.source_auto_reconnect.isEnabled()
         dlg.source_auto_reconnect.setChecked(True)
         assert dlg.source_auto_reconnect.isChecked()
+        assert not dlg.source_rate_tx.isChecked()
+        dlg.source_rate_tx.setChecked(True)
         dlg.source_rate_tx.setChecked(False)
+        assert dlg.source_auto_reconnect.isChecked()
+        assert dlg.source_auto_reconnect.isEnabled()
+        dlg.source_auto_reconnect.setChecked(False)
         assert not dlg.source_auto_reconnect.isChecked()
-        assert not dlg.source_auto_reconnect.isEnabled()
+    finally:
+        dlg.close()
+        dlg.deleteLater()
+
+
+def test_passive_retry_never_grants_hardware_rate_permission(qt_app):
+    from ..desktop.native_capture_dialog import NativeCaptureDialog
+    dlg=NativeCaptureDialog()
+    try:
+        dlg.source_auto_reconnect.setChecked(True)
+        assert dlg.source_auto_reconnect.isChecked()
+        assert not dlg.source_rate_tx.isChecked()
+        assert not dlg.source_rate_tx_active()
+        assert "Без отдельного разрешения SetRate" in dlg.source_auto_reconnect.toolTip()
     finally:
         dlg.close()
         dlg.deleteLater()

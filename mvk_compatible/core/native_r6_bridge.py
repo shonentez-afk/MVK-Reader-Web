@@ -86,9 +86,10 @@ class CaptureSpec:
     source_auto_reconnect: bool = False  # separate opt-in AFTER first RAW byte
 
     def validate(self) -> None:
-        if type(self.source_auto_reconnect) is not bool or (
-                self.source_auto_reconnect and not self.source_rate_tx):
-            raise ValueError("Переподключение после RAW требует отдельного разрешения SetRate")
+        # TCP retry and hardware SetRate have independent permissions.
+        # Choosing another TCP connection never implies device TX.
+        if type(self.source_auto_reconnect) is not bool:
+            raise ValueError("Неверный режим переподключения TCP")
         if type(self.source_rate_tx) is not bool:
             raise ValueError("Неверный режим отправки оригинальных команд")
         validate_ipv4(self.device_ipv4, field="IP МВК")

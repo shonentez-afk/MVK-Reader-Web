@@ -12,8 +12,9 @@ Private source _Unit125.pas:
 - 00808ADD..00808B0E if PauseValue < 801, multiplies by sqrt(2)
   and stores back in Win32 Single.
 
-The current passive Go receiver DOES NOT execute the retry plan. There
-is no network, timer, additional TCP client or device command sender here.
+This pure Core model performs NO network I/O. Go can execute separately
+approved Task2 TCP reconnect even without SetRate writes. Multiple socket
+segments have independent SHA256 and cannot certify a merged source BIN.
 """
 from __future__ import annotations
 
