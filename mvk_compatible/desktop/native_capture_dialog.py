@@ -83,6 +83,7 @@ class NativeCaptureDialog(QDialog):
         self._source_long_selector=None
         self._source_long_last_sent_at=0.0
         self._source_long_last_emitted=None
+        self._source_long_last_capture_end=None
         self._source_long_last_error=None
         self._frame_mark_sequence = 0
         self._timer = QTimer(self)
@@ -404,17 +405,26 @@ class NativeCaptureDialog(QDialog):
             self._source_long_request=None
             self._source_long_last_sent_at=0.0
             self._source_long_last_emitted=None
+            self._source_long_last_capture_end=None
         try:
             pending=self._source_long_request
             if pending is not None:
                 window=load_source_long_window(self._capture_root,snapshot,pending)
                 if window is not None and pending.request_id!=self._source_long_last_emitted:
                     self._source_long_last_emitted=pending.request_id
+                    self._source_long_last_capture_end=window.received_samples
                     self.sourceLongWindowReady.emit(window)
             # One new bounded ZIP no more often than every three seconds.
             # A different source menu selection can request immediately.
             clock=time.monotonic()
             if clock-self._source_long_last_sent_at<3.0:
+                return
+            # A new request ID is not evidence of new ADC data. Refuse
+            # periodic 5MiB file writes while Go is receiving nothing.
+            rows=(snapshot.get("source_original_storage") or {}).get("channels") or []
+            if (self._source_long_last_capture_end is not None and
+                    len(rows)>=adc and
+                    rows[adc-1]["rx_pos_64"]<=self._source_long_last_capture_end):
                 return
             request=submit_source_long_window(
                 self._capture_root,snapshot,adc,tag)
@@ -670,6 +680,7 @@ class NativeCaptureDialog(QDialog):
         self._source_long_selector=None
         self._source_long_last_sent_at=0.0
         self._source_long_last_emitted=None
+        self._source_long_last_capture_end=None
         self._source_long_last_error=None
         self._frame_mark_sequence = 0
         self._reset_live_channels()

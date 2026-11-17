@@ -523,6 +523,14 @@ def test_original_qt_long_window_request_only_for_selected_page_and_tag(
         before=dialog._source_long_request
         dialog._poll_source_long_window(status)
         assert dialog._source_long_request is before
+        # Even after the time throttle expires, an unchanged confirmed
+        # source FRxPos cannot cause an expensive 5MiB ZIP retry.
+        dialog._source_long_last_capture_end=status[
+            "source_original_storage"]["channels"][0]["rx_pos_64"]
+        dialog._source_long_last_sent_at=0.0
+        dialog._poll_source_long_window(status)
+        assert dialog._source_long_request is before
+        assert (root/REQUEST_NAME).read_bytes()==request
         # Freeze does not ask the device for new samples.
         window._source_live_view_frozen=True
         dialog._poll_source_long_window(status)
@@ -532,6 +540,10 @@ def test_original_qt_long_window_request_only_for_selected_page_and_tag(
         assert (root/REQUEST_NAME).read_bytes()==request
     finally:
         if window._live_active:window._end_live_capture(False)
+        # This test sets _mode="capture" WITHOUT starting any QProcess.
+        # Close only the synthetic dialog state; never disable the actual
+        # application's operator Stop/confirm modal policy.
+        dialog._mode=None
         dialog.close()
         window.close()
         qt_app.processEvents()
