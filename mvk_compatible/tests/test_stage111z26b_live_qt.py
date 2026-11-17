@@ -129,3 +129,35 @@ def test_live_completion_disables_preview_until_verified_archive(tmp_path,qt_app
     assert len(window.wave_plot.listDataItems())==1
     window.close()
     qt_app.processEvents()
+
+
+def test_qt_live_wave_and_fft_survive_late_attach_absolute_source_index(
+        tmp_path,qt_app):
+    from .test_stage111z26b_live_preview import make_preview,now
+    from mvk_compatible.core.native_r6_live_preview import (
+        MAX_SAMPLES,load_live_preview,
+    )
+    from mvk_compatible.desktop.main_window import MainWindow
+    offset=1_000_000
+    def large_cursor(meta):
+        for channel in meta["channels"]:
+            channel["first_sample_index"]+=offset
+            channel["next_sample_index"]+=offset
+    root,status,_=make_preview(tmp_path,modify=large_cursor)
+    for ch in status["channels"][:8]:
+        ch["next_sample_index"]=offset+4096+MAX_SAMPLES
+    preview=load_live_preview(root,status,now=now())
+    win=MainWindow()
+    try:
+        win._begin_live_capture()
+        win._receive_native_live_status(status)
+        win._receive_live_preview(preview)
+        assert len(win.wave_plot.listDataItems())==1
+        assert len(win.spec_plot.listDataItems())==1
+        assert "FFT N=65536" in win.spec_mean.text()
+        # Absolute device time is never mistaken for capture-local 0.
+        assert "Индекс отсчёта" in win.wave_plot.getAxis("bottom").labelText
+    finally:
+        if win._live_active:win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()

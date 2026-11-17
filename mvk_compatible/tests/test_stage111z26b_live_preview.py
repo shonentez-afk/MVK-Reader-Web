@@ -161,3 +161,37 @@ def test_source_prebuffer_does_not_pad_or_downsample_requested_n(tmp_path):
     assert provisional_spectrum(preview,1,n_fft=8192)["n_fft"]==8192
     with pytest.raises(ValueError,match="FFT N=65536"):
         provisional_spectrum(preview,1,n_fft=65536)
+
+
+def test_late_tcp_attach_absolute_instrument_index_still_validates(tmp_path):
+    from mvk_compatible.core.original_live_view_gate import gate_live_preview
+    offset=1_000_000
+    def large_device_cursor(meta):
+        for row in meta["channels"]:
+            row["first_sample_index"]+=offset
+            row["next_sample_index"]+=offset
+    root,status,_=make_preview(tmp_path,modify=large_device_cursor)
+    expected_next=offset+4096+MAX_SAMPLES
+    for channel in status["channels"][:8]:
+        channel["next_sample_index"]=expected_next
+    preview=load_live_preview(root,status,now=now())
+    assert preview.channels[1].first_index==offset+4096
+    assert preview.channels[1].next_index==expected_next
+    allowed=gate_live_preview(status,preview)
+    assert allowed.allowed,allowed.reason
+    assert provisional_spectrum(preview,1,mode=1,n_fft=65536)["n_fft"]==65536
+    # If Go reports a source end cursor behind this window,
+    # the independent local core must reject it before Qt.
+    status["channels"][0]["next_sample_index"]=expected_next-256
+    with pytest.raises(ValueError,match="absolute index mismatch"):
+        load_live_preview(root,status,now=now())
+    denied=gate_live_preview(status,preview)
+    assert not denied.allowed
+    assert denied.phase=="SOURCE_INDEX_MISMATCH"
+
+
+def test_legacy_status_without_source_device_cursor_is_not_invented(tmp_path):
+    root,status,_=make_preview(tmp_path)
+    assert all("next_sample_index" not in ch for ch in status["channels"])
+    preview=load_live_preview(root,status,now=now())
+    assert gate_live_preview(status,preview).allowed

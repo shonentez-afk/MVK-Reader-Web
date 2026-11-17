@@ -130,3 +130,23 @@ def test_status_symlink_rejected(tmp_path):
         pytest.skip("symlink requires elevated permissions on this Windows host")
     with pytest.raises(ValueError, match="symlink"):
         load_capture_live_status(root, now=now())
+
+
+def test_original_absolute_device_index_differs_from_capture_samples():
+    state=fixture_state()
+    state["channels"][0]["next_sample_index"]=1_000_000+76800
+    validated=validate_live_status(
+        state,expected_run=state["session_id"],now=now())
+    assert validated["channels"][0]["samples"]==76800
+    assert validated["channels"][0]["next_sample_index"]==1_076_800
+    assert validated["channels"][1]["next_sample_index"] is None
+    for invalid in (-1,2**32,True,"1076800"):
+        state["channels"][0]["next_sample_index"]=invalid
+        with pytest.raises(ValueError,match="absolute sample index"):
+            validate_live_status(
+                state,expected_run=state["session_id"],now=now())
+    state["channels"][0]["samples"]=0
+    state["channels"][0]["next_sample_index"]=1
+    with pytest.raises(ValueError,match="absolute sample index"):
+        validate_live_status(
+            state,expected_run=state["session_id"],now=now())

@@ -96,3 +96,32 @@ func TestSourceRetryTelemetryIsTransportOnlyNotHardwareStatus(t *testing.T){
   t.Fatal("source retry must not imply completed connection or hardware TX")
  }
 }
+
+
+func TestSourceAbsoluteADCIndexIsNotCaptureLocalSampleCounter(t *testing.T){
+ dir:=filepath.Join(t.TempDir(),"TEST_absolute_index")
+ m,e:=NewMonitor(dir,"OFFLINE_REPLAY","")
+ if e!=nil{t.Fatal(e)}
+ defer m.CloseFiles()
+ // First observed ADC packet can arrive at source device index
+ // 1,000,000. The local capture has only 65536 samples; these are
+ // DIFFERENT clocks and neither can be silently recast as the other.
+ ch:=&m.summary.Channels[0]
+ ch.Frames=256
+ ch.Samples=65536
+ ch.lastIndex=1000000+65536
+ ch.seen=true
+ ch.rates[65536]=true
+ now:=time.Now()
+ got:=m.snapshotLiveStatus("RECORDING",now)
+ if len(got.Channels)!=10||got.Channels[0].NextSampleIndex==nil||
+   *got.Channels[0].NextSampleIndex!=1065536||
+   got.Channels[0].Samples!=65536{
+  t.Fatal("original absolute ADC frame sample index was lost")
+ }
+ for i:=1;i<10;i++{
+  if got.Channels[i].NextSampleIndex!=nil{
+   t.Fatalf("invented device cursor for unseen channel %d",i+1)
+  }
+ }
+}

@@ -88,8 +88,18 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                 or not isinstance(rates, list) or ch.rate_hz not in rates
                 or type(ch.first_index) is not int
                 or type(ch.next_index) is not int
-                or not 0 <= ch.first_index < ch.next_index <= samples):
+                or not 0 <= ch.first_index < ch.next_index < 2**32
+                or ch.next_index-ch.first_index!=len(ch.samples)):
             return deny("Нарушены исходные границы или частота АЦП",
                         "CHANNEL_MISMATCH")
+        # Original source SampleHeader.Index is absolute; the JSON
+        # "samples" above counts ONLY bytes captured during this session.
+        # The previous <= samples test rejected valid late-attach windows.
+        source_end=source.get("next_sample_index")
+        if source_end is not None and (
+                ch.next_index>source_end or
+                source_end-ch.next_index>samples-len(ch.samples)):
+            return deny("Абсолютный индекс АЦП не подтверждён Go",
+                        "SOURCE_INDEX_MISMATCH")
     return LivePreviewDecision(True, "Подтверждённый Native preview",
                                "RECORDING")

@@ -20,6 +20,10 @@ type LiveChannelStatus struct {
     Type                    string   `json:"type"`
     Frames                  uint64   `json:"frames"`
     Samples                 uint64   `json:"samples"`
+    // Source ADC/TACH frame.Index+Samples is an absolute uint32 device
+    // sample cursor. Unlike Samples (capture count), it need not start
+    // at zero. Never serialize a synthetic cursor for unseen channels.
+    NextSampleIndex         *uint32  `json:"next_sample_index,omitempty"`
     SampleRatesHz           []uint32 `json:"sample_rates_hz"`
     SequenceDiscontinuities uint64   `json:"sequence_discontinuities"`
     NonFiniteSamples        uint64   `json:"nonfinite_samples"`
@@ -79,6 +83,13 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
             Channel: c.Channel, Type: typ, Frames: c.Frames, Samples: c.Samples,
             SampleRatesHz: append([]uint32{}, c.Rates...), SequenceDiscontinuities: c.SequenceDiscontinuities,
             NonFiniteSamples: c.NonFiniteSamples,
+        }
+        // Snapshot() retains private lastIndex/seen fields from the
+        // sole Go receiver; JSON includes only confirmed actual frame
+        // cursor metadata. No second TCP socket or hardware command.
+        if c.seen {
+            end:=c.lastIndex
+            item.NextSampleIndex=&end
         }
         if i < 8 && m.liveDSPSeen[i] {
             status := fmt.Sprintf("0x%08X", m.liveDSPStatus[i])

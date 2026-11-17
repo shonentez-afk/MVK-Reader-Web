@@ -131,10 +131,15 @@ def _validate_preview_payload(archive: zipfile.ZipFile, status: dict,
                 not isinstance(digest, str) or _HEX.fullmatch(digest) is None):
             raise ValueError("Native live preview: invalid calibrated sample metadata")
         reported = status["channels"][number-1]
+        # Absolute device cursor != samples captured since this program
+        # connected. A valid snapshot can start at a large source index.
+        source_end=reported.get("next_sample_index")
         if (count > reported["samples"] or
                 rate not in reported["sample_rates_hz"] or
-                reported["sequence_discontinuities"] or reported["nonfinite_samples"]):
-            raise ValueError("Native live preview: channel count/rate/quality mismatch")
+                reported["sequence_discontinuities"] or reported["nonfinite_samples"] or
+                (source_end is not None and
+                 (end>source_end or source_end-end>reported["samples"]-count))):
+            raise ValueError("Native live preview: channel count/rate/absolute index mismatch")
         info = archive.getinfo(name)
         if info.file_size != count*4:
             raise ValueError("Native live preview: truncated Float32 channel")

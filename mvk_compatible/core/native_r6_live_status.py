@@ -187,6 +187,16 @@ def validate_live_status(payload: dict, *, expected_run: str,
         record = {"channel": number, "type": typ}
         for field in ("frames", "samples", "sequence_discontinuities", "nonfinite_samples"):
             record[field] = _positive_int(entry.get(field), field)
+        # Source SampleHeader.Index is an ABSOLUTE device cursor,
+        # distinct from "samples" counted since this TCP capture began.
+        # Older Go sidecars without this new field remain unverified,
+        # never receive an invented index zero.
+        next_index=entry.get("next_sample_index")
+        if next_index is not None and (
+                type(next_index) is not int or
+                not 0<=next_index<2**32 or record["samples"]==0):
+            raise ValueError("Native live status: invalid absolute sample index")
+        record["next_sample_index"]=next_index
         record["sample_rates_hz"] = _rate_list(entry.get("sample_rates_hz"))
         status = entry.get("dsp_sensor_status_hex")
         if status is not None and (typ != "ADC" or not isinstance(status, str)
