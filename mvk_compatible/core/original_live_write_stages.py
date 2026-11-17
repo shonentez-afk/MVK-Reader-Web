@@ -460,7 +460,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "original_write_data_stage_recovered":True,
             "original_write_values_stage_recovered":True,
             "native_full_raw_recorded_independently":True,
-            "hardware_command_sent":False,
+            "hardware_command_sent":bool(frame_mark_evidence and frame_mark_evidence.get("device_commands_sent")),
+            "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes",0),
             "original_tach_calibration_verified":False,
         }
         (target/"SOURCE_WRITE_WINDOWS_AUDIT.json").write_text(
@@ -470,7 +471,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "files_written":len(emitted),"new_directory":str(target),
                 "verified_frame_boundaries":bool(ledger.frame_marks_verified),
                 "native_mark_requests":len(ledger.frame_mark_actions),
-                "hardware_command_sent":False}
+                "hardware_command_sent":bool(frame_mark_evidence and frame_mark_evidence.get("device_commands_sent")),
+                "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes",0)}
     except Exception:
         if created:
             shutil.rmtree(target)
