@@ -26,7 +26,9 @@ from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_tabl
 from ..core.original_connected_status import connected_system_status
 from ..core.original_live_write_stages import OriginalLiveWriteLedger
 from ..core.original_mode2_runtime_trace import OriginalMode2RuntimeTrace
-from ..core.original_mode2_interface_timer import OriginalMode2InterfaceTimer
+from ..core.original_mode2_interface_timer import (
+    OriginalMode2InterfaceTimer, source_active_page_refresh_allowed,
+)
 from .original_write_export_worker import SourceWriteWindowExportWorker
 from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
@@ -2523,26 +2525,36 @@ class MainWindow(QMainWindow):
             active.setProperty('sourceOriginalInterfaceTickReceipt',receipt)
         if controls.panel.isVisible():
             controls.panel.setProperty('sourceOriginalInterfaceTickReceipt',receipt)
-        if page==self._source_interface_last_page:
-            return
-        self._source_interface_last_page=page
-        # In source 00847248 ONLY the current page gets its handler.
-        # PageStatus can refresh from the already checked source Core.
-        # The two graphs may render an already validated latest preview,
-        # but never read the instrument or refresh an inactive series.
+        # Original 00847248 executes on EVERY 20 ms timer tick even
+        # when the active TTabSheet is unchanged. This is a UI dispatcher,
+        # not a new ADC sample source or a 50 Hz Go status poll.
+        page_changed = page != self._source_interface_last_page
+        self._source_interface_last_page = page
         if page=='PageStatus':
-            self.original_shell.refresh_status()
-        elif (page=='PageAdc' and self._live_preview is not None
+            # Original 008475BC exits without painting while
+            # TMVKThread.FreezeUpdate (+400CD) is set.
+            if source_active_page_refresh_allowed(
+                    page, freeze_update=self._source_live_view_frozen):
+                self.original_shell.refresh_status()
+        elif (page=='PageAdc' and page_changed
+                and self._live_preview is not None
                 and not self._source_live_view_frozen
                 and not self._measurement_exit_requested):
+            # New verified Go previews already render in their callback.
+            # Rebind on page transition, not 50 stale FFTs per second.
             self._render_live_wave()
-        elif (page=='PageSpectrum' and self._live_preview is not None
+        elif (page=='PageSpectrum' and page_changed
+                and self._live_preview is not None
                 and not self._source_live_view_frozen
                 and not self._measurement_exit_requested):
             self._render_live_spectrum()
         elif page=='PageFile':
+            # Original 0084845C dispatches for each active-page tick;
+            # this only reads local, validated source flag selections.
             self.original_shell.file_selection_status.setText(
                 self.original_shell._file_selection_status())
+        # Original 008486F4 runs AFTER the active page on EVERY tick
+        # when pnMeasure is visible. No network or source file writes.
         if controls.panel.isVisible():
             controls.render()
 
@@ -2899,7 +2911,10 @@ class MainWindow(QMainWindow):
         # Delphi's 20ms UI timer; propagate each event to every PageStatus
         # mode, not only the first. The native provenance remains separate
         # from unverified original DSP/firmware fields.
-        self.original_shell.refresh_status()
+        # Source PageStatus (008475BC) suppresses painting on
+        # FreezeUpdate. Still surface a newly latched system error.
+        if not self._source_live_view_frozen or system_latched:
+            self.original_shell.refresh_status()
         return evidence
 
     def _invalidate_native_live_status(self,reason):

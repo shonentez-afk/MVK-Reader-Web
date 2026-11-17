@@ -106,3 +106,47 @@ def test_failed_native_retry_renews_20ms_timer_without_reusing_old_ticks(
             win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_original_same_page_20ms_dispatch_calls_real_status_and_toolbar_each_tick(
+        qt_app, monkeypatch):
+    """00847248 has no changed-tab early return; source 008475BC freezes body."""
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win._begin_live_capture()  # synthetic UI only, no industrial TCP
+        win._source_interface_qtimer.stop()  # deterministic manual ticks
+        win.original_visual_skin.reveal_page(2)
+        qt_app.processEvents()
+        seen=[]
+        monkeypatch.setattr(
+            win.original_shell,"refresh_status",lambda:seen.append("status"))
+        monkeypatch.setattr(
+            win.original_shell.measure_controls,"render",
+            lambda:seen.append("pnMeasure"))
+        win._source_interface_last_page="PageStatus"
+        initial=win._source_interface_clock.tick_count
+        for _ in range(4):
+            win._source_interface_tick()
+        assert seen==["status","pnMeasure"]*4
+        assert win._source_interface_clock.tick_count==initial+4
+        # Original status body is held on FreezeUpdate, while the
+        # bottom panel and dispatcher remain active.
+        win._source_live_view_frozen=True
+        for _ in range(2):
+            win._source_interface_tick()
+        assert seen==["status","pnMeasure"]*4+["pnMeasure"]*2
+        assert win._source_interface_clock.tick_count==initial+6
+        win._source_live_view_frozen=False
+        win._source_interface_tick()
+        assert seen[-2:]==["status","pnMeasure"]
+        assert win._source_interface_clock.tick_count==initial+7
+        assert win.original_root_tabs.property(
+            "sourceOriginalInterfaceTickReceipt")["active_page_handler_address"]=="008475BC"
+    finally:
+        if win._live_active:
+            win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()

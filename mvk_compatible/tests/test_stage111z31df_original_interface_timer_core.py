@@ -10,6 +10,7 @@ from ..core.original_mode2_interface_timer import (
     OriginalMode2InterfaceTimer,
     SOURCE_ACTIVE_PAGE_HANDLERS,
     SOURCE_TOOLBAR_UPDATE_HANDLER, DFM_INTERVAL_MS,
+    source_active_page_refresh_allowed,
 )
 from ..core.original_runtime_tabs import PAGES
 
@@ -72,3 +73,22 @@ def test_source_timer_refuses_unknown_pages_and_unproven_visibility(
     with pytest.raises(ValueError):
         clock.tick(bad,visible)
     assert clock.receipt()["ticks_total"]==0
+
+
+@pytest.mark.parametrize("page,frozen,allowed",[
+    ("PageStatus",False,True),("PageStatus",True,False),
+    ("PageAdc",True,True),("PageSpectrum",True,True),
+    ("PageFile",True,True),("PageStart",True,True),
+])
+def test_008475bc_source_freeze_is_status_painter_only(page,frozen,allowed):
+    assert source_active_page_refresh_allowed(
+        page,freeze_update=frozen) is allowed
+
+
+@pytest.mark.parametrize("page,freeze",[
+    ("NotAnOriginalPage",False),("PageStatus",1),
+    ("PageStatus","yes"),
+])
+def test_source_timer_freeze_gate_rejects_unverified_inputs(page,freeze):
+    with pytest.raises(ValueError):
+        source_active_page_refresh_allowed(page,freeze_update=freeze)

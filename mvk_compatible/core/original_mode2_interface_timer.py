@@ -34,6 +34,19 @@ SOURCE_ACTIVE_PAGE_HANDLERS = {
 assert set(SOURCE_ACTIVE_PAGE_HANDLERS) == set(PAGES)
 
 
+def source_active_page_refresh_allowed(page_name: str, *, freeze_update: bool) -> bool:
+    """Original 008475BC skips PageStatus body painting on FreezeUpdate.
+
+    Original 00847248 still dispatches the active page and 008486F4
+    still refreshes pnMeasure. Other page handlers retain their own
+    independent source semantics. No network or device writes.
+    """
+    if type(page_name) is not str or page_name not in SOURCE_ACTIVE_PAGE_HANDLERS:
+        raise ValueError("Original active TTabSheet required")
+    if type(freeze_update) is not bool:
+        raise ValueError("Original TMVKThread.FreezeUpdate is Boolean")
+    return not (page_name == "PageStatus" and freeze_update)
+
 @dataclass(frozen=True)
 class SourceInterfaceTimerTick:
     number: int
