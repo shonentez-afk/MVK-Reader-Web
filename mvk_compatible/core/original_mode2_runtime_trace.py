@@ -50,6 +50,7 @@ class OriginalMode2RuntimeTrace:
         self.receive_evidence=OriginalMode2ReceiveEvidence()
         self.status_cells=OriginalStatusCellsEvidence()
         self.source_tx_observed=None
+        self.source_tcp_connection_count=0
         self.source_retry_plan=OriginalSourceRetryPlan()
         self.phase = "IDLE"
         self.capture_started = False
@@ -123,6 +124,19 @@ class OriginalMode2RuntimeTrace:
         # Sparse old synthetic UI receipts have no run identity; never
         # pretend their counters belong to one monotonic physical session.
         self.frames_decoded = max(self.frames_decoded, frames)
+        tcp_count=status.get("source_tcp_connection_count",0)
+        if type(tcp_count) is not int or not 0<=tcp_count<=128:
+            raise ValueError("Invalid source TCP socket count")
+        if tcp_count<self.source_tcp_connection_count:
+            raise ValueError("Source TCP socket index rolled back")
+        if tcp_count>self.source_tcp_connection_count:
+            if self.source_tcp_connection_count and tcp_count>1:
+                # Original TMVKThread resets Stage0 and all register validity
+                # for the NEW socket. A previous true Stage3 must not poison
+                # the new measurement: the Go new socket is independent.
+                self.status_cells=OriginalStatusCellsEvidence()
+                self._event("SOURCE_TCP_NEW_CONNECTION_FRESH_REGISTERS")
+            self.source_tcp_connection_count=tcp_count
         # Actual Go receive counters are separate from the DRY-RUN
         # SetRate queue: ACK from the device cannot certify that we sent
         # a command, because the Native Go client sends none.
@@ -171,6 +185,8 @@ class OriginalMode2RuntimeTrace:
         elif proof.data_integrity_alert:
             self.phase = "STREAM_ERRORS"
             self.fault_routes.record_native_fault("STREAM_ERRORS")
+        elif status["phase"]=="CONNECTING":
+            self.phase="CONNECTING"
         elif proof.connection_verified:
             self.phase = "RECORDING"
         else:
@@ -264,6 +280,8 @@ class OriginalMode2RuntimeTrace:
             "native_stop_requested": self.stop_requested,
             "native_run_bound": self.session_id is not None,
             "native_frames_decoded": self.frames_decoded,
+            "source_tcp_connection_count":self.source_tcp_connection_count,
+            "source_multi_socket_measurement":self.source_tcp_connection_count>1,
             "recording_commands_allowed": bool(
                 self.source_tx_observed and self.source_tx_observed["source_tx_explicitly_approved"]),
             "original_source_timer_ms": 20,
