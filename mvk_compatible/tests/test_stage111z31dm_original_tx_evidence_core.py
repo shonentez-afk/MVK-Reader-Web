@@ -1,18 +1,29 @@
 """Go sender-opportunity proof is independent of actual physical TX."""
 from __future__ import annotations
-from copy import deepcopy
 import pytest
 from ..core.original_mode2_transmit_evidence import (
     FIELD, validate_original_task2_tx,
 )
-from .test_stage111z31di_qt_live_source_status_cells import inbound
+from ..core.original_mode2_status_cells import SOURCE_INDEX_ADDR,SOURCE_STATUS_FIELD
+from .test_stage111z31cz_source_write_stages_core import source_status,RUN
 
 
 def snapshot(value=0,param=1,capture_only=False):
-    p=inbound(value=value,param=param)
+    p=source_status(session=RUN,adc_samples=512,aux=2,frames=80,raw=50000)
+    known=param>0 and value is not None
+    p.update({
+        "source_rx_nonempty_parameter_frames":param,
+        "source_rx_ack_observed_no_command_issued":0,
+        "source_rx_denied_responses":0,
+        SOURCE_STATUS_FIELD:[
+            {"index":i,"register_address":addr,
+             "valid":i==0 and known,
+             "value_uint32":value if i==0 and known else None}
+            for i,addr in enumerate(SOURCE_INDEX_ADDR)],
+    })
     p["capture_only"]=capture_only
     seen=param>0
-    zero=value==0
+    zero=known and value==0
     p[FIELD]={
         "source_original_writer_present":True,
         "source_stage1_nonempty_param_observed":seen,
