@@ -1,3 +1,5 @@
+> **17.11.2026 — ПОЛНАЯ ПРИЁМКА КОДА:** [GitHub Actions #44012163117](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44012163117) **4/4 SUCCESS**, exact code SHA **1c99afda3718729211b0c47a8f0b3992dc4f889e**. Linux Core 2203 PASS, Windows Core 2423 PASS, Qt 49+47+191 PASS, Native Windows QPA DPI100/150 PASS, Go tests + build PASS. [Проверенный Windows EXE artifact #14298155462](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44012163117/artifacts/14298155462), EXE 69,249,476 bytes SHA256 **6040f6e87b6a3dde19372b4c81fa39d14eda1f884b4b9d8572ffa0a09776900f**, build manifest verified. До 01.12.2026. Это программная/localhost приёмка, НЕ реальный промышленный прибор и НЕ финальная совместимость Delphi 1:1; original_delphi_compatibility_verified=false. Старые фразы ниже о незавершённом CI — исторические.
+
 # Stage111Z31EA–EK. Повтор TCP после первого RAW в исходном измерении МВК01
 
 Дата аудита: 17 ноября 2026 г. Исследовательская ветка: research/stage111-mvkview-desktop-20261029. Следовать реальным исходникам TMVKThread и атомарным Go-приёмникам, не возвращаться к одному UI без ядра.
