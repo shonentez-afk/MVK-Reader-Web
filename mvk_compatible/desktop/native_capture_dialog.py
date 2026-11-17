@@ -21,6 +21,7 @@ from ..core.native_r6_bridge import (CaptureSpec, native_executable,
 from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview
 from ..core.source_frame_mark_protocol import submit_native_frame_mark
+from ..core.original_mode2_source_rate_input import source_setrate_stdin_line
 
 
 class ExportPackWorker(QThread):
@@ -509,7 +510,7 @@ class NativeCaptureDialog(QDialog):
             raise ValueError("Реальная отправка SetRate не была разрешена")
         if type(rate) is not int or rate not in (65536,32768,8192,2048,512):
             raise ValueError("Неподтверждённая исходная частота")
-        command=f"RATE {rate}\\n".encode("ascii")
+        command=source_setrate_stdin_line(rate)
         actual=self._process.write(command)
         if actual!=len(command):
             raise RuntimeError("Очередь изменения частоты Go не приняла запрос")
