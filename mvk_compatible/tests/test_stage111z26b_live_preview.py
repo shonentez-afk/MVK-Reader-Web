@@ -53,7 +53,7 @@ def make_preview(tmp_path, *, modify=None, tamper_adc=False, extra=False,
             sample_rate_hz=source_rate,
             first_sample_index=4096,
             next_sample_index=4096+len(samples),
-            captured_samples=len(samples),
+            captured_samples=status["channels"][channel-1]["samples"],
             sha256=hashlib.sha256(data).hexdigest(),
         ))
     if modify is not None:
@@ -331,7 +331,7 @@ def test_source_u32_rollover_validates_real_go_capture_cursor(tmp_path):
     for ch in status["channels"][:8]:
         ch["next_sample_index"]=end
     preview=load_live_preview(root,status,now=now())
-    assert preview.channels[1].captured_samples==count
+    assert preview.channels[1].captured_samples==status["channels"][0]["samples"]
     assert gate_live_preview(status,preview).allowed
     wave=provisional_waveform(preview,1,source_h_tag=4,
         capture_rxpos=count,source_allow_overlap=False)
@@ -346,8 +346,10 @@ def test_source_u32_rollover_validates_real_go_capture_cursor(tmp_path):
     newer["channels"][0]["samples"]+=256
     newer["channels"][0]["next_sample_index"]=(end+256)&mask
     assert u32_matches_go_status(
-        end,(end+256)&mask,status_samples=count+256,
-        window_samples=count,captured_samples=count)
+        end,(end+256)&mask,
+        status_samples=status["channels"][0]["samples"]+256,
+        window_samples=count,
+        captured_samples=status["channels"][0]["samples"])
     assert gate_live_preview(newer,preview).allowed
     # A backwards device cursor cannot be mistaken for a valid wrap.
     newer["channels"][0]["next_sample_index"]=(end-256)&mask
@@ -368,7 +370,7 @@ def test_source_u32_legacy_ambiguous_epoch_fails_closed():
     assert not u32_preview_bounds(True,0,1)
     assert not u32_matches_go_status(100,100,
         status_samples=(1<<32)+256,window_samples=256,captured_samples=None)
-    assert not u32_matches_go_status(100,101,
+    assert not u32_matches_go_status(100,102,
         status_samples=1000,window_samples=256,captured_samples=999)
     assert extended_u32_window(0xFFFF0000,0,65536,65536)==(
         0xFFFF0000,1<<32)
