@@ -18,6 +18,9 @@ import numpy as np
 
 from .native_r6_live_status import _utc_stamp
 from .offline_export import waveform_for_zip, spectrum_for_zip
+from .original_getsignal_live_source import (
+    source_live_adc_menu_length,source_getsignal_readiness,
+)
 
 NAME = "MVK_NATIVE_LIVE_PREVIEW.zip"
 SCHEMA = "MVK_NATIVE_R6_CALIBRATED_PREVIEW_V1"
@@ -201,16 +204,47 @@ def _mark_absolute_live_source_window(result: dict, channel: PreviewADC) -> None
     result["input_source_window"]=evidence
 
 
-def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) -> dict:
+def provisional_waveform(
+        preview: LivePreview, adc: int, *, ac: bool = False,
+        source_h_tag: int | None = None,
+        capture_rxpos: int | None = None,
+        last_processed_pos: int = 0,
+        source_allow_overlap: bool = True) -> dict:
+    """Original source PageAdc H scale, using only SHA-confirmed Float32.
+
+    With source_h_tag the exact source count is Fs*menu_ms//1000.
+    No synthetic zero-fill or silent downshift. The separate Source
+    CheckDataAvailability runtime distinguishes original readiness
+    from the stricter, actually verified preview history.
+    Without source_h_tag the legacy research latest-30s window remains.
+    """
     channel = preview.channels.get(adc)
     if channel is None:
         raise ValueError("Live ADC window not yet available")
-    # GetSignal's existing offline window contract caps one displayed
-    # window at 30 seconds. A 262144-sample ring can represent >30 s at
-    # lower source Fs; show its real latest window, NEVER invent a new Fs
-    # or truncate the source buffer silently during FFT.
     total = len(channel.samples)
-    visible = min(total, int(channel.rate_hz) * 30)
+    source_receipt=None
+    source_ms=None
+    if source_h_tag is not None:
+        visible,source_ms=source_live_adc_menu_length(
+            source_h_tag,channel.rate_hz)
+        rx=total if capture_rxpos is None else capture_rxpos
+        source_receipt=source_getsignal_readiness(
+            rx_pos=rx,valid_pos=0,
+            last_processed_pos=last_processed_pos,
+            signal_length=visible,contiguous=False,
+            allow_overlap=source_allow_overlap,
+            preview_samples=total,
+        )
+        if not source_receipt.verified_preview_window_ready:
+            raise ValueError(
+                f"GetSignal {source_ms} мс: требуется {visible} реальных "
+                f"отсчётов и подтверждение нового окна, "
+                f"доступно в preview {total}, новых от последнего "
+                f"обновления {max(0,rx-last_processed_pos)}")
+    else:
+        # Latest-30s research fallback is not an original bAdcHScale
+        # selection. Original source menu Tag0 is 20s, not 30s.
+        visible = min(total, int(channel.rate_hz) * 30)
     start = total - visible
     duration = visible / channel.rate_hz
     out = waveform_for_zip(
@@ -225,6 +259,13 @@ def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) ->
     out["source_waveform_latest_real_samples"] = visible
     out["source_waveform_max_display_seconds"] = 30
     out["source_live_preview_ring_samples"] = total
+    if source_receipt is not None:
+        out["original_bAdcHScale_tag"] = source_h_tag
+        out["original_bAdcHScale_milliseconds"] = source_ms
+        out["original_bAdcHScale_requested_samples"] = visible
+        out["source_getsignal_readiness"] = source_receipt.receipt()
+        out["source_getsignal_exact_selected_count"] = (
+            out["window_samples"] == visible)
     out["warning"] = ("Предварительный GetSignal-кандидат по уже калиброванным "
                       "битам R6.1. Не результат оригинального MVKView.")
     return out

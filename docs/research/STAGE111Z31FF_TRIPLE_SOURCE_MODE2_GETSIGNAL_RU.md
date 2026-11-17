@@ -1,0 +1,23 @@
+# Stage111Z31FF — оригинальный Mode2 GetSignal и bAdcHScale (строгое окно Live)
+
+**17.11.2026** · ветка `research/stage111-mvkview-desktop-20261029`.
+
+## Совместное восстановление по всем трём приватным источникам
+
+Локально прочитаны `mvkview.idp`, `Projects.7z` и `mvk_idr(1).sqlite`. Три SHA-256 сохранены только в приватном рабочем окружении; SQLite `PRAGMA quick_check(1)=ok`, четыре распакованных PAS/DFM совпали с `source_files` по размеру и SHA.
+
+- `_Unit115.pas:TMvkChannelStorage.GetSignal` **007D0C30**: отказывается от нулевой длины, вызывает `CheckDataAvailability` по **007D0C51**, для `Params.Contiguous=True` прибавляет длину к `LastProcessedPos` (**007D0C64..007D0C72**), иначе копирует текущий `FRxPos:UInt64` (**007D0C77..007D0C83**). Затем читает *строго* `SignalLength` из циклического массива; `NoDC` и `EnvelopeCode` определяют последующую обработку. Ничего не отправляет на прибор.
+- `_Unit115.pas:CheckDataAvailability` **007D1998**: специальная ветвь `AllowOverlap AND NOT Contiguous` возвращает TRUE даже если новых данных меньше `SignalLength` (**007D19A1..007D19AF**). В остальных случаях проверяет `FRxPos - LastProcessedPos >= SignalLength` (**007D19B1..007D19D5**). В непрерывном режиме при отставании больше `FBufferSize` выбрасывает исключение **`Buffer overflow due to insufficient processing speed`** (**007D19DA..007D19FB**). Оригинал создаёт буфер `0x200000 = 2^21` отсчётов на канал, `FBufferMask = FBufferSize - 1` (**007D09F3..007D09F7**).
+- `_Unit128.pas:PageAdc` **00847EAC..00847FCF**: горизонтальное меню `bAdcHScale.Tag` берёт `milliseconds` из исходной таблицы `gvar_008D33BC` и вычисляет **целочисленно** `SignalLength = FSampleRate * milliseconds // 1000` (**00847F0D..00847F2F**). В Mode2 обработчик **00847F75..00847FA0** задаёт AllowOverlap с отдельным правилом для интервалов не больше 1000ms, затем вызывает GetSignal. Исходные 14 меток в миллисекундах: **20000,10000,5000,2000,1000,500,200,100,50,20,10,5,2,1**.
+- Получение исходных данных идёт после подтверждённого Native Go TCP10230; валидированный PNG/Float32 и RAW со временем не смешиваются. **Важно**: исходный `CheckDataAvailability` допускает последующее заполнение отсутствующих значений нулём; совместимый Qt в Live ради достоверности НЕ рисует придуманные нули из неподтверждённой истории, строго требует реальные SHA-подтверждённые Float32.
+
+## Совместное исправление Core + Qt
+
+1. `core/original_getsignal_live_source.py` — source-модель `CheckDataAvailability` с исходным 64-битным локальным курсором, нулевой длиной, Contiguous, AllowOverlap, переполнением 2M оригинальной ring и отдельным флагом **verified_preview_window_ready**. Проверяется длина доступного калиброванного preview; абсолютный 32-битный индекс прибора остаётся **отдельным** от локального `FRxPos`.
+2. `core/native_r6_live_preview.py:provisional_waveform(...,source_h_tag,capture_rxpos,last_processed_pos,source_allow_overlap)` — выполняет `N=int(Fs)*milliseconds//1000` без округления QDoubleSpinBox/дополнения нулями, обращается к уже SHA-проверенному тому же TCP окну и возвращает source receipt и точное количество отсчётов. Legacy исследовательский 30-секундный путь без исходного Tag сохранён и явно отделён.
+3. `desktop/main_window.py` — та же оригинальная PageAdc, кнопки `bAdcHScale` и `bAdcType`. В Mode2 каждая метка H выбирает точное N; для коротких масштабов (до 1000ms при активном Grapher) не рисует окно повторно до появления новых отсчётов, а хранит локальный `LastProcessedPos`. Изменение Tag и AC сбрасывает только LOCAL cursor. FreezeUpdate блокирует принудительное рисование; не затрагивает RAW. Если исходный N длиннее проверенной Native preview ring (например, 20s при 65536Hz требует 1,310,720 отсчётов, тогда как sidecar 262,144), Qt **очищает устаревший график** и отображает ожидание; нет подмены меньшим N.
+4. Новые source-контракты и синтетические Core/реальные Qt QWidget регрессии. В Live остаются FRange-once, одна сессия TCP, 8 ADC/2 TACH, SHA и прежние функции FFT.
+
+## Что НЕ объявляется готовым
+
+Это восстановление **параметров и правил окон GetSignal**, не полная копия исходного 2^21-внутреннего буфера или оригинального TQGrapher GetSignal x87 output/pixel parity. Существующий UI получает не больше `262144` последних реально полученных отсчётов на каждый ADC. Поэтому все длинные HScale пункты сохранены и дают честное ожидание при нехватке истории; не нужно создавать синтетические данные. Численное сравнение на физическом МВК01 не выполнено. `original_delphi_compatibility_verified=false`. Аппаратные IP Flash/Reboot и WriteData/WriteValues остаются OPEN. Приватные PAS/DFM/IDP/SQLite/RAW никогда не публиковать.

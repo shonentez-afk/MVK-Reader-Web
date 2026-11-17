@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
         self._measurement_exit_requested=False
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
+        self._source_getsignal_last_processed={}  # source PageAdc stable Mode2 64-bit cursor
         # High-N live FFT is full numerical work, never a 50Hz UI-timer
         # re-render. The 20ms original dispatcher still runs untouched.
         self._source_large_fft_key=None
@@ -948,14 +949,25 @@ class MainWindow(QMainWindow):
                 self._toggle_spec_envelope(True)
 
     def _wave_mode_selected(self,*_):
+        # Source NoDC toggling changes the visible data, not RAW.
+        # Rebind the local GetSignal last-processed read for this Tag.
+        self._source_getsignal_last_processed.clear()
         self._sync_wave_primary_labels()
         self.refresh_wave()
 
     def _select_original_wave_hscale(self,tag:int):
         if type(tag) is not int or not 0<=tag<len(ADC_HORIZONTAL_MS):
             raise ValueError('Source ADC H menu Tag 0..13 required')
+        self._source_getsignal_last_processed.clear()
         self._wave_hscale_tag=tag
-        self.wave_seconds.setValue(ADC_HORIZONTAL_MS[tag]/1000.)
+        # bAdcHScale is a SINGLE source action. The QDoubleSpinBox
+        # valueChanged signal must not trigger an earlier extra live
+        # GetSignal and advance LastProcessedPos twice.
+        previously_blocked=self.wave_seconds.blockSignals(True)
+        try:
+            self.wave_seconds.setValue(ADC_HORIZONTAL_MS[tag]/1000.)
+        finally:
+            self.wave_seconds.blockSignals(previously_blocked)
         self._sync_wave_primary_labels()
         self.refresh_wave()
 
@@ -2809,6 +2821,7 @@ class MainWindow(QMainWindow):
         self._measurement_exit_requested=False
         self._native_live_status=None
         self._live_preview=None
+        self._source_getsignal_last_processed.clear()
         self._source_large_fft_key=None
         self._source_large_fft_at=0.0
         self.session=None
@@ -3009,6 +3022,7 @@ class MainWindow(QMainWindow):
         if self._live_preview is None:
             return
         self._live_preview=None
+        self._source_getsignal_last_processed.clear()
         self._source_large_fft_key=None
         self._source_large_fft_at=0.0
         self.wave_plot.clear_source_tqgr_series()
@@ -3030,8 +3044,39 @@ class MainWindow(QMainWindow):
             return
         try:
             ch=self._ch()
+            tag=self._wave_hscale_tag
+            rate=self._live_preview.channels[ch].rate_hz
+            channels=(self._native_live_status or {}).get('channels') or []
+            if (len(channels)<=ch-1 or
+                    type(channels[ch-1].get('samples')) is not int):
+                raise ValueError("Нет проверенного счётчика текущего АЦП")
+            rx_pos=channels[ch-1]['samples'] # client-local 64-bit, not Sample.Index
+            cursor_key=(self._live_preview.session_id,ch,tag,
+                        self.wave_mode.currentIndex(),rate)
+            last=self._source_getsignal_last_processed.get(cursor_key,0)
+            # Original PageAdc 00847F75..00847FA0 disables overlap for
+            # short H windows <=1000ms in Mode2 when Grapher is active.
+            # Longer windows may overlap. This is a conservative
+            # candidate because original Grapher field varies by mode.
+            allow_overlap=(tag is None or ADC_HORIZONTAL_MS[tag]>1000)
+            if (not allow_overlap and last and
+                    rx_pos-last < rate*ADC_HORIZONTAL_MS[tag]//1000):
+                # Source GetSignal would return FALSE until new real
+                # samples are received. Retain current valid graph;
+                # never re-render old data pretending it is fresh.
+                self.wave_hint.setText(
+                    f'GetSignal: ожидание следующего окна '
+                    f'{ADC_HORIZONTAL_MS[tag]} мс · нет новых '
+                    'подтверждённых отсчётов')
+                return
             d=provisional_waveform(
-                self._live_preview,ch,ac=self.wave_mode.currentIndex()==0)
+                self._live_preview,ch,ac=self.wave_mode.currentIndex()==0,
+                source_h_tag=tag,capture_rxpos=rx_pos,
+                last_processed_pos=last,source_allow_overlap=allow_overlap)
+            proof=d.get("source_getsignal_readiness")
+            if proof is not None and proof["verified_preview_window_ready"]:
+                self._source_getsignal_last_processed[cursor_key]=(
+                    proof["next_processed_pos_64"])
             self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_line=None  # Original cursor requires audited archived samples
@@ -3044,13 +3089,21 @@ class MainWindow(QMainWindow):
             self.wave_mean_primary.setText(
                 f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} м/с²\n'
                 'Не сверено с оригинальной MVKView')
+            source_scale=(
+                f'bAdcHScale={d["original_bAdcHScale_milliseconds"]} мс · '
+                if "original_bAdcHScale_milliseconds" in d else "")
             self.wave_hint.setText(
-                f'LIVE PREVIEW · {d["window_samples"]} реальных Float32 отсчётов · '
+                f'LIVE PREVIEW · {source_scale}'
+                f'{d["window_samples"]} реальных Float32 отсчётов · '
                 f'AC={"без DC" if self.wave_mode.currentIndex()==0 else "с DC"} · '
                 'GetSignal IDR-кандидат; исходный RAW не изменён')
         except (ValueError,OSError,KeyError) as exc:
             self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
+            self.wave_line=None
+            self._wave_hover_window=None
+            self.wave_mean_primary.setText(
+                'LIVE GetSignal: ожидание реальных отсчётов')
             self.wave_hint.setText('Live signal недоступен: '+str(exc))
 
     def _render_live_spectrum(self):
@@ -3942,7 +3995,10 @@ class MainWindow(QMainWindow):
 
     def refresh_wave(self,*_,quiet=False):
         if self._live_active:
-            self._render_live_wave()
+            # Original FreezeUpdate skips active-page rendering; pending
+            # source selections remain and will show on unfreeze.
+            if not self._source_live_view_frozen:
+                self._render_live_wave()
             return
         if not self.session:return
         flow=self._current_offline_flow()

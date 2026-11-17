@@ -205,3 +205,63 @@ def test_live_original_131072_and_262144_bSpecLines_on_real_qt_widgets(
         if win._live_active: win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_real_qt_original_page_adc_hscale_live_signal_length_and_cursor(
+        tmp_path,qt_app):
+    from mvk_compatible.desktop.main_window import MainWindow
+    status,preview=_preview(tmp_path)  # Fs=65536, actual 65536 real samples
+    win=MainWindow()
+    try:
+        win._begin_live_capture()
+        win._receive_native_live_status(status)
+        win._receive_live_preview(preview)
+        assert win._wave_hscale_tag==4
+        assert "bAdcHScale=1000 мс" in win.wave_hint.text()
+        assert "65536 реальных Float32" in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        key=(preview.session_id,win._ch(),4,
+             win.wave_mode.currentIndex(),preview.channels[win._ch()].rate_hz)
+        rx=status["channels"][win._ch()-1]["samples"]
+        assert win._source_getsignal_last_processed[key]==rx
+        # A stable Mode2 1-second GetSignal cannot be repainted as
+        # NEW data before another full 65536 ADC samples have arrived.
+        old_x=win.wave_plot.listDataItems()[0].xData.copy()
+        win._render_live_wave()
+        assert "ожидание следующего окна" in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        assert (win.wave_plot.listDataItems()[0].xData==old_x).all()
+        # The original 500ms Tag5 must request exactly 32768 fresh
+        # captured samples; a menu selection clears only the local
+        # last-processed cursor and recomputes from SAME verified ZIP.
+        win._select_original_wave_hscale(5)
+        qt_app.processEvents()
+        assert "bAdcHScale=500 мс" in win.wave_hint.text()
+        assert "32768 реальных Float32" in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        assert win._source_getsignal_last_processed[
+            (preview.session_id,win._ch(),5,win.wave_mode.currentIndex(),
+             preview.channels[win._ch()].rate_hz)]==rx
+        # 20s asks 1,310,720 samples at Fs=65536; 262144 native preview
+        # cannot provide it. Never show the stale 500ms waveform.
+        win._select_original_wave_hscale(0)
+        qt_app.processEvents()
+        assert not win.wave_plot.listDataItems()
+        assert "GetSignal 20000 мс" in win.wave_hint.text()
+        assert "ожидание реальных отсчётов" in win.wave_mean_primary.text()
+        # Restore source Tag4 without reopening TCP or applying gain twice.
+        win._select_original_wave_hscale(4)
+        qt_app.processEvents()
+        assert "bAdcHScale=1000 мс" in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        # FreezeUpdate suppresses new render even for a Tag change.
+        win._source_live_view_frozen=True
+        win._select_original_wave_hscale(5)
+        assert "bAdcHScale=1000 мс" in win.wave_hint.text()
+        win._source_live_view_frozen=False
+        win._render_live_wave()
+        assert "bAdcHScale=500 мс" in win.wave_hint.text()
+    finally:
+        if win._live_active:win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()

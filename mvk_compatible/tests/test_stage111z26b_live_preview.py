@@ -254,3 +254,57 @@ def test_full_native_preview_rejects_source_nonfinite_and_oversized_row(tmp_path
     status["channels"][0]["samples"]=MAX_SAMPLES-256
     with pytest.raises(ValueError,match="channel count"):
         load_live_preview(root,status,now=now())
+
+
+def test_original_live_adc_hscale_14_values_use_exact_received_getsignal_window(
+        tmp_path):
+    from mvk_compatible.core.native_r6_live_preview import provisional_waveform
+    root,status,_=make_preview(tmp_path,count=65536)
+    preview=load_live_preview(root,status,now=now())
+    for tag,length,ms in ((4,65536,1000),(5,32768,500),(8,3276,50),
+                           (13,65,1)):
+        d=provisional_waveform(
+            preview,1,ac=False,source_h_tag=tag,
+            capture_rxpos=status["channels"][0]["samples"],
+            source_allow_overlap=(ms>1000))
+        assert d["window_samples"]==length
+        assert d["original_bAdcHScale_milliseconds"]==ms
+        assert d["original_bAdcHScale_requested_samples"]==length
+        assert d["source_getsignal_exact_selected_count"]
+        assert d["source_getsignal_readiness"]["verified_preview_window_ready"]
+        assert d["input_source_window"]["live_last_adc_sample_exclusive"]==(
+            4096+65536)
+        assert d["input_source_window"]["live_first_adc_sample_index"]==(
+            4096+65536-length)
+    # Original 20s Tag0 does not magically shrink to 4s of preview data.
+    with pytest.raises(ValueError,match="GetSignal 20000 мс"):
+        provisional_waveform(
+            preview,1,source_h_tag=0,
+            capture_rxpos=status["channels"][0]["samples"])
+
+
+def test_original_live_getsignal_waits_for_new_samples_without_fake_zero_fill(
+        tmp_path):
+    root,status,_=make_preview(tmp_path,count=65536)
+    preview=load_live_preview(root,status,now=now())
+    rx=status["channels"][0]["samples"]
+    first=provisional_waveform(
+        preview,1,ac=True,source_h_tag=5,
+        capture_rxpos=rx,last_processed_pos=0,
+        source_allow_overlap=False)
+    assert first["window_samples"]==32768
+    assert first["source_getsignal_readiness"]["next_processed_pos_64"]==rx
+    with pytest.raises(ValueError,match="ожидание|требуется"):
+        provisional_waveform(
+            preview,1,ac=True,source_h_tag=5,
+            capture_rxpos=rx,last_processed_pos=rx,
+            source_allow_overlap=False)
+    # In original overlapping mode Readiness is true even without new
+    # samples; the content remains real, same SHA-confirmed Float32.
+    reuse=provisional_waveform(
+        preview,1,ac=True,source_h_tag=5,
+        capture_rxpos=rx,last_processed_pos=rx,
+        source_allow_overlap=True)
+    assert reuse["window_samples"]==32768
+    assert reuse["source_getsignal_readiness"][
+        "original_check_data_availability"]
