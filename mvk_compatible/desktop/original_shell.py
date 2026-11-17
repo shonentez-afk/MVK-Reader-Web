@@ -801,12 +801,13 @@ class OriginalRootShell:
             source_cells=trace.status_cells.receipt() if trace is not None else None
             known=(source_cells["source_status_cells_valid_count"]
                    if source_cells is not None else 0)
-            if known:
-                # 14 source StatusCells are NOT the 15 labels below:
-                # never invent serial, firmware, Modbus or DSP values.
-                note=(f"Получено {known}/14 исходных StatusCells "
-                      "из проверенных регистров; соответствие 15 "
-                      "системным строкам не доказано.")
+            if model.source_fields_proven:
+                note=(f"Подтверждено {model.source_fields_proven}/15 видимых полей "
+                      f"из реальных регистров, внутренних StatusCells: {known}/14. "
+                      "Неаттестованные Delphi-форматы показаны как RAW HEX.")
+            elif known:
+                note=(f"Получено {known}/14 StatusCells; 15 видимых "
+                      "регистров ещё не поступили.")
                 if source_cells["source_system_error_latched_until_new_capture"]:
                     code=source_cells["source_statuscells0_uint32"]
                     detail=(f"0x{code:08X}" if isinstance(code,int) and code>0
@@ -826,7 +827,7 @@ class OriginalRootShell:
             self.status_page.setProperty(
                 "sourceNativeTransportConnected",model.connection_verified)
             self.status_page.setProperty(
-                "sourceOriginalSystemRowsVerified",0)
+                "sourceOriginalSystemRowsVerified",model.source_fields_proven)
         elif (self.window.session is not None
                 and not self.window._measurement_mode_selected
                 and not self.window._live_active):

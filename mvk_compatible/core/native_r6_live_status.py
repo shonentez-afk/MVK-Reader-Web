@@ -13,6 +13,7 @@ import re
 
 from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
 from .original_mode2_status_cells import parse_source_cells
+from .original_system_register_fields import verify_source_error_overlap
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
 FILENAME = "MVK_NATIVE_LIVE_STATUS.json"
@@ -101,6 +102,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
     # Each DWORD requires *two* observed uint16 register words; a missing
     # cell is null/UNKNOWN, never the source Delphi FF init sentinel.
     status_cells=parse_source_cells(payload)
+    verify_source_error_overlap(payload)
     source_system_error=bool(status_cells and status_cells[0].valid
                              and status_cells[0].value>0)
     elapsed = payload.get("elapsed_seconds")
