@@ -286,7 +286,8 @@ class OriginalMeasureControls:
         self.freeze.setText("Продолжить приём" if state.frozen
                             else "Пауза приема")
         dlg=getattr(self.window,"_native_dialog",None)
-        tx_enabled=bool(live and dlg is not None and dlg.source_rate_tx_active()
+        tx_enabled=bool(live and dlg is not None and
+                        getattr(dlg,"source_rate_tx_active",lambda:False)()
                         and not self.window._measurement_exit_requested)
         self.rate.setEnabled(policy.rate_inspection_enabled)
         self.rate.setToolTip(
