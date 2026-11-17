@@ -1,0 +1,77 @@
+name: MVK Live Standalone - Windows Native IPC and Qt EXE
+
+on:
+  push:
+    branches: [feature/mvk-live-standalone-20261117]
+    paths:
+      - 'mvk_live_standalone/**'
+      - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/source/**'
+      - '.github/workflows/mvk_live_windows.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-standalone:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and check single-owner Go receiver with bounded IPC
+        shell: pwsh
+        run: |
+          Push-Location tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+          go test -count=1 ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -o "$env:GITHUB_WORKSPACE\build\MVK_Native_R6_1_LiveIPC_Windows_x64.exe" .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          $digest=(Get-FileHash -Algorithm SHA256 "build\MVK_Native_R6_1_LiveIPC_Windows_x64.exe").Hash.ToLowerInvariant()
+          $digest | Set-Content -Encoding ASCII "build\NATIVE_SHA256SUMS.txt"
+      - name: Install deterministic Python/Qt build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check numpy scipy PySide6 pyqtgraph pytest pyinstaller
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q mvk_live_standalone/tests/
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build independent Qt GUI containing its matched Go receiver
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name MVK_Live --paths . --collect-all pyqtgraph --add-binary "build\MVK_Native_R6_1_LiveIPC_Windows_x64.exe;mvk_native" --add-data "build\NATIVE_SHA256SUMS.txt;mvk_native" mvk_live_standalone/launcher.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item "mvk_live_standalone\README_RU.md" "dist\MVK_Live\README_RU.md"
+          $exe="dist\MVK_Live\MVK_Live.exe"
+          if (!(Test-Path $exe)) { throw "Standalone EXE was not produced" }
+          # --help exits before QApplication or any connection attempt.
+          & $exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify bundled exact SHA and prepare distributable ZIP
+        shell: pwsh
+        run: |
+          $inner="dist\MVK_Live\_internal\mvk_native"
+          if (!(Test-Path "$inner\MVK_Native_R6_1_LiveIPC_Windows_x64.exe")) {
+            throw "Matched Native Go was not bundled"
+          }
+          $expected=(Get-Content "$inner\NATIVE_SHA256SUMS.txt" -Raw).Trim()
+          $actual=(Get-FileHash -Algorithm SHA256 "$inner\MVK_Native_R6_1_LiveIPC_Windows_x64.exe").Hash
+          if ($actual -ne $expected) { throw "Bundled receiver hash differs" }
+          New-Item -ItemType Directory -Force release | Out-Null
+          Compress-Archive -Path "dist\MVK_Live" -DestinationPath "release\MVK_Live_Standalone_Windows.zip"
+          (Get-FileHash -Algorithm SHA256 "release\MVK_Live_Standalone_Windows.zip").Hash.ToLowerInvariant() |
+            Set-Content -Encoding ASCII "release\MVK_Live_Standalone_Windows.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MVK_Live_Standalone_Windows_Experimental
+          path: |
+            release/MVK_Live_Standalone_Windows.zip
+            release/MVK_Live_Standalone_Windows.zip.sha256
+          retention-days: 14
+          if-no-files-found: error
