@@ -94,6 +94,7 @@ type Monitor struct {
 	closed      bool
 	liveBin     *LiveBinSpool
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
+	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
 	// Opt-in Stage111Z26 UI-only telemetry, never part of original RAW/BIN.
 	liveProgressEnabled bool
 	liveTargetSeconds int
@@ -225,6 +226,11 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
 			m.captureOnly = true
 			m.summary.CaptureOnly = true
 			break
+		}
+		if m.sourceTask2TX != nil {
+			if e := m.sourceTask2TX.afterReceivedFrame(m,f); e != nil {
+				return e // network TX/DENIED propagates, NEVER a fake RAW framing fault
+			}
 		}
 	}
 	if parseErr != nil && !m.captureOnly {

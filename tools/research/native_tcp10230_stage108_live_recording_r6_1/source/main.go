@@ -85,30 +85,38 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 	if e != nil {
 		return "LOCAL_INTERFACE_INVALID", e
 	}
-	// TCP connection itself triggers the original MVK stream. No handshake
-	// or application payload: only DialContext -> SetReadDeadline -> Read.
+	// TCP Connect starts streaming even WITHOUT an application command.
+	// Original Task2 rate transmission is separately opt-in and restricted.
 	// On Windows, IP_UNICAST_IF prevents silent use of another adapter.
 	c, e := dialer.DialContext(ctx, "tcp4", addr)
 	if e != nil {
 		return "CONNECT_FAILED", fmt.Errorf("connect: %w", e)
 	}
 	defer c.Close()
+	if m.sourceTask2TX != nil {m.sourceTask2TX.conn=c;defer func(){m.sourceTask2TX.conn=nil}()}
 	if e = verifySelectedSource(c, nic); e != nil {
 		return "INTERFACE_MISMATCH", e
 	}
 	m.summary.SocketLocalAddr = c.LocalAddr().String()
 	m.summary.SocketRemoteAddr = c.RemoteAddr().String()
 	m.publishLiveStatus("RECORDING", true, "")
-	m.note(fmt.Sprintf("Connected TCP local=%s remote=%s (no MVK commands sent)", c.LocalAddr(), c.RemoteAddr()))
+	m.note(fmt.Sprintf("Connected TCP local=%s remote=%s (source SetRate enabled=%v)", c.LocalAddr(), c.RemoteAddr(),m.sourceTask2TX!=nil))
 	fmt.Printf("TCP: %s -> %s\n", c.LocalAddr(), c.RemoteAddr())
 	start := time.Now()
 	deadline := start.Add(time.Duration(seconds) * time.Second)
 	buf := make([]byte, 64*1024)
 	lastPrinted := time.Time{}
+	var rateLines <-chan string
+	if m.sourceTask2TX!=nil {
+		queue:=make(chan string,16)
+		rateLines=queue
+		go sourceOperatorRateLines(os.Stdin,queue)
+	}
 	for {
 		if ctx.Err() != nil {
 			return "STOPPED_BY_USER", nil
 		}
+		if e:=m.drainSourceOperatorRates(rateLines);e!=nil{return "SOURCE_RATE_TX_FAILED",e}
 		if !time.Now().Before(deadline) {
 			return "DURATION_REACHED", nil
 		}
@@ -131,6 +139,8 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 				limit = true
 			}
 			if err := m.ProcessChunk(buf[:n], time.Now()); err != nil {
+				if errors.Is(err,errTask2SourceDenied){return "SOURCE_OPERATION_DENIED",err}
+				if errors.Is(err,errTask2SourceWrite){return "SOURCE_RATE_TX_FAILED",err}
 				return "LOCAL_WRITE_FAILED", err
 			}
 			m.publishLiveStatus("RECORDING", false, "")
@@ -197,6 +207,8 @@ func mainInner() int {
 	seconds := flag.Int("seconds", 15, "live capture duration seconds (1..300)")
 	out := flag.String("out", defaultOutput(), "root output folder")
 	approve := flag.Bool("approve", false, "explicit approval to connect to industrial instrument")
+	sourceTX := flag.Bool("source-setrate-tx",false,"opt-in original Task2 SetRate over the SAME TCP socket; never Flash")
+	sourceTXApproval := flag.Bool("source-setrate-tx-approved",false,"separate operator confirmation for hardware rate writes")
 	replay := flag.String("replay", "", "offline replay of captured incoming.raw (no network access)")
 	limitMB := flag.Int("max-mb", 256, "maximum raw capture size in MiB (1..2048)")
 	localIP := flag.String("local-ip", "", "REQUIRED for command-line live: local IPv4 of the wired Ethernet adapter")
@@ -271,6 +283,10 @@ func mainInner() int {
 			return 2
 		}
 	}
+	if *sourceTX && (!*sourceTXApproval || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
+		fmt.Println("Real source SetRate requires separate operator approval, live status and a controlled stop")
+		return 2
+	}
 	if *frameMarks && (!*liveStatus || !*autoExport || *replay != "" || *stopFile == "") {
 		fmt.Println("Local frame marks require approved GUI LIVE status, export and graceful stop")
 		return 2
@@ -322,6 +338,10 @@ func mainInner() int {
 	if e != nil {
 		fmt.Println("Ошибка создания файлов:", e)
 		return 2
+	}
+	if *sourceTX {
+		m.sourceTask2TX=newSourceLiveTask2TX()
+		fmt.Println("Original MVKView Task2 SetRate ENABLED with separate operator approval; only 5 verified rates")
 	}
 	if *frameMarks {
 		marks, err := newFrameMarkController(*out, dir)

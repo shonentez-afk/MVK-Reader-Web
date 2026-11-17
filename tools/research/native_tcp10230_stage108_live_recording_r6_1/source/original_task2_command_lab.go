@@ -122,7 +122,7 @@ func (m *Monitor) snapshotOriginalTask2TxEvidence() LiveOriginalTask2TxEvidence 
         Status0ValidZero:validZero,
         DelphiUnobservedStatus0SentinelRisk:seenParam && e!=nil,
         ValidatedSourceCandidate:seenParam && validZero && !m.captureOnly,
-        ActualGoAppBytesSent:0,
+        ActualGoAppBytesSent:func() uint64 {if m.sourceTask2TX != nil{return m.sourceTask2TX.sentBytes};return 0}(),
         OriginalSetRateLength:sourceSetRateWriteLen,
         NoPhysicalCommandClaim:false,
     }
