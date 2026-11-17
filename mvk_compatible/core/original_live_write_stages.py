@@ -28,6 +28,7 @@ import shutil
 import zipfile
 
 from .original_connected_status import connected_system_status
+from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
 from .original_live_pagefile import OriginalLiveFilePlan
 from .offline_measurement_flow import OfflineMeasurementFlow
 from .offline_export import require_members
@@ -56,6 +57,14 @@ def _status_proof(payload):
     if not isinstance(payload,dict):
         raise ValueError("Writer needs authenticated Go evidence")
     proof=connected_system_status(payload)
+    # Original SetRate sends real outgoing bytes on the SAME Go socket.
+    # An authorized physical SetRate must not disable the separate local
+    # WriteData/WriteValues buttons or be relabeled as a read-only run.
+    verify_source_native_tx_origin(payload)
+    if payload.get("source_tcp_multi_socket",False) is True:
+        raise ValueError(
+            "Original write intervals cannot cross physically separate TCP sockets; "
+            "use individually SHA-verified source RAW segments")
     if (not proof.connection_verified or proof.data_integrity_alert
             or payload.get("capture_only") is True
             or payload.get("snapshot_stale") is not False
@@ -66,8 +75,8 @@ def _status_proof(payload):
             not 1<=len(session_id)<=160 or
             any(c in session_id for c in ("/","\\","\x00"))):
         raise ValueError("Live writer has no authenticated single run identity")
-    if payload.get("read_only_no_app_payload_sent") is not True:
-        raise ValueError("Native capture must stay read-only")
+    if payload.get("source_rate_transition_during_live",False) is True:
+        raise ValueError("Original writer multi-frequency session requires separated rate intervals")
     channels=payload.get("channels")
     if not isinstance(channels,list) or len(channels)!=10:
         raise ValueError("Original live writer requires all ten Go channel banks")
@@ -81,7 +90,7 @@ def _status_proof(payload):
         if count!=frames*(256 if number<=8 else 64):
             raise ValueError("Go source frames/samples mismatch")
         rates=ch.get("sample_rates_hz")
-        if (not isinstance(rates,list) or len(rates)>3 or
+        if (not isinstance(rates,list) or len(rates)>5 or
                 any(type(v) is not int or v not in SOURCE_RATES for v in rates)):
             raise ValueError("Native Go source rate values not checked")
         counters.append(count)
@@ -89,7 +98,12 @@ def _status_proof(payload):
     frames=_int(payload.get("frames_decoded"),"decoded frames")
     raw=_int(payload.get("raw_bytes"),"RAW bytes")
     if frames==0 or raw==0:
-        raise ValueError("No read-only source frames")
+        raise ValueError("No source frames")
+    # _Unit125:008085A5..008085BD writes a VALUES row only when the
+    # observed PARAM descriptor starts at address 0x3100, not on AUX4700.
+    ticks=payload.get("source_values_ticks_address_3100")
+    if ticks is not None and _int(ticks,"actual source 0x3100 VALUES ticks")>frames:
+        raise ValueError("Source VALUES ticks cannot exceed received frames")
     return (session_id,tuple(counters),aux,frames,raw)
 
 
@@ -109,6 +123,9 @@ class OriginalSourceWriteWindow:
     operator_begin_utc:str
     operator_end_utc:str
     boundary_mode:str="LAST_VERIFIED_NATIVE_STATUS"
+    start_source_values_ticks:int|None=None
+    end_source_values_ticks:int|None=None
+    source_setrate_commands_seen:int=0
 
     def receipt(self):
         return {
@@ -127,7 +144,13 @@ class OriginalSourceWriteWindow:
             "end_aux":self.end_aux,
             "operator_begin_utc":self.operator_begin_utc,
             "operator_end_utc":self.operator_end_utc,
-            "hardware_command_sent":False,
+            "hardware_command_sent":self.source_setrate_commands_seen>0,
+            "source_setrate_commands_seen":self.source_setrate_commands_seen,
+            "original_source_values_ticks_0x3100":{
+                "start":self.start_source_values_ticks,
+                "end":self.end_source_values_ticks,
+                "source_trigger_is_param_address_3100":True,
+                "native_aux_tick_is_not_source_values_tick":True},
             "original_tmkvthread_file_byte_parity_verified":False,
         }
 
@@ -149,6 +172,9 @@ class OriginalLiveWriteLedger:
         self.frame_marks_verified=False
         self.frame_marks_failed=False
         self.frame_mark_actions=[]
+        self.source_setrate_commands_seen=0
+        self.source_tcp_connection_count=0
+        self.source_values_ticks=None
 
     @property
     def trustworthy(self):
@@ -162,6 +188,25 @@ class OriginalLiveWriteLedger:
         try:
             proof=_status_proof(payload)
             sid,counters,aux,frames,raw=proof
+            current_socket=payload.get("source_tcp_connection_count",0)
+            if type(current_socket) is not int or not 0<=current_socket<=128:
+                raise ValueError("Source writer TCP session count invalid")
+            if current_socket < self.source_tcp_connection_count:
+                raise ValueError("Source writer TCP epoch rolled back")
+            if (current_socket>self.source_tcp_connection_count and
+                    self.source_tcp_connection_count and
+                    (self._active_data is not None or self._active_values is not None)):
+                raise ValueError("Original live WriteData/WriteValues stopped on TCP disconnect")
+            source_tick=payload.get("source_values_ticks_address_3100")
+            if (source_tick is not None and self.source_values_ticks is not None
+                    and source_tick<self.source_values_ticks):
+                raise ValueError("Source 0x3100 VALUES row tick count rolled back")
+            tx=payload.get("source_mode2_tx_evidence")
+            current_tx=(tx.get("source_tx_sent_commands",0)
+                        if isinstance(tx,dict) else 0)
+            _int(current_tx,"original source command count")
+            if current_tx<self.source_setrate_commands_seen:
+                raise ValueError("Actual Go source SetRate command count rolled back")
             if self.finished:
                 raise ValueError("Capture already finished")
             if self.session_id is not None and sid!=self.session_id:
@@ -173,6 +218,9 @@ class OriginalLiveWriteLedger:
                     raise ValueError("Native sample/counter rollback")
             self.session_id=sid
             self._last=proof
+            self.source_tcp_connection_count=current_socket
+            self.source_values_ticks=source_tick
+            self.source_setrate_commands_seen=current_tx
             # Original WriteDataStage=0 reaches 1 on the first ADC1 block.
             if (self.data_stage==STAGE_OPEN and self._active_data is not None
                     and counters[0]>self._active_data[1][0]):
@@ -216,14 +264,17 @@ class OriginalLiveWriteLedger:
             if len(self.windows)>=MAX_WINDOWS:
                 raise ValueError("At most eight checked local write intervals")
             _,samples,aux,frames,_=self._last
-            setattr(self,attr,(plan,samples,aux,frames,stamp))
+            setattr(self,attr,(
+                plan,samples,aux,frames,stamp,
+                self.source_values_ticks,self.source_setrate_commands_seen))
             if kind=="data":
                 self.data_stage=STAGE_OPEN
             else:
                 # Source 00809977 opens VALUES file directly into stage1.
                 self.values_stage=STAGE_STREAMING
             return self.receipt()
-        plan_open,start_samples,start_aux,start_frames,start_stamp=active
+        (plan_open,start_samples,start_aux,start_frames,start_stamp,
+         start_source_tick,start_tx_commands)=active
         _,end_samples,end_aux,end_frames,_=self._last
         if (any(b<a for a,b in zip(start_samples,end_samples))
                 or end_aux<start_aux or end_frames<start_frames):
@@ -232,7 +283,10 @@ class OriginalLiveWriteLedger:
         window=OriginalSourceWriteWindow(
             kind,self.session_id,plan_open.channels,plan_open.spec,
             plan_open.values,start_samples,end_samples,start_aux,end_aux,
-            start_frames,end_frames,start_stamp,stamp)
+            start_frames,end_frames,start_stamp,stamp,
+            start_source_values_ticks=start_source_tick,
+            end_source_values_ticks=self.source_values_ticks,
+            source_setrate_commands_seen=self.source_setrate_commands_seen)
         self.windows.append(window)
         setattr(self,attr,None)
         if kind=="data":
@@ -294,7 +348,9 @@ class OriginalLiveWriteLedger:
             "completed_window_count":len(self.windows),
             "has_verifiable_live_status":self.trustworthy,
             "errors":list(self.errors),
-            "hardware_commands_sent":False,
+            "hardware_commands_sent":self.source_setrate_commands_seen,
+            "original_source_values_ticks_0x3100":self.source_values_ticks,
+            "source_tcp_connection_count":self.source_tcp_connection_count,
             "original_write_bytes_identical":False,
             "native_full_raw_not_filtered":True,
             "source_native_frame_marks_requested":self.frame_marks_required,
