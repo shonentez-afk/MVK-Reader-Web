@@ -65,6 +65,9 @@ func parseOffset(value string, now time.Time) (int, error) {
 }
 
 func isSafeCaptureForExport(s Summary) error {
+	if s.SourceTCPConnectionCount>1 || s.SourceTCPMultiSocket || s.SourceRateTransition {
+		return errors.New("source Task2 multi-socket or changed ADC rate: retain independently hashed RAW; one-rate BIN/TSXML not certifiable")
+	}
 	if s.CaptureOnly || s.InvalidFrames != 0 || s.RawBytes == 0 {
 		return errors.New("invalid/no-data capture: preserve RAW, no reconstructed outputs")
 	}
