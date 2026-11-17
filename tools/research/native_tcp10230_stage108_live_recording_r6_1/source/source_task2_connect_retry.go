@@ -1,51 +1,63 @@
 package main
 
-// Original TMVKThread Task2 initial connection retry in OPT-IN source mode.
-// Private _Unit125.pas 00807C12/008089BA-00808B0E:
-// connect timeout 1000ms, read timeout 5000ms, wait Round(Pause)*10ms,
-// Pause starts at 25 and grows x sqrt(2), stops growing at 801.
-// Retries only BEFORE any RAW bytes arrive. After incoming data, a new
-// connection would require a new run/RAW segment and fresh register image;
-// mixing two TCP sessions into one certified archive is forbidden.
+// _Unit125.pas 008089A3..00808B15 creates a NEW TCP client after
+// EIdConnClosedGracefully / EIdReadTimeout / EIdConnectTimeout.
+// Its PauseValue starts at Single(25.0), each sleep uses
+// (Round(PauseValue)+1)*10ms, then PauseValue *= sqrt(2) while <801.
+// After actual RAW bytes, retry is a distinct user-authorized feature:
+// each socket gets independent SHA256 RAW and fresh protocol state.
 import (
  "context"
  "errors"
  "fmt"
  "math"
  "net"
+ "os"
  "strconv"
  "time"
 )
-
-func sourceRetryWait(ticks float64) time.Duration {
- if ticks<25 {ticks=25}
- if ticks>801 {ticks=801}
- return time.Duration(math.Round(ticks))*10*time.Millisecond
+func sourceRetryWait(ticks float64)time.Duration{
+ if ticks<25{ticks=25}
+ if ticks>801{ticks=801}
+ return time.Duration(math.Round(ticks)+1)*10*time.Millisecond
 }
 func sourceTask2CaptureInitialRetry(ctx context.Context,m *Monitor,ip string,
-   seconds int,maxBytes uint64,nic *LocalNIC)(string,error){
- end:=time.Now().Add(time.Duration(seconds)*time.Second)
- ticks:=25.0
+ seconds int,maxBytes uint64,nic *LocalNIC)(string,error){
  addr:=net.JoinHostPort(ip,strconv.Itoa(instrumentPort))
- for {
+ return sourceTask2CaptureAddressRetry(ctx,m,addr,seconds,maxBytes,nic)
+}
+// Explicit test-only address injection lets CI exercise TWO real loopback
+// TCP sockets without contacting an instrument or changing port 10230 live.
+func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
+ seconds int,maxBytes uint64,nic *LocalNIC)(string,error){
+ if m.sourceTask2TX==nil{return "",errors.New("source Task2 TX state missing")}
+ deadline:=time.Now().Add(time.Duration(seconds)*time.Second)
+ ticks:=25.0
+ if m.sourceOperatorRateChan==nil{
+  ch:=make(chan string,16)
+  m.sourceOperatorRateChan=ch
+  go sourceOperatorRateLines(os.Stdin,ch)
+ }
+ for{
   if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
-  remaining:=int(math.Ceil(time.Until(end).Seconds()))
-  if remaining<1 {return "SOURCE_INITIAL_RETRY_TIMEOUT",errors.New("source Task2 initial connection exceeded capture deadline")}
+  remaining:=int(math.Ceil(time.Until(deadline).Seconds()))
+  if remaining<1{return "SOURCE_RETRY_TIMEOUT",errors.New("source Task2 connection deadline exceeded")}
   reason,err:=liveCaptureAddressOnNIC(ctx,m,addr,remaining,maxBytes,nic)
-  // NEVER concatenate two physical TCP stream sessions into ONE RAW!
-  // A new attempt is only safe while absolutely no application RX bytes
-  // have been written and no source command was sent.
-  if m.summary.RawBytes!=0 || m.sourceTask2TX.sentBytes!=0 || ctx.Err()!=nil {
+  if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
+  if m.captureOnly || m.sourceTask2TX.writeFault!=""{return reason,err}
+  if reason!="CONNECT_FAILED" && reason!="REMOTE_DISCONNECTED" &&
+    reason!="SOURCE_READ_TIMEOUT" && reason!="SOCKET_READ_FAILED"{
    return reason,err
   }
-  if reason!="CONNECT_FAILED" && reason!="SOURCE_READ_TIMEOUT" && reason!="SOCKET_READ_FAILED" {
-   return reason,err
+  if m.summary.RawBytes>0 && !m.sourceAfterRAWReconnect{
+   return reason,err // no approval: preserve RAW, no additional sockets
   }
   wait:=sourceRetryWait(ticks)
-  if time.Until(end)<wait {return reason,err}
+  if time.Until(deadline)<wait{return reason,err}
   m.summary.SourceInitialRetryAttempts++
-  m.note(fmt.Sprintf("Task2 initial reconnect attempt %d after %v; zero RAW bytes, zero TX",
-      m.summary.SourceInitialRetryAttempts,wait))
+  if m.summary.RawBytes>0{m.summary.SourceTCPReconnectAfterRAW++}
+  m.note(fmt.Sprintf("Task2 new socket attempt %d after %v; retained RAW=%d bytes; source TX=%d",
+   m.summary.SourceInitialRetryAttempts,wait,m.summary.RawBytes,m.sourceTask2TX.sentBytes))
   m.publishLiveStatus("CONNECTING",true,"")
   timer:=time.NewTimer(wait)
   select{
