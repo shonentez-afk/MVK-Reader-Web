@@ -83,6 +83,14 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.exe_path.setPlaceholderText("Путь к проверенному MVK_Native_R6_1...exe")
         self.exe_sha = QtWidgets.QLineEdit()
         self.exe_sha.setPlaceholderText("Файл с SHA256 бинарного Native")
+        # PyInstaller one-folder distribution includes the exact Go binary
+        # built in this branch and its hash. Operator approval still applies.
+        bundle=Path(getattr(sys,"_MEIPASS",Path(__file__).resolve().parents[1]))
+        exe=bundle/"mvk_native"/"MVK_Native_R6_1_LiveIPC_Windows_x64.exe"
+        sums=bundle/"mvk_native"/"NATIVE_SHA256SUMS.txt"
+        if exe.is_file() and sums.is_file():
+            self.exe_path.setText(str(exe))
+            self.exe_sha.setText(str(sums))
         panel.addWidget(QtWidgets.QLabel("МВК01 IP"), 0, 0)
         panel.addWidget(self.device_ip, 0, 1)
         panel.addWidget(QtWidgets.QLabel("Локальный IPv4"), 0, 2)
