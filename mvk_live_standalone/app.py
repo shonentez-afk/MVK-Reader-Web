@@ -475,6 +475,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         )
 
     def _update_features(self):
+        if self.freeze.isChecked():return
         ch=self._gui_ring.channel(self.adc.currentData())
         if ch is None or ch.available<512:return
         key=(self._gui_ring.session_id,self.adc.currentData(),ch.end)
@@ -486,7 +487,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             f"APP_DERIVED · ВУ СКЗ {f.acceleration_rms:.5g} м/с² · "
             f"Пик {f.acceleration_peak:.5g} м/с² · Crest {f.acceleration_crest_factor:.3f} · "
             f"Куртозис Pearson {f.acceleration_kurtosis:.3f} · "
-            +("RPM задан вручную, НЕ TACH" if self.rpm.value()>0 else "RPM: нет доказанного TACH")
+            +("Обороты: "+self._rpm_source if self.rpm.value()>0 else "Обороты: не заданы")
         )
         if len(self._trend_points) and ch.end/ch.rate_hz<=self._trend_points[-1][0]:
             self._trend_points=[]
@@ -610,6 +611,7 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _poll(self):
         self._collect_analysis()
+        self._poll_extra()
         if self._capture_root is None:return
         try:
             status=load_capture_live_status(self._capture_root,
@@ -621,8 +623,17 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._render_dsp()
             self.status.setText(f"Native R6.1: {status['phase']} · RAW {status['raw_bytes']/1048576:.1f} МиБ · "
                                 f"кадров {status['frames_decoded']} · AUX {status['aux4700_updates']}")
-            if status.get("source_tcp_multi_socket") or status["phase"]!="RECORDING":
-                self._clear(f"Источник недоступен: {status['phase']}")
+            if status.get("source_tcp_multi_socket"):
+                self._clear("Отклонено: обнаружен посторонний TCP источник")
+                return
+            if status["phase"]!="RECORDING":
+                # The last already validated local history remains available
+                # for operator review; it must NOT be relabeled as live.
+                self._ipc_client=None
+                self._capture_root=None
+                self.status.setText(
+                    f"Приём завершён: {status['phase']} · "
+                    "последний локальный снимок (не Live)")
                 return
             if self._ipc_client is None:
                 self._ipc_client=discover_local_ipc(self._capture_root,status)
@@ -639,7 +650,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 str(self._gui_ring.channel(self.adc.currentData()).available if
                     self._gui_ring.channel(self.adc.currentData()) else 0)+
                 " отсчётов · DSP: AUX4700 · FFT: APP_DERIVED")
-            if updated:
+            if updated and not self.freeze.isChecked():
                 self._update_features()
                 self._request_update()
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
@@ -647,6 +658,7 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _poll_ipc(self):
         self._collect_analysis()
+        self._poll_extra()
         # QApplication thread owns GUI ring. HTTP is handled ONLY by worker.
         if self._ipc_future is not None and self._ipc_future.done():
             pending=self._ipc_future
@@ -673,9 +685,14 @@ class LiveWindow(QtWidgets.QMainWindow):
                         self._preview=preview
                         self._last_stamp=preview.updated_utc
                         self._last_ipc_ok=time.monotonic()
-                        self._render_wave()
-                        self._update_features()
-                        self._request_update()
+                        self.quality.setText(
+                            f"Локальный Go IPC · АЦП {self.adc.currentData()} · "
+                            f"реальных отсчётов {self._gui_ring.channel(self.adc.currentData()).available}"
+                            " · APP_DERIVED · исходный DSP отдельно")
+                        if not self.freeze.isChecked():
+                            self._render_wave()
+                            self._update_features()
+                            self._request_update()
         if (self._ipc_client is None or self._ipc_future is not None or
             self._last_status is None or
             self._last_status.get("phase")!="RECORDING" or
@@ -693,6 +710,16 @@ class LiveWindow(QtWidgets.QMainWindow):
     def _clear(self,message):
         self._preview=None
         self._ipc_client=None
+        if self.freeze.isChecked():
+            self.freeze.setChecked(False)
+            self.freeze.setText("Заморозить графики")
+        self._freeze_samples=None
+        self._freeze_rate=None
+        self._freeze_channel=None
+        self._freeze_session=None
+        self._freeze_end=None
+        self.history.setRange(0,0)
+        self.history.setValue(0)
         self._gui_ring.clear()
         self._last_submitted_key=None
         self._last_fft_submit=0.0
@@ -1184,6 +1211,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             "изменить состояние МВК01. Максимальный RAW: 2048 МиБ.",
             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.No)
         if reply!=QtWidgets.QMessageBox.Yes:return
+        self._clear("Запуск нового подтверждённого приёма")
         root=Path(tempfile.mkdtemp(prefix="mvk_live_",dir=str(Path.home())))
         self._capture_root=root
         self._active_ip=ip
@@ -1226,6 +1254,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         # is tearing down: this can cause native Qt reference-count crashes.
         self._executor.shutdown(wait=True,cancel_futures=True)
         self._ipc_executor.shutdown(wait=True,cancel_futures=True)
+        self._extra_executor.shutdown(wait=True,cancel_futures=True)
         super().closeEvent(event)
 
 
