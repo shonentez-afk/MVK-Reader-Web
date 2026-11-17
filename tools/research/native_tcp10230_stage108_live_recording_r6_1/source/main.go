@@ -437,7 +437,7 @@ func mainInner() int {
 			_ = m.CloseFiles()
 			return 2
 		}
-		if *liveStatus { // Explicit GUI opt-in; the accepted Native R6 BIN is unchanged.
+		if *liveStatus && !*liveIPC { // IPC replaces 8 MiB per-tick ZIP preview; RAW/BIN unchanged.
 			m.liveBin.preview = newLivePreviewBuffer()
 		}
 	}
