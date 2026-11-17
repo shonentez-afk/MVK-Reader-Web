@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import time
 
 from PySide6.QtCore import QProcess, QThread, QTimer, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -20,7 +21,10 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog,
 from ..core.native_r6_bridge import (CaptureSpec, native_executable,
                                      pack_completed_export, request_graceful_stop)
 from ..core.native_r6_live_status import load_capture_live_status
-from ..core.native_r6_live_preview import load_live_preview
+from ..core.native_r6_live_preview import load_live_preview, MAX_SAMPLES
+from ..core.original_source_long_window import (
+    submit_source_long_window,load_source_long_window,
+)
 from ..core.source_frame_mark_protocol import submit_native_frame_mark
 from ..core.original_mode2_source_rate_input import source_setrate_stdin_line
 from ..core.source_tcp_segments import verify_source_tcp_session_segments
@@ -53,6 +57,7 @@ class NativeCaptureDialog(QDialog):
     captureEnded = Signal(bool)
     previewReady = Signal(object)
     previewInvalid = Signal(str)
+    sourceLongWindowReady = Signal(object)  # one SHA-bound GetSignal selection
     _NIC_RE = re.compile(r"^\s*\d+\)\s*(.+?)\s*\|\s*IPv4\s+([0-9.]+)/\d+\s*\|\s*индекс\s+\d+", re.I)
 
     def __init__(self, parent=None):
@@ -74,6 +79,11 @@ class NativeCaptureDialog(QDialog):
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
+        self._source_long_request=None
+        self._source_long_selector=None
+        self._source_long_last_sent_at=0.0
+        self._source_long_last_emitted=None
+        self._source_long_last_error=None
         self._frame_mark_sequence = 0
         self._timer = QTimer(self)
         self._timer.setInterval(900)
@@ -252,6 +262,9 @@ class NativeCaptureDialog(QDialog):
             return
         self._live_last_error = None
         self.statusReady.emit(snapshot)
+        # Read-only local ring requests are driven from the same validated
+        # 900ms status polling loop. No extra instrument TCP client.
+        self._poll_source_long_window(snapshot)
         target = snapshot["target_seconds"]
         elapsed = snapshot["elapsed_seconds"]
         phase = snapshot["phase"]
@@ -361,6 +374,61 @@ class NativeCaptureDialog(QDialog):
         if preview.updated_utc != self._last_preview_stamp:
             self._last_preview_stamp = preview.updated_utc
             self.previewReady.emit(preview)
+
+    def _poll_source_long_window(self,snapshot):
+        """Ask the sole Go receiver for a long real ADC window, only in PageAdc.
+
+        Source bAdcHScale Tag is authoritative; Go rejects invented counts,
+        stale FRxPos and overwritten ranges. Nothing is sent to the device.
+        """
+        parent=self.parent()
+        if (self._mode!="capture" or self._capture_root is None or
+                parent is None or
+                not getattr(parent,"_live_active",False) or
+                getattr(parent,"_measurement_exit_requested",False) or
+                getattr(parent,"_source_live_view_frozen",False)):
+            return
+        tabs=getattr(parent,"original_root_tabs",None)
+        if tabs is None:
+            return
+        idx=tabs.currentIndex()
+        if idx<0 or tabs.tabData(idx)!="PageAdc":
+            return
+        adc=parent._ch()
+        tag=getattr(parent,"_wave_hscale_tag",None)
+        if type(tag) is not int:
+            return
+        key=(snapshot.get("session_id"),adc,tag)
+        if self._source_long_selector!=key:
+            self._source_long_selector=key
+            self._source_long_request=None
+            self._source_long_last_sent_at=0.0
+            self._source_long_last_emitted=None
+        try:
+            pending=self._source_long_request
+            if pending is not None:
+                window=load_source_long_window(self._capture_root,snapshot,pending)
+                if window is not None and pending.request_id!=self._source_long_last_emitted:
+                    self._source_long_last_emitted=pending.request_id
+                    self.sourceLongWindowReady.emit(window)
+            # One new bounded ZIP no more often than every three seconds.
+            # A different source menu selection can request immediately.
+            clock=time.monotonic()
+            if clock-self._source_long_last_sent_at<3.0:
+                return
+            request=submit_source_long_window(
+                self._capture_root,snapshot,adc,tag)
+            if request is None:
+                return  # 262144 preview suffices, or real N not yet resident
+            self._source_long_request=request
+            self._source_long_last_sent_at=clock
+            self._source_long_last_error=None
+        except (ValueError,OSError,KeyError,TypeError) as exc:
+            message=str(exc)
+            if message!=self._source_long_last_error:
+                self.log.appendPlainText(
+                    "Исходный GetSignal из кольца недоступен: "+message)
+                self._source_long_last_error=message
 
     def is_busy(self):
         return self._mode is not None or self._worker is not None
@@ -598,6 +666,11 @@ class NativeCaptureDialog(QDialog):
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
+        self._source_long_request=None
+        self._source_long_selector=None
+        self._source_long_last_sent_at=0.0
+        self._source_long_last_emitted=None
+        self._source_long_last_error=None
         self._frame_mark_sequence = 0
         self._reset_live_channels()
         self.progress.setRange(0,100)

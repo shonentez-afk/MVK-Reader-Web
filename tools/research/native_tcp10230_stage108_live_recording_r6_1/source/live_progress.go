@@ -165,6 +165,21 @@ func (m *Monitor) publishLiveStatus(phase string, force bool, exportStatus strin
         return
     }
     m.liveProgressAt = now
+    // Service one LOCAL operator selection from the full 2^21 ring.
+    // This stays on the SAME receiver goroutine, AFTER a trusted status
+    // publication, with no device command or second TCP connection.
+    if phase=="RECORDING" {
+        if err:=m.handleSourceLongWindowRequest(now);err!=nil {
+            // This optional GUI sidecar must never stop or change RAW/BIN.
+            // Avoid a recurring error log on an unchanged bad request.
+            if m.sourceLongWindowLastError!=err.Error() {
+                m.warn("Local source GetSignal selection denied: "+err.Error())
+                m.sourceLongWindowLastError=err.Error()
+            }
+        } else {
+            m.sourceLongWindowLastError=""
+        }
+    }
     // Publish a SINGLE atomic local, provisional ZIP only from calibrated
     // Float32 bytes already accepted by the existing LiveBinSpool. It is
     // never fed back into the original capture or published as accepted BIN.

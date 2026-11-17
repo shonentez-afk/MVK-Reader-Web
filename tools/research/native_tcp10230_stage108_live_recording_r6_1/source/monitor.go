@@ -108,6 +108,8 @@ type Monitor struct {
 	closed      bool
 	liveBin     *LiveBinSpool
 	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
+	sourceLongWindowLastID string // one on-demand read per unique local request ID
+	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
 	sourceTask0ConfigRead bool // separate original bConfigDownload Task=0, passive
