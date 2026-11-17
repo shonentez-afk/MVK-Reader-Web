@@ -3,6 +3,7 @@ import (
     "bytes"
     "context"
     "encoding/binary"
+    "encoding/hex"
     "errors"
     "io"
     "net"
@@ -147,5 +148,20 @@ func TestNativeReadOnlySocketSendsNothingEvenWhenParamReady(t *testing.T) {
         if n!=0{t.Fatalf("passive Native transmitted %d bytes to fake device",n)}
     case e:=<-deviceError:t.Fatal(e)
     case <-time.After(3*time.Second):t.Fatal("local fake server did not complete")
+    }
+}
+
+func TestSourceSetRateMatchesIndependentHistoricalOriginalMVKViewPCAP(t *testing.T) {
+    // Independently published 2026-10-26 A/B Win32 MVKView captures:
+    // docs/CLIENT_COMMAND_36_BYTES_TCP10230_ANALYSIS_RU.md
+    // Exact 36-byte client message was split into 4 + 32 TCP payloads.
+    // This is not Go's own generated fixture or packet synthesis.
+    const captured="0d0c80ff2400000000000000000000000000000000000000010000000e00020000000100"
+    expected,e:=hex.DecodeString(captured)
+    if e!=nil{t.Fatal(e)}
+    generated,e:=sourceSetRateWireBytes(65536)
+    if e!=nil{t.Fatal(e)}
+    if !bytes.Equal(generated,expected) {
+        t.Fatalf("source restored SetRate differs from historical A/B Win32 PCAP: %x",generated)
     }
 }
