@@ -40,10 +40,14 @@ func TestOriginalSourceRingTenChannelsAndByteWidths(t *testing.T) {
     }
     for i:=8;i<10;i++ {
         p:=bytes.Repeat([]byte{byte(i)},256)
-        h:=SampleHeader{Channel:i,Rate:512,Index:0xFFFFFFC0,Samples:64}
+        h:=SampleHeader{Channel:i,Rate:512,Index:0xFFFFFFC0,Samples:64,
+            NonFinite:uint32(i-8+1)}
+        // As ORIGINAL AdcDataType=2/Byte, any bit pattern is valid TACH
+        // payload, regardless of an incidental Float32 nonfinite counter.
         if e:=r.appendFrame(h,p,sourceStorageTachBytes);e!=nil {t.Fatal(e)}
         c:=r.receipt().Channels[i]
-        if c.RxPos!=256 || c.Available!=256 || *c.NextDeviceIndex!=0 {
+        if c.RxPos!=256 || c.Available!=256 || *c.NextDeviceIndex!=0 ||
+           c.RejectedNonfinite!=0 {
             t.Fatalf("TACH byte/rate/source cursor conflated: %+v",c)
         }
         got,e:=r.window(i,0,256)

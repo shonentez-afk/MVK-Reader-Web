@@ -93,3 +93,13 @@ def test_no_unobserved_device_index_invented_for_empty_storage():
     receipt["channels"][0].update(
         rx_pos_64=0,available_elements=0,next_device_sample_index=None)
     assert validate_original_storage_receipt(receipt,status)
+
+
+def test_original_tach_byte_receipt_never_invents_float32_rejection():
+    receipt,status=ring_fixture()
+    status[8]["nonfinite_samples"]=1  # Go may flag a suspect Float32 TACH
+    receipt["channels"][8]["rejected_nonfinite_frames"]=1
+    with pytest.raises(ValueError,match="byte TACH"):
+        validate_original_storage_receipt(receipt,status)
+    receipt["channels"][8]["rejected_nonfinite_frames"]=0
+    assert validate_original_storage_receipt(receipt,status)

@@ -110,9 +110,11 @@ func (r *sourceOriginalStorageRing) appendFrame(
     c.sampleRate=h.Rate
     c.seen=true
     c.domain=domain
-    if h.NonFinite>0 {
-        // RAW still carries the exact packet. Never present nonfinite bits
-        // as a verified current GetSignal/GetRawSignal window.
+    if h.NonFinite>0 && h.Channel<8 {
+        // Only original ADC type 0 is Float32 storage. TACH type 2 is
+        // BYTE storage: it must preserve all 256 packet payload bytes even
+        // when their four-byte patterns resemble Float32 NaN/Inf.
+        // Preserve the RAW ADC packet, but do not present a bad Float32.
         c.rejectedNonfinite++
         c.validPos=c.rxPos
         return nil

@@ -70,6 +70,8 @@ def validate_original_storage_receipt(
                 dropped>channels[i].get("nonfinite_samples",-1)):
             raise ValueError("Original storage: source RX counters disagree")
         domain=row.get("input_domain")
+        if i>=8 and dropped!=0:
+            raise ValueError("Original storage: byte TACH cannot reject Float32 NaN")
         allowed=ADC_DOMAIN if i<8 else frozenset((TACH_DOMAIN,))
         if domain not in allowed and domain!="":
             raise ValueError("Original storage: unknown signal input domain")
