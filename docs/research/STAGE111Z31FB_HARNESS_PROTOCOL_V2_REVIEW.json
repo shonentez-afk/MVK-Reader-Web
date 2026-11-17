@@ -1,0 +1,178 @@
+{
+  "schema": "MVK_HARNESS_PROTOCOL_V2_SOURCE_REVIEW_V1",
+  "input_registry_id": "mvk_protocol_evidence_v2",
+  "status": "CORRECTION_REQUIRED",
+  "finding_count": 13,
+  "by_category": {
+    "PROVENANCE_GAP": 1,
+    "PROVENANCE_LIMIT": 1,
+    "REQUIRES_TRACE": 1,
+    "SEMANTIC_QUALIFIER": 1,
+    "SOURCE_CONFLICT": 9
+  },
+  "findings": [
+    {
+      "code": "TYPE1_NOT_SAMPLES",
+      "field": "data_stream_frame.packet_type",
+      "reported": 1,
+      "correction": "0x00000001 drains remaining UInt32; 0xFF800ADC ADC and 0xFF8001AC TACH enter 0080816B",
+      "source": "_Unit125.pas:00808022-00808076,008080EB-0080816B",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "CHANNEL10_INVALID_NOT_TACH",
+      "field": "data_stream_frame.tach_branch_not_disassembled",
+      "reported": {
+        "target": "00808339",
+        "status": "OPEN-001"
+      },
+      "correction": "00808339 raises errInvalidPacket for channel>=10; TACH indices are 8/9, see 00808251",
+      "source": "_Unit125.pas:008081AA-008081AE,00808251,00808339-00808394",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "CHANNEL0_WRITEDATA_STAGE",
+      "field": "data_stream_processing.channel_activation",
+      "reported": "Первый кадр канала 0 устанавливает [+0x40] = 1",
+      "correction": "Field thread+0x40 is WriteDataStage; channel 0 makes recording 0->1, not connection readiness",
+      "source": "_Unit125.pas:00808291-008082AA",
+      "category": "SEMANTIC_QUALIFIER"
+    },
+    {
+      "code": "14_STATUSCELLS_NOT_DESCRIPTORS",
+      "field": "descriptor_loop.semantics",
+      "reported": "STATIC_INFERRED — предположительно 8 ADC + 2 TACH + 4 служебных",
+      "correction": "Loop updates fourteen StatusCells (indices 0..13) for EACH received register block, not fourteen packet descriptors",
+      "source": "_Unit125.pas:00805D08-00805ECA,0080857C-0080859A; data 008D3068",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "REGISTER3100_NOT_STAGE_TRIGGER",
+      "field": "trigger_0x3100.meaning_inferred",
+      "reported": "переключатель состояния / завершение передачи параметров",
+      "correction": "0x3100 triggers a VALUES-CSV row only when ValuesFile exists and two tach state comparisons; Stage0->1 uses 00808617",
+      "source": "_Unit125.pas:008085A5-008085DD,008066F0,00808617",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "00806030_NOT_COMMAND_LOOP",
+      "field": "trigger_0x3100.on_match",
+      "reported": [
+        {
+          "check": "008085AE: CMP [EAX+0x40088],0x0"
+        },
+        {
+          "action": "008085BA: CALL 0x008066f0 (отложенное действие)"
+        },
+        {
+          "action": "008085D1: CALL 0x00806030 (цикл команд)"
+        }
+      ],
+      "correction": "00806030 compares/updates two tach states in the register image (no QueueCommand or Write)",
+      "source": "_Unit125.pas:00806030-008060AB,008085C2-008085DD",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "WRITER_HEADER_EIGHT",
+      "field": "four_mechanisms_distinguished.items[1]",
+      "reported": {
+        "name": "outgoing_write",
+        "format": "9+ words, magic 0xFF800C0D",
+        "address": "0080937C",
+        "direction": "TCP send",
+        "confidence": "VERIFIED_STATIC"
+      },
+      "correction": "0080937C emits eight WriteUInt32 calls; queued SetRate adds a ninth Data call in Execute at 00807F52",
+      "source": "_Unit125.pas:0080937C-008093FD,00807F52",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "ACK_IS_0x10FF0",
+      "field": "four_mechanisms_distinguished.items[3]",
+      "reported": {
+        "name": "successful_ack",
+        "format": "type 0x00000001, channel at word 5",
+        "address": "00808196",
+        "direction": "TCP receive",
+        "confidence": "VERIFIED_STATIC"
+      },
+      "correction": "0x00010FF0 is success ACK; 0x00000001 is drain-only",
+      "source": "_Unit125.pas:00808060-0080809D",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "WRONG_REPO_SCOPE",
+      "field": "gap_analysis_vs_repo.missing_in_repo",
+      "reported": [
+        "TCP port 10230 / TIdTCPClient equivalent",
+        "Frame format [type][len][payload]",
+        "6-type packet dispatcher",
+        "PARAM packed (count<<16)|addr parsing",
+        "Trigger register 0x3100",
+        "10-channel DATA_STREAM decode",
+        "12-byte command queue",
+        "xConfigIP / xConfigCalib / xConfigCh register maps",
+        "Fs-vs-frame-frequency validation",
+        "freeze flag +0x400CD handling"
+      ],
+      "correction": "Local MVK_Reader_Web folder is not GitHub research branch; source protocol and Qt implementations are already present in working branch",
+      "source": "GitHub research/stage111-mvkview-desktop-20261029 / mvk_compatible/core/original_mode2_received_frames.py",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "REPO_GAP_NOT_BINARY_PROOF",
+      "field": "gap_analysis_vs_repo.confidence",
+      "reported": "VERIFIED_STATIC",
+      "correction": "Binary disassembly does not prove absence of code in a repository not searched on GitHub",
+      "source": "GitHub branch inspection",
+      "category": "SOURCE_CONFLICT"
+    },
+    {
+      "code": "CONFIG_TASK_UI_MAPPING_OPEN",
+      "field": "config_reads.by_mode",
+      "reported": "mode 3/4 register maps",
+      "correction": "Task register blocks are statically visible, but associate UI handlers only by tracing 00846AD4 and actual constructor Task; ConfigIP button requests UI mode4, which is not automatically identical to thread Task4",
+      "source": "_Unit128.pas:00848E6C,00846AD4,00846DCC; _Unit125.pas:00807CFA-00807DCF",
+      "category": "REQUIRES_TRACE"
+    },
+    {
+      "code": "MISSING_ARCHIVE_CROSSCHECK",
+      "field": "sources_used.projects_7z",
+      "reported": {
+        "status": "NOT_USED",
+        "reason": "read-only рамки"
+      },
+      "correction": "The Harness agent did not use Projects.7z; independent review confirmed six PAS/DFM hashes against SQLite",
+      "source": "Projects.7z + mvk_idr(1).sqlite/source_files",
+      "category": "PROVENANCE_GAP"
+    },
+    {
+      "code": "IDP_SCOPE_LIMITED",
+      "field": "sources_used.mvkview_idp",
+      "reported": "METADATA_ONLY",
+      "correction": "IDP checksum/header verified; IDP internal objects and RTTI are not independently decoded",
+      "source": "mvkview.idp SHA256 77e59f98...; SQLite meta.idp_header",
+      "category": "PROVENANCE_LIMIT"
+    }
+  ],
+  "source_packet_roles": {
+    "0x00000001": "DRAIN_UINT32",
+    "0x00010FF0": "OPERATION_SUCCESS",
+    "0x00010FFF": "OPERATION_DENIED",
+    "0xFF8001AC": "TACH_DATA",
+    "0xFF800ADC": "ADC_DATA",
+    "0xFF800C0D": "PARAM_REGISTER_BLOCKS"
+  },
+  "already_in_current_github": [
+    "mvk_compatible/core/original_mode2_received_frames.py",
+    "mvk_compatible/core/original_mode2_status_cells.py",
+    "mvk_compatible/core/original_mode2_command_queue.py",
+    "mvk_compatible/core/original_mode2_wire_word_candidate.py",
+    "mvk_compatible/core/original_mode2_task2_exchange.py"
+  ],
+  "source_recording_field": "TMVKThread.WriteDataStage at +0x40",
+  "stage0_to_1_at": "00808617 (nonempty valid PARAM, NOT 0x3100-specific)",
+  "values_tick_at": "008085A5 / 008066F0 when ValuesFile exists",
+  "harness_code_changed": false,
+  "safe": "static-only; no packet transmission, process attachment, instrument or private files"
+}
