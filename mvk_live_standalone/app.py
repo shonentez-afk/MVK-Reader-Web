@@ -150,6 +150,13 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _request_update(self,*_):
         self._generation += 1
+        # The physical Y unit must update IMMEDIATELY on the operator's
+        # choice, even while the next verified FFT is still calculating.
+        self._apply_axes()
+        if self._spectrum is not None and self._spectrum.kind != self.kind.currentData():
+            self._spectrum = None
+            self.spec_curve.setData([],[])
+            self.metrics.setText("Пересчёт выбранного физического спектра")
         self._render_wave()
         self._schedule_fft()
 
