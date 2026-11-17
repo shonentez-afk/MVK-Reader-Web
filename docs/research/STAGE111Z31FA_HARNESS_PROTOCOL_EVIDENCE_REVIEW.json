@@ -1,0 +1,121 @@
+{
+  "schema": "MVK_HARNESS_PROTOCOL_SOURCE_REVIEW_V1",
+  "input_registry_id": "mvk_protocol_evidence_v1",
+  "review_status": "SOURCE_CONFLICTS",
+  "finding_count": 11,
+  "source_conflict_count": 10,
+  "provenance_gap_count": 1,
+  "conflicts": [
+    {
+      "code": "MISLABELED_00000001",
+      "field": "wire_protocol.packet_type_dispatch.types[00000001].name_inferred",
+      "reported": "DATA_STREAM",
+      "expected": "IDENTITY_DRAIN",
+      "source_address": "00808060..00808076",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "MISLABELED_00010FF0",
+      "field": "wire_protocol.packet_type_dispatch.types[00010FF0].name_inferred",
+      "reported": "STATUS_CONFIG",
+      "expected": "OPERATION_ACK",
+      "source_address": "0080807B",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "MISLABELED_FF8001AC",
+      "field": "wire_protocol.packet_type_dispatch.types[FF8001AC].name_inferred",
+      "reported": "REPLY_A",
+      "expected": "TACH_DATA",
+      "source_address": "008080EB..00808339",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "MISLABELED_FF800ADC",
+      "field": "wire_protocol.packet_type_dispatch.types[FF800ADC].name_inferred",
+      "reported": "REPLY_B",
+      "expected": "ADC_DATA",
+      "source_address": "008080EB..00808339",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "MISLABELED_FF800C0D",
+      "field": "wire_protocol.packet_type_dispatch.types[FF800C0D].name_inferred",
+      "reported": "REPLY_CMD",
+      "expected": "PARAM_REGISTERS",
+      "source_address": "0080839E..00808718",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "WRITER_HEADER_WORD_COUNT",
+      "field": "wire_protocol.outgoing_command_frame.words",
+      "reported": 9,
+      "expected": "0080937C writes exactly 8 UInt32 values; 00807F52 writes a 9th Data word for queued commands",
+      "source_address": "00809395..008093F5;00807F52",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "WRITER_RESERVED_ZERO_COUNT",
+      "field": "wire_protocol.outgoing_command_frame.words",
+      "reported": 5,
+      "expected": "Exactly four zero-valued Write calls in 0080937C",
+      "source_address": "008093B6;008093C1;008093CC;008093D7",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "WRITER_FUNCTION_SIZE_CONFLATED",
+      "field": "wire_protocol.outgoing_command_frame.min_frame_bytes",
+      "reported": 36,
+      "expected": "0080937C emits 32 bytes; the SetRate caller emits a further 4-byte data word (36 total)",
+      "source_address": "0080937C..008093FD;00807F52",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "WRITEDATA_TIME_WRONG_OFFSET",
+      "field": "channel_processing.write_flags",
+      "reported": "THREAD+0X400E0",
+      "expected": "WriteDataTime at TMVKThread+0x404E0 (not +0x400E0)",
+      "source_address": "008061B2;0084E936",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "TIMER_BODY_CONFUSION",
+      "field": "dfm_measure_controls.tmInterfaceUpdateTimer.flag_field",
+      "reported": "+0xBD8",
+      "expected": "0084F7C8 only calls 00847248 then RET; 0084F7D0 is a different function",
+      "source_address": "0084F7C8..0084F7CD",
+      "severity": "source_conflict"
+    },
+    {
+      "code": "ARCHIVE_NOT_EXAMINED",
+      "field": "sources_used.projects_7z.used",
+      "reported": false,
+      "expected": "Evidence was not independently cross-checked against the extracted original Pascal/DFM",
+      "source_address": "Projects.7z (_Unit125.pas, _Unit128.pas, mvkform.dfm)",
+      "severity": "provenance_gap"
+    }
+  ],
+  "already_in_core": {
+    "source_receive_emulator": "mvk_compatible/core/original_mode2_received_frames.py",
+    "source_transmit_word_plan": "mvk_compatible/core/original_mode2_wire_word_candidate.py",
+    "offline_exchange": "mvk_compatible/core/original_mode2_task2_exchange.py",
+    "source_rate_fifo": "mvk_compatible/core/original_mode2_command_queue.py"
+  },
+  "report_made_core_changes": false,
+  "no_network_io_or_device_commands": true,
+  "all_six_source_packet_roles": {
+    "0x00000001": "IDENTITY_DRAIN",
+    "0x00010FF0": "OPERATION_ACK",
+    "0x00010FFF": "OPERATION_DENIED",
+    "0xFF8001AC": "TACH_DATA",
+    "0xFF800ADC": "ADC_DATA",
+    "0xFF800C0D": "PARAM_REGISTERS"
+  },
+  "notes": [
+    "QueueCommand.Cmd=1, Addr=0x0E, Data=rate: 0x0E is Addr, not Cmd",
+    "The 9th SetRate word is written by Execute at 00807F52, not inside 0080937C",
+    "TYPE 1 drains UInt32 words; real ADC/TACH streams are 0xFF800ADC/0xFF8001AC",
+    "0xFF800C0D incoming branch parses register blocks, not a generic ACK",
+    "No claim of original hardware numerical or on-wire operational parity"
+  ]
+}
