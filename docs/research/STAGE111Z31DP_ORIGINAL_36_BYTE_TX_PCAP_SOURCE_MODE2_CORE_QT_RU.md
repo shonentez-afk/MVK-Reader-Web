@@ -63,7 +63,7 @@
 
 ## CI и ограничения
 
-Последний программный исходный SHA: `4d6d407729e7422a605dddb4b438bcd84ae2acb0`. Дождаться **4/4 SUCCESS** в Actions для этого SHA прежде чем объявлять EXE проверенным; последующий документационный `[skip ci]` не пересобирает EXE.
+Последний проверенный программный исходный SHA: `4d6d407729e7422a605dddb4b438bcd84ae2acb0`. **GitHub Actions #43998555534 — 4/4 SUCCESS**. Linux 2177 PASS/128 SKIP, Windows Core 2394 PASS/7 SKIP, Windows Qt 49 + 44 + 188 PASS, native Windows QPA 44+44 PASS. Windows EXE 69,206,267 bytes, SHA256 `5ab350779daef255d69854a22cf153d746ca86a16cf481c5bac97da451e7ed39`. [Артефакт #14290754332](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/43998555534/artifacts/14290754332) доступен до 01.12.2026. Build manifest verified, `original_delphi_compatibility_verified=false` — реальные аппаратные команды и численный same-run паритет всё ещё НЕ подтверждены. Последующий документационный `[skip ci]` не пересобирает EXE.
 
 **Не завершено:** включение физической source SetRate в действующий Native/Qt по отдельному промышленному допуску, подтверждённая атрибуция ACK, автоматический source live-retry и численный same-run DSP/RPM/GDI/экспорт. Известная точная команда не значит, что её обязательно надо посылать в работающий прибор: 3 пассивных live записи содержат полный сигнал без TX.
 
