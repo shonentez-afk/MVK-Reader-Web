@@ -75,7 +75,7 @@ func liveCaptureAddress(ctx context.Context, m *Monitor, addr string, seconds in
 	return liveCaptureAddressOnNIC(ctx, m, addr, seconds, maxBytes, nil)
 }
 
-func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, seconds int, maxBytes uint64, nic *LocalNIC) (string, error) {
+func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, seconds int, maxBytes uint64, nic *LocalNIC) (reason string, resultErr error) {
 	fmt.Printf("\nСоединение с %s (только чтение)...\n", addr)
 	if nic != nil {
 		m.summary.SelectedInterface = nic.Name
@@ -101,6 +101,10 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 	if e = verifySelectedSource(c, nic); e != nil {
 		return "INTERFACE_MISMATCH", e
 	}
+	if m.sourceTCP!=nil {
+		if e:=m.sourceTCP.begin(m);e!=nil{return "SOURCE_TCP_SEGMENT_FAILED",e}
+		defer func(){m.sourceTCP.finish(m,reason)}()
+	}
 	m.summary.SocketLocalAddr = c.LocalAddr().String()
 	m.summary.SocketRemoteAddr = c.RemoteAddr().String()
 	m.publishLiveStatus("RECORDING", true, "")
@@ -111,12 +115,8 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 	deadline := start.Add(time.Duration(seconds) * time.Second)
 	buf := make([]byte, 64*1024)
 	lastPrinted := time.Time{}
-	var rateLines <-chan string
-	if m.sourceTask2TX!=nil {
-		queue:=make(chan string,16)
-		rateLines=queue
-		go sourceOperatorRateLines(os.Stdin,queue)
-	}
+	// Exactly one scanner for the full source measurement (all sockets).
+	rateLines:=m.sourceOperatorRateChan
 	for {
 		if ctx.Err() != nil {
 			return "STOPPED_BY_USER", nil
@@ -218,6 +218,8 @@ func mainInner() int {
 	approve := flag.Bool("approve", false, "explicit approval to connect to industrial instrument")
 	sourceTX := flag.Bool("source-setrate-tx",false,"opt-in original Task2 SetRate over the SAME TCP socket; never Flash")
 	sourceTXApproval := flag.Bool("source-setrate-tx-approved",false,"separate operator confirmation for hardware rate writes")
+	sourceReconnect:=flag.Bool("source-task2-reconnect",false,"original Task2 retry AFTER RAW; independent SHA256 TCP segments")
+	sourceReconnectApproved:=flag.Bool("source-task2-reconnect-approved",false,"separate operator consent for reconnect after live data")
 	replay := flag.String("replay", "", "offline replay of captured incoming.raw (no network access)")
 	limitMB := flag.Int("max-mb", 256, "maximum raw capture size in MiB (1..2048)")
 	localIP := flag.String("local-ip", "", "REQUIRED for command-line live: local IPv4 of the wired Ethernet adapter")
@@ -300,6 +302,10 @@ func mainInner() int {
 			return 2
 		}
 	}
+	if *sourceReconnect && (!*sourceReconnectApproved || !*sourceTX || !*sourceTXApproval || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
+		fmt.Println("Original Task2 retry after RAW requires independent operator confirmation and approved source SetRate")
+		return 2
+	}
 	if *sourceTX && (!*sourceTXApproval || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
 		fmt.Println("Real source SetRate requires separate operator approval, live status and a controlled stop")
 		return 2
@@ -359,6 +365,8 @@ func mainInner() int {
 	if *sourceTX {
 		m.summary.Mode="LIVE_SOURCE_SET_RATE_APPROVED"
 		m.sourceTask2TX=newSourceLiveTask2TX()
+		m.sourceTCP=&sourceTCPLedger{}
+		m.sourceAfterRAWReconnect=*sourceReconnect
 		fmt.Println("Original MVKView Task2 SetRate ENABLED with separate operator approval; only 5 verified rates")
 	}
 	if *frameMarks {
