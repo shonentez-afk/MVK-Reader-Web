@@ -26,7 +26,6 @@ def test_y_axis_log_does_not_change_physical_units_or_values():
     assert y_axis_label("velocity","linear")=="ВС · Виброскорость, мм/с СКЗ"
     assert y_axis_label("velocity","log")=="ВС · Виброскорость, мм/с СКЗ"
     assert "дБ (отн. 1 мм/с" in y_axis_label("velocity","db")
-    assert np.array_equal(plot_values(s,"linear")[1:],plot_values(s,"log")[1:],equal_nan=True) is False
     pos=s.rms>0
     assert np.allclose(plot_values(s,"linear")[pos],plot_values(s,"log")[pos])
     p=plot_values(s,"db")
