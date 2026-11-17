@@ -26,6 +26,6 @@ def test_qt_modes_scale_update_labels_and_no_network_on_open():
         widget.db_ref.setCurrentIndex(1)
         assert "дБ" in widget.spec.getPlotItem().getAxis("left").label.toPlainText()
         assert "отн. 1 мкм" in widget.spec.getPlotItem().getAxis("left").label.toPlainText()
-        assert widget.spec.getPlotItem().logMode[1] is False
+        assert widget.yscale.currentData()=="db"
     finally:
         widget.close()
