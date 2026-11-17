@@ -37,7 +37,8 @@ def test_explicit_duration_keeps_old_native_argv_and_status(tmp_path):
     spec=_spec(tmp_path,30)
     assert not spec.source_until_stop
     assert "на 30 секунд" in spec.duration_description()
-    assert spec.native_args(spec.create_root())[5:7]==["-seconds","30"]
+    args=spec.native_args(spec.create_root())
+    assert args[args.index("-seconds")+1]=="30"
 
 
 def test_unbounded_producer_status_is_accepted_without_fake_success():
