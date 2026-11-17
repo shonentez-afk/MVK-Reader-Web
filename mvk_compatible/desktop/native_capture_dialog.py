@@ -435,7 +435,7 @@ class NativeCaptureDialog(QDialog):
         response = QMessageBox.question(
             self, "Подтверждение соединения с промышленным МВК",
             f"Начать подключение TCP/10230 к {spec.device_ipv4} через "
-            f"выбранный Ethernet {spec.local_ipv4} на {spec.seconds} секунд?\n"
+            f"выбранный Ethernet {spec.local_ipv4} на {spec.seconds} секунд?\n" +
             ("ВНИМАНИЕ: будет отправлена исходная 36-байтная SetRate(65536) "
              "после подтверждённого PARAM; меню сможет отправлять новые SetRate. "
              "Это может изменить частоту прибора. Flash/Reboot исключены. "
