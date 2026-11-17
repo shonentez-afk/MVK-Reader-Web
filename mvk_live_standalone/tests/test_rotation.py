@@ -36,6 +36,6 @@ def test_absent_and_unresolved_speed_rejected():
         estimate_rotation_from_velocity(np.zeros(32768),8192)
     with pytest.raises(ValueError):
         estimate_rotation_from_velocity(np.ones(32),8192,nfft=32768)
-    with pytest.raises(ValueError,match="range"):
+    with pytest.raises(ValueError,match="RPM"):
         estimate_rotation_from_velocity(np.ones(32768),8192,
                                         min_rpm=18000,max_rpm=300)
