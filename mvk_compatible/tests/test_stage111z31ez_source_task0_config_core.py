@@ -150,3 +150,15 @@ def test_original_task0_idp_ip_netmask_and_port_text_preserves_raw():
         "valid":False,"raw_hex_le":None})=="—"
     with pytest.raises(ValueError):
         original_task0_field_text("ConfigIP",{"valid":True,"raw_hex_le":"0000"})
+
+
+def test_original_task0_default_config_basename_is_source_fixed(tmp_path):
+    from ..core.original_task0_config_live import (
+        SOURCE_DEFAULT_CONFIG_FILENAME,source_original_default_config_path,
+    )
+    executable=tmp_path/"MVKViewCompatible.exe"
+    assert SOURCE_DEFAULT_CONFIG_FILENAME=="DefaultConfig.txt"
+    assert source_original_default_config_path(executable)==(
+        tmp_path/"DefaultConfig.txt")
+    assert source_original_default_config_path(
+        tmp_path/"ApplicationPreview.exe").name=="DefaultConfig.txt"

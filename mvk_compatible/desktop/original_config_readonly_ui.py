@@ -24,7 +24,9 @@ from ..core.original_config_input_draft import (
     SourceInputRejected, encode_source_text,
 )
 from ..core.original_config_local_workflow import OriginalLocalConfigWorkspace
-from ..core.original_task0_config_live import original_task0_field_text
+from ..core.original_task0_config_live import (
+    original_task0_field_text,source_original_default_config_path,
+)
 from .original_value_edit_dialog import OriginalValueEditDialog
 
 
@@ -269,12 +271,62 @@ class OriginalConfigReadOnlyPanel:
             self._task0_dialog.raise_()
             self._task0_dialog.activateWindow()
             return True
+        if self.workspace is not None and self.workspace.changed:
+            window.original_window_man.spawn_error(
+                "Сохраните локальную конфигурацию или отмените её изменения.")
+            return False
         dialog=OriginalTask0DownloadDialog(
             controller.workspace.device_ipv4,window)
         dialog.readCompleted.connect(self.apply_device_task0_read)
+        dialog.readStarted.connect(self.source_task0_read_started)
+        dialog.readFailed.connect(self.source_task0_read_failed)
         self._task0_dialog=dialog
         dialog.show()
         return True
+
+    def source_task0_read_started(self):
+        """Do not leave old device fields visible during a new TCP attempt."""
+        self._task0_receipt=None
+        self.workspace=None
+        self.document=empty_original_config_inspection()
+        self.refresh()
+        self.source_note.setText(
+            "Считывание Task0: старые значения прибора очищены. "
+            "Нет подтверждённых данных нового TCP-сеанса.")
+
+    def source_task0_read_failed(self,reason):
+        """00849687..00849765: LOCAL DefaultConfig.txt fallback, never device."""
+        if not isinstance(reason,str):
+            reason="исходный Task0 не подтвердил конфигурацию"
+        reason=reason[:220]
+        self._task0_receipt=None
+        self.workspace=None
+        self.document=empty_original_config_inspection()
+        self.refresh()
+        fallback=source_original_default_config_path()
+        if (fallback.is_file() and not fallback.is_symlink()):
+            try:
+                self.load_local_file(fallback)
+            except (ValueError,OSError,UnicodeError):
+                # Fail closed: do not display invalid or stale device fields.
+                self.workspace=None
+                self.document=empty_original_config_inspection()
+                self.refresh()
+                self.source_note.setText(
+                    "Ошибка чтения Task0: "+reason+
+                    ". Локальный DefaultConfig.txt повреждён; "
+                    "конфигурация прибора НЕ известна.")
+            else:
+                self.source_note.setText(
+                    "Ошибка чтения Task0: "+reason+
+                    ". Загружен ТОЛЬКО локальный DefaultConfig.txt "
+                    "из каталога приложения, как в оригинале. "
+                    "ЭТО НЕ КОНФИГУРАЦИЯ ПОДКЛЮЧЁННОГО ПРИБОРА.")
+        else:
+            self.source_note.setText(
+                "Ошибка чтения Task0: "+reason+
+                ". Локальный DefaultConfig.txt отсутствует. "
+                "Конфигурация прибора НЕ известна.")
 
     def apply_device_task0_read(self,proof):
         """Bind only independently RAW/SHA-verified Task0 register cells."""

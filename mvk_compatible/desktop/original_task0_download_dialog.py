@@ -26,6 +26,8 @@ from ..core.original_task0_config_live import (
 
 class OriginalTask0DownloadDialog(QDialog):
     readCompleted=Signal(object)
+    readStarted=Signal()
+    readFailed=Signal(str)
     _NIC_RE=re.compile(
         r"^\s*\d+\)\s*(.+?)\s*\|\s*IPv4\s+([0-9.]+)/\d+\s*\|\s*индекс\s+\d+",
         re.I,
@@ -154,7 +156,9 @@ class OriginalTask0DownloadDialog(QDialog):
     def _process_error(self,error):
         if error==QProcess.FailedToStart:
             self._mode=None
-            self.status.setText("Не удалось запустить проверенный Native Go для Task0.")
+            text="Не удалось запустить проверенный Native Go для Task0."
+            self.status.setText(text)
+            self.readFailed.emit(text)
             self._buttons()
 
     def start_read(self):
@@ -194,6 +198,9 @@ class OriginalTask0DownloadDialog(QDialog):
         self.status.setText(
             "Чтение исходного Task0. Ожидается проверенный непустой PARAM; "
             "поля конфигурации ещё неизвестны.")
+        # Clear the previous read only AFTER the operator authorized
+        # the NEW socket. Cancelled approval keeps the previous proof.
+        self.readStarted.emit()
         self._process.start(str(self._native),args)
         self._buttons()
         return True
@@ -229,18 +236,20 @@ class OriginalTask0DownloadDialog(QDialog):
                 "Проверьте, что выбран именно проводной Ethernet.")
         elif previous=="read":
             if exit_code!=0 or exit_status!=QProcess.NormalExit:
-                self.status.setText(
-                    "Task0 не завершил проверенное чтение. "
-                    "Локальный RAW сохранён для диагностики, "
-                    "конфигурация прибора не обновлена.")
+                text=("Task0 не завершил проверенное чтение. "
+                      "Локальный RAW сохранён для диагностики; "
+                      "конфигурация прибора НЕ подтверждена.")
+                self.status.setText(text)
+                self.readFailed.emit(text)
             else:
                 try:
                     proof=load_source_task0_config(
                         self._root,expected_ip=self._device_ip)
                 except (ValueError,OSError,UnicodeError) as exc:
-                    self.status.setText(
-                        "Ответ Task0 не прошёл независимую проверку RAW: "
-                        +str(exc))
+                    text=("Ответ Task0 не прошёл независимую проверку RAW: "
+                          +str(exc))
+                    self.status.setText(text)
+                    self.readFailed.emit(text)
                 else:
                     self.status.setText(
                         f"Task0: проверенных полей {proof['confirmed_fields']}; "

@@ -25,6 +25,8 @@ def test_source_page_config_download_is_a_real_task0_action(qt_app,monkeypatch):
             invoked.append(fn)
     class FakeTask0Dialog:
         readCompleted=SignalMock()
+        readStarted=SignalMock()
+        readFailed=SignalMock()
         def __init__(self,device_ip,parent):
             self.device_ip=device_ip
             invoked.append(("created",device_ip,parent))
@@ -46,8 +48,8 @@ def test_source_page_config_download_is_a_real_task0_action(qt_app,monkeypatch):
         assert invoked[0][0]=="created"
         assert invoked[0][1]==controller.workspace.device_ipv4
         assert invoked[0][2] is win
-        assert callable(invoked[1])
-        assert invoked[2]=="shown"
+        assert all(callable(callback) for callback in invoked[1:4])
+        assert invoked[4]=="shown"
         assert win.session is None
         assert not win._live_active
         assert not win._measurement_mode_selected
@@ -212,5 +214,74 @@ def test_task0_cannot_start_while_original_measurement_selected(
         assert not dlg._busy()
     finally:
         dlg.close()
+        win.close()
+        qt_app.processEvents()
+
+
+def test_task0_failure_clears_stale_device_proof_and_loads_only_local_defaults(
+        qt_app,monkeypatch,tmp_path):
+    from ..desktop.main_window import MainWindow
+    from ..desktop import original_config_readonly_ui as ui
+    default=tmp_path/"DefaultConfig.txt"
+    # Source-owned flattened text file, NOT a device response.
+    default.write_text(
+        "; original local fallback fixture\n"
+        "+0x0000\n"
+        "0x0004 a:192.168.0.30\n",encoding="utf-8")
+    monkeypatch.setattr(
+        ui,"source_original_default_config_path",lambda:default)
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win.original_start_controller.open_config_mode(4)
+        panel=win.original_config_panel
+        proof={
+            "schema":"MVK_SOURCE_TASK0_CONFIG_IP_READ_V1",
+            "source_original_task":0,"read_only":True,
+            "device_commands_sent":False,
+            "original_delphi_byte_parity_verified":False,
+            "device_ipv4":win.original_start_controller.workspace.device_ipv4,
+            "confirmed_fields":1,
+            "fields":{"ConfigIP":{
+                "valid":True,"address":"0x0004",
+                "raw_hex_le":"01020304"}},
+        }
+        panel.apply_device_task0_read(proof)
+        assert panel.basic_table.item(0,3).text()=="4.3.2.1"
+        panel.source_task0_read_started()
+        assert panel.basic_table.item(0,3).text()=="—"
+        assert panel._task0_receipt is None
+        panel.source_task0_read_failed("source PARAM timed out")
+        assert panel._task0_receipt is None
+        assert panel.basic_table.item(0,3).text()=="a:192.168.0.30"
+        assert "ТОЛЬКО локальный DefaultConfig.txt" in panel.source_note.text()
+        assert "НЕ КОНФИГУРАЦИЯ" in panel.source_note.text()
+        assert not win._live_active
+    finally:
+        win.close()
+        qt_app.processEvents()
+
+
+def test_task0_failure_without_default_leaves_original_config_unknown(
+        qt_app,monkeypatch,tmp_path):
+    from ..desktop.main_window import MainWindow
+    from ..desktop import original_config_readonly_ui as ui
+    monkeypatch.setattr(
+        ui,"source_original_default_config_path",
+        lambda:tmp_path/"DefaultConfig.txt")
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win.original_start_controller.open_config_mode(4)
+        panel=win.original_config_panel
+        panel.source_task0_read_started()
+        panel.source_task0_read_failed("connection refused")
+        assert panel.basic_table.item(0,3).text()=="—"
+        assert "DefaultConfig.txt отсутствует" in panel.source_note.text()
+        assert panel._task0_receipt is None
+        assert not panel.save_button.isEnabled()
+    finally:
         win.close()
         qt_app.processEvents()

@@ -12,6 +12,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
+import sys
 import struct
 import tempfile
 
@@ -263,3 +264,20 @@ def original_task0_field_text(key:str,field:dict)->str:
     if key in _SOURCE_PORT_KEYS:
         return str(struct.unpack("<I",raw)[0])
     return "0x"+payload.upper()
+
+
+SOURCE_DEFAULT_CONFIG_FILENAME="DefaultConfig.txt"
+
+
+def source_original_default_config_path(
+        executable:Path|str|None=None)->Path:
+    """Original 008496D2..00849718 reads AppPath/DefaultConfig.txt on error.
+
+    This returns ONLY an installation-adjacent local file location. It
+    never opens a socket, reads application secrets or claims that local
+    defaults are the live configuration of the device.
+    """
+    binary=Path(executable) if executable is not None else Path(sys.executable)
+    if not binary.name or binary.is_dir():
+        raise ValueError("Executable path for original DefaultConfig required")
+    return binary.absolute().parent/SOURCE_DEFAULT_CONFIG_FILENAME
