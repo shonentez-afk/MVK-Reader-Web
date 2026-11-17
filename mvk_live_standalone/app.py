@@ -21,8 +21,9 @@ from mvk_compatible.core.native_r6_live_status import load_capture_live_status
 from mvk_compatible.core.native_r6_live_preview import load_live_preview
 from .spectrum import (
     FFT_SIZES, KINDS, PRESET_BANDS, Spectrum,
-    calculate_spectrum, plot_values, y_axis_label,
+    calculate_spectrum, plot_values, y_axis_label, db_reference_text,
 )
+from .live_ring import VerifiedLiveRing
 
 MAX_CAPTURE_MB = 2048
 
@@ -37,6 +38,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._local_ip = None
         self._last_stamp = None
         self._preview = None
+        self._gui_ring = VerifiedLiveRing()
+        self._last_submitted_key = None
         self._last_status = None
         self._spectrum: Spectrum | None = None
         self._future: Future | None = None
@@ -88,8 +91,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         for key,(name,unit) in KINDS.items():
             self.kind.addItem(f"{name} ({unit})", key)
         self.yscale = QtWidgets.QComboBox()
-        for txt,key in [("Линейная Y","linear"),("Логарифмическая Y","log"),("дБ Y (отн. 1 единицы)","db")]:
+        for txt,key in [("Линейная Y","linear"),("Логарифмическая Y (дБ)","db")]:
             self.yscale.addItem(txt,key)
+        self.db_ref = QtWidgets.QComboBox()
+        self.db_ref.addItem("ISO 1683 · 10⁻⁶ выбранной единицы", "iso")
+        self.db_ref.addItem("Относительно 1 выбранной единицы", "unit")
         self.xscale = QtWidgets.QComboBox()
         for txt,key in [("Линейная X","linear"),("Логарифмическая X","log")]:
             self.xscale.addItem(txt,key)
@@ -106,6 +112,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.smooth.setValue(1)
         for label,widget in [
             ("Канал",self.adc),("Тип",self.kind),("Шкала Y",self.yscale),
+            ("Опора дБ",self.db_ref),
             ("Шкала X",self.xscale),("FFT",self.nfft),("Полоса",self.band),
             ("Сглаживание (бин)",self.smooth),
         ]:
@@ -137,7 +144,7 @@ class LiveWindow(QtWidgets.QMainWindow):
 
         for w in (self.adc,self.kind,self.nfft,self.band,self.smooth):
             w.currentIndexChanged.connect(self._request_update) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._request_update)
-        for w in (self.yscale,self.xscale):
+        for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
         self._timer=QtCore.QTimer(self)
         self._timer.setInterval(900)  # current Native sidecar is published >=750 ms
@@ -164,20 +171,20 @@ class LiveWindow(QtWidgets.QMainWindow):
         kind=self.kind.currentData()
         ys=self.yscale.currentData()
         xs=self.xscale.currentData()
-        self.spec.setLabel("left",y_axis_label(kind,ys))
-        self.spec.getPlotItem().setLogMode(x=(xs=="log"),y=(ys=="log"))
+        self.spec.setLabel("left",y_axis_label(kind,ys,self.db_ref.currentData()))
+        # dB data is a logarithm already. Never apply logY to it again.
+        self.spec.getPlotItem().setLogMode(x=(xs=="log"),y=False)
 
     def _redraw_from_current(self,*_):
         self._apply_axes()
         self._render_spectrum()
 
     def _render_wave(self):
-        if self._preview is None:return
-        ch=self._preview.channels.get(self.adc.currentData())
-        if ch is None:
+        ch=self._gui_ring.channel(self.adc.currentData())
+        if ch is None or not ch.available:
             self.wave_curve.setData([],[])
             return
-        x=ch.samples
+        x=ch.latest(min(ch.available,250000))
         # Peak-preserving min/max decimation prevents hiding narrow spikes.
         step=max(1,len(x)//2500)
         last=x[-step*math.ceil(min(len(x),250000)/step):]
@@ -196,13 +203,17 @@ class LiveWindow(QtWidgets.QMainWindow):
         if self._preview is None or (self._future is not None and not self._future.done()):
             return
         s=self._read_settings()
-        ch=self._preview.channels.get(s[0])
-        if ch is None or len(ch.samples)<s[2]:
+        ch=self._gui_ring.channel(s[0])
+        if ch is None or ch.available<s[2]:
             self._spectrum=None
             self.spec_curve.setData([],[])
             self.metrics.setText(f"Ожидание {s[2]} подтверждённых отсчётов АЦП {s[0]}")
             return
-        source=ch.samples[-s[2]:].copy()
+        job_key=(self._gui_ring.session_id, s[0], ch.end, s)
+        if job_key==self._last_submitted_key:
+            return
+        source=ch.latest(s[2])  # independent snapshot for worker thread
+        self._last_submitted_key=job_key
         self._job_settings=(self._generation,self._preview.updated_utc,s)
         self._future=self._executor.submit(calculate_spectrum,source,ch.rate_hz,
                  kind=s[1],nfft=s[2],band_hz=s[3],smooth_bins=s[4])
@@ -240,16 +251,24 @@ class LiveWindow(QtWidgets.QMainWindow):
                 return
             preview=load_live_preview(self._capture_root,status)
             if preview is None or preview.updated_utc==self._last_stamp:return
+            updated=self._gui_ring.ingest_preview(preview)
             self._last_stamp=preview.updated_utc
             self._preview=preview
             ch=status["channels"][self.adc.currentData()-1]
-            self.quality.setText("Контроль АЦП: "+ch["quality"]+" · DSP источник: AUX4700 · FFT: APP_DERIVED")
-            self._request_update()
+            self.quality.setText("Контроль АЦП: "+ch["quality"]+
+                " · клиентский буфер: "+
+                str(self._gui_ring.channel(self.adc.currentData()).available if
+                    self._gui_ring.channel(self.adc.currentData()) else 0)+
+                " отсчётов · DSP: AUX4700 · FFT: APP_DERIVED")
+            if updated:
+                self._request_update()
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             self._clear(f"Превью отклонено: {exc}")
 
     def _clear(self,message):
         self._preview=None
+        self._gui_ring.clear()
+        self._last_submitted_key=None
         self._spectrum=None
         self._last_stamp=None
         self._generation+=1
@@ -262,7 +281,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._apply_axes()
         s=self._spectrum
         x=s.hz
-        y=plot_values(s,self.yscale.currentData())
+        y=plot_values(s,self.yscale.currentData(),reference=self.db_ref.currentData())
         valid=np.isfinite(x)&np.isfinite(y)
         if self.xscale.currentData()=="log":valid &= x>0
         # Peak-preserving chart reduction: physics uses full FFT.
@@ -279,7 +298,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.metrics.setText(
             f"АЦП {self.adc.currentData()} · {s.nfft} отсчётов · Δf {s.resolution_hz:g} Гц · "
             f"пик {s.peak[0]:.2f} Гц / {s.peak[1]:.5g} {s.units} СКЗ · "
-            "локальная FFT, не приборный DSP"
+            ("· дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())+
+             " · локальная FFT, не DSP" if self.yscale.currentData()=="db"
+             else "· локальная FFT, не приборный DSP")
         )
 
     def _cursor_text(self,*_):
@@ -287,7 +308,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         f=self._spectrum.hz
         i=int(np.argmin(np.abs(f-self.cursor.value())))
         value=self._spectrum.rms[i]
-        self.spec.setTitle(f"FFT · курсор {f[i]:.2f} Гц · {value:.5g} {self._spectrum.units} СКЗ")
+        if self.yscale.currentData()=="db":
+            dbv=plot_values(self._spectrum,"db",reference=self.db_ref.currentData())[i]
+            self.spec.setTitle(f"FFT · {f[i]:.2f} Гц · {dbv:.2f} дБ · {value:.5g} {self._spectrum.units} СКЗ")
+        else:
+            self.spec.setTitle(f"FFT · курсор {f[i]:.2f} Гц · {value:.5g} {self._spectrum.units} СКЗ")
 
     @staticmethod
     def _canonical_ipv4(value:str)->str:
