@@ -141,6 +141,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         for name,key in [
             ("FFT · амплитуда СКЗ","fft"),
             ("PSD Уэлча · мощность/Гц","welch"),
+            ("ASD Уэлча · амплитуда/√Гц","asd"),
             ("1/3 октавы · СКЗ полосы","third_octave"),
             ("Спектр огибающей · Hilbert","envelope"),
         ]:
@@ -419,14 +420,17 @@ class LiveWindow(QtWidgets.QMainWindow):
         if self._spectrum is not None and self._spectrum.kind==kind and self._spectrum.mode==mode:
             vertical=vibration_y_label(self._spectrum,ys,self.db_ref.currentData())
         else:
-            prefix={"fft":"FFT","welch":"PSD Уэлча",
+            prefix={"fft":"FFT","welch":"PSD Уэлча","asd":"ASD Уэлча",
                     "third_octave":"1/3 октавы","envelope":"Огибающая"}[mode]
             if ys=="linear":
-                vertical=f"{prefix} · {unit} СКЗ" if mode!="welch" else f"{prefix} · ({unit})²/Гц"
+                vertical=(f"{prefix} · ({unit})²/Гц" if mode=="welch" else
+                          f"{prefix} · {unit}/√Гц" if mode=="asd" else
+                          f"{prefix} · {unit} СКЗ")
             else:
                 ref=db_reference_text(kind,self.db_ref.currentData())
                 vertical=f"{prefix} · дБ (отн. {ref})"
                 if mode=="welch":vertical+="²/Гц"
+                if mode=="asd":vertical+="/√Гц"
         self.spec.setLabel("left",vertical)
         # Numerical amplitudes are ALREADY logarithmic dB. A second log-Y
         # transformation would distort negative and zero dB values.
@@ -727,7 +731,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         # IPC transfers the selected ADC only, not a periodic 8 MiB ZIP.
         # Welch/1/3 octave use the extra available history when configured.
-        count=min(self._gui_ring.capacity,max(65536,int(self.nfft.currentData())*(2 if self.analysis.currentData() in ("welch","third_octave") else 1)))
+        count=min(self._gui_ring.capacity,max(65536,int(self.nfft.currentData())*(2 if self.analysis.currentData() in ("welch","asd","third_octave") else 1)))
         self._ipc_channel=self.adc.currentData()
         self._ipc_future=self._ipc_executor.submit(
             self._ipc_client.read_channel,self._ipc_channel,count)
@@ -779,15 +783,15 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.spec_curve.setData(x[ix],y[ix],connect="finite")
         self._cursor_text()
         label=({"fft":"FFT","welch":"Welch PSD",
-               "third_octave":"1/3 октавы","envelope":"Hilbert огибающая"}[s.mode])
-        suffix="" if s.mode=="welch" else " СКЗ"
+               "asd":"ASD Уэлча","third_octave":"1/3 октавы","envelope":"Hilbert огибающая"}[s.mode])
+        suffix="" if s.mode in ("welch","asd") else " СКЗ"
         base=(f"{label} · АЦП {self.adc.currentData()} · N={s.nfft} · "
               f"Δf={s.resolution_hz:g} Гц · пик {s.peak[0]:.2f} Гц / "
               f"{s.peak[1]:.5g} {s.units}{suffix} · "
               f"источник APP_DERIVED (НЕ AUX4700)")
         if self.yscale.currentData()=="db":
             base+=" · дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())
-        if s.mode in ("welch","third_octave"):
+        if s.mode in ("welch","asd","third_octave"):
             base+=f" · сегментов Welch: {s.segments} · HP от {s.floor_hz:g} Гц"
         self.metrics.setText(base)
 
@@ -799,7 +803,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             pos=10**np.clip(pos,-12,12)
         i=int(np.argmin(np.abs(f-pos)))
         value=self._spectrum.rms[i]
-        unit=f"{self._spectrum.units}"+("" if self._spectrum.mode=="welch" else " СКЗ")
+        unit=f"{self._spectrum.units}"+("" if self._spectrum.mode in ("welch","asd") else " СКЗ")
         if self.yscale.currentData()=="db":
             dbv=vibration_plot_values(self._spectrum,"db",reference=self.db_ref.currentData())[i]
             self.spec.setTitle(f"{self._spectrum.mode.upper()} · {f[i]:.2f} Гц · "
@@ -809,7 +813,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                                f"{value:.5g} {unit}")
 
     def _update_waterfall(self,job_key):
-        if self._spectrum is None or self._spectrum.mode not in ("fft","welch"):
+        if self._spectrum is None or self._spectrum.mode not in ("fft","welch","asd"):
             return
         if job_key==self._waterfall_key:
             return
