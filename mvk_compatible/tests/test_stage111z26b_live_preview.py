@@ -20,12 +20,15 @@ def make_preview(tmp_path, *, modify=None, tamper_adc=False, extra=False,
                  count=65536, source_rate=65536):
     root = tmp_path / "capture"
     state = fixture_state()
-    # Full-size 262144-sample synthetic preview requires a corresponding
-    # (still synthetic) same-run Go status with enough received ADC frames.
-    if count > state["channels"][0]["samples"]:
-        for ch in state["channels"][:8]:
-            ch["samples"] = count
-            ch["frames"] = count//256
+    # One synthetic source run: the atomic preview and Go status refer
+    # to the SAME capture-local uint64 count. The older fixture kept
+    # 76800 status samples for a 65536-sample window; that is valid only
+    # if the device next-index also advances by the remaining 11264.
+    # Our fixture supplies a device end exactly at 4096+count instead.
+    for ch in state["channels"][:8]:
+        ch["samples"] = count
+        ch["frames"] = count//256
+    if count > 300*256:
         state["raw_bytes"] = 32*count + 50_000
         state["frames_decoded"] = 8*(count//256) + 100
     run = root / state["session_id"]
@@ -53,7 +56,7 @@ def make_preview(tmp_path, *, modify=None, tamper_adc=False, extra=False,
             sample_rate_hz=source_rate,
             first_sample_index=4096,
             next_sample_index=4096+len(samples),
-            captured_samples=status["channels"][channel-1]["samples"],
+            captured_samples=len(samples),
             sha256=hashlib.sha256(data).hexdigest(),
         ))
     if modify is not None:
