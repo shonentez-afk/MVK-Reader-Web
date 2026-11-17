@@ -125,6 +125,7 @@ type Monitor struct {
 	liveLastAUXUTC string
 	liveDSPStatus [8]uint32
 	liveDSPSeen [8]bool
+	liveDSPOriginal [8]CalculatedChannel // vendor AUX4700; NEVER local FFT
 	livePreviewFailures int // optional file sharing errors; never interrupt RAW
 }
 
@@ -411,6 +412,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				if m.liveProgressEnabled {
 					m.liveDSPStatus[channel] = v.Status
 					m.liveDSPSeen[channel] = true
+					m.liveDSPOriginal[channel] = v
 				}
 				data, e := json.Marshal(v)
 				if e != nil {
