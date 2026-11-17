@@ -579,7 +579,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         else:
             available=ch.available
         history=min(available,s[2]*2) if s[5] in (
-            "welch","third_octave") else s[2]
+            "welch","asd","third_octave") else s[2]
         history=max(history,s[2])
         try:
             source,fs,stamp=self._current_window(history)
