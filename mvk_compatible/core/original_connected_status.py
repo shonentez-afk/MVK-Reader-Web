@@ -13,7 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .native_r6_live_status import SCHEMA
 from .original_mode2_live_health import live_transport_health
-from .original_system_register_fields import SYSTEM_SOURCE_FIELDS,parse_source_system_registers
+from .original_system_register_fields import (
+    SYSTEM_SOURCE_FIELDS,parse_source_system_registers,verify_source_error_overlap,
+)
 
 SOURCE="ORIGINAL_CONNECTED_SYSTEM_STATUS_VISIBLE_SCREEN_20261116"
 SYSTEM_STATUS_KEYS=(
@@ -113,6 +115,8 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
             and not stale and not health.stream_silent)
     # Never fill serial, firmware, errors, DSP MD5 or Modbus counters
     # using Go capture elapsed_seconds/frames_decoded/raw_bytes.
+    if native_status is not None:
+        verify_source_error_overlap(native_status)
     fields=parse_source_system_registers(native_status) if native_status is not None else None
     rows=tuple((caption,fields[i].value() if fields is not None else UNKNOWN)
                for i,(_,caption) in enumerate(SYSTEM_STATUS_KEYS))

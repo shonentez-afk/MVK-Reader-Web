@@ -17,6 +17,7 @@ No programmatic device connection or background scans happen here.
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from ..core.original_device_ip_settings import (
     startup_device_address,save_compatible_device_address,
 )
@@ -238,7 +239,8 @@ class OriginalStartController:
         self.status.setText(
             f"Выбран IP: {self.workspace.device_ipv4}; "
             "прибор не опрашивался")
-        if self._saved_device_ip!=self.workspace.device_ipv4:
+        if (getattr(sys,"frozen",False) and
+                self._saved_device_ip!=self.workspace.device_ipv4):
             try:
                 save_compatible_device_address(self.workspace.device_ipv4)
                 self._saved_device_ip=self.workspace.device_ipv4
