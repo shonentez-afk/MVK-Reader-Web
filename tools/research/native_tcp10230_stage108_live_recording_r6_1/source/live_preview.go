@@ -21,7 +21,12 @@ import (
 const livePreviewFile = "MVK_NATIVE_LIVE_PREVIEW.zip"
 const livePreviewSchema = "MVK_NATIVE_R6_CALIBRATED_PREVIEW_V1"
 const livePreviewDomain = "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
-const livePreviewSamples = 8192 // 0.125 s @ 65536 Hz, 8 channels = 256 KiB
+// Source original _Unit128.pas 0084819A..00848200 reads Tag->N at
+// 008D3450; the default source bSpecLines is N=65536. A bounded
+// 8192-point preview MUST NOT silently impersonate that selected FFT.
+// This is an 8*256KiB optional ring (2 MiB), not a new TCP receiver.
+// Longer source presets 131072/262144 require verified extra history.
+const livePreviewSamples = 65536
 
 type LivePreviewBuffer struct {
     bytes [8][]byte

@@ -2125,8 +2125,15 @@ class MainWindow(QMainWindow):
         self._sync_spec_lines_presentation(sample_rate)
 
     def _spec_n_changed(self,*_):
-        """Reject unavailable N without discarding already rendered FFT."""
-        if self.session is None:return
+        """Source bSpecLines changes exact requested N in offline AND live."""
+        if self.session is None:
+            if self._live_active:
+                # Original 0084819A..00848200 uses the selected Tag→N,
+                # not the nearest available FFT window. We do not pad.
+                self._sync_spec_lines_presentation()
+                if self._live_preview is not None and not self._source_live_view_frozen:
+                    self._render_live_spectrum()
+            return
         requested=int(self.spec_n.currentData())
         try:
             samples,fs,_,_=self.session.samples(self._ch())
@@ -3032,8 +3039,13 @@ class MainWindow(QMainWindow):
             return
         try:
             ch=self._ch()
+            selected_n=int(self.spec_n.currentData())
+            channel=self._live_preview.channels.get(ch)
+            if channel is not None:
+                self._sync_spec_lines_presentation(channel.rate_hz)
             d=provisional_spectrum(
-                self._live_preview,ch,mode=self.spec_mode.currentIndex())
+                self._live_preview,ch,mode=self.spec_mode.currentIndex(),
+                n_fft=selected_n)
             xs=np.asarray(d['frequency_hz'],dtype=float)
             ys=np.asarray(d['amplitude'],dtype=float)
             self.spec_plot.clear_source_tqgr_series()
@@ -3060,8 +3072,17 @@ class MainWindow(QMainWindow):
                 'результат не предназначен для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
+            # No stale 8192-point FFT may remain on screen when the
+            # operator explicitly requested N=65536/131072/262144.
             self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
+            self._full_spectrum=None
+            self._spectrum_summary=None
+            self.spec_mean.setText(
+                f'LIVE · FFT N={int(self.spec_n.currentData())}: '
+                'ожидание реальных данных; паритет Delphi не доказан')
+            self.spec_mean_primary.setText(
+                'LIVE FFT · недостаточная исходная история')
             self.spec_hint.setText('Live FFT недоступен: '+str(exc))
 
     def _end_live_capture(self, exported):

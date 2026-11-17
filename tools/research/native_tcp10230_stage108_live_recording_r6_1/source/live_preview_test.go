@@ -17,8 +17,8 @@ import (
 func TestPreviewRingSameBytesAsAlreadyCalibratedSpoolAndWrap(t *testing.T) {
     p:=newLivePreviewBuffer()
     initial:=uint32(1024)
-    complete:=make([]byte,0,40*1024)
-    for frame:=0; frame<40; frame++ { // wraps capacity at 32 ADC packets
+    complete:=make([]byte,0,300*1024)
+    for frame:=0; frame<300; frame++ { // wraps 65536 ring at 256 ADC packets
         data:=make([]byte,1024)
         for j:=0;j<256;j++ {
             binary.LittleEndian.PutUint32(data[j*4:],uint32(frame*256+j))
@@ -28,7 +28,7 @@ func TestPreviewRingSameBytesAsAlreadyCalibratedSpoolAndWrap(t *testing.T) {
         complete=append(complete,data...)
     }
     captured,n,first:=p.channelBytes(3)
-    if n!=livePreviewSamples || first != initial+uint32(8*256) ||
+    if n!=livePreviewSamples || first != initial+uint32((300-256)*256) ||
         !bytes.Equal(captured,complete[len(complete)-len(captured):]) {
         t.Fatal("wrap/order/Float32 stored bits disagree with original spool byte sequence")
     }

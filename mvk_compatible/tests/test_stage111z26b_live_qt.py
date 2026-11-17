@@ -43,6 +43,11 @@ def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_
     window._receive_live_preview(preview)
     assert len(window.wave_plot.listDataItems())==1
     assert len(window.spec_plot.listDataItems())==1
+    # bSpecLines default N=65536 must be the ACTUAL candidate FFT N,
+    # not the old silent downshift to N=8192 at Fs=65536Hz.
+    assert int(window.spec_n.currentData())==65536
+    assert "FFT N=65536" in window.spec_mean.text()
+    assert "1 Гц/лин" in window.spec_lines_button.text()
     assert "LIVE PREVIEW" in window.wave_hint.text()
     assert "FRange повторно НЕ применялся" in window.spec_hint.text()
     assert not window.spec_copy_button.isEnabled()
@@ -56,6 +61,24 @@ def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_
     assert "АЦП7" in window.wave_mean_primary.text()
     window.spec_mode.setCurrentIndex(1)
     qt_app.processEvents()
+    assert len(window.spec_plot.listDataItems())==1
+    # Source menu may select a smaller, *explicit* FFT N; it must
+    # recompute from the SAME SHA-verified incoming Float32 bytes.
+    window.spec_n.setCurrentText("32768")
+    qt_app.processEvents()
+    assert "FFT N=32768" in window.spec_mean.text()
+    assert "2 Гц/лин" in window.spec_lines_button.text()
+    assert len(window.spec_plot.listDataItems())==1
+    # Original 131072 requires history the 65536 bounded live ring
+    # cannot yet provide. Blank the prior spectrum, never lie about N.
+    window.spec_n.setCurrentText("131072")
+    qt_app.processEvents()
+    assert "ожидание реальных данных" in window.spec_mean.text()
+    assert "FFT N=131072" in window.spec_hint.text()
+    assert not window.spec_plot.listDataItems()
+    window.spec_n.setCurrentText("65536")
+    qt_app.processEvents()
+    assert "FFT N=65536" in window.spec_mean.text()
     assert len(window.spec_plot.listDataItems())==1
     window._invalidate_live_preview("некорректный SHA")
     assert not window.wave_plot.listDataItems()

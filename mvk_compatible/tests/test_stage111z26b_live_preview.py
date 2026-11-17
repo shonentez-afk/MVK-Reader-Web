@@ -67,15 +67,16 @@ def test_preview_fft_uses_existing_candidate_and_precalibrated_bits(tmp_path):
     assert set(preview.channels)==set(range(1,9))
     assert preview.channels[0+1].first_index==4096
     assert preview.channels[1].samples.dtype==np.dtype("<f4")
-    assert preview.channels[1].samples.size==8192
+    assert preview.channels[1].samples.size==MAX_SAMPLES
     signal=provisional_waveform(preview,1,ac=False)
     assert signal["source"]=="LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED"
     assert signal["provisional_not_audited"]
     assert signal["time_s"][0]==pytest.approx(4096/65536)
     assert signal["rms_m_s2"]>0.5
     spec=provisional_spectrum(preview,1,mode=1)
-    assert spec["n_fft"]==8192
-    assert spec["df_hz"]==8.
+    assert spec["n_fft"]==65536
+    assert spec["df_hz"]==1.
+    assert spec["source_fft_n_matches_requested_bSpecLines"]
     assert spec["f_range_used"]==1.
     assert spec["input_domain"]=="calibrated_bin"
     assert spec["provisional_not_audited"] is True
@@ -101,7 +102,7 @@ def test_corrupted_or_mixed_preview_never_reaches_graphs(tmp_path,case):
         if case=="future": meta["updated_utc"]="2026-11-02T09:02:50Z"
         if case=="old": meta["updated_utc"]="2026-11-02T09:00:55Z"
         if case=="duplicate_adc": meta["channels"][1]["adc"]=1
-        if case=="bad_sample_count": meta["channels"][0]["samples"]=8193
+        if case=="bad_sample_count": meta["channels"][0]["samples"]=MAX_SAMPLES+1
         if case=="not_read_only": meta["read_only_no_app_payload_sent"]=False
         if case=="wrong_rate": meta["channels"][0]["sample_rate_hz"]=12345
     root,status,run=make_preview(tmp_path,
@@ -133,3 +134,30 @@ def test_insufficient_original_history_stays_disallowed(tmp_path):
     assert preview.channels[1].samples.size==512
     with pytest.raises(ValueError,match="insufficient"):
         provisional_spectrum(preview,1)
+
+
+def test_live_source_spec_lines_recomputes_exact_requested_original_fft_n(tmp_path):
+    root,status,_=make_preview(tmp_path)
+    preview=load_live_preview(root,status,now=now())
+    for selected in (8192,16384,32768,65536):
+        spectrum=provisional_spectrum(preview,1,mode=1,n_fft=selected)
+        assert spectrum["n_fft"]==selected
+        assert spectrum["df_hz"]==pytest.approx(65536/selected)
+        assert spectrum["source_selected_fft_n"]==selected
+        assert spectrum["source_fft_n_matches_requested_bSpecLines"]
+    for not_yet_available in (131072,262144):
+        with pytest.raises(ValueError,match="реальных отсчётов"):
+            provisional_spectrum(
+                preview,1,mode=1,n_fft=not_yet_available)
+    with pytest.raises(ValueError,match="Invalid original"):
+        provisional_spectrum(preview,1,n_fft=8193)
+    with pytest.raises(ValueError,match="Invalid original"):
+        provisional_spectrum(preview,1,n_fft=True)
+
+
+def test_source_prebuffer_does_not_pad_or_downsample_requested_n(tmp_path):
+    root,status,_=make_preview(tmp_path,count=8192)
+    preview=load_live_preview(root,status,now=now())
+    assert provisional_spectrum(preview,1,n_fft=8192)["n_fft"]==8192
+    with pytest.raises(ValueError,match="FFT N=65536"):
+        provisional_spectrum(preview,1,n_fft=65536)

@@ -22,8 +22,11 @@ from .offline_export import waveform_for_zip, spectrum_for_zip
 NAME = "MVK_NATIVE_LIVE_PREVIEW.zip"
 SCHEMA = "MVK_NATIVE_R6_CALIBRATED_PREVIEW_V1"
 DOMAIN = "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
-MAX_SAMPLES = 8192
-MAX_DISK_BYTES = 500_000
+# Original bSpecLines default is 65536, not the old 8192-point
+# preview approximation. Keep the sidecar strict and bounded: at most
+# 8 channels * 65536 Float32 samples (2MiB) plus small metadata.
+MAX_SAMPLES = 65536
+MAX_DISK_BYTES = 3_000_000
 MAX_MANIFEST = 16_384
 MAX_UNCOMPRESSED_BYTES = MAX_SAMPLES * 4 * 8 + MAX_MANIFEST
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
@@ -212,11 +215,29 @@ def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) ->
     return out
 
 
-def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1) -> dict:
+def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
+                         *, n_fft: int | None = None) -> dict:
+    """Compute only the SELECTED source bSpecLines N, no silent fallback.
+
+    Source _Unit128.pas 0084819A..008481AA assigns gvar_008D3450
+    to GetSpectrum Params+4. The prior live preview auto-selected the
+    largest available power of two, misrepresenting the visible source
+    menu, currently default N=65536. Preserve the no-argument API
+    solely for offline/test callers; Qt always supplies its menu N.
+    """
     channel = preview.channels.get(adc)
     if channel is None or len(channel.samples) < 1024:
         raise ValueError("Live ADC has insufficient real FFT history")
-    n_fft = 1 << (min(len(channel.samples), MAX_SAMPLES).bit_length()-1)
+    if n_fft is None:
+        n_fft = 1 << (min(len(channel.samples), MAX_SAMPLES).bit_length()-1)
+    elif (type(n_fft) is not int or n_fft not in
+          (1024, 4096, 8192, 16384, 32768, 65536, 131072, 262144)):
+        raise ValueError("Invalid original bSpecLines N")
+    if len(channel.samples) < n_fft:
+        raise ValueError(
+            f"FFT N={n_fft}: требуется {n_fft} реальных отсчётов, "
+            f"в текущем Live окне {len(channel.samples)}; "
+            "уменьшение N или нулевое дополнение запрещено")
     out = spectrum_for_zip(
         Path("NOT_OPENED"), adc, n_fft, mode, None,
         max_hz=channel.rate_hz/2, max_points=n_fft//2,
@@ -226,6 +247,10 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1) -> dict:
     _mark_absolute_live_source_window(out,channel)
     out["source"] = "LIVE_NATIVE_R6_FFT_IDR_CANDIDATE_UNVERIFIED"
     out["provisional_not_audited"] = True
+    out["source_selected_fft_n"] = n_fft
+    out["source_fft_n_matches_requested_bSpecLines"] = True
+    out["original_bSpecLines_source"] = "_Unit128.pas:0084819A-00848200"
+    out["source_history_uses_exact_calibrated_float32"] = True
     out["warning"] = (
         "Live FFT из реальных калиброванных отсчётов R6.1 (FRange=1 после "
         "BIN spool, без второго gain). Оригинальный MVKView parity НЕ доказан.")
