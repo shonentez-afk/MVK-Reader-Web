@@ -731,7 +731,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         # IPC transfers the selected ADC only, not a periodic 8 MiB ZIP.
         # Welch/1/3 octave use the extra available history when configured.
-        count=min(self._gui_ring.capacity,max(65536,int(self.nfft.currentData())*(2 if self.analysis.currentData() in ("welch","asd","third_octave") else 1)))
+        count=min(self._gui_ring.capacity,max(8192,int(self.nfft.currentData())*(2 if self.analysis.currentData() in ("welch","asd","third_octave") else 1)))
         self._ipc_channel=self.adc.currentData()
         self._ipc_future=self._ipc_executor.submit(
             self._ipc_client.read_channel,self._ipc_channel,count)
