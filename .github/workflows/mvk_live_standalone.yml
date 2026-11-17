@@ -1,0 +1,39 @@
+name: MVK Live Standalone - units and Qt smoke
+
+on:
+  push:
+    branches:
+      - feature/mvk-live-standalone-20261117
+    paths:
+      - 'mvk_live_standalone/**'
+      - '.github/workflows/mvk_live_standalone.yml'
+  workflow_dispatch:
+
+jobs:
+  live-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check numpy scipy pytest
+      - name: Verify acceleration, velocity, displacement and scale contracts
+        run: python -m pytest -q mvk_live_standalone/tests/test_spectrum.py
+  live-qt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install GUI dependencies
+        run: python -m pip install --disable-pip-version-check numpy scipy pytest PySide6 pyqtgraph
+      - name: Qt offscreen and physical spectrum unit smoke
+        run: python -m pytest -q mvk_live_standalone/tests/
