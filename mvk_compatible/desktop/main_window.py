@@ -3215,7 +3215,8 @@ class MainWindow(QMainWindow):
         reply=QMessageBox.question(
             self,"Исходная установка частоты МВК01",
             f"Передать SetRate({rate}) на подключённый прибор? "
-            "Изменение ЧД может повлиять на текущий процесс измерения.",
+            "Изменение ЧД может повлиять на измерение. При изменении в середине "
+            "записи RAW сохранится, но однодиапазонный BIN будет отклонён.",
             QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
         if reply!=QMessageBox.Yes:return False
         try:

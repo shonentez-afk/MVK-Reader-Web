@@ -105,6 +105,9 @@ def validate_live_status(payload: dict, *, expected_run: str,
     status_cells=parse_source_cells(payload)
     verify_source_error_overlap(payload)
     validated_source_tx=validate_original_task2_tx(payload)
+    rate_transition=payload.get("source_rate_transition_during_live",False)
+    if type(rate_transition) is not bool:
+        raise ValueError("Invalid real Task2 rate transition flag")
     source_system_error=bool(status_cells and status_cells[0].valid
                              and status_cells[0].value>0)
     elapsed = payload.get("elapsed_seconds")
@@ -140,6 +143,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
     result["channels"] = safe
     result["source_system_error_observed"] = source_system_error
     result["source_original_setrate_physically_sent"] = physical_source_tx
+    result["source_rate_transition_during_live"] = rate_transition
     result["original_source_tx_proof"] = (
         validated_source_tx.receipt() if validated_source_tx is not None else None)
     result["snapshot_age_s"] = age
@@ -149,7 +153,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
         result["snapshot_stale"] or
         (silent is not None and silent > 4.0) or
         (all(source_fields) and payload[SOURCE_RX_FIELDS[2]]>0) or
-        source_system_error or
+        source_system_error or rate_transition or
         any(ch["quality"] in ("ОШИБКА ПОТОКА", "DSP: ПРЕДУПРЕЖДЕНИЕ") for ch in safe))
     return result
 

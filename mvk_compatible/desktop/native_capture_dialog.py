@@ -262,6 +262,9 @@ class NativeCaptureDialog(QDialog):
             label = "Нет обнаруженных ошибок потока; это НЕ подтверждение точности датчиков/FFT."
         if snapshot["aux4700_updates"] == 0:
             label += " · Статусы DSP пока НЕ получены."
+        if snapshot.get("source_rate_transition_during_live"):
+            label += (" · ИЗМЕНЕНИЕ ЧД: весь RAW сохраняется, но одиночный "
+                      "BIN не может считаться проверенным; экспорт будет отклонён.")
         self.live_quality.setText(label)
         for i, ch in enumerate(snapshot["channels"]):
             fs = ", ".join(str(x) for x in ch["sample_rates_hz"]) or "—"

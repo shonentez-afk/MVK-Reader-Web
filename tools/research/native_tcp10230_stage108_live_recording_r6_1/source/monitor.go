@@ -42,6 +42,7 @@ type Summary struct {
 	SocketRemoteAddr       string            `json:"connected_remote_address,omitempty"`
 	ReadOnly               bool              `json:"read_only_no_app_payload_sent"`
 	SourceInitialRetryAttempts uint64 `json:"source_initial_retry_attempts,omitempty"`
+	SourceRateTransition bool `json:"source_rate_transition_during_live,omitempty"`
 	SourceSetRateApproved bool `json:"source_setrate_tx_approved,omitempty"`
 	SourceSetRateCount uint64 `json:"source_setrate_sent_commands,omitempty"`
 	SourceSetRateBytes uint64 `json:"source_setrate_sent_bytes,omitempty"`
@@ -102,6 +103,7 @@ type Monitor struct {
 	liveBin     *LiveBinSpool
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
+	sourceRateTransitionDetected bool // valid RAW but no single-rate BIN parity
 	// Opt-in Stage111Z26 UI-only telemetry, never part of original RAW/BIN.
 	liveProgressEnabled bool
 	liveTargetSeconds int
@@ -332,8 +334,17 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 			m.warn(fmt.Sprintf("channel %d contains non-finite ADC/TACH values", sample.Channel+1))
 		}
 		if typ == typeADC && m.liveBin != nil {
-			if e := m.liveBin.adcFrame(f, *sample); e != nil {
-				return e
+			// Original mRate1Click permits rate changes. Keep every subsequent
+			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
+			// corrupt TCP. Existing single-rate BIN cannot certify this session.
+			if m.sourceTask2TX!=nil && len(c.rates)>1 && !m.sourceRateTransitionDetected {
+				m.sourceRateTransitionDetected=true
+				m.summary.SourceRateTransition=true
+				m.warn("Original SetRate changed ADC Fs during capture: RAW retained, single-rate BIN export unavailable")
+				if m.liveBin.preview!=nil {m.liveBin.preview=nil}
+			}
+			if !m.sourceRateTransitionDetected {
+				if e := m.liveBin.adcFrame(f, *sample);e!=nil{return e}
 			}
 		}
 	case typeParam:
