@@ -281,6 +281,11 @@ class NativeCaptureDialog(QDialog):
             label = "Нет обнаруженных ошибок потока; это НЕ подтверждение точности датчиков/FFT."
         if snapshot["aux4700_updates"] == 0:
             label += " · Статусы DSP пока НЕ получены."
+        source_ticks=snapshot.get("source_values_ticks_address_3100")
+        if source_ticks is not None:
+            label += (f" · Исходные VALUES 0x3100: {source_ticks}; "
+                      f"AUX4700: {snapshot['aux4700_updates']} "
+                      "(разные события).")
         if snapshot.get("source_rate_transition_during_live"):
             label += (" · ИЗМЕНЕНИЕ ЧД: весь RAW сохраняется, но одиночный "
                       "BIN не может считаться проверенным; экспорт будет отклонён.")
