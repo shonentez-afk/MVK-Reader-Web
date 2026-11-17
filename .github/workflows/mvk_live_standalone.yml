@@ -33,6 +33,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install system Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxcb-cursor0
       - name: Install GUI dependencies
         run: python -m pip install --disable-pip-version-check numpy scipy pytest PySide6 pyqtgraph
       - name: Qt offscreen and physical spectrum unit smoke
