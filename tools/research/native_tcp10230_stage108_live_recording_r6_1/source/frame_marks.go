@@ -51,6 +51,7 @@ type frameMarkReceipt struct {
     Reason string `json:"reason,omitempty"`
     FramesDecoded uint64 `json:"frames_decoded"`
     AUX4700Updates uint64 `json:"aux4700_updates"`
+    SourceValuesTicks uint64 `json:"source_values_ticks_address_3100"`
     ChannelSamples [10]uint64 `json:"channel_samples"`
     Channels [10]bool `json:"channels"`
     Spec [43]bool `json:"spec"`
@@ -65,6 +66,7 @@ type frameMarkAudit struct {
     SourceRawSHA256 string `json:"source_raw_sha256"`
     EndFramesDecoded uint64 `json:"end_frames_decoded"`
     EndAUX4700Updates uint64 `json:"end_aux4700_updates"`
+    EndSourceValuesTicks uint64 `json:"end_source_values_ticks_address_3100"`
     EndChannelSamples [10]uint64 `json:"end_channel_samples"`
     DeviceCommandsSent bool `json:"device_commands_sent"`
     SourceFrameBoundary bool `json:"source_frame_boundary"`
@@ -147,6 +149,7 @@ func (c *frameMarkController) poll(m *Monitor,at time.Time) {
         }
         receipt.FramesDecoded=m.summary.TotalFrames
         receipt.AUX4700Updates=m.summary.Aux4700
+        receipt.SourceValuesTicks=m.summary.ValuesTicks
         for i:=0;i<10;i++ {receipt.ChannelSamples[i]=m.summary.Channels[i].Samples}
         if !info.Mode().IsRegular() || info.Size()>frameMarkMaxRequestBytes {
             receipt.Reason="nonregular or oversized local request"
@@ -214,6 +217,7 @@ func (c *frameMarkController) finalize(m *Monitor) error {
         SourceRawSHA256:m.summary.RawSHA256,
         EndFramesDecoded:m.summary.TotalFrames,
         EndAUX4700Updates:m.summary.Aux4700,
+        EndSourceValuesTicks:m.summary.ValuesTicks,
         DeviceCommandsSent:m.sourceTask2TX!=nil && m.sourceTask2TX.sentBytes>0,
         SourceFrameBoundary:true,
         OriginalDelphiFileParityVerified:false,
