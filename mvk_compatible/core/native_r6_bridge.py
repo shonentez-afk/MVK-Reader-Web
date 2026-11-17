@@ -93,13 +93,29 @@ class CaptureSpec:
             raise ValueError("Неверный режим отправки оригинальных команд")
         validate_ipv4(self.device_ipv4, field="IP МВК")
         validate_ipv4(self.local_ipv4, field="IP Ethernet")
-        if not isinstance(self.seconds, int) or not 1 <= self.seconds <= 300:
-            raise ValueError("Время записи: 1..300 секунд")
+        if type(self.seconds) is not int or not 0 <= self.seconds <= 300:
+            raise ValueError("Время записи: 0 (до остановки) либо 1..300 секунд")
         if not isinstance(self.max_mb, int) or not 1 <= self.max_mb <= 2048:
             raise ValueError("Лимит RAW: 1..2048 МиБ")
         parent = Path(self.output_parent)
         if parent.is_symlink() or not parent.is_dir():
             raise ValueError("Каталог записи должен существовать и не быть ссылкой")
+
+    @property
+    def source_until_stop(self) -> bool:
+        """Original Task2 Execute has no fixed 30/300-second timer.
+
+        0 is only used with the verified GUI's local -stop-file and
+        bounded RAW limit; the operator still approves TCP separately.
+        """
+        return type(self.seconds) is int and self.seconds == 0
+
+    def duration_description(self) -> str:
+        self.validate()
+        if self.source_until_stop:
+            return ("до нажатия «Отключить» или достижения лимита RAW "
+                    f"{self.max_mb} МиБ")
+        return f"на {self.seconds} секунд (лимит RAW {self.max_mb} МиБ)"
 
     def create_root(self) -> Path:
         self.validate()

@@ -31,7 +31,10 @@ func sourceTask2CaptureInitialRetry(ctx context.Context,m *Monitor,ip string,
 func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
  seconds int,maxBytes uint64,nic *LocalNIC)(string,error){
  if m.sourceTask2TX==nil{return "",errors.New("source Task2 TX state missing")}
- deadline:=time.Now().Add(time.Duration(seconds)*time.Second)
+ // Original Task2 retry is bounded by thread termination, not a
+ // mandatory wall clock. Unbounded GUI sessions pass seconds==0.
+ var deadline time.Time
+ if seconds>0 {deadline=time.Now().Add(time.Duration(seconds)*time.Second)}
  ticks:=25.0
  if m.sourceOperatorRateChan==nil{
   ch:=make(chan string,16)
@@ -40,8 +43,11 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
  }
  for{
   if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
-  remaining:=int(math.Ceil(time.Until(deadline).Seconds()))
-  if remaining<1{return "SOURCE_RETRY_TIMEOUT",errors.New("source Task2 connection deadline exceeded")}
+  remaining:=0
+  if !deadline.IsZero(){
+   remaining=int(math.Ceil(time.Until(deadline).Seconds()))
+   if remaining<1{return "SOURCE_RETRY_TIMEOUT",errors.New("source Task2 connection deadline exceeded")}
+  }
   reason,err:=liveCaptureAddressOnNIC(ctx,m,addr,remaining,maxBytes,nic)
   if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
   if m.captureOnly || m.sourceTask2TX.writeFault!=""{return reason,err}
@@ -53,7 +59,7 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
    return reason,err // no approval: preserve RAW, no additional sockets
   }
   wait:=sourceRetryWait(ticks)
-  if time.Until(deadline)<wait{return reason,err}
+  if !deadline.IsZero() && time.Until(deadline)<wait{return reason,err}
   m.summary.SourceInitialRetryAttempts++
   if m.summary.RawBytes>0{m.summary.SourceTCPReconnectAfterRAW++}
   m.note(fmt.Sprintf("Task2 new socket attempt %d after %v; retained RAW=%d bytes; source TX=%d",

@@ -114,7 +114,11 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 	fmt.Printf("TCP: %s -> %s\n", c.LocalAddr(), c.RemoteAddr())
 	start := time.Now()
 	lastPacket := start // source ReadTimeout=5000ms when TX approved
-	deadline := start.Add(time.Duration(seconds) * time.Second)
+	// Source TMVKThread.Execute (IDP 00807A98) is terminated by the
+	// operator, not by a mandatory duration. seconds==0 is an
+	// explicitly approved unbounded GUI session with a hard RAW cap.
+	var deadline time.Time
+	if seconds > 0 { deadline = start.Add(time.Duration(seconds) * time.Second) }
 	buf := make([]byte, 64*1024)
 	lastPrinted := time.Time{}
 	// Exactly one scanner for the full source measurement (all sockets).
@@ -124,14 +128,14 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			return "STOPPED_BY_USER", nil
 		}
 		if e:=m.drainSourceOperatorRates(rateLines);e!=nil{return "SOURCE_RATE_TX_FAILED",e}
-		if !time.Now().Before(deadline) {
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
 			return "DURATION_REACHED", nil
 		}
 		if m.summary.RawBytes >= maxBytes {
 			return "SIZE_LIMIT_REACHED", nil
 		}
 		timeout := time.Now().Add(time.Second)
-		if timeout.After(deadline) {
+		if !deadline.IsZero() && timeout.After(deadline) {
 			timeout = deadline
 		}
 		if e := c.SetReadDeadline(timeout); e != nil {
@@ -215,7 +219,7 @@ func replayRaw(m *Monitor, path string, maxBytes uint64) (string, error) {
 
 func mainInner() int {
 	ip := flag.String("ip", "", "IPv4 address of MVK instrument; always port 10230")
-	seconds := flag.Int("seconds", 15, "live capture duration seconds (1..300)")
+	seconds := flag.Int("seconds", 15, "live duration 1..300 seconds, or 0 until explicit stop with -stop-file and RAW cap")
 	out := flag.String("out", defaultOutput(), "root output folder")
 	approve := flag.Bool("approve", false, "explicit approval to connect to industrial instrument")
 	sourceTX := flag.Bool("source-setrate-tx",false,"opt-in original Task2 SetRate over the SAME TCP socket; never Flash")
@@ -325,8 +329,12 @@ func mainInner() int {
 			fmt.Println("Необходимо указать действительный числовой IPv4 прибора")
 			return 2
 		}
-		if *seconds < 1 || *seconds > 300 {
-			fmt.Println("Время должно быть от 1 до 300 секунд")
+		if *seconds < 0 || *seconds > 300 {
+			fmt.Println("Время должно быть 0 (до остановки) или 1..300 секунд")
+			return 2
+		}
+		if *seconds == 0 && *stopFile == "" {
+			fmt.Println("Режим до остановки требует локальный -stop-file; ограничение RAW обязательно")
 			return 2
 		}
 		if !*approve {

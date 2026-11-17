@@ -118,9 +118,10 @@ class NativeCaptureDialog(QDialog):
         adapter_row.addWidget(self.refresh_button)
         form.addRow("Проводной Ethernet:", adapter_row)
         self.seconds = QSpinBox()
-        self.seconds.setRange(1, 300)
-        self.seconds.setValue(30)
+        self.seconds.setRange(0, 300)
+        self.seconds.setSpecialValueText("До отключения")
         self.seconds.setSuffix(" с")
+        self.seconds.setValue(0)  # original TMVKThread runs until stopped
         form.addRow("Длительность:", self.seconds)
         self.max_mb = QSpinBox()
         self.max_mb.setRange(1, 2048)
@@ -253,12 +254,25 @@ class NativeCaptureDialog(QDialog):
             return
         self._live_last_error = None
         self.statusReady.emit(snapshot)
-        target = max(1, snapshot["target_seconds"])
+        target = snapshot["target_seconds"]
         elapsed = snapshot["elapsed_seconds"]
-        self.progress.setValue(min(100, max(0, round(100 * elapsed / target))))
+        phase = snapshot["phase"]
+        if target == 0:
+            # A time-unbounded source session has no honest time-based
+            # percentage; Go still enforces the selected RAW byte limit.
+            active = phase in ("CONNECTING","RECORDING")
+            self.progress.setRange(0,0 if active else 100)
+            if not active:
+                self.progress.setValue(100 if phase == "COMPLETED" else 0)
+            self.progress.setFormat("До отключения · ограничение по RAW")
+            duration = f"{elapsed:.1f} с с момента запуска · до отключения"
+        else:
+            self.progress.setRange(0,100)
+            self.progress.setValue(min(100, max(0, round(100 * elapsed / target))))
+            self.progress.setFormat("%p%")
+            duration = f"{elapsed:.1f} / {target} с"
         frames = snapshot["frames_decoded"]
         raw_mb = snapshot["raw_bytes"] / (1024 * 1024)
-        phase = snapshot["phase"]
         phase_names = {
             "CONNECTING": "Подключение (после разрешения оператора)",
             "RECORDING": "Запись RAW",
@@ -268,7 +282,7 @@ class NativeCaptureDialog(QDialog):
         }
         freshness = (" · УСТАРЕВШИЙ статус" if snapshot["snapshot_stale"] else "")
         self.status_label.setText(
-            f'{phase_names.get(phase, phase)}: {elapsed:.1f} / {target} с, '
+            f'{phase_names.get(phase, phase)}: {duration}, '
             f'RAW {raw_mb:.1f} МиБ, кадров {frames}, AUX {snapshot["aux4700_updates"]}'
             f'{freshness}')
         invalid = snapshot["invalid_frames"]
@@ -497,7 +511,8 @@ class NativeCaptureDialog(QDialog):
         response = QMessageBox.question(
             self, "Подтверждение соединения с промышленным МВК",
             f"Начать подключение TCP/10230 к {spec.device_ipv4} через "
-            f"выбранный Ethernet {spec.local_ipv4} на {spec.seconds} секунд?\n" +
+            f"выбранный Ethernet {spec.local_ipv4} "
+            f"{spec.duration_description()}?\n" +
             ("ВНИМАНИЕ: будет отправлена исходная 36-байтная SetRate(65536) "
              "после подтверждённого PARAM; меню сможет отправлять новые SetRate. "
              "Это может изменить частоту прибора. Flash/Reboot исключены. "
@@ -534,6 +549,7 @@ class NativeCaptureDialog(QDialog):
         self._preview_last_error = None
         self._frame_mark_sequence = 0
         self._reset_live_channels()
+        self.progress.setRange(0,100)
         self.progress.setValue(0)
         self.live_quality.setText("Подключение ожидается. Состояние датчиков ещё неизвестно.")
         self.log.clear()

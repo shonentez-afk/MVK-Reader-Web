@@ -89,6 +89,10 @@ def validate_live_status(payload: dict, *, expected_run: str,
     for key in ("raw_bytes", "frames_decoded", "invalid_frames", "aux4700_updates",
                 "full_register_snapshots", "warning_count", "target_seconds"):
         _positive_int(payload.get(key), key)
+    # 0 is the original-unbounded mode; negative/oversized durations
+    # cannot come from the approved native CLI contract.
+    if payload["target_seconds"] > 300:
+        raise ValueError("Native live status: unsupported capture duration")
     # New read-only Go producer publishes the three counters atomically.
     # Old statuses lacking all three remain valid but UNKNOWN; a partial
     # set, rollback, or synthetic overcount cannot claim Delphi readiness.
