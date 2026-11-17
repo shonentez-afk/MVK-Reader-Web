@@ -191,6 +191,7 @@ def test_late_tcp_attach_absolute_instrument_index_still_validates(tmp_path):
 
 
 def test_legacy_status_without_source_device_cursor_is_not_invented(tmp_path):
+    from mvk_compatible.core.original_live_view_gate import gate_live_preview
     root,status,_=make_preview(tmp_path)
     # Validator normalizes absent legacy producer fields to None;
     # it never invents a numeric source cursor.
