@@ -516,8 +516,12 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "original_write_data_stage_recovered":True,
             "original_write_values_stage_recovered":True,
             "native_full_raw_recorded_independently":True,
-            "hardware_command_sent":bool(frame_mark_evidence and frame_mark_evidence.get("device_commands_sent")),
-            "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes",0),
+            "hardware_command_sent":bool(ledger.source_setrate_commands_seen),
+            "source_setrate_sent_commands":ledger.source_setrate_commands_seen,
+            "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes"),
+            "actual_source_values_tick_trigger_word":"0x3100",
+            "source_values_tick_is_distinct_from_aux4700":True,
+            "source_values_csv_exact_delphi_layout_verified":False,
             "original_tach_calibration_verified":False,
         }
         (target/"SOURCE_WRITE_WINDOWS_AUDIT.json").write_text(
@@ -527,8 +531,10 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "files_written":len(emitted),"new_directory":str(target),
                 "verified_frame_boundaries":bool(ledger.frame_marks_verified),
                 "native_mark_requests":len(ledger.frame_mark_actions),
-                "hardware_command_sent":bool(frame_mark_evidence and frame_mark_evidence.get("device_commands_sent")),
-                "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes",0)}
+                "hardware_command_sent":bool(ledger.source_setrate_commands_seen),
+                "source_setrate_sent_commands":ledger.source_setrate_commands_seen,
+                "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes"),
+                "source_values_csv_exact_delphi_layout_verified":False}
     except Exception:
         if created:
             shutil.rmtree(target)
