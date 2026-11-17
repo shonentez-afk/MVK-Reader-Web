@@ -14,6 +14,7 @@
 
 - IDP начинается с `IDR proj v.3`, Delphi 2014, entry `008C1DC0`, base `00400000`; SHA256 и исходные размеры совпадают с `sqlite.meta.idp_header`; `PRAGMA quick_check(1)=ok`.
 - Реально распакованные из `Projects.7z` `_Unit115.pas`, `_Unit125.pas`, `_Unit128.pas` и `mvkform.dfm` побайтово совпадают со своим `bytes,sha256` в `sqlite.source_files` (**4/4**).
+- **Поля класса проверены непосредственно в типовой части бинарного IDP и Pascal-дизассемблере:** `TMVKThread.WriteData` смещение `+0x400CE`, `TMVKThread.WriteValues` смещение `+0x400CF`. Утилита требует эти бинарные маркеры, а не только текстовые имена функций; неверный IDP/модуль не проходит проверку.
 - Шесть основных обработчиков сверены по трём источникам (бинарный символ `#address name` в IDP, `sqlite.functions/events`, маркер и тело по адресу в Pascal из настоящего архива): `bTaskConnectClick 00848E78`, `bTaskConfigIPClick 00848E6C`, `bWriteAdcClick 0084E914`, `bWriteValuesClick 0084E988`, `bWriteTableClick 0084E020`, `mRate1Click 0084DEC4`.
 
 Запуск в поддерживаемой Linux/контейнерной среде с `libarchive`:
