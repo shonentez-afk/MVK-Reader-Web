@@ -497,27 +497,44 @@ class LiveWindow(QtWidgets.QMainWindow):
             [p[1] for p in self._trend_points])
 
     def _render_wave(self):
-        ch=self._gui_ring.channel(self.adc.currentData())
-        if ch is None or not ch.available:
+        if self.freeze.isChecked() and self._freeze_samples is not None:
+            if self.adc.currentData()!=self._freeze_channel:
+                self.wave_curve.setData([],[])
+                return
+            fs=self._freeze_rate
+            offset=int(round(self.history.value()*fs))
+            end=len(self._freeze_samples)-offset
+            data=self._freeze_samples[:max(0,end)]
+        else:
+            ch=self._gui_ring.channel(self.adc.currentData())
+            if ch is None or ch.available==0:
+                self.wave_curve.setData([],[])
+                return
+            fs=ch.rate_hz
+            data=ch.latest(min(ch.available,262144))
+        if fs<=0 or len(data)==0:
             self.wave_curve.setData([],[])
             return
-        x=ch.latest(min(ch.available,250000))
-        # Peak-preserving min/max decimation prevents hiding narrow spikes.
-        step=max(1,len(x)//2500)
-        last=x[-step*math.ceil(min(len(x),250000)/step):]
-        if step>1 and len(last)>=step:
-            trimmed=last[:(len(last)//step)*step].reshape(-1,step)
-            ymin=trimmed.min(axis=1);ymax=trimmed.max(axis=1)
-            yy=np.stack((ymin,ymax),axis=1).reshape(-1)
-            xx=(np.repeat(np.arange(len(ymin))*step,2)+np.tile([0,step-1],len(ymin)))/ch.rate_hz
+        # Physical timebase is explicit; no manufactured interpolation.
+        n=min(len(data),max(1,int(self.timebase.currentData()*fs)))
+        window=data[-n:]
+        step=max(1,int(math.ceil(len(window)/2500)))
+        if step>1 and len(window)>=step:
+            trimmed=window[-(len(window)//step)*step:].reshape(-1,step)
+            low=trimmed.min(axis=1)
+            high=trimmed.max(axis=1)
+            y=np.stack((low,high),axis=1).reshape(-1)
+            indices=np.repeat(np.arange(len(low))*step,2)
+            indices[1::2]+=step-1
+            x=(indices-len(trimmed.reshape(-1)))/fs
         else:
-            yy=last
-            xx=np.arange(len(last),dtype=float)/ch.rate_hz
-        xx=xx-(len(last)/ch.rate_hz)
-        self.wave_curve.setData(xx,yy)
+            y=window
+            x=(np.arange(len(window),dtype=np.float64)-len(window))/fs
+        self.wave_curve.setData(x,y)
 
     def _schedule_fft(self):
-        if self._preview is None or (self._future is not None and not self._future.done()):
+        if self._preview is None or (
+                self._future is not None and not self._future.done()):
             return
         s=self._read_settings()
         ch=self._gui_ring.channel(s[0])
@@ -526,22 +543,36 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.spec_curve.setData([],[])
             self.metrics.setText(f"Ожидание {s[2]} подтверждённых отсчётов АЦП {s[0]}")
             return
-        job_key=(self._gui_ring.session_id, s[0], ch.end, s)
+        if self.freeze.isChecked() and self._freeze_samples is not None:
+            available=max(0,len(self._freeze_samples)-
+                          int(round(self.history.value()*self._freeze_rate)))
+        else:
+            available=ch.available
+        history=min(available,s[2]*2) if s[5] in (
+            "welch","third_octave") else s[2]
+        history=max(history,s[2])
+        try:
+            source,fs,stamp=self._current_window(history)
+        except ValueError as exc:
+            self._spectrum=None
+            self.spec_curve.setData([],[])
+            self.metrics.setText(str(exc))
+            return
+        job_key=(stamp,s)
         if job_key==self._last_submitted_key or (
-            time.monotonic()-self._last_fft_submit<0.14):
-            return  # plot may follow at 13Hz while FFT is at most ~7Hz
-        history=min(ch.available,s[2]*2) if s[5] in ("welch","third_octave") else s[2]
-        source=ch.latest(history)  # immutable snapshot: no race with acquisition
+                time.monotonic()-self._last_fft_submit<.14):
+            return
         self._last_fft_submit=time.monotonic()
         self._last_submitted_key=job_key
         self._job_settings=(self._generation,self._preview.updated_utc,s,job_key)
         self._future=self._executor.submit(
-            analyze_vibration,source,ch.rate_hz,
+            analyze_live,source,fs,
             kind=s[1],mode=s[5],nfft=s[2],band_hz=s[3],
-            envelope_band_hz=s[6],smooth_bins=s[4],notch_hz=s[7])
+            envelope_band=s[6],smooth_bins=s[4],notch_hz=s[7])
 
     def _collect_analysis(self):
-        if self._future is None or not self._future.done():return
+        if self._future is None or not self._future.done():
+            return
         job=self._job_settings
         try:
             result=self._future.result()
@@ -550,10 +581,30 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.spec_curve.setData([],[])
             self._spectrum=None
         else:
-            if job and job[2]==self._read_settings() and self._preview is not None:
-                self._spectrum=result
+            if (job and job[2]==self._read_settings() and
+                    self._preview is not None and
+                    (job[3][0][0]=="FROZEN")==self.freeze.isChecked()):
+                self._last_result=result
+                self._spectrum=result.view
                 self._render_spectrum()
-                self._update_waterfall(job[3])
+                if not self.freeze.isChecked():
+                    self._update_waterfall(job[3])
+                f=result.features
+                detail=(f"ВУ СКЗ {f.rms_m_s2:.5g} м/с² · "
+                        f"пик {f.peak_m_s2:.5g} м/с² · пик-пик {f.peak_to_peak_m_s2:.5g} · "
+                        f"crest {f.crest_factor:.2f} · kurt {f.kurtosis_pearson:.2f} · "
+                        f"skew {f.skewness:.2f} · shape {f.shape_factor:.2f} · "
+                        f"impulse {f.impulse_factor:.2f}")
+                if result.broadband_velocity is not None and result.broadband_velocity.valid:
+                    v=result.broadband_velocity
+                    detail+=f" · ВС {v.low_hz:g}–{v.high_hz:g} Гц: {v.rms:.3g} {v.unit} СКЗ"
+                self.features_label.setText("APP_DERIVED · "+detail)
+                if result.auto_envelope is not None:
+                    choice=result.auto_envelope
+                    self.metrics.setText(self.metrics.text()+
+                        f" · автополоса {choice.low_hz:.0f}–{choice.high_hz:.0f} Гц"
+                        f" (kurt={choice.envelope_kurtosis:.2f}, {choice.confidence})")
+                self._show_bearing_diagnostics()
         self._future=None
         self._schedule_fft()
 
