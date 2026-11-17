@@ -300,7 +300,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         return p
 
     def start_native(self):
-        if self._native.state()!=QtCore.QProcess.NotRunning:return
+        if self._native.state()!=QtCore.QProcess.ProcessState.NotRunning:return
         try:
             ip=self._canonical_ipv4(self.device_ip.text())
             local=self._canonical_ipv4(self.local_ip.text())
@@ -330,7 +330,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.connect_button.setEnabled(False)
 
     def stop_native(self):
-        if self._native.state()==QtCore.QProcess.NotRunning:return
+        if self._native.state()==QtCore.QProcess.ProcessState.NotRunning:return
         if self._capture_root is None:return
         stop=self._capture_root/".mvk_stop_requested"
         try:
@@ -346,7 +346,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.status.setText(f"Native завершён (код {exit_code}); папка: {self._capture_root}")
 
     def closeEvent(self,event):
-        if self._native.state()!=QtCore.QProcess.NotRunning:
+        if self._native.state()!=QtCore.QProcess.ProcessState.NotRunning:
             QtWidgets.QMessageBox.warning(self,"Запись ещё идёт",
                 "Сначала нажмите «Остановить», дождитесь завершения Native и повторите закрытие.")
             event.ignore()
