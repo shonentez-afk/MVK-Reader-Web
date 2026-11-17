@@ -192,6 +192,8 @@ def test_late_tcp_attach_absolute_instrument_index_still_validates(tmp_path):
 
 def test_legacy_status_without_source_device_cursor_is_not_invented(tmp_path):
     root,status,_=make_preview(tmp_path)
-    assert all("next_sample_index" not in ch for ch in status["channels"])
+    # Validator normalizes absent legacy producer fields to None;
+    # it never invents a numeric source cursor.
+    assert all(ch.get("next_sample_index") is None for ch in status["channels"])
     preview=load_live_preview(root,status,now=now())
     assert gate_live_preview(status,preview).allowed
