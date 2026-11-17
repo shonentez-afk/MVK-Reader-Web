@@ -12,7 +12,7 @@ def test_qt_modes_scale_update_labels_and_no_network_on_open():
     app=QApplication.instance() or QApplication([])
     widget=LiveWindow()
     try:
-        assert widget._native.state()==widget._native.NotRunning
+        assert widget._native.state()==QtCore.QProcess.ProcessState.NotRunning
         assert widget._capture_root is None
         assert "м/с²" in widget.spec.getPlotItem().getAxis("left").label.toPlainText()
         widget.kind.setCurrentIndex(1)
