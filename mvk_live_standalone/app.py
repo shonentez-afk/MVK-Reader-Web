@@ -166,6 +166,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         main.addLayout(opts2)
         opts2.addWidget(QtWidgets.QLabel("Полоса огибающей"))
         opts2.addWidget(self.envelope_band)
+        opts2.addWidget(QtWidgets.QLabel("Notch (внимание: скрывает механич. гармоники)"))
+        self.notch=QtWidgets.QComboBox()
+        self.notch.addItem("Откл.",None)
+        self.notch.addItem("50 Гц",50.0)
+        self.notch.addItem("60 Гц",60.0)
+        opts2.addWidget(self.notch)
         opts2.addWidget(QtWidgets.QLabel("Обороты, вручную (0 — нет)"))
         self.rpm=QtWidgets.QDoubleSpinBox()
         self.rpm.setRange(0,200000)
@@ -241,7 +247,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         main.addWidget(self.features_label)
         self._apply_axes()
 
-        for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band):
+        for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band,self.notch):
             w.currentIndexChanged.connect(self._on_control_change) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._on_control_change)
         for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
@@ -259,7 +265,7 @@ class LiveWindow(QtWidgets.QMainWindow):
     def _read_settings(self):
         return (self.adc.currentData(),self.kind.currentData(),self.nfft.currentData(),
                 self.band.currentData(),self.smooth.value(),
-                self.analysis.currentData(),self.envelope_band.currentData())
+                self.analysis.currentData(),self.envelope_band.currentData(),self.notch.currentData())
 
     def _on_control_change(self,*_):
         self._last_fft_submit=0.0
@@ -428,7 +434,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._future=self._executor.submit(
             analyze_vibration,source,ch.rate_hz,
             kind=s[1],mode=s[5],nfft=s[2],band_hz=s[3],
-            envelope_band_hz=s[6],smooth_bins=s[4])
+            envelope_band_hz=s[6],smooth_bins=s[4],notch_hz=s[7])
 
     def _collect_analysis(self):
         if self._future is None or not self._future.done():return
