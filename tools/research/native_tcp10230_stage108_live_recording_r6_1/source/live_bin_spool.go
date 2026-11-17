@@ -29,6 +29,7 @@ type LiveBinSpool struct {
 	files       [8]*os.File
 	digest      [8]hash.Hash
 	preview     *LivePreviewBuffer // Stage111Z26B opt-in, receives exact accepted bytes
+    sourceOriginalStorage *sourceOriginalStorageRing // 2^21, no per-tick ZIP copies
 }
 
 func newLiveBinSpool(runDir string) (*LiveBinSpool, error) {
@@ -110,6 +111,13 @@ func (s *LiveBinSpool) adcFrame(f Frame, h SampleHeader) error {
 	_, _ = s.digest[ch].Write(bytesOut[:])
 	s.samples[ch] += 256
 	s.next[ch] = h.Index + 256
+    // Real original float32 storage, after the verified calibrated spool
+    // write; Go captures exactly the SAME already-scaled bytes. Original
+    // GetSignal must not apply FRange a second time to this domain.
+    if s.sourceOriginalStorage != nil {
+        if e:=s.sourceOriginalStorage.appendFrame(
+            h,bytesOut[:],sourceStorageCalibratedADC);e!=nil{return e}
+    }
 	// AFTER original spool write and digest: no preview may change a BIN byte.
 	if s.preview != nil {
 		if e := s.preview.appendCalibratedADC(h, bytesOut[:]); e != nil {

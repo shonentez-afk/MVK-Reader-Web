@@ -55,6 +55,7 @@ type LiveStatus struct {
     SourcePageStatusFields []LiveSourcePageStatusField `json:"source_page_status_fields_15"`
     SourceMode2TxEvidence LiveOriginalTask2TxEvidence `json:"source_mode2_tx_evidence"`
     SourceRateTransition bool `json:"source_rate_transition_during_live"`
+    SourceOriginalStorage *sourceOriginalStorageReceipt `json:"source_original_storage,omitempty"`
     SourceTCPConnectionCount uint64 `json:"source_tcp_connection_count"`
     SourceTCPMultiSocket bool `json:"source_tcp_multi_socket"`
     SourceTCPReconnectAfterRAW uint64 `json:"source_tcp_reconnects_after_raw"`
@@ -110,6 +111,11 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
     }
     elapsed := now.Sub(m.start).Seconds()
     if elapsed < 0 { elapsed = 0 }
+    var originalStorage *sourceOriginalStorageReceipt
+    if m.sourceOriginalStorage != nil {
+        p:=m.sourceOriginalStorage.receipt()
+        originalStorage=&p
+    }
     return LiveStatus{
         Schema: liveStatusSchema, Phase: phase, SessionID: filepath.Base(m.dir),
         UpdatedUTC: now.UTC().Format(time.RFC3339Nano),
@@ -126,6 +132,7 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SourcePageStatusFields: m.snapshotSourcePageStatusFields(),
         SourceMode2TxEvidence: m.snapshotOriginalTask2TxEvidence(),
         SourceRateTransition: m.sourceRateTransitionDetected,
+        SourceOriginalStorage:originalStorage,
         SourceTCPConnectionCount:report.SourceTCPConnectionCount,
         SourceTCPMultiSocket:report.SourceTCPMultiSocket,
         SourceTCPReconnectAfterRAW:report.SourceTCPReconnectAfterRAW,

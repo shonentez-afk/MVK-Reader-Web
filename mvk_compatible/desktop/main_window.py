@@ -2630,6 +2630,9 @@ class MainWindow(QMainWindow):
         self._measurement_connection_error=False
         self._measurement_exit_requested=False
         self._native_live_status=None
+        # A new physical Mode2 must never inherit the former Go ring proof.
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTenChannelStorageProof",None)
         # Park the last VERIFIED offline source before Mode2 clears the
         # visible session. Never treat it as evidence of this new device.
         self._live_prior_session=self.session
@@ -2943,6 +2946,14 @@ class MainWindow(QMainWindow):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
+        # Display only validated, bounded Source 2M storage accounting
+        # on the already-existing PageStatus QWidget: no research controls,
+        # no extra TCP owner, and no invented ADC/TACH bytes for the view.
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTenChannelStorageProof",
+            snapshot.get("source_original_storage")
+            if snapshot.get("source_original_storage_verified") is True
+            else None)
         self._measurement_connection_error=False
         self._sync_source_mode2_runtime()
         system_latched=self._source_mode2_runtime.status_cells.system_error_latched
@@ -2992,6 +3003,8 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._native_live_status=None
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTenChannelStorageProof",None)
         self._source_live_writer.invalidate(str(reason))
         if (str(reason)=="Нет текущего подтверждённого состояния"
                 and self._source_mode2_runtime.session_id is None):
@@ -3236,6 +3249,8 @@ class MainWindow(QMainWindow):
             self._source_live_writer
             if exported and self._source_live_writer.windows else None)
         self._native_live_status=None
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTenChannelStorageProof",None)
         # Core owns the exit policy; Qt merely applies it. A physical
         # connection is NEVER inferred from visible tabs or a parked ZIP.
         completion=capture_completion_policy(

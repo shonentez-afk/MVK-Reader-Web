@@ -107,6 +107,7 @@ type Monitor struct {
 	captureOnly bool
 	closed      bool
 	liveBin     *LiveBinSpool
+	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
 	sourceTask0ConfigRead bool // separate original bConfigDownload Task=0, passive
@@ -131,7 +132,8 @@ func NewMonitor(dir, mode, ip string) (*Monitor, error) {
 	if err := os.Mkdir(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create run directory: %w", err)
 	}
-	m := &Monitor{dir: dir, f: &Framer{}, sum: sha256.New(), start: time.Now()}
+	m := &Monitor{dir: dir, f: &Framer{}, sum: sha256.New(), start: time.Now(),
+		sourceOriginalStorage:newSourceOriginalStorageRing()}
 	m.summary = Summary{Version: "Native Stage108 R6.1 / R5.1 Ethernet receive / embedded Stage107 export 0.1", Mode: mode, IP: ip, Port: instrumentPort,
 		ReadOnly: true, StartedUTC: m.start.UTC().Format(time.RFC3339Nano), FrameCounts: map[string]uint64{}, Files: map[string]string{}}
 	for i := 0; i < 10; i++ {
@@ -189,6 +191,7 @@ func (m *Monitor) EnableLiveBinSpool() error {
 	if err != nil {
 		return err
 	}
+	stager.sourceOriginalStorage=m.sourceOriginalStorage
 	m.liveBin = stager
 	m.note("Live calibrated BIN spool enabled: partial files never published before verification")
 	return nil
@@ -345,6 +348,12 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		if sample.NonFinite > 0 && c.NonFiniteSamples <= uint64(sample.NonFinite) {
 			m.warn(fmt.Sprintf("channel %d contains non-finite ADC/TACH values", sample.Channel+1))
 		}
+		// Original channel 8/9 store the 256 raw payload BYTES, not
+        // 64 Float32 samples; FRxPos is byte count for TACH in Delphi.
+        if typ==typeTach && m.sourceOriginalStorage!=nil {
+            if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
+        }
+        storedByCalibratedSpool:=false
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
 			// Original mRate1Click permits rate changes. Keep every subsequent
 			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
@@ -357,8 +366,16 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 			}
 			if !m.sourceRateTransitionDetected {
 				if e := m.liveBin.adcFrame(f, *sample);e!=nil{return e}
+                storedByCalibratedSpool=true
 			}
 		}
+        // A read-only capture without exported BIN must STILL have the
+        // source's in-memory 2^21 ring. Its domain is explicitly raw;
+        // this is not the gain-corrected GetSignal of original Delphi.
+        if typ==typeADC && !storedByCalibratedSpool &&
+            m.sourceOriginalStorage!=nil {
+            if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageUnscaledADC);e!=nil{return e}
+        }
 	case typeParam:
 		for _, b := range blocks {
 			m.image.Put(b)
