@@ -80,7 +80,7 @@ def verify_source_tcp_session_segments(root:Path|str)->dict:
     if (type(total) is not int or not 0<=total<=MAX_BYTES or
             type(count) is not int or not 1<=count<=MAX_SEGMENTS or
             summary.get("source_tcp_segment_copies_verified") is not True or
-            summary.get("source_tcp_multi_socket") is not (count>1)):
+            summary.get("source_tcp_multi_socket",False) is not (count>1)):
         raise ValueError("Source TCP summary segment count/size/verification invalid")
     raw=run/"incoming.raw"
     _safe_file(raw,total)
