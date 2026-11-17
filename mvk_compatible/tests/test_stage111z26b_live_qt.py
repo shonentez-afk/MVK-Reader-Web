@@ -143,10 +143,15 @@ def test_qt_live_wave_and_fft_survive_late_attach_absolute_source_index(
         for channel in meta["channels"]:
             channel["first_sample_index"]+=offset
             channel["next_sample_index"]+=offset
+    # This short original late-attach fixture keeps only 65536 real
+    # samples; MAX_SAMPLES now denotes the *capacity* 262144, not the
+    # contents of every individual validated preview.
     root,status,_=make_preview(tmp_path,modify=large_cursor)
+    actual_fixture_samples=65536
     for ch in status["channels"][:8]:
-        ch["next_sample_index"]=offset+4096+MAX_SAMPLES
+        ch["next_sample_index"]=offset+4096+actual_fixture_samples
     preview=load_live_preview(root,status,now=now())
+    assert preview.channels[1].next_index==offset+4096+actual_fixture_samples
     win=MainWindow()
     try:
         win._begin_live_capture()
