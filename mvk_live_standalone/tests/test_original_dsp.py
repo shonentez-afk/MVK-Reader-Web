@@ -37,7 +37,7 @@ def test_original_dsp_rejects_fabricated_or_incomplete_dsp():
         read_original_dsp_bands(status,3)
     status=_status()
     status["dsp_original_aux4700_channels"][0]["third_octave_acceleration_rms"]=[0.1]
-    with pytest.raises(ValueError,match="shape"):
+    with pytest.raises(ValueError,match="expected 43 transmitted cells"):
         read_original_dsp_bands(status,3)
     status=_status()
     status["dsp_original_aux4700_channels"][0]["third_octave_acceleration_rms"][4]=None
