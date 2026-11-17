@@ -140,8 +140,16 @@ def analyze_vibration(
     band_hz: tuple[float,float|None]=(0.0,None),
     envelope_band_hz: tuple[float,float]=(1000.0,3000.0),
     smooth_bins: int=1,
+    notch_hz: float|None=None,
 ) -> VibrationView:
     x=_checked_input(calibrated_acceleration,fs,nfft)
+    if notch_hz is not None:
+        if not np.isfinite(notch_hz) or not 0<notch_hz<fs/2:
+            raise ValueError("Notch must be within the physical Nyquist range")
+        # Explicit ONLY; for rotating machinery 50/60 Hz may be a genuine
+        # fault harmonic. Never enable this automatically.
+        b,a=signal.iirnotch(notch_hz,Q=35,fs=fs)
+        x=signal.filtfilt(b,a,x)
     if kind not in KINDS or mode not in ("fft","welch","third_octave","envelope"):
         raise ValueError("Unknown vibration analysis mode")
     if mode=="envelope" and kind!="acceleration":
