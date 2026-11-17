@@ -29,3 +29,5 @@ def test_qt_modes_scale_update_labels_and_no_network_on_open():
         assert widget.yscale.currentData()=="db"
     finally:
         widget.close()
+        widget.deleteLater()
+        app.processEvents()
