@@ -14,6 +14,7 @@ import math
 import tempfile
 import time
 import sys
+from datetime import datetime, timezone
 
 import numpy as np
 from PySide6 import QtCore, QtWidgets
@@ -26,8 +27,13 @@ from .spectrum import (
     calculate_spectrum, plot_values, y_axis_label, db_reference_text,
 )
 from .live_ring import VerifiedLiveRing
-from .live_ipc import discover_local_ipc, IPCNotReady
+from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
 from .original_dsp import read_original_dsp_bands
+from .rotation import estimate_rotation_from_velocity
+from .pipeline import analyze_live, AnalysisResult
+from .advanced import (envelope_fault_lines, stft_vibration,
+                       cwt_morlet_vibration, real_cepstrum)
+from .recordings import save_snapshot, load_snapshot, save_spectrum_csv
 from .vibration import (
     VibrationView, analyze_vibration, vibration_plot_values,
     vibration_y_label, time_features, bearing_frequency_markers,
@@ -56,6 +62,19 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._trend_points=[]
         self._trend_key=None
         self._marker_lines=[]
+        self._freeze_samples=None
+        self._freeze_rate=None
+        self._freeze_channel=None
+        self._freeze_session=None
+        self._freeze_end=None
+        self._speed_candidate=None
+        self._speed_future=None
+        self._rpm_source="MANUAL"
+        self._setting_rpm_from_candidate=False
+        self._last_result: AnalysisResult | None=None
+        self._extra_future=None
+        self._extra_kind=None
+        self._extra_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix="MVK-advanced")
         self._future: Future | None = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-spectrum")
         self._ipc_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-local-IPC")
