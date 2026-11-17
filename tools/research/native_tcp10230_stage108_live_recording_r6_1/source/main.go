@@ -247,6 +247,7 @@ func mainInner() int {
 	stopFile := flag.String("stop-file", "", "optional absolute GUI stop-request file (.mvk_stop_requested); stops safely without killing process")
 	frameMarks := flag.Bool("frame-marks", false, "opt-in local-only GUI source write boundaries; NEVER sends device commands")
 	liveStatus := flag.Bool("live-status", false, "opt-in atomic local status JSON for GUI; never sends instrument data")
+	liveIPC := flag.Bool("live-ipc", false, "opt-in authenticated loopback read-only calibrated ADC snapshots for independent MVK Live")
 	autoExport := flag.Bool("export", true, "after capture, validate and atomically produce 8 BIN/TSXML + VALUES/TABLE in same run folder")
 	offsetText := flag.String("offset", "auto", "capture-PC UTC offset auto or +/-HH:MM; for replay specify original capture PC timezone")
 	flag.Parse()
@@ -335,6 +336,10 @@ func mainInner() int {
 	}
 	if *sourceTX && (!*sourceTXApproval || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
 		fmt.Println("Real source SetRate requires separate operator approval, live status and a controlled stop")
+		return 2
+	}
+	if *liveIPC && (!*liveStatus || !*autoExport || *replay!="" || !*approve || *stopFile=="" || *sourceTX || *sourceReconnect || *sourceTask0) {
+		fmt.Println("MVK Live loopback IPC requires approved passive live, calibrated BIN, status and stop-file; never SetRate/reconnect/replay")
 		return 2
 	}
 	if *frameMarks && (!*liveStatus || !*autoExport || *replay != "" || *stopFile == "") {
@@ -436,6 +441,18 @@ func mainInner() int {
 			m.liveBin.preview = newLivePreviewBuffer()
 		}
 	}
+	// Independent viewer IPC cannot change the capture stream; only reads
+	// already accepted, calibrated Float32 from the existing source ring.
+	var localIPC *liveIPCEndpoint
+	if *liveIPC {
+		localIPC,e=startLiveIPC(dir,m.sourceOriginalStorage)
+		if e!=nil {
+			fmt.Println("MVK Live IPC unavailable:",e)
+			_ = m.CloseFiles()
+			return 2
+		}
+		defer func(){if localIPC!=nil {_ = localIPC.Close()}}()
+	}
 	var reason string
 	var runError error
 	if *replay != "" {
@@ -453,6 +470,8 @@ func mainInner() int {
 		}
 		reason, runError = liveCapture(ctx, m, *ip, *seconds, uint64(*limitMB)*1024*1024, selectedNIC)
 	}
+	// Shut down viewer IPC before original RAW verification and export.
+	if localIPC!=nil {_ = localIPC.Close(); localIPC=nil}
 	if runError != nil {
 		fmt.Println("Ошибка:", runError)
 		m.warn(runError.Error())
