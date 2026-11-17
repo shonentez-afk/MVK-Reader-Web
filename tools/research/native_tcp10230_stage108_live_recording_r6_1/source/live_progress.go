@@ -67,6 +67,7 @@ type LiveStatus struct {
     SecondsSinceLastPacket *float64            `json:"seconds_since_last_packet"`
     LastAUXUTC             *string             `json:"last_aux_received_utc"`
     Channels               []LiveChannelStatus `json:"channels"`
+    DSPOriginal             []CalculatedChannel `json:"dsp_original_aux4700_channels,omitempty"`
     EndReason              string              `json:"end_reason,omitempty"`
     ExportStatus           string              `json:"export_status,omitempty"`
     ProgressError          string              `json:"progress_error,omitempty"`
@@ -116,7 +117,12 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         p:=m.sourceOriginalStorage.receipt()
         originalStorage=&p
     }
+    originalDSP:=make([]CalculatedChannel,0,8)
+    for i:=0;i<8;i++ {
+        if m.liveDSPSeen[i] {originalDSP=append(originalDSP,m.liveDSPOriginal[i])}
+    }
     return LiveStatus{
+        DSPOriginal:originalDSP,
         Schema: liveStatusSchema, Phase: phase, SessionID: filepath.Base(m.dir),
         UpdatedUTC: now.UTC().Format(time.RFC3339Nano),
         ElapsedSeconds: elapsed, TargetSeconds: m.liveTargetSeconds,
