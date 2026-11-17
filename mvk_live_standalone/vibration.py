@@ -17,7 +17,7 @@ from scipy import signal
 
 from .spectrum import KINDS, Spectrum, calculate_spectrum, db_reference
 
-Mode = Literal["fft", "welch", "third_octave", "envelope"]
+Mode = Literal["fft", "welch", "asd", "third_octave", "envelope"]
 OCTAVE_CENTERS = np.asarray((
     0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.15,4,5,6.3,8,10,12.5,
     16,20,25,31.5,40,50,63,80,100,125,160,200,250,315,
@@ -150,7 +150,7 @@ def analyze_vibration(
         # fault harmonic. Never enable this automatically.
         b,a=signal.iirnotch(notch_hz,Q=35,fs=fs)
         x=signal.filtfilt(b,a,x)
-    if kind not in KINDS or mode not in ("fft","welch","third_octave","envelope"):
+    if kind not in KINDS or mode not in ("fft","welch","asd","third_octave","envelope"):
         raise ValueError("Unknown vibration analysis mode")
     if mode=="envelope" and kind!="acceleration":
         raise ValueError("Bearing envelope uses acceleration units only; select VU")
@@ -181,6 +181,12 @@ def analyze_vibration(
         # Units are squared per hertz and MUST NOT be labeled as RMS.
         return VibrationView(f,converted,kind,f"({KINDS[kind][1]})²/Гц",
                              fs,nfft,mode,conditioned,segments,float(fs/nfft),effective_low)
+    if mode=="asd":
+        # ASD is the square root of Welch PSD, (physical unit)/sqrt(Hz).
+        # It is amplitude spectral density, never FFT line RMS or DSP.
+        return VibrationView(f,np.sqrt(converted),kind,
+                             f"{KINDS[kind][1]}/√Гц",fs,nfft,mode,
+                             conditioned,segments,float(fs/nfft),effective_low)
     # Fractional octave power summation (enDAQ): integrate density over
     # frequency; reject bands with insufficient resolution/coverage.
     # 2**(+/-1/6) gives one-third-octave edges for exact binary octaves.
@@ -201,7 +207,7 @@ def analyze_vibration(
 
 
 def vibration_y_label(view: VibrationView, scale: str, reference: str="iso") -> str:
-    label={"fft":"FFT","welch":"PSD Уэлча","third_octave":"1/3 октавы",
+    label={"fft":"FFT","welch":"PSD Уэлча","asd":"ASD Уэлча","third_octave":"1/3 октавы",
            "envelope":"Спектр огибающей"}[view.mode]
     if scale=="linear":
         return f"{label} · {KINDS[view.kind][0]}, {view.units}"
