@@ -22,6 +22,7 @@ import (
     "errors"
     "fmt"
     "math"
+    "sync"
 )
 
 const (
@@ -47,6 +48,7 @@ type sourceOriginalChannelRing struct {
 }
 
 type sourceOriginalStorageRing struct {
+    mu sync.RWMutex // receive hot path writes; loopback IPC copies bounded snapshots
     channels [10]sourceOriginalChannelRing
 }
 
@@ -86,6 +88,8 @@ func (r *sourceOriginalStorageRing) appendFrame(
     } else if domain != expectDomain {
         return errors.New("TACH original byte storage must preserve exact payload bits")
     }
+    r.mu.Lock()
+    defer r.mu.Unlock()
     c:=&r.channels[h.Channel]
     count:=uint64(len(payload)/width)
     if c.rxPos>math.MaxUint64-count {
@@ -136,6 +140,16 @@ func (r *sourceOriginalStorageRing) appendFrame(
 func (r *sourceOriginalStorageRing) window(
     channel int,start uint64,count uint64,
 ) ([]byte,error) {
+    if r==nil { return nil,errors.New("source ring unavailable") }
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    return r.windowLocked(channel,start,count)
+}
+
+// Call with r.mu already held. Never hand out an alias to the live ring.
+func (r *sourceOriginalStorageRing) windowLocked(
+    channel int,start uint64,count uint64,
+) ([]byte,error) {
     width:=sourceOriginalElementWidth(channel)
     if r==nil || width==0 || count==0 || count>sourceOriginalStorageSamples ||
        count>math.MaxUint64-start {
@@ -179,6 +193,8 @@ type sourceOriginalStorageReceipt struct {
 }
 
 func (r *sourceOriginalStorageRing) receipt() sourceOriginalStorageReceipt {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
     result:=sourceOriginalStorageReceipt{
         Schema:sourceOriginalStorageSchema,BufferSamples:sourceOriginalStorageSamples,
         Channels:make([]sourceOriginalChannelReceipt,0,10),
@@ -205,4 +221,46 @@ func (r *sourceOriginalStorageRing) receipt() sourceOriginalStorageReceipt {
         result.Channels=append(result.Channels,row)
     }
     return result
+}
+
+
+// snapshotCalibratedADC is the ONLY ring entrypoint for MVK Live local IPC.
+// A bounded, immutable snapshot and its metadata are copied under ONE read
+// lock. The original single receive goroutine retains ownership of writes.
+// RAW uncalibrated ADC, TACH payloads and interrupted windows are refused.
+func (r *sourceOriginalStorageRing) snapshotCalibratedADC(
+    channel int, count uint64,
+) ([]byte,sourceOriginalChannelReceipt,error) {
+    var meta sourceOriginalChannelReceipt
+    if r==nil || channel<0 || channel>=8 || count==0 ||
+       count>262144 {
+        return nil,meta,errors.New("invalid bounded IPC request")
+    }
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    c:=&r.channels[channel]
+    if !c.seen || c.sampleRate==0 || c.domain!=sourceStorageCalibratedADC ||
+       c.data==nil {
+        return nil,meta,errors.New("ADC has no verified calibrated data")
+    }
+    first:=c.validPos
+    if c.rxPos>sourceOriginalStorageSamples &&
+       c.rxPos-sourceOriginalStorageSamples>first {
+        first=c.rxPos-sourceOriginalStorageSamples
+    }
+    if count>c.rxPos-first {
+        return nil,meta,errors.New("insufficient contiguous calibrated samples")
+    }
+    data,e:=r.windowLocked(channel,c.rxPos-count,count)
+    if e!=nil {return nil,meta,e}
+    next:=c.nextDeviceIndex
+    meta=sourceOriginalChannelReceipt{
+        Channel:channel+1,SampleWidthBytes:4,
+        RxPos:c.rxPos,ValidPos:c.validPos,FirstReadable:first,
+        Available:c.rxPos-first,SampleRate:c.sampleRate,
+        NextDeviceIndex:&next,Domain:c.domain,
+        SequenceGaps:c.sequenceGaps,RateChanges:c.rateChanges,
+        RejectedNonfinite:c.rejectedNonfinite,
+    }
+    return data,meta,nil
 }
