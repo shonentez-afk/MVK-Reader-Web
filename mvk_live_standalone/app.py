@@ -465,7 +465,8 @@ class LiveWindow(QtWidgets.QMainWindow):
                 for i,hz in enumerate(gear.harmonics_hz[1:],start=2):
                     markers[f"{i}GMF"]=hz
                 for hz in gear.sidebands_hz:
-                    markers[f"GMF±{abs(hz-gear.mesh_hz)/self.rpm.value()*60:.0f}×"]=hz
+                    sign="−" if hz<gear.mesh_hz else "+"
+                    markers[f"GMF{sign}{abs(hz-gear.mesh_hz)/self.rpm.value()*60:.0f}×"]=hz
             except ValueError:
                 pass  # invalid user geometry cannot inject arbitrary lines
         for label,hz in markers.items():
