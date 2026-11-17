@@ -44,7 +44,7 @@ def _utc_stamp(value: str, name: str) -> datetime:
 
 
 def _rate_list(value) -> list[int]:
-    if not isinstance(value, list) or len(value) > 3:
+    if not isinstance(value, list) or len(value) > 5:
         raise ValueError("Native live status: invalid frequency list")
     rates = [_positive_int(v, "sample rate") for v in value]
     if any(v == 0 or v > 1_000_000 for v in rates):
@@ -93,6 +93,11 @@ def validate_live_status(payload: dict, *, expected_run: str,
     # Old statuses lacking all three remain valid but UNKNOWN; a partial
     # set, rollback, or synthetic overcount cannot claim Delphi readiness.
     source_fields=[key in payload for key in SOURCE_RX_FIELDS]
+    source_values_ticks=payload.get("source_values_ticks_address_3100")
+    if source_values_ticks is not None and (
+            _positive_int(source_values_ticks,"source address 0x3100 VALUES ticks")
+            >payload["frames_decoded"]):
+        raise ValueError("Native source VALUES ticks exceed decoded frames")
     if any(source_fields) and not all(source_fields):
         raise ValueError("Native live status: partial source RX evidence")
     if all(source_fields):
@@ -161,6 +166,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
     result["source_system_error_observed"] = source_system_error
     result["source_original_setrate_physically_sent"] = physical_source_tx
     result["source_rate_transition_during_live"] = rate_transition
+    result["source_values_ticks_address_3100"] = source_values_ticks
     result["source_tcp_connection_count"] = tcp_count
     result["source_tcp_multi_socket"] = tcp_multi
     result["source_tcp_reconnects_after_raw"] = tcp_retries
