@@ -142,7 +142,7 @@ func (c *frameMarkController) poll(m *Monitor,at time.Time) {
         }
         receipt:=frameMarkReceipt{
             Sequence:c.next,AppliedUTC:at.UTC().Format(time.RFC3339Nano),
-            SourceReadOnly:false,
+            SourceReadOnly:m.sourceTask2TX!=nil && m.sourceTask2TX.sentBytes>0,
             Boundary:"BEFORE_NEXT_REASSEMBLED_APPLICATION_FRAME",
         }
         receipt.FramesDecoded=m.summary.TotalFrames
@@ -214,7 +214,7 @@ func (c *frameMarkController) finalize(m *Monitor) error {
         SourceRawSHA256:m.summary.RawSHA256,
         EndFramesDecoded:m.summary.TotalFrames,
         EndAUX4700Updates:m.summary.Aux4700,
-        DeviceCommandsSent:false,
+        DeviceCommandsSent:m.sourceTask2TX!=nil && m.sourceTask2TX.sentBytes>0,
         SourceFrameBoundary:true,
         OriginalDelphiFileParityVerified:false,
         Requests:c.records,

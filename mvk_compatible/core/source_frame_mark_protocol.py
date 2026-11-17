@@ -163,10 +163,17 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         raise ValueError("Source frame marks are from a different RAW")
     if (doc.get("schema")!=AUDIT_SCHEMA or
             doc.get("session_id")!=ledger.session_id or
-            doc.get("device_commands_sent") is not False or
+            type(doc.get("device_commands_sent")) is not bool or
             doc.get("source_frame_boundary") is not True or
             doc.get("original_delphi_file_parity_verified") is not False):
         raise ValueError("Source frame-mark provenance not read-only or wrong run")
+    sent_bytes=_strict_int(summary.get("source_setrate_sent_bytes",0),"source TX bytes")
+    source_approved=summary.get("source_setrate_tx_approved",False)
+    if type(source_approved) is not bool or (
+            sent_bytes>0 and not source_approved) or (
+            sent_bytes>0 and summary.get("read_only_no_app_payload_sent") is not False) or (
+            doc["device_commands_sent"] != (sent_bytes>0)):
+        raise ValueError("Go frame marks mismatch authenticated source SetRate TX")
     entries=doc.get("requests")
     if not isinstance(entries,list) or len(entries)!=len(
             ledger.frame_mark_actions) or len(entries)>MAX_REQUESTS:
@@ -185,6 +192,7 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         raise ValueError("Go AUX tick count exceeds SHA-accepted ZIP")
     by_kind={}
     reconstructed=[]
+    command_seen=False
     for idx,(issued,receipt) in enumerate(
             zip(ledger.frame_mark_actions,entries),1):
         if not isinstance(receipt,dict):
@@ -194,8 +202,13 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
                 or receipt.get("event")!=issued["event"]
                 or receipt.get("applied") is not True
                 or receipt.get("boundary")!=FRAME_BOUNDARY
-                or receipt.get("device_commands_sent") is not False):
+                or type(receipt.get("device_commands_sent")) is not bool
+                or (receipt.get("device_commands_sent") and not sent_bytes)):
+
             raise ValueError("Go refused or reordered an operator frame mark")
+        if command_seen and not receipt["device_commands_sent"]:
+            raise ValueError("Go source TX commands evidence rolled back in frame marks")
+        command_seen=command_seen or receipt["device_commands_sent"]
         _flags(receipt.get("channels"),10,"channels")
         _flags(receipt.get("spec"),43,"spec")
         _flags(receipt.get("values"),73,"values")
@@ -251,7 +264,8 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         "source_raw_sha256":raw_sha,
         "verified_go_mark_audit_sha256":digest,
         "accepted_events":len(entries),
-        "device_commands_sent":False,
+        "device_commands_sent":sent_bytes>0,
+        "source_setrate_sent_bytes":sent_bytes,
         "full_original_delphi_parity_verified":False,
     }
 
