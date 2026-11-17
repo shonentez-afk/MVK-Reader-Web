@@ -140,6 +140,7 @@ class MainWindow(QMainWindow):
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._source_getsignal_last_processed={}  # source PageAdc stable Mode2 64-bit cursor
+        self._source_getsignal_last_preview_end={}  # verified device cursor per rendered window
         # High-N live FFT is full numerical work, never a 50Hz UI-timer
         # re-render. The 20ms original dispatcher still runs untouched.
         self._source_large_fft_key=None
@@ -952,6 +953,7 @@ class MainWindow(QMainWindow):
         # Source NoDC toggling changes the visible data, not RAW.
         # Rebind the local GetSignal last-processed read for this Tag.
         self._source_getsignal_last_processed.clear()
+        self._source_getsignal_last_preview_end.clear()
         self._sync_wave_primary_labels()
         self.refresh_wave()
 
@@ -959,6 +961,7 @@ class MainWindow(QMainWindow):
         if type(tag) is not int or not 0<=tag<len(ADC_HORIZONTAL_MS):
             raise ValueError('Source ADC H menu Tag 0..13 required')
         self._source_getsignal_last_processed.clear()
+        self._source_getsignal_last_preview_end.clear()
         self._wave_hscale_tag=tag
         # bAdcHScale is a SINGLE source action. The QDoubleSpinBox
         # valueChanged signal must not trigger an earlier extra live
@@ -2822,6 +2825,7 @@ class MainWindow(QMainWindow):
         self._native_live_status=None
         self._live_preview=None
         self._source_getsignal_last_processed.clear()
+        self._source_getsignal_last_preview_end.clear()
         self._source_large_fft_key=None
         self._source_large_fft_at=0.0
         self.session=None
@@ -3023,6 +3027,7 @@ class MainWindow(QMainWindow):
             return
         self._live_preview=None
         self._source_getsignal_last_processed.clear()
+        self._source_getsignal_last_preview_end.clear()
         self._source_large_fft_key=None
         self._source_large_fft_at=0.0
         self.wave_plot.clear_source_tqgr_series()
@@ -3054,16 +3059,21 @@ class MainWindow(QMainWindow):
             cursor_key=(self._live_preview.session_id,ch,tag,
                         self.wave_mode.currentIndex(),rate)
             last=self._source_getsignal_last_processed.get(cursor_key,0)
+            last_preview_end=self._source_getsignal_last_preview_end.get(cursor_key)
             # Original PageAdc 00847F75..00847FA0 disables overlap for
             # short H windows <=1000ms in Mode2 when Grapher is active.
             # Longer windows may overlap. This is a conservative
             # candidate because original Grapher field varies by mode.
             allow_overlap=(tag is None or ADC_HORIZONTAL_MS[tag]>1000)
             if (not allow_overlap and last and
-                    rx_pos-last < rate*ADC_HORIZONTAL_MS[tag]//1000):
-                # Source GetSignal would return FALSE until new real
-                # samples are received. Retain current valid graph;
-                # never re-render old data pretending it is fresh.
+                    (rx_pos-last < rate*ADC_HORIZONTAL_MS[tag]//1000
+                     or (last_preview_end is not None and
+                         self._live_preview.channels[ch].next_index
+                         <=last_preview_end))):
+                # A newer TCP status without NEW SHA-validated preview
+                # is not a new GetSignal frame. Bind BOTH local counter
+                # and original absolute device cursor; never redisplay
+                # a stale capture as new samples.
                 self.wave_hint.setText(
                     f'GetSignal: ожидание следующего окна '
                     f'{ADC_HORIZONTAL_MS[tag]} мс · нет новых '
@@ -3077,6 +3087,8 @@ class MainWindow(QMainWindow):
             if proof is not None and proof["verified_preview_window_ready"]:
                 self._source_getsignal_last_processed[cursor_key]=(
                     proof["next_processed_pos_64"])
+                self._source_getsignal_last_preview_end[cursor_key]=(
+                    self._live_preview.channels[ch].next_index)
             self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_line=None  # Original cursor requires audited archived samples

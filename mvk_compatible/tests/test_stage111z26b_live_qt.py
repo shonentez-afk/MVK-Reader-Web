@@ -224,6 +224,16 @@ def test_real_qt_original_page_adc_hscale_live_signal_length_and_cursor(
              win.wave_mode.currentIndex(),preview.channels[win._ch()].rate_hz)
         rx=status["channels"][win._ch()-1]["samples"]
         assert win._source_getsignal_last_processed[key]==rx
+        assert win._source_getsignal_last_preview_end[key]==(
+            preview.channels[win._ch()].next_index)
+        # Even if the verified native transport counter advances,
+        # unchanged source preview bytes cannot be marked NEW data.
+        native_ch=win._native_live_status["channels"][win._ch()-1]
+        native_ch["samples"]+=65536
+        win._render_live_wave()
+        assert "ожидание следующего окна" in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        native_ch["samples"]-=65536
         # A stable Mode2 1-second GetSignal cannot be repainted as
         # NEW data before another full 65536 ADC samples have arrived.
         old_x=win.wave_plot.listDataItems()[0].xData.copy()
