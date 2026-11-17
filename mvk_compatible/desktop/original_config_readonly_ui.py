@@ -36,6 +36,11 @@ class OriginalConfigReadOnlyPanel:
         self.source_note=page.findChild(QLabel,"sourceConfigEvidence")
         self.load_button=page.findChild(QPushButton,"bConfigLoad")
         self.save_button=page.findChild(QPushButton,"bConfigSave")
+        self.download_button=page.findChild(QPushButton,"bConfigDownload")
+        self.upload_button=page.findChild(QPushButton,"bConfigUpload")
+        self.reset_button=page.findChild(QPushButton,"bConfigReset")
+        self._task0_receipt=None
+        self._task0_dialog=None
         self.workspace=None
         self.selected_adc=1
         self.page_tabs=page.findChild(QTabWidget,"tcConfig")
@@ -43,7 +48,8 @@ class OriginalConfigReadOnlyPanel:
         self.document=empty_original_config_inspection()
         if any(x is None for x in (self.channel_table,self.alarm_table,
                                    self.basic_table,self.source_note,
-                                   self.load_button,self.save_button,self.page_tabs)):
+                                   self.load_button,self.save_button,
+                                   self.download_button,self.page_tabs)):
             raise ValueError("Missing source PageConfig DFM control")
         self.load_button.setEnabled(True)
         self.load_button.setToolTip(
@@ -55,6 +61,16 @@ class OriginalConfigReadOnlyPanel:
             "Сохранить НОВУЮ локальную текстовую конфигурацию по исходному "
             "TMvkCellList.SaveValuesToFile. Без команды прибору.")
         self.save_button.clicked.connect(self.choose_save_file)
+        self.download_button.setToolTip(
+            "Исходный Task0: чтение конфигурации с прибора по разрешённому TCP; "
+            "никаких Flash, Reset, SetRate или Upload.")
+        self.download_button.clicked.connect(self.download_device_config)
+        for unsafe in (self.upload_button,self.reset_button):
+            if unsafe is not None:
+                unsafe.setEnabled(False)
+                unsafe.setToolTip(
+                    "Аппаратная запись/перезагрузка не разрешена без "
+                    "отдельной аппаратной приёмки.")
         self.channel_table.cellClicked.connect(self._select_channel)
         self.channel_fields=QTableWidget(0,4,page)
         self.channel_fields.setObjectName("sourceConfigSelectedAdcFields")
@@ -153,18 +169,30 @@ class OriginalConfigReadOnlyPanel:
             summary=(f"Исходный Mode{self.source_mode}: "
                      f"{known}/{len(rows)} полей локального источника.")
         pending=(self.workspace.changed_count if self.workspace else 0)
-        self.source_note.setText(
-            f"Локально прочитано {total} RAW значений. {summary} "
-            f"Изменено в памяти: {pending}. "
-            "Текущая конфигурация прибора НЕ подтверждена. "
-            "Локальное Save доступно после Load; "
-            "приборные Reset/Download/Upload/Calib отключены.")
+        if self.source_mode==4 and self._task0_receipt is not None:
+            checked=self._task0_receipt
+            self.source_note.setText(
+                f"Task0: {checked['confirmed_fields']} полей получены "
+                "и независимо сверены с RAW и SHA256. "
+                "Остальные поля остаются неизвестными; пароли скрыты. "
+                "Flash, Reset и Upload не выполнялись.")
+        else:
+            self.source_note.setText(
+                f"Локально прочитано {total} RAW значений. {summary} "
+                f"Изменено в памяти: {pending}. "
+                "Текущая конфигурация прибора НЕ подтверждена. "
+                "Локальное Save доступно после Load; "
+                "приборные Reset/Upload/Calib отключены.")
 
 
     def _set_mode_visibility(self,*_):
         basic=self.source_mode in (4,5)
         self.page_tabs.setVisible(not basic)
         self.basic_table.setVisible(basic)
+        # Task0 is the ONLY restored hardware configuration action.
+        self.download_button.setEnabled(self.source_mode==4)
+        for unsafe in (self.upload_button,self.reset_button):
+            if unsafe is not None:unsafe.setEnabled(False)
         show_channel=(not basic and self.page_tabs.currentIndex()==0)
         self.channel_fields_caption.setVisible(show_channel)
         self.channel_fields.setVisible(show_channel)
@@ -196,27 +224,90 @@ class OriginalConfigReadOnlyPanel:
         rows=source_section_rows(
             self.document,"ip" if self.source_mode==4 else "calib")
         table.setColumnCount(5)
+        task0=(self._task0_receipt if self.source_mode==4 else None)
         table.setHorizontalHeaderLabels(
-            ("Исходное поле","Адрес","IDR тип","Локальный RAW",
+            ("Исходное поле","Адрес","IDR тип",
+             "RAW прибора (LE)" if task0 else "Локальный RAW",
              "Исходные пределы / список"))
         table.setRowCount(len(rows))
         for index,info in enumerate(rows):
             name=source_localize(info["source_key"]).display+info["source_suffix"]
             bounds=(f'{info["source_min"]}..{info["source_max"]}'
                     if info["source_min"] is not None else "")
+            value=info["raw_value"]
+            if task0 is not None:
+                entry=task0["fields"].get(info["source_key"])
+                if entry is not None:
+                    value=("0x"+entry["raw_hex_le"] if entry["valid"]
+                           else UNKNOWN)
+                elif info["source_key"]=="ConfigWifiPassword":
+                    value="•••••••• (скрыто)"
             values=(name,info["address"],
                     f'{info["cell_type_code"]} ({info["source_format_char"]}, '
                     f'{info["source_storage_bytes"]} байт)',
-                    info["raw_value"],bounds or info["advanced_kind"] or UNKNOWN)
+                    value,bounds or info["advanced_kind"] or UNKNOWN)
             detail={"source_translation_key":info["source_key"],
                     "address":info["address"]}
             for col,value in enumerate(values):
                 self._cell(table,index,col,value,
                            detail=detail if col==3 else None)
 
+    def download_device_config(self):
+        """Original bConfigDownloadClick: separate, consented Task0 read."""
+        if self.source_mode!=4:return False
+        window=self.page.window()
+        if (getattr(window,"_measurement_mode_selected",False) or
+                getattr(window,"_live_active",False)):
+            window.original_window_man.spawn_error(
+                "Сначала завершите измерение: Task0 требует отдельного TCP.")
+            return False
+        controller=window.original_start_controller
+        if not controller.commit_ip():return False
+        from .original_task0_download_dialog import OriginalTask0DownloadDialog
+        if self._task0_dialog is not None and self._task0_dialog.isVisible():
+            self._task0_dialog.raise_()
+            self._task0_dialog.activateWindow()
+            return True
+        dialog=OriginalTask0DownloadDialog(
+            controller.workspace.device_ipv4,window)
+        dialog.readCompleted.connect(self.apply_device_task0_read)
+        self._task0_dialog=dialog
+        dialog.show()
+        return True
+
+    def apply_device_task0_read(self,proof):
+        """Bind only independently RAW/SHA-verified Task0 register cells."""
+        if (not isinstance(proof,dict) or
+                proof.get("schema")!="MVK_SOURCE_TASK0_CONFIG_IP_READ_V1" or
+                proof.get("source_original_task")!=0 or
+                proof.get("read_only") is not True or
+                proof.get("device_commands_sent") is not False or
+                proof.get("original_delphi_byte_parity_verified") is not False or
+                not isinstance(proof.get("fields"),dict)):
+            raise ValueError("Task0: неверное подтверждение конфигурации")
+        controller=self.page.window().original_start_controller
+        if proof.get("device_ipv4")!=controller.workspace.device_ipv4:
+            raise ValueError("Task0: текущий IP прибора отличается от ответа")
+        if self.workspace is not None and self.workspace.changed:
+            raise ValueError(
+                "Сохраните или отмените локальные изменения перед Task0")
+        self.workspace=None
+        self.document=empty_original_config_inspection()
+        self._task0_receipt=proof
+        self.source_mode=4
+        self.refresh()
+        return self.basic_table.rowCount()
+
     def set_source_mode(self,mode):
         if type(mode) is not int or mode not in (4,5,6):
             raise ValueError("Only source Config Mode4/5/6 supported")
+        if mode==4 and self._task0_receipt is not None:
+            # An old TCP response can never be shown under a new edIpAddr.
+            controller=getattr(self.page.window(),"original_start_controller",None)
+            if (controller is None or
+                    controller.workspace.device_ipv4!=
+                    self._task0_receipt.get("device_ipv4")):
+                self._task0_receipt=None
         self.source_mode=mode
         self.refresh()
 
@@ -228,9 +319,17 @@ class OriginalConfigReadOnlyPanel:
         info=source_section_rows(
             self.document,"ip" if self.source_mode==4 else "calib")[row]
         hint=source_localize(info["source_key"])
+        value=info["raw_value"]
+        if self.source_mode==4 and self._task0_receipt is not None:
+            entry=self._task0_receipt["fields"].get(info["source_key"])
+            if entry is not None:
+                value=("0x"+entry["raw_hex_le"] if entry["valid"]
+                       else UNKNOWN)
+            elif info["source_key"]=="ConfigWifiPassword":
+                value="•••••••• (скрыто)"
         return OriginalValueEditDialog(
             prompt=f'{hint.display}{info["source_suffix"]} ({hint.key})',
-            value=info["raw_value"],units=info["address"],
+            value=value,units=info["address"],
             parent=self.page,read_only=True)
 
     def show_basic_details(self,row,column):
@@ -396,6 +495,7 @@ class OriginalConfigReadOnlyPanel:
     def load_local_file(self,path):
         """Fail-closed: a bad/new file never preserves old config evidence."""
         self.workspace=None
+        self._task0_receipt=None
         self.document=empty_original_config_inspection()
         self.refresh()
         self.workspace=OriginalLocalConfigWorkspace.load(path)

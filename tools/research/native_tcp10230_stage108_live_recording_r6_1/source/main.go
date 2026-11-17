@@ -87,7 +87,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		fmt.Printf("Ethernet-интерфейс: %s | индекс %d | локальный IPv4 %s\n", nic.Name, nic.Index, nic.IP)
 	}
 	dialer, e := newInterfaceDialer(nic)
-	if e == nil && m.sourceTask2TX != nil {dialer.Timeout=time.Second} // original ConnectTimeout=1000ms
+	if e == nil && (m.sourceTask2TX != nil || m.sourceTask0ConfigRead) {dialer.Timeout=time.Second} // original Task0/Task2 ConnectTimeout=1000ms
 	if e != nil {
 		return "LOCAL_INTERFACE_INVALID", e
 	}
@@ -130,6 +130,13 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			return "STOPPED_BY_USER", nil
 		}
 		if e:=m.drainSourceOperatorRates(rateLines);e!=nil{return "SOURCE_RATE_TX_FAILED",e}
+		// Source _Unit125.pas:00808769..008087B6: Task=0 transitions
+		// from Stage1 (first valid nonempty PARAM) to Stage2 "Read".
+		// No device command is transmitted for Task0. This is a separate
+		// explicit read operation, NOT config write Task3/4/5.
+		if m.sourceTask0ConfigRead && m.summary.SourceNonemptyParameters>0 && !m.captureOnly {
+			return "SOURCE_TASK0_CONFIG_READ_COMPLETE",nil
+		}
 		if !deadline.IsZero() && !time.Now().Before(deadline) {
 			return "DURATION_REACHED", nil
 		}
@@ -158,6 +165,9 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 				return "LOCAL_WRITE_FAILED", err
 			}
 			m.publishLiveStatus("RECORDING", false, "")
+			if m.sourceTask0ConfigRead && m.summary.SourceNonemptyParameters>0 && !m.captureOnly {
+				return "SOURCE_TASK0_CONFIG_READ_COMPLETE",nil
+			}
 			if time.Since(lastPrinted) >= 2*time.Second {
 				fmt.Printf("Получено %.2f МБ | кадров %d | AUX4700 %d | ADC1 %d отсчётов\n",
 					float64(m.summary.RawBytes)/1048576, m.summary.TotalFrames, m.summary.Aux4700, m.summary.Channels[0].Samples)
@@ -224,6 +234,8 @@ func mainInner() int {
 	seconds := flag.Int("seconds", 15, "live duration 1..300 seconds, or 0 until explicit stop with -stop-file and RAW cap")
 	out := flag.String("out", defaultOutput(), "root output folder")
 	approve := flag.Bool("approve", false, "explicit approval to connect to industrial instrument")
+	sourceTask0 := flag.Bool("source-task0-config-read",false,
+		"original bConfigDownloadClick: approved read-only Task0 until first nonempty PARAM")
 	sourceTX := flag.Bool("source-setrate-tx",false,"opt-in original Task2 SetRate over the SAME TCP socket; never Flash")
 	sourceTXApproval := flag.Bool("source-setrate-tx-approved",false,"separate operator confirmation for hardware rate writes")
 	sourceReconnect:=flag.Bool("source-task2-reconnect",false,"original Task2 retry AFTER RAW; independent SHA256 TCP segments")
@@ -310,6 +322,13 @@ func mainInner() int {
 			return 2
 		}
 	}
+	if *sourceTask0 && (!*approve || *replay!="" || *autoExport ||
+			*sourceTX || *sourceTXApproval || *sourceReconnect ||
+			*sourceReconnectApproved || *frameMarks || !*liveStatus ||
+			*stopFile=="" || *seconds<1 || *seconds>300) {
+		fmt.Println("Source Task0 config reading requires approved PASSIVE TCP, bounded time, local stop; no SetRate/Flash/reboot or BIN exporter")
+		return 2
+	}
 	if *sourceReconnect && (!*sourceReconnectApproved || !*approve || *replay!="" || !*liveStatus || *stopFile=="") {
 		fmt.Println("Task2 TCP retry requires its own explicit consent, live status and local stop; SetRate approval is separate")
 		return 2
@@ -373,6 +392,11 @@ func mainInner() int {
 	if e != nil {
 		fmt.Println("Ошибка создания файлов:", e)
 		return 2
+	}
+	if *sourceTask0 {
+		m.sourceTask0ConfigRead=true
+		m.summary.Mode="LIVE_SOURCE_TASK0_CONFIG_READ_ONLY"
+		fmt.Println("Original Task0: PASSIVE read of first validated PARAM. No device commands.")
 	}
 	if *sourceTX {
 		m.summary.Mode="LIVE_SOURCE_SET_RATE_APPROVED"
@@ -440,6 +464,27 @@ func mainInner() int {
 		return 1
 	}
 	m.publishLiveStatus("VERIFYING", true, "")
+	if *sourceTask0 {
+		// The original bConfigDownload waits for Task0 completion, not
+		// 8 ADC BIN exports. Create a local RAW-SHA-bound, redacted read
+		// receipt; private Wi-Fi password and other secret register words
+		// never leave the run directory or appear in logs.
+		if runError!=nil || report.CaptureOnly ||
+				reason!="SOURCE_TASK0_CONFIG_READ_COMPLETE" ||
+				report.SourceNonemptyParameters==0 {
+			m.publishLiveStatus("REFUSED",true,"SOURCE_TASK0_NOT_VERIFIED")
+			fmt.Println("Task0 config not verified; original RAW remains local")
+			return 1
+		}
+		if err:=writeSourceTask0ConfigSnapshot(m,report);err!=nil {
+			m.publishLiveStatus("REFUSED",true,"SOURCE_TASK0_SNAPSHOT_FAILED")
+			fmt.Println("Task0 verified RAW snapshot error:",err)
+			return 1
+		}
+		m.publishLiveStatus("COMPLETED",true,"SOURCE_TASK0_READ_ONLY")
+		fmt.Println("Task0 read-only IP config snapshot verified; no hardware writes, ZIP RAW saved")
+		return 0
+	}
 	fmt.Println("\n=== РЕЗУЛЬТАТ ===")
 	fmt.Printf("Получено байт: %d; кадров: %d; AUX4700: %d; снимков регистров: %d\n",
 		report.RawBytes, report.TotalFrames, report.Aux4700, report.FullSnapshots)

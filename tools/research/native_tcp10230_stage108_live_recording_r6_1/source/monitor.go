@@ -109,6 +109,7 @@ type Monitor struct {
 	liveBin     *LiveBinSpool
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
+	sourceTask0ConfigRead bool // separate original bConfigDownload Task=0, passive
 	sourceTCP *sourceTCPLedger
 	sourceAfterRAWReconnect bool
 	sourceLastRetryReason string // exact Go transport class, not a Delphi message
