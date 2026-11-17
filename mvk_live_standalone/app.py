@@ -381,7 +381,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.features_label.setText(
             f"APP_DERIVED · ВУ СКЗ {f.acceleration_rms:.5g} м/с² · "
             f"Пик {f.acceleration_peak:.5g} м/с² · Crest {f.acceleration_crest_factor:.3f} · "
-            f"Эксцесс (Pearson) {f.acceleration_kurtosis:.3f} · "
+            f"Куртозис Pearson {f.acceleration_kurtosis:.3f} · "
             +("RPM задан вручную, НЕ TACH" if self.rpm.value()>0 else "RPM: нет доказанного TACH")
         )
         if len(self._trend_points) and ch.end/ch.rate_hz<=self._trend_points[-1][0]:
