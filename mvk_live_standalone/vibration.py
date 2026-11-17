@@ -216,6 +216,8 @@ def vibration_y_label(view: VibrationView, scale: str, reference: str="iso") -> 
     ref=db_reference(view.kind,reference)
     if view.mode=="welch":
         return f"{label} · дБ отн. ({ref:g} {KINDS[view.kind][1]})²/Гц"
+    if view.mode=="asd":
+        return f"{label} · дБ отн. {ref:g} {KINDS[view.kind][1]}/√Гц"
     return f"{label} · дБ отн. {ref:g} {KINDS[view.kind][1]} СКЗ"
 
 
