@@ -6,6 +6,7 @@ on:
       - feature/mvk-live-standalone-20261117
     paths:
       - 'mvk_live_standalone/**'
+      - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/source/**'
       - '.github/workflows/mvk_live_standalone.yml'
   workflow_dispatch:
 
@@ -39,3 +40,17 @@ jobs:
         run: python -m pip install --disable-pip-version-check numpy scipy pytest PySide6 pyqtgraph
       - name: Qt offscreen and physical spectrum unit smoke
         run: python -m pytest -q mvk_live_standalone/tests/
+
+  live-go-ipc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Verified R6.1 receiver + IPC integration and race detector
+        run: go test -race -count=1 ./...
