@@ -39,8 +39,8 @@ _HEX = re.compile(r"[a-f0-9]{64}\Z")
 _ENTRY = re.compile(r"ADC([1-8])\.f32\Z")
 
 
-def _uint(value, name: str) -> int:
-    if type(value) is not int or value < 0 or value > 2**32:
+def _uint(value, name: str, *, max_value: int = (1 << 32) - 1) -> int:
+    if type(value) is not int or value < 0 or value > max_value:
         raise ValueError(f"Native live preview: invalid {name}")
     return value
 
@@ -108,8 +108,10 @@ def _validate_preview_payload(archive: zipfile.ZipFile, status: dict,
     st = _utc_stamp(status["updated_utc"], "live status updated_utc")
     if (ts-st).total_seconds() > 3 or (st-ts).total_seconds() > 5:
         raise ValueError("Native live preview: unrelated status/preview update")
-    raw = _uint(meta.get("raw_bytes"), "raw_bytes")
-    frames = _uint(meta.get("frames_decoded"), "frames_decoded")
+    # Go Summary.RawBytes/TotalFrames are uint64; continuous source
+    # recording must not stop preview at the old 4 GiB counter limit.
+    raw = _uint(meta.get("raw_bytes"), "raw_bytes",max_value=(1<<64)-1)
+    frames = _uint(meta.get("frames_decoded"), "frames_decoded",max_value=(1<<64)-1)
     if raw > status["raw_bytes"] or frames > status["frames_decoded"]:
         raise ValueError("Native live preview: preview newer than trusted status")
     records = meta.get("channels")

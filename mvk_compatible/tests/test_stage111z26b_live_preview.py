@@ -377,3 +377,26 @@ def test_source_u32_legacy_ambiguous_epoch_fails_closed():
         status_samples=1000,window_samples=256,captured_samples=999)
     assert extended_u32_window(0xFFFF0000,0,65536,65536)==(
         0xFFFF0000,1<<32)
+
+
+def test_continuous_measure_go_uint64_raw_and_frame_counters_do_not_truncate(
+        tmp_path):
+    # The Go source stores RAW bytes and frame counters as uint64.
+    # This case is metadata-only; no synthetic 4GiB buffer or socket.
+    count=(1<<32)+1234
+    def long_capture(meta):
+        meta["raw_bytes"]=count
+        meta["frames_decoded"]=count
+    root,status,_=make_preview(tmp_path,modify=long_capture)
+    status["raw_bytes"]=count
+    status["frames_decoded"]=count
+    preview=load_live_preview(root,status,now=now())
+    assert preview is not None
+    assert preview.raw_bytes==count and preview.frames_decoded==count
+    # Device SampleHeader.Index must still be strictly uint32.
+    def source_invalid_index(meta):
+        meta["channels"][0]["next_sample_index"]=1<<32
+    other=tmp_path/"invalid"
+    root2,status2,_=make_preview(other,modify=source_invalid_index)
+    with pytest.raises(ValueError,match="invalid calibrated sample metadata"):
+        load_live_preview(root2,status2,now=now())
