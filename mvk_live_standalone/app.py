@@ -298,7 +298,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.metrics.setText(
             f"АЦП {self.adc.currentData()} · {s.nfft} отсчётов · Δf {s.resolution_hz:g} Гц · "
             f"пик {s.peak[0]:.2f} Гц / {s.peak[1]:.5g} {s.units} СКЗ · "
-            ("· дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())+
+            + ("дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())+
              " · локальная FFT, не DSP" if self.yscale.currentData()=="db"
              else "· локальная FFT, не приборный DSP")
         )
