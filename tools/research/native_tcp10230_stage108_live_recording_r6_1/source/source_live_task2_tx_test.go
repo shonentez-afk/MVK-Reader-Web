@@ -1,10 +1,12 @@
 package main
 import (
  "bytes"
+ "context"
  "encoding/binary"
  "errors"
  "io"
  "net"
+ "path/filepath"
  "testing"
  "time"
 )
@@ -57,4 +59,40 @@ func TestApprovedSourceRateQueueAndAllowedMenuRates(t *testing.T){
  }
  if len(tx.pending)!=5{t.Fatal("initial 65536 plus 4 source menu items")}
  if e:=tx.queueRate(512);e!=nil||len(tx.pending)!=5{t.Fatal("redundant source click")}
+}
+
+func TestSourceTask2OptInActualDuplexLocalhostStream(t *testing.T) {
+ listener,e:=net.Listen("tcp4","127.0.0.1:0")
+ if e!=nil{t.Fatal(e)}
+ defer listener.Close()
+ capture:=make(chan []byte,1);serverErr:=make(chan error,1)
+ go func() {
+  c,e:=listener.Accept();if e!=nil{serverErr<-e;return}
+  defer c.Close()
+  if _,e=c.Write(task2Status0Param(0).Raw);e!=nil{serverErr<-e;return}
+  _=c.SetReadDeadline(time.Now().Add(2*time.Second))
+  buf:=make([]byte,36)
+  if _,e=io.ReadFull(c,buf);e!=nil{serverErr<-e;return}
+  capture<-buf
+  _,_=c.Write(sourceReply(typeAck))
+ }()
+ m,e:=NewMonitor(filepath.Join(t.TempDir(),"task2_live"),"LIVE_SOURCE_SET_RATE_APPROVED","127.0.0.1")
+ if e!=nil{t.Fatal(e)}
+ defer m.CloseFiles()
+ m.sourceTask2TX=newSourceLiveTask2TX()
+ reason,e:=liveCaptureAddress(context.Background(),m,listener.Addr().String(),2,4*1024*1024)
+ if e!=nil{t.Fatalf("source Task2 live fake server: %s: %v",reason,e)}
+ if reason!="REMOTE_DISCONNECTED" && reason!="DURATION_REACHED"{t.Fatal(reason)}
+ select{
+ case got:=<-capture:
+  want,_:=sourceSetRateWireBytes(65536)
+  if !bytes.Equal(got,want){t.Fatal("actual local socket TX not original PCAP")}
+ case e:=<-serverErr:t.Fatal(e)
+ case <-time.After(time.Second):t.Fatal("fake device did not receive SetRate")
+ }
+ if m.summary.SourceNonemptyParameters!=1||m.sourceTask2TX.sentCommands!=1||
+    m.sourceTask2TX.sentBytes!=36||m.summary.ReadOnly {
+  t.Fatal("approved hardware source TX provenance not recorded")
+ }
+ if m.sourceTask2TX.ackAfterTX!=1 {t.Fatal("source ACK must remain unpaired")}
 }
