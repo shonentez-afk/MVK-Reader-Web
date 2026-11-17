@@ -416,8 +416,9 @@ class OriginalMeasureControls:
                  "Go физически отправил 0 байт. "
                  if tx is not None and tx["source_setrate_dispatch_candidate"]
                  else "")+
-                "Статус подтверждённого пассивного Native R6.1. "
-                "Он не является приборным регистром StatusIsError. "
+                ("Native R6.1: исходная SetRate физически отправлялась; "
+                 if tx_bytes else "Пассивный Native R6.1: исходящих команд нет. ")+
+                "Транспортный статус не является приборным регистром StatusIsError. "
                 "ACK/отказ входящего протокола не имеют transaction ID: "
                 "нельзя приписывать их конкретной SetRate без проверки. "
                 "Системная ошибка StatusCells[0] выводится только при "
