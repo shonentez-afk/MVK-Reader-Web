@@ -42,6 +42,12 @@ type Summary struct {
 	SocketRemoteAddr       string            `json:"connected_remote_address,omitempty"`
 	ReadOnly               bool              `json:"read_only_no_app_payload_sent"`
 	SourceInitialRetryAttempts uint64 `json:"source_initial_retry_attempts,omitempty"`
+	SourceTCPConnectionCount uint64 `json:"source_tcp_connection_count,omitempty"`
+	SourceTCPMultiSocket bool `json:"source_tcp_multi_socket,omitempty"`
+	SourceTCPReconnectAfterRAW uint64 `json:"source_tcp_reconnects_after_raw,omitempty"`
+	SourceTCPAbandonedTailBytes uint64 `json:"source_tcp_abandoned_tail_bytes,omitempty"`
+	SourceTCPSegmentManifestSHA256 string `json:"source_tcp_segments_manifest_sha256,omitempty"`
+	SourceTCPSegmentCopiesVerified bool `json:"source_tcp_segment_copies_verified,omitempty"`
 	SourceRateTransition bool `json:"source_rate_transition_during_live,omitempty"`
 	SourceSetRateApproved bool `json:"source_setrate_tx_approved,omitempty"`
 	SourceSetRateCount uint64 `json:"source_setrate_sent_commands,omitempty"`
@@ -103,6 +109,9 @@ type Monitor struct {
 	liveBin     *LiveBinSpool
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
+	sourceTCP *sourceTCPLedger
+	sourceAfterRAWReconnect bool
+	sourceOperatorRateChan <-chan string
 	sourceRateTransitionDetected bool // valid RAW but no single-rate BIN parity
 	// Opt-in Stage111Z26 UI-only telemetry, never part of original RAW/BIN.
 	liveProgressEnabled bool
@@ -333,7 +342,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		if sample.NonFinite > 0 && c.NonFiniteSamples <= uint64(sample.NonFinite) {
 			m.warn(fmt.Sprintf("channel %d contains non-finite ADC/TACH values", sample.Channel+1))
 		}
-		if typ == typeADC && m.liveBin != nil {
+		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
 			// Original mRate1Click permits rate changes. Keep every subsequent
 			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
 			// corrupt TCP. Existing single-rate BIN cannot certify this session.
@@ -489,6 +498,11 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
 		if e := m.CloseFiles(); e != nil {
 			return m.Snapshot(), "", e
 		}
+		if m.sourceTCP!=nil {
+			if e:=m.sourceTCP.writeVerifiedArtifacts(m);e!=nil {
+				return m.Snapshot(),"",fmt.Errorf("source TCP session RAW evidence: %w",e)
+			}
+		}
 	}
 	report := m.Snapshot()
 	p := filepath.Join(m.dir, "summary.json")
@@ -514,7 +528,10 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
 func renderSummary(s Summary) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "MVK Reader Web - диагностика TCP/10230 (Native R5)\n")
-	fmt.Fprintf(&b, "Только чтение. Команды прибору не отправляются.\n\n")
+	if s.ReadOnly {fmt.Fprint(&b,"Нет исходящих прикладных байт.\n\n")} else {
+		fmt.Fprintf(&b,"Source SetRate с разрешения оператора: команд=%d, байт=%d.\n\n",s.SourceSetRateCount,s.SourceSetRateBytes)
+	}
+	if s.SourceTCPConnectionCount>1 {fmt.Fprintf(&b,"ВНИМАНИЕ: %d независимых TCP-сессий; %d повторов после RAW. Для каждой — отдельный SHA256 RAW. Единый BIN запрещён.\n",s.SourceTCPConnectionCount,s.SourceTCPReconnectAfterRAW)}
 	fmt.Fprintf(&b, "Режим: %s; IP: %s; порт: %d\n", s.Mode, s.IP, s.Port)
 	if s.SelectedLocalIPv4 != "" {
 		fmt.Fprintf(&b, "Выбранный интерфейс: %s [index %d] / %s\n", s.SelectedInterface, s.SelectedInterfaceIndex, s.SelectedLocalIPv4)
