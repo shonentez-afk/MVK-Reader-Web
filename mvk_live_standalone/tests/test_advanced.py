@@ -89,3 +89,27 @@ def test_stft_cwt_and_cepstrum_shapes_are_bounded_and_labeled():
     cep=real_cepstrum(x,fs,max_quefrency_s=.04)
     assert cep.quefrency_s.shape==cep.magnitude.shape
     assert np.isfinite(cep.magnitude).all()
+
+
+
+def test_operator_gear_mesh_harmonics_and_sidebands_without_tach():
+    from mvk_live_standalone.advanced import gear_mesh_markers
+    m=gear_mesh_markers(1500,32)
+    assert m.mesh_hz==800
+    assert m.harmonics_hz==(800,1600,2400)
+    assert m.sidebands_hz==(725,750,775,825,850,875)
+    assert "NO_TACH" in m.source
+    with pytest.raises(ValueError,match="teeth"):
+        gear_mesh_markers(1500,0)
+
+
+def test_historical_severity_requires_user_class_and_full_band():
+    from mvk_live_standalone.advanced import indicative_iso10816_zone
+    z=indicative_iso10816_zone(5.0,machine_class=2,rpm=1500)
+    assert z.zone=="B"
+    assert "INDICATIVE" in z.source
+    with pytest.raises(ValueError,match="class"):
+        indicative_iso10816_zone(5.0,machine_class=0,rpm=1500)
+    with pytest.raises(ValueError,match="Full measured"):
+        indicative_iso10816_zone(5.0,machine_class=2,rpm=1500,
+                                measured_band_hz=(10,200))
