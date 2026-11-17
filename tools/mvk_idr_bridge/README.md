@@ -83,3 +83,12 @@ py -m unittest discover -s tools\mvk_idr_bridge\tests -v
 ## Хранение
 
 В GitHub сохраняется **только программа построения/доступа и примеры**, не 42 МБ реконструированного кода и не оригинальный `mvkview.idp`. Файлы SQLite и CSV генерируются локально из материалов пользователя; готовый архив базы предоставляется отдельно в этом чате.
+
+## Ghidra 12.2: автономный экспорт и локальный Harness/Hermes
+
+- [MVK_Export_IDR_Research.java](MVK_Export_IDR_Research.java): Java-скрипт для Ghidra 12.2 CodeBrowser. Без MCP сохраняет ограниченные (до 64 функций) декомпиляции, xrefs, инструкции и структуры в локальную папку. **Не модифицирует EXE и не отправляет команды прибору**.
+- [README_GHIDRA_OFFLINE_RU.md](README_GHIDRA_OFFLINE_RU.md): запуск, файлы результата, ограничения и приватная передача ZIP.
+- [verify_export.py](verify_export.py): локальная проверка структуры выгрузки.
+- [HARNESS_MCP_RU.md](HARNESS_MCP_RU.md): локальное подключение уже установленного GhidrAssistMCP 3.0.0 к Harness/Hermes через `http://127.0.0.1:8080/mcp`, без OpenAI Tunnel. У LaurieWired/GhidraMCP release 2.0 готовый ZIP ориентирован на Ghidra 12.1.4, не на 12.2.
+
+Сами исходные EXE/IDP/PAS/BIN/DFM и декомпилированные данные остаются локально и **в GitHub не публикуются**.
