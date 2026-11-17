@@ -2501,6 +2501,31 @@ class MainWindow(QMainWindow):
             self.original_shell.sync_availability()
             self.original_shell.measure_controls.sync_source()
 
+    def _sync_mode2_operator_controls(self):
+        """Original Measure exposes only source controls, not research tools.
+
+        Original _Unit128.pas:00846D24 reveals the source pages before
+        Task2/TCP; bAdcHScale and bSpecLines remain operator controls.
+        Research FFT N=1024/4096 and inspector docks belong to offline QA,
+        never to the original Mode2 toolbar.
+        """
+        in_mode2=bool(self._measurement_mode_selected or self._live_active)
+        if in_mode2:
+            self.wave_inspector.hide()
+            self.spec_inspector.hide()
+        self.wave_advanced_button.setVisible(not in_mode2)
+        self.spec_advanced_button.setVisible(not in_mode2)
+        for action in self._spec_lines_actions:
+            action.setVisible(
+                not in_mode2 or int(action.data()) not in RESEARCH_FFT_SIZES)
+        if (in_mode2 and self.spec_n.currentData() is not None
+                and int(self.spec_n.currentData()) in RESEARCH_FFT_SIZES):
+            # Only the six IDP/DFM bSpecLines Tags are valid in Mode2.
+            # A previously selected offline research FFT must not enter
+            # the actual measurement as though it existed in Delphi.
+            self.spec_n.setCurrentText('65536')
+        self._sync_spec_lines_presentation()
+
     def _sync_source_mode2_runtime(self):
         """Project the SAME read-only source Core receipt on existing Qt pages.
 
@@ -2650,6 +2675,7 @@ class MainWindow(QMainWindow):
         self.calc_status.setText('Нет подключения к прибору')
         self._refresh_source_pagestatus()
         self._set_active(False)
+        self._sync_mode2_operator_controls()
         # The source calls TPageControl.SetActivePage(PageStatus).
         self.original_visual_skin.reveal_page(2)
         self.original_shell.measure_controls.render()
@@ -2697,6 +2723,7 @@ class MainWindow(QMainWindow):
         parked=self._live_prior_session
         self._live_prior_session=None
         self._measurement_mode_selected=False
+        self._sync_mode2_operator_controls()
         if self._source_mode2_runtime.finished:
             self._source_mode2_runtime.leave_after_native()
         else:
@@ -2839,13 +2866,17 @@ class MainWindow(QMainWindow):
         self.original_shell.begin_live_file_plan()
         self._bind_only_verified_channels(tuple(range(1,9)))
         self._set_active(True)
+        self._sync_mode2_operator_controls()
         self.original_shell.measure_controls.begin_live()
         self.tick.setEnabled(False)
         self.task_metrics_button.setEnabled(False)
         self._live_control_states=[(widget,widget.isEnabled()) for widget in (
             self.wave_start,self.wave_seconds,self.wave_order,self.wave_envelope_code,
-            self.wave_filter_button,self.wave_hscale_button,self.spec_n,
-            self.spec_f_range,self.spec_input_domain,self.spec_last)]
+            self.spec_n,self.spec_f_range,self.spec_input_domain,self.spec_last)]
+        # Original _Unit128:00847F0D and 0084819A: bAdcHScale and
+        # bSpecLines are LIVE operator actions, not archive-only controls.
+        # Keep the original ADC envelope selector active as well; the
+        # private offline editor fields above remain disabled.
         for widget,_ in self._live_control_states:
             widget.setEnabled(False)  # archive selectors are NOT live FFT windows
         # Never display previous archive's DSP/VALUES while recording new RAW.
@@ -3210,6 +3241,7 @@ class MainWindow(QMainWindow):
             has_parked_archive=self._live_prior_session is not None)
         self._measurement_connection_error=completion.connection_error
         self._measurement_mode_selected=completion.keep_mode2
+        self._sync_mode2_operator_controls()
         if not completion.keep_mode2 and not exported:
             # The operator pressed the original second Mode2 button:
             # Native has now stopped and the same Core trace must also
