@@ -103,3 +103,17 @@ def test_reject_false_low_frequency_psd_without_imaginary_data():
     assert v.rms[0]==0 and v.rms[1]==0
     with pytest.raises(ValueError,match="Need real contiguous"):
         analyze_vibration(x[:32],8192,mode="welch",nfft=8192)
+
+
+def test_optional_notch_is_never_implicit_and_preserves_other_orders():
+    fs=8192
+    t=np.arange(32768)/fs
+    x=np.sin(2*np.pi*50*t)+np.sin(2*np.pi*128*t)
+    normal=analyze_vibration(x,fs,nfft=8192,mode="fft")
+    filtered=analyze_vibration(x,fs,nfft=8192,mode="fft",notch_hz=50.0)
+    i50=int(np.argmin(abs(normal.hz-50)))
+    i128=int(np.argmin(abs(normal.hz-128)))
+    assert filtered.rms[i50] < normal.rms[i50]*0.05
+    assert filtered.rms[i128]==pytest.approx(normal.rms[i128],rel=.01)
+    with pytest.raises(ValueError,match="Nyquist"):
+        analyze_vibration(x,fs,nfft=8192,notch_hz=5000)
