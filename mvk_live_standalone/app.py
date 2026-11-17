@@ -221,7 +221,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._apply_axes()
 
         for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band):
-            w.currentIndexChanged.connect(self._request_update) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._request_update)
+            w.currentIndexChanged.connect(self._on_control_change) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._on_control_change)
         for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
         for w in (self.rpm,self.balls,self.ball_diameter,self.pitch_diameter,self.contact_angle):
@@ -240,12 +240,25 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.band.currentData(),self.smooth.value(),
                 self.analysis.currentData(),self.envelope_band.currentData())
 
+    def _on_control_change(self,*_):
+        self._last_fft_submit=0.0
+        self._last_submitted_key=None
+        if self._spectrum is not None and (
+                self._spectrum.mode!=self.analysis.currentData() or
+                self._spectrum.kind!=self.kind.currentData()):
+            self._waterfall_rows=[]
+            self._waterfall_key=None
+            self.waterfall_img.clear()
+        self._request_update()
+
     def _request_update(self,*_):
         self._generation += 1
         # The physical Y unit must update IMMEDIATELY on the operator's
         # choice, even while the next verified FFT is still calculating.
         self._apply_axes()
-        if self._spectrum is not None and self._spectrum.kind != self.kind.currentData():
+        if self._spectrum is not None and (
+                self._spectrum.kind != self.kind.currentData() or
+                self._spectrum.mode != self.analysis.currentData()):
             self._spectrum = None
             self.spec_curve.setData([],[])
             self.metrics.setText("Пересчёт выбранного физического спектра")
@@ -256,13 +269,74 @@ class LiveWindow(QtWidgets.QMainWindow):
         kind=self.kind.currentData()
         ys=self.yscale.currentData()
         xs=self.xscale.currentData()
-        self.spec.setLabel("left",y_axis_label(kind,ys,self.db_ref.currentData()))
-        # dB data is a logarithm already. Never apply logY to it again.
+        mode=self.analysis.currentData()
+        unit=KINDS[kind][1]
+        if self._spectrum is not None and self._spectrum.kind==kind and self._spectrum.mode==mode:
+            vertical=vibration_y_label(self._spectrum,ys,self.db_ref.currentData())
+        else:
+            prefix={"fft":"FFT","welch":"PSD Уэлча",
+                    "third_octave":"1/3 октавы","envelope":"Огибающая"}[mode]
+            if ys=="linear":
+                vertical=f"{prefix} · {unit} СКЗ" if mode!="welch" else f"{prefix} · ({unit})²/Гц"
+            else:
+                ref=db_reference_text(kind,self.db_ref.currentData())
+                vertical=f"{prefix} · дБ (отн. {ref})"
+                if mode=="welch":vertical+="²/Гц"
+        self.spec.setLabel("left",vertical)
+        # Numerical amplitudes are ALREADY logarithmic dB. A second log-Y
+        # transformation would distort negative and zero dB values.
         self.spec.getPlotItem().setLogMode(x=(xs=="log"),y=False)
 
     def _redraw_from_current(self,*_):
         self._apply_axes()
         self._render_spectrum()
+
+    def _update_markers(self,*_):
+        for line in self._marker_lines:
+            self.spec.removeItem(line)
+        self._marker_lines=[]
+        if self.rpm.value()<=0:
+            return  # missing TACH pulses-per-revolution: RPM never invented
+        try:
+            if self.balls.value()>0:
+                markers=bearing_frequency_markers(
+                    self.rpm.value(), balls=self.balls.value(),
+                    ball_diameter_mm=self.ball_diameter.value(),
+                    pitch_diameter_mm=self.pitch_diameter.value(),
+                    contact_angle_deg=self.contact_angle.value())
+            else:
+                markers=bearing_frequency_markers(self.rpm.value())
+        except ValueError:
+            markers=bearing_frequency_markers(self.rpm.value())
+        for label,hz in markers.items():
+            if hz<=0:continue
+            line=pg.InfiniteLine(pos=hz,movable=False,
+                 pen=pg.mkPen("#6e8295",width=1,style=QtCore.Qt.DashLine),
+                 label=label,labelOpts={"position":0.9,"color":"#6e8295"})
+            self.spec.addItem(line)
+            self._marker_lines.append(line)
+
+    def _update_features(self):
+        ch=self._gui_ring.channel(self.adc.currentData())
+        if ch is None or ch.available<512:return
+        key=(self._gui_ring.session_id,self.adc.currentData(),ch.end)
+        if key==self._trend_key:return
+        self._trend_key=key
+        count=min(ch.available,max(2048,ch.rate_hz))
+        f=time_features(ch.latest(count),ch.rate_hz)
+        self.features_label.setText(
+            f"APP_DERIVED · ВУ СКЗ {f.acceleration_rms:.5g} м/с² · "
+            f"Пик {f.acceleration_peak:.5g} м/с² · Crest {f.acceleration_crest_factor:.3f} · "
+            f"Эксцесс (Pearson) {f.acceleration_kurtosis:.3f} · "
+            +("RPM задан вручную, НЕ TACH" if self.rpm.value()>0 else "RPM: нет доказанного TACH")
+        )
+        if len(self._trend_points) and ch.end/ch.rate_hz<=self._trend_points[-1][0]:
+            self._trend_points=[]
+        self._trend_points.append((ch.end/ch.rate_hz,f.acceleration_rms))
+        self._trend_points=self._trend_points[-240:]
+        self.trend_line.setData(
+            [p[0] for p in self._trend_points],
+            [p[1] for p in self._trend_points])
 
     def _render_wave(self):
         ch=self._gui_ring.channel(self.adc.currentData())
@@ -295,32 +369,38 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.metrics.setText(f"Ожидание {s[2]} подтверждённых отсчётов АЦП {s[0]}")
             return
         job_key=(self._gui_ring.session_id, s[0], ch.end, s)
-        if job_key==self._last_submitted_key:
-            return
-        source=ch.latest(s[2])  # independent snapshot for worker thread
+        if job_key==self._last_submitted_key or (
+            time.monotonic()-self._last_fft_submit<0.14):
+            return  # plot may follow at 13Hz while FFT is at most ~7Hz
+        history=min(ch.available,s[2]*2) if s[5] in ("welch","third_octave") else s[2]
+        source=ch.latest(history)  # immutable snapshot: no race with acquisition
+        self._last_fft_submit=time.monotonic()
         self._last_submitted_key=job_key
-        self._job_settings=(self._generation,self._preview.updated_utc,s)
-        self._future=self._executor.submit(calculate_spectrum,source,ch.rate_hz,
-                 kind=s[1],nfft=s[2],band_hz=s[3],smooth_bins=s[4])
+        self._job_settings=(self._generation,self._preview.updated_utc,s,job_key)
+        self._future=self._executor.submit(
+            analyze_vibration,source,ch.rate_hz,
+            kind=s[1],mode=s[5],nfft=s[2],band_hz=s[3],
+            envelope_band_hz=s[6],smooth_bins=s[4])
+
+    def _collect_analysis(self):
+        if self._future is None or not self._future.done():return
+        job=self._job_settings
+        try:
+            result=self._future.result()
+        except (ValueError,RuntimeError,FloatingPointError) as exc:
+            self.metrics.setText(f"APP_DERIVED: {exc}")
+            self.spec_curve.setData([],[])
+            self._spectrum=None
+        else:
+            if job and job[2]==self._read_settings() and self._preview is not None:
+                self._spectrum=result
+                self._render_spectrum()
+                self._update_waterfall(job[3])
+        self._future=None
+        self._schedule_fft()
 
     def _poll(self):
-        if self._future is not None and self._future.done():
-            job=self._job_settings
-            try:
-                result=self._future.result()
-            except (ValueError,RuntimeError,FloatingPointError) as exc:
-                self.metrics.setText(f"FFT: {exc}")
-                self.spec_curve.setData([],[])
-                self._spectrum=None
-            else:
-                if job and job[2]==self._read_settings() and self._preview is not None:
-                    # A verified preview may arrive while the FFT worker runs.
-                    # Showing that completed result is preferable to starving
-                    # the graph when new previews arrive every 750-900 ms.
-                    self._spectrum=result
-                    self._render_spectrum()
-            self._future=None
-            self._schedule_fft()
+        self._collect_analysis()
         if self._capture_root is None:return
         try:
             status=load_capture_live_status(self._capture_root,
@@ -350,11 +430,13 @@ class LiveWindow(QtWidgets.QMainWindow):
                     self._gui_ring.channel(self.adc.currentData()) else 0)+
                 " отсчётов · DSP: AUX4700 · FFT: APP_DERIVED")
             if updated:
+                self._update_features()
                 self._request_update()
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             self._clear(f"Превью отклонено: {exc}")
 
     def _poll_ipc(self):
+        self._collect_analysis()
         # QApplication thread owns GUI ring. HTTP is handled ONLY by worker.
         if self._ipc_future is not None and self._ipc_future.done():
             pending=self._ipc_future
@@ -372,12 +454,17 @@ class LiveWindow(QtWidgets.QMainWindow):
                     preview.session_id==self._ipc_client.session_id and
                     self._last_status is not None and
                     self._last_status.get("phase")=="RECORDING"):
-                    changed=self._gui_ring.ingest_preview(preview)
+                    try:
+                        changed=self._gui_ring.ingest_preview(preview)
+                    except ValueError as exc:
+                        self._clear(f"IPC последовательность отклонена: {exc}")
+                        return
                     if changed:
                         self._preview=preview
                         self._last_stamp=preview.updated_utc
                         self._last_ipc_ok=time.monotonic()
                         self._render_wave()
+                        self._update_features()
                         self._request_update()
         if (self._ipc_client is None or self._ipc_future is not None or
             self._last_status is None or
@@ -388,7 +475,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         # IPC transfers the selected ADC only, not a periodic 8 MiB ZIP.
         # Welch/1/3 octave use the extra available history when configured.
-        count=min(self._gui_ring.capacity,max(65536,int(self.nfft.currentData())))
+        count=min(self._gui_ring.capacity,max(65536,int(self.nfft.currentData())*(2 if self.analysis.currentData() in ("welch","third_octave") else 1)))
         self._ipc_channel=self.adc.currentData()
         self._ipc_future=self._ipc_executor.submit(
             self._ipc_client.read_channel,self._ipc_channel,count)
