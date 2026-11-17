@@ -97,7 +97,6 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		return "CONNECT_FAILED", fmt.Errorf("connect: %w", e)
 	}
 	defer c.Close()
-	if m.sourceTask2TX != nil {m.sourceTask2TX.conn=c;defer func(){m.sourceTask2TX.conn=nil}()}
 	if e = verifySelectedSource(c, nic); e != nil {
 		return "INTERFACE_MISMATCH", e
 	}
@@ -105,6 +104,9 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		if e:=m.sourceTCP.begin(m);e!=nil{return "SOURCE_TCP_SEGMENT_FAILED",e}
 		defer func(){m.sourceTCP.finish(m,reason)}()
 	}
+	// Rebind AFTER Stage0 reset: the renewed original SetRate must use
+	// this new TCP socket, never the disconnected previous conn.
+	if m.sourceTask2TX!=nil {m.sourceTask2TX.conn=c;defer func(){m.sourceTask2TX.conn=nil}()}
 	m.summary.SocketLocalAddr = c.LocalAddr().String()
 	m.summary.SocketRemoteAddr = c.RemoteAddr().String()
 	m.publishLiveStatus("RECORDING", true, "")
