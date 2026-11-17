@@ -16,7 +16,9 @@ def app():
     pytest.importorskip("PySide6")
     pytest.importorskip("pyqtgraph")
     from PySide6.QtWidgets import QApplication
-    return QApplication.instance() or QApplication([])
+    inst=QApplication.instance() or QApplication([])
+    inst.setQuitOnLastWindowClosed(False)
+    return inst
 
 
 def fake_preview(x,fs=8192,n=1,end=None):
@@ -82,6 +84,8 @@ def test_all_derived_views_and_waterfall_with_real_synthetic_samples(app):
         assert not widget._marker_lines
     finally:
         widget.close()
+        widget.deleteLater()
+        app.processEvents()
 
 
 def test_no_unsupported_envelope_in_velocity_mode_and_manual_source_label(app):
@@ -101,8 +105,6 @@ def test_no_unsupported_envelope_in_velocity_mode_and_manual_source_label(app):
         assert widget._spectrum.peak[0]==pytest.approx(50,abs=1)
         widget.kind.setCurrentIndex(1)
         assert widget._spectrum is None
-        if widget._future is not None:
-            widget._future.result(timeout=6) if False else None
         # Envelopes are only physically defined and labeled as VU here.
         widget._schedule_fft()
         if widget._future is not None:
