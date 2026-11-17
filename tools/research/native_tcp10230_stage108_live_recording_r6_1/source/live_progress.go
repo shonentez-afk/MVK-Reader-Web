@@ -42,6 +42,7 @@ type LiveStatus struct {
     InvalidFrames          uint64              `json:"invalid_frames"`
     CaptureOnly            bool                `json:"capture_only"`
     AUXUpdates             uint64              `json:"aux4700_updates"`
+    SourceValuesTicks      uint64              `json:"source_values_ticks_address_3100"`
     FullSnapshots          uint64              `json:"full_register_snapshots"`
     SourceRXNonemptyParam   uint64              `json:"source_rx_nonempty_parameter_frames"`
     SourceRXACKObserved     uint64              `json:"source_rx_ack_observed_no_command_issued"`
@@ -102,7 +103,8 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SocketRemote: report.SocketRemoteAddr, ReadOnly: report.ReadOnly,
         RawBytes: report.RawBytes, TotalFrames: report.TotalFrames,
         InvalidFrames: report.InvalidFrames, CaptureOnly: report.CaptureOnly,
-        AUXUpdates: report.Aux4700, FullSnapshots: report.FullSnapshots,
+        AUXUpdates: report.Aux4700, SourceValuesTicks:report.ValuesTicks,
+        FullSnapshots: report.FullSnapshots,
         SourceRXNonemptyParam: report.SourceNonemptyParameters,
         SourceRXACKObserved: report.ACK, SourceRXDenials: report.Denials,
         SourceStatusCells: m.snapshotSourceStatusCells(),
