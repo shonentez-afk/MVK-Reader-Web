@@ -53,6 +53,7 @@ def make_preview(tmp_path, *, modify=None, tamper_adc=False, extra=False,
             sample_rate_hz=source_rate,
             first_sample_index=4096,
             next_sample_index=4096+len(samples),
+            captured_samples=len(samples),
             sha256=hashlib.sha256(data).hexdigest(),
         ))
     if modify is not None:
@@ -308,3 +309,66 @@ def test_original_live_getsignal_waits_for_new_samples_without_fake_zero_fill(
     assert reuse["window_samples"]==32768
     assert reuse["source_getsignal_readiness"][
         "original_check_data_availability"]
+
+
+def test_source_u32_rollover_validates_real_go_capture_cursor(tmp_path):
+    from mvk_compatible.core.original_sample_cursor32 import (
+        u32_preview_bounds,u32_matches_go_status,u32_has_advanced,
+    )
+    from mvk_compatible.core.original_live_view_gate import gate_live_preview
+    mask=(1<<32)-1
+    count=65536
+    end=4096
+    first=(end-count)&mask
+    assert first>end and u32_preview_bounds(first,end,count)
+    assert u32_has_advanced(0xFFFFF000,0x0000F000,received_since_last=65536)
+    assert not u32_has_advanced(0xFFFFF000,0xFFFFF000,received_since_last=65536)
+    def source_wrap(meta):
+        for ch in meta["channels"]:
+            ch["first_sample_index"]=first
+            ch["next_sample_index"]=end
+    root,status,_=make_preview(tmp_path,modify=source_wrap)
+    for ch in status["channels"][:8]:
+        ch["next_sample_index"]=end
+    preview=load_live_preview(root,status,now=now())
+    assert preview.channels[1].captured_samples==count
+    assert gate_live_preview(status,preview).allowed
+    wave=provisional_waveform(preview,1,source_h_tag=4,
+        capture_rxpos=count,source_allow_overlap=False)
+    evidence=wave["input_source_window"]
+    assert evidence["source_index_u32_wrapped"]
+    assert evidence["capture_local_uint64_cursor_confirmed"]
+    assert evidence["live_first_adc_sample_index"]==(1<<32)+end-count
+    assert evidence["live_last_adc_sample_exclusive"]==(1<<32)+end
+    assert wave["time_s"][0]==pytest.approx(((1<<32)+end-count)/65536)
+    newer=dict(status)
+    newer["channels"]=[dict(x) for x in status["channels"]]
+    newer["channels"][0]["samples"]+=256
+    newer["channels"][0]["next_sample_index"]=(end+256)&mask
+    assert u32_matches_go_status(
+        end,(end+256)&mask,status_samples=count+256,
+        window_samples=count,captured_samples=count)
+    assert gate_live_preview(newer,preview).allowed
+    # A backwards device cursor cannot be mistaken for a valid wrap.
+    newer["channels"][0]["next_sample_index"]=(end-256)&mask
+    assert not gate_live_preview(newer,preview).allowed
+    with pytest.raises(ValueError,match="absolute index mismatch"):
+        load_live_preview(root,newer,now=now())
+    assert not u32_matches_go_status(
+        end,(end+256)&mask,status_samples=count+512,
+        window_samples=count,captured_samples=count)
+
+
+def test_source_u32_legacy_ambiguous_epoch_fails_closed():
+    from mvk_compatible.core.original_sample_cursor32 import (
+        u32_preview_bounds,u32_matches_go_status,extended_u32_window,
+    )
+    assert not u32_preview_bounds(123,123,65536)
+    assert not u32_preview_bounds(-1,0,1)
+    assert not u32_preview_bounds(True,0,1)
+    assert not u32_matches_go_status(100,100,
+        status_samples=(1<<32)+256,window_samples=256,captured_samples=None)
+    assert not u32_matches_go_status(100,101,
+        status_samples=1000,window_samples=256,captured_samples=999)
+    assert extended_u32_window(0xFFFF0000,0,65536,65536)==(
+        0xFFFF0000,1<<32)

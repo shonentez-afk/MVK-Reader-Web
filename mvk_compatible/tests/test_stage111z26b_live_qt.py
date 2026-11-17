@@ -343,3 +343,50 @@ def test_original_measure_mode2_operator_controls_before_and_during_live(qt_app)
             win.leave_measurement_mode()
         win.close()
         qt_app.processEvents()
+
+
+def test_qt_getsignal_new_window_survives_source_uint32_rollover(
+        tmp_path,qt_app):
+    from copy import deepcopy
+    from dataclasses import replace
+    from mvk_compatible.desktop.main_window import MainWindow
+    status,preview=_preview(tmp_path)
+    mask=(1<<32)-1
+    ch=preview.channels[1]
+    n=len(ch.samples)
+    before=0xFFFFF000
+    after=(before+n)&mask
+    s1=deepcopy(status)
+    s1["channels"][0]["next_sample_index"]=before
+    p1=replace(preview,channels={
+        **preview.channels,1:replace(ch,
+            first_index=(before-n)&mask,next_index=before,
+            captured_samples=s1["channels"][0]["samples"])})
+    win=MainWindow()
+    try:
+        win._begin_live_capture()
+        win._receive_native_live_status(s1)
+        win._receive_live_preview(p1)
+        assert "bAdcHScale=1000 мс" in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        s2=deepcopy(s1)
+        s2["channels"][0]["samples"]+=n
+        s2["channels"][0]["next_sample_index"]=after
+        p2=replace(p1,channels={
+            **p1.channels,1:replace(p1.channels[1],
+                first_index=(after-n)&mask,next_index=after,
+                captured_samples=s2["channels"][0]["samples"])})
+        win._receive_native_live_status(s2)
+        win._receive_live_preview(p2)
+        assert "bAdcHScale=1000 мс" in win.wave_hint.text()
+        assert "ожидание следующего окна" not in win.wave_hint.text()
+        assert len(win.wave_plot.listDataItems())==1
+        assert win._source_getsignal_last_preview_end[
+            (p2.session_id,1,4,win.wave_mode.currentIndex(),
+             p2.channels[1].rate_hz)]==after
+        win._render_live_wave()
+        assert "ожидание следующего окна" in win.wave_hint.text()
+    finally:
+        if win._live_active:win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()

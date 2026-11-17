@@ -62,6 +62,44 @@ func TestPreviewRingSameBytesAsAlreadyCalibratedSpoolAndWrap(t *testing.T) {
     if len(pending)!=0 {t.Fatalf("atomic temp files left: %v",pending)}
 }
 
+func TestOriginalSampleHeaderU32WrapPreservesCalibratedBytesAnd64BitCount(t *testing.T) {
+    p:=newLivePreviewBuffer()
+    start:=uint32(0xFFFFFF00)
+    for i:=0;i<2;i++ {
+        block:=bytes.Repeat([]byte{byte(i+1)},1024)
+        h:=SampleHeader{Channel:0,Rate:65536,Index:start+uint32(i*256),Samples:256}
+        if err:=p.appendCalibratedADC(h,block);err!=nil {t.Fatal(err)}
+    }
+    b,n,first:=p.channelBytes(0)
+    if n!=512 || first!=start || p.next[0]!=256 || p.samples[0]!=512 {
+        t.Fatalf("uint32 rollover reset uint64 capture: first=%08X end=%08X n=%d total=%d",
+            first,p.next[0],n,p.samples[0])
+    }
+    if !bytes.Equal(b[:1024],bytes.Repeat([]byte{1},1024)) ||
+       !bytes.Equal(b[1024:],bytes.Repeat([]byte{2},1024)) {
+        t.Fatal("uint32 wrap changed the actual calibrated byte order")
+    }
+    dir:=t.TempDir()
+    if err:=writePreviewAtomic(dir,p,Summary{ReadOnly:true,RawBytes:4096,TotalFrames:2},time.Now());err!=nil {t.Fatal(err)}
+    z,err:=zip.OpenReader(filepath.Join(dir,livePreviewFile))
+    if err!=nil {t.Fatal(err)}
+    defer z.Close()
+    saw:=false
+    for _,f:=range z.File {
+        if f.Name!="MANIFEST.json" {continue}
+        saw=true
+        reader,e:=f.Open();if e!=nil {t.Fatal(e)}
+        data,e:=io.ReadAll(reader);reader.Close();if e!=nil {t.Fatal(e)}
+        var m LivePreviewManifest
+        if e:=json.Unmarshal(data,&m);e!=nil {t.Fatal(e)}
+        if len(m.Channels)!=1 || m.Channels[0].CapturedSamples!=512 ||
+            m.Channels[0].FirstSampleIndex!=start || m.Channels[0].NextSampleIndex!=256 {
+            t.Fatalf("invalid original source cursor/capture evidence: %+v",m.Channels)
+        }
+    }
+    if !saw {t.Fatal("missing source manifest")}
+}
+
 func TestPreviewNeverCreatesUnrequestedFiles(t *testing.T) {
     dir:=t.TempDir()
     var p *LivePreviewBuffer

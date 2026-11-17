@@ -39,6 +39,7 @@ type LivePreviewChannel struct {
     ADC int `json:"adc"`
     Entry string `json:"entry"`
     Samples int `json:"samples"`
+    CapturedSamples uint64 `json:"captured_samples"`
     SampleRateHz uint32 `json:"sample_rate_hz"`
     FirstSampleIndex uint32 `json:"first_sample_index"`
     NextSampleIndex uint32 `json:"next_sample_index"`
@@ -73,6 +74,8 @@ func (p *LivePreviewBuffer) appendCalibratedADC(h SampleHeader, written []byte) 
         p.bytes[ch] = make([]byte, livePreviewSamples*4)
     }
     start := int(p.samples[ch]%livePreviewSamples)*4
+    // SampleHeader.Index is uint32 (wraps), captured_samples is a separate
+    // monotonic uint64 received-count proof. Never conflate them.
     // 262144 is a multiple of 256; each received ADC frame is one contiguous
     // slice. These bits are the actual, already-calibrated native BIN bytes.
     copy(p.bytes[ch][start:start+len(written)], written)
@@ -130,7 +133,7 @@ func writePreviewAtomic(dir string, p *LivePreviewBuffer, summary Summary, now t
         if _,e=w.Write(raw); e!=nil { z.Close(); tmp.Close(); return e }
         digest:=sha256.Sum256(raw)
         manifest.Channels=append(manifest.Channels,LivePreviewChannel{
-            ADC:ch+1,Entry:name,Samples:n,SampleRateHz:p.rate[ch],
+            ADC:ch+1,Entry:name,Samples:n,CapturedSamples:p.samples[ch],SampleRateHz:p.rate[ch],
             FirstSampleIndex:first,NextSampleIndex:p.next[ch],
             SHA256:hex.EncodeToString(digest[:]),
         })

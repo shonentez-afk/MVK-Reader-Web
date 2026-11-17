@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .native_r6_live_preview import LivePreview
+from .original_sample_cursor32 import u32_preview_bounds,u32_matches_go_status
 from .original_connected_status import connected_system_status
 
 SOURCE = "STAGE111Z31DB_SOURCE_MODE2_LIVE_PREVIEW_GATE"
@@ -89,17 +90,18 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                 or type(ch.first_index) is not int
                 or type(ch.next_index) is not int
                 or samples<len(ch.samples)
-                or not 0 <= ch.first_index < ch.next_index < 2**32
-                or ch.next_index-ch.first_index!=len(ch.samples)):
+                or not u32_preview_bounds(
+                    ch.first_index,ch.next_index,len(ch.samples))):
             return deny("Нарушены исходные границы или частота АЦП",
                         "CHANNEL_MISMATCH")
         # Original source SampleHeader.Index is absolute; the JSON
         # "samples" above counts ONLY bytes captured during this session.
         # The previous <= samples test rejected valid late-attach windows.
         source_end=source.get("next_sample_index")
-        if source_end is not None and (
-                ch.next_index>source_end or
-                source_end-ch.next_index>samples-len(ch.samples)):
+        if not u32_matches_go_status(
+                ch.next_index,source_end,status_samples=samples,
+                window_samples=len(ch.samples),
+                captured_samples=ch.captured_samples):
             return deny("Абсолютный индекс АЦП не подтверждён Go",
                         "SOURCE_INDEX_MISMATCH")
     return LivePreviewDecision(True, "Подтверждённый Native preview",

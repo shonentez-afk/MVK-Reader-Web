@@ -21,6 +21,9 @@ from .offline_export import waveform_for_zip, spectrum_for_zip
 from .original_getsignal_live_source import (
     source_live_adc_menu_length,source_getsignal_readiness,
 )
+from .original_sample_cursor32 import (
+    u32_preview_bounds,u32_matches_go_status,extended_u32_window,
+)
 
 NAME = "MVK_NATIVE_LIVE_PREVIEW.zip"
 SCHEMA = "MVK_NATIVE_R6_CALIBRATED_PREVIEW_V1"
@@ -50,6 +53,7 @@ class PreviewADC:
     next_index: int
     samples: np.ndarray
     sha256: str
+    captured_samples: int | None = None
 
 
 @dataclass(frozen=True)
@@ -129,19 +133,23 @@ def _validate_preview_payload(archive: zipfile.ZipFile, status: dict,
         first = _uint(row.get("first_sample_index"), "first_index")
         end = _uint(row.get("next_sample_index"), "next_index")
         digest = row.get("sha256")
+        captured=row.get("captured_samples")
+        if captured is not None and (
+                type(captured) is not int or not 0<=captured<1<<64):
+            raise ValueError("Native live preview: invalid uint64 captured count")
         if (not 0 < count <= MAX_SAMPLES or not 0 < rate <= 1_000_000 or
-                end-first != count or end > 2**32 or
-                not isinstance(digest, str) or _HEX.fullmatch(digest) is None):
+                not u32_preview_bounds(first,end,count) or
+                not isinstance(digest,str) or _HEX.fullmatch(digest) is None):
             raise ValueError("Native live preview: invalid calibrated sample metadata")
         reported = status["channels"][number-1]
-        # Absolute device cursor != samples captured since this program
-        # connected. A valid snapshot can start at a large source index.
-        source_end=reported.get("next_sample_index")
-        if (count > reported["samples"] or
-                rate not in reported["sample_rates_hz"] or
-                reported["sequence_discontinuities"] or reported["nonfinite_samples"] or
-                (source_end is not None and
-                 (end>source_end or source_end-end>reported["samples"]-count))):
+        if (count>reported["samples"]
+                or rate not in reported["sample_rates_hz"]
+                or reported["sequence_discontinuities"]
+                or reported["nonfinite_samples"]
+                or not u32_matches_go_status(
+                    end,reported.get("next_sample_index"),
+                    status_samples=reported["samples"],window_samples=count,
+                    captured_samples=captured)):
             raise ValueError("Native live preview: channel count/rate/absolute index mismatch")
         info = archive.getinfo(name)
         if info.file_size != count*4:
@@ -152,7 +160,7 @@ def _validate_preview_payload(archive: zipfile.ZipFile, status: dict,
         values = np.frombuffer(data, dtype="<f4")
         if len(values) != count or not bool(np.isfinite(values).all()):
             raise ValueError("Native live preview: nonfinite or inconsistent ADC")
-        channels[number] = PreviewADC(number,rate,first,end,values,digest)
+        channels[number] = PreviewADC(number,rate,first,end,values,digest,captured)
     if actual_names != expected_names:
         raise ValueError("Native live preview: unexpected ZIP members")
     return LivePreview(meta["session_id"],ts,raw,frames,channels)
@@ -193,10 +201,17 @@ def _mark_absolute_live_source_window(result: dict, channel: PreviewADC) -> None
     # The generic offline candidate operates on a local 0-based preview
     # buffer. Do NOT mistake it for absolute device sample index zero.
     evidence=dict(result["input_source_window"])
+    extended_first,_=extended_u32_window(
+        channel.first_index,channel.next_index,len(channel.samples),
+        channel.captured_samples if channel.captured_samples is not None
+        else len(channel.samples))
     evidence["live_first_adc_sample_index"]=(
-        channel.first_index+evidence["first_archive_sample_index"])
+        extended_first+evidence["first_archive_sample_index"])
     evidence["live_last_adc_sample_exclusive"]=(
-        channel.first_index+evidence["last_archive_sample_exclusive"])
+        extended_first+evidence["last_archive_sample_exclusive"])
+    evidence["source_index_u32_wrapped"]=channel.first_index>channel.next_index
+    evidence["capture_local_uint64_cursor_confirmed"]=(
+        channel.captured_samples is not None)
     evidence["preview_source_calibrated_sha256"]=channel.sha256
     evidence["original_live_rxpos_parity_verified"]=False
     evidence["provisional_not_audited"]=True
@@ -251,7 +266,11 @@ def provisional_waveform(
         Path("NOT_OPENED"), adc, start/channel.rate_hz, duration,
         mode="ac" if ac else "acdc", display_order="chronological",
         sample_provider=preview.samples_for_offline_candidate)
-    offset = channel.first_index/channel.rate_hz
+    extended_first,_=extended_u32_window(
+        channel.first_index,channel.next_index,total,
+        channel.captured_samples if channel.captured_samples is not None
+        else total)
+    offset = extended_first/channel.rate_hz
     out["time_s"] = [offset + float(x) for x in out["time_s"]]
     _mark_absolute_live_source_window(out,channel)
     out["source"] = "LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED"

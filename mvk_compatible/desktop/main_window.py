@@ -26,6 +26,7 @@ from ..core.original_native_parity import compare_original_native
 from ..core.original_pagestatus_source import MODE_NAMES, source_pagestatus_table
 from ..core.original_connected_status import connected_system_status
 from ..core.original_live_write_stages import OriginalLiveWriteLedger
+from ..core.original_sample_cursor32 import u32_has_advanced
 from ..core.original_mode2_runtime_trace import OriginalMode2RuntimeTrace
 from ..core.original_mode2_interface_timer import (
     OriginalMode2InterfaceTimer, source_active_page_refresh_allowed,
@@ -3099,8 +3100,10 @@ class MainWindow(QMainWindow):
             if (not allow_overlap and last and
                     (rx_pos-last < rate*ADC_HORIZONTAL_MS[tag]//1000
                      or (last_preview_end is not None and
-                         self._live_preview.channels[ch].next_index
-                         <=last_preview_end))):
+                         not u32_has_advanced(
+                             last_preview_end,
+                             self._live_preview.channels[ch].next_index,
+                             received_since_last=rx_pos-last)))):
                 # A newer TCP status without NEW SHA-validated preview
                 # is not a new GetSignal frame. Bind BOTH local counter
                 # and original absolute device cursor; never redisplay
