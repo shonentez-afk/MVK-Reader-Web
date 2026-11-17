@@ -522,29 +522,78 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.spec.addItem(line)
             self._marker_lines.append(line)
 
+    def _plot_dsp_24(self,*_):
+        packet=self._dsp_last
+        if packet is None or not packet.has_extended:
+            self.dsp24_curve.setData([],[])
+            return
+        key=self.dsp24_mode.currentData()
+        data=getattr(packet,key,None)
+        if data is None:
+            self.dsp24_curve.setData([],[])
+            return
+        indices=np.arange(1,25,dtype=np.float64)
+        available=np.isfinite(data)
+        self.dsp24_curve.setData(indices[available],data[available],
+                                 connect="finite")
+        self.dsp24_plot.setTitle(
+            "ОРИГИНАЛЬНЫЙ AUX4700 · "+key+
+            " · x: номер исходной позиции (не неподтверждённая частота)")
+        self.dsp24_plot.setLabel(
+            "left","Исходное значение прибора · единицы уточняются")
+
+    def _reset_dsp(self,message):
+        self._dsp_last=None
+        self.dsp_curve.setData([],[])
+        self.dsp24_curve.setData([],[])
+        self.dsp24_table.clearContents()
+        self.dsp_info.setText(message)
+
     def _render_dsp(self):
         status=self._last_status
         if status is None or status.get("phase")!="RECORDING":
-            self.dsp_curve.setData([],[])
-            self.dsp_info.setText("DSP: ожидание измерения МВК01")
+            self._reset_dsp("DSP: ожидание измерения МВК01; значения не подменяются локальной FFT")
             return
         try:
             band=read_original_dsp_bands(status,self.adc.currentData())
         except (ValueError,TypeError) as exc:
-            self.dsp_curve.setData([],[])
-            self.dsp_info.setText(f"Оригинальный AUX4700 отклонён: {exc}")
+            self._reset_dsp(f"Оригинальный AUX4700 отклонён: {exc}")
             return
         if band is None:
-            self.dsp_curve.setData([],[])
-            self.dsp_info.setText("AUX4700: нет реальных 43-полосных данных выбранного АЦП")
+            self._reset_dsp("AUX4700: оригинальные расчётные данные выбранного АЦП ещё не получены")
             return
         good=np.isfinite(band.acceleration_rms)
         self.dsp_curve.setData(band.frequency_hz[good],band.acceleration_rms[good])
+        self._dsp_last=band
+        if band.has_extended:
+            # Register slots 1..24 are NOT the same as 43 third-octave
+            # frequencies. Original register map is kept precisely.
+            for i in range(24):
+                cells=[
+                    f"{i+1:d} (0x{0x60+2*i:02X} / 0x{0xA0+2*i:02X} / 0x{0xE0+2*i:02X})",
+                    "—" if np.isnan(band.band_rms[i]) else f"{band.band_rms[i]:.8g}",
+                    "—" if np.isnan(band.band_peak_equiv[i]) else f"{band.band_peak_equiv[i]:.8g}",
+                    "—" if np.isnan(band.band_span_equiv[i]) else f"{band.band_span_equiv[i]:.8g}",
+                ]
+                for j,value in enumerate(cells):
+                    item=QtWidgets.QTableWidgetItem(value)
+                    if j>0 and value=="—":
+                        item.setToolTip("Оригинальный DSP: недоступно/NaN (НЕ ноль)")
+                    self.dsp24_table.setItem(i,j,item)
+            self._plot_dsp_24()
+        else:
+            self.dsp24_table.clearContents()
+            self.dsp24_curve.setData([],[])
+        pending=(" · не готовы: "+", ".join(band.not_ready)) if band.not_ready else ""
         self.dsp_info.setText(
             f"ИСТОЧНИК: MVK_DSP_ORIGINAL_AUX4700 · АЦП {band.adc} · "
-            f"пакет {band.update} · статус {band.status_hex} · "
-            f"неконечных полей: {band.nonfinite_fields} · "
-            "это оригинальный результат прибора, НЕ локальная PSD/FFT"
+            f"пакет {band.update} · статус {band.status_hex}{pending} · "
+            f"передано: {band.total_transmitted_cells} значений · "
+            f"неконечных/недоступных: {band.nonfinite_fields}. "
+            "43 третьоктавы — СКЗ ВУ по известным центрам; "
+            "24 расчётные позиции — отдельные приборные СКЗ/Peak/Span "
+            "с пока не подтверждённой привязкой к частотам и единицам. "
+            "Никакой подмены локальными RMS/FFT."
         )
 
     def _update_features(self):
