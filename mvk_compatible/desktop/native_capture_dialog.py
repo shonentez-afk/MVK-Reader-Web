@@ -1,7 +1,8 @@
 """Stage111Z.25: native Windows Qt controller for the verified Go R6.1 recorder.
 
-No Qt networking and no instrument commands. The Go helper is run only after
-operator consent; completed output is rechecked offline before use in the GUI.
+No second Qt networking client. The Go helper runs only after consent; the
+original 36-byte SetRate is separately authorized and is OFF by default.
+Completed output is rechecked offline before use in the GUI.
 """
 from __future__ import annotations
 
@@ -63,6 +64,7 @@ class NativeCaptureDialog(QDialog):
         self._stdout = ""
         self._active_device_ipv4 = None
         self._active_local_ipv4 = None
+        self._source_rate_tx_enabled = False
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
@@ -87,7 +89,8 @@ class NativeCaptureDialog(QDialog):
         root = QVBoxLayout(self)
         label = QLabel(
             "Измерения с МВК01 · отдельный уже испытанный приёмник Native R6.1.\n"
-            "TCP/10230: только connect → read; команды, изменение параметров и Modbus отсутствуют.")
+            "TCP/10230: приём без команд по умолчанию. Оригинальная SetRate "
+            "доступна только после отдельного разрешения; Flash/Reboot запрещены.")
         label.setWordWrap(True)
         root.addWidget(label)
         self.availability_label = QLabel(availability)
@@ -141,11 +144,20 @@ class NativeCaptureDialog(QDialog):
         info.setWordWrap(True)
         root.addWidget(info)
         self.confirm = QCheckBox(
-            "Разрешение на подключение получено, выбран именно Ethernet; "
-            "подтверждаю запуск только чтения")
+            "Разрешение на подключение получено, выбран именно Ethernet")
         self.confirm.setObjectName("r6OperatorApproval")
         self.confirm.toggled.connect(self._sync_buttons)
         root.addWidget(self.confirm)
+        self.source_rate_tx = QCheckBox(
+            "Разрешаю оригинальную передачу SetRate при измерении "
+            "и изменение частоты через штатное меню (36 байт; только эта команда)")
+        self.source_rate_tx.setObjectName("r6OriginalSourceSetRateTX")
+        self.source_rate_tx.setChecked(False)
+        self.source_rate_tx.setToolTip(
+            "На реальном МВК это может изменить параметры измерения. "
+            "Не включайте без допуска к управлению прибором. "
+            "Flash, reboot и запись конфигурации не разрешаются.")
+        root.addWidget(self.source_rate_tx)
 
         actions = QHBoxLayout()
         self.start_button = QPushButton("Начать запись")
@@ -338,6 +350,7 @@ class NativeCaptureDialog(QDialog):
             self._poll_live_status()
             self._timer.stop()
         self._mode = None
+        self._source_rate_tx_enabled = False
         if mode == "interfaces":
             self.adapters.clear()
             if exit_code == 0 and exit_status == QProcess.NormalExit:
@@ -402,7 +415,8 @@ class NativeCaptureDialog(QDialog):
                 raise ValueError("Выберите локальный проводной Ethernet")
             spec = CaptureSpec(self.device_ip.text(), str(local_ip),
                                int(self.seconds.value()), int(self.max_mb.value()),
-                               Path(self.output_path.text()))
+                               Path(self.output_path.text()),
+                               source_rate_tx=self.source_rate_tx.isChecked())
             spec.validate()
             if not self.confirm.isChecked():
                 raise ValueError("Отсутствует разрешение оператора")
@@ -413,8 +427,12 @@ class NativeCaptureDialog(QDialog):
             self, "Подтверждение соединения с промышленным МВК",
             f"Начать подключение TCP/10230 к {spec.device_ipv4} через "
             f"выбранный Ethernet {spec.local_ipv4} на {spec.seconds} секунд?\n"
-            "Приёмник только читает. Сам TCP Connect может влиять на прибор. "
-            "Подтвердите производственный допуск.",
+            ("ВНИМАНИЕ: будет отправлена исходная 36-байтная SetRate(65536) "
+             "после подтверждённого PARAM; меню сможет отправлять новые SetRate. "
+             "Это может изменить частоту прибора. Flash/Reboot исключены. "
+             if spec.source_rate_tx else
+             "Пассивный режим: клиент только читает. ")+
+            "Сам TCP Connect может влиять на прибор. Подтвердите производственный допуск.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if response != QMessageBox.Yes:
             return
@@ -428,6 +446,7 @@ class NativeCaptureDialog(QDialog):
         self._stdout = ""
         self._active_device_ipv4 = spec.device_ipv4
         self._active_local_ipv4 = spec.local_ipv4
+        self._source_rate_tx_enabled = spec.source_rate_tx
         # Source edIpAddr remains the one operator-selected device address.
         # A dialog override is reflected into PageStart before Go starts;
         # this is not Ethernet NIC autodetection or a second TCP socket.
@@ -443,6 +462,7 @@ class NativeCaptureDialog(QDialog):
         self.live_quality.setText("Подключение ожидается. Состояние датчиков ещё неизвестно.")
         self.log.clear()
         self.confirm.setChecked(False)  # every separate live session needs fresh consent
+        self.source_rate_tx.setChecked(False)  # reset dangerous permission after use
         self._mode = "capture"
         self.status_label.setText(
             "Запись запускается через Native R6.1. RAW сохраняется без изменений.")
@@ -473,6 +493,29 @@ class NativeCaptureDialog(QDialog):
             "ожидается точная граница следующего декодированного кадра. "
             "Приборных команд нет.")
         return receipt
+
+    def source_rate_tx_active(self):
+        return bool(self._source_rate_tx_enabled and
+                    self._mode == "capture" and
+                    self._process.state() == QProcess.Running)
+
+    def send_source_rate(self,rate:int)->bool:
+        """Source original mRate1Click → SetRate through EXISTING Go socket.
+
+        Per-capture QProcess stdin. Never open a separate TCP client or
+        send a generic register/Flash/reboot command.
+        """
+        if not self.source_rate_tx_active():
+            raise ValueError("Реальная отправка SetRate не была разрешена")
+        if type(rate) is not int or rate not in (65536,32768,8192,2048,512):
+            raise ValueError("Неподтверждённая исходная частота")
+        command=f"RATE {rate}\\n".encode("ascii")
+        actual=self._process.write(command)
+        if actual!=len(command):
+            raise RuntimeError("Очередь изменения частоты Go не приняла запрос")
+        self.log.appendPlainText(f"Запрошена оригинальная SetRate({rate}); "
+                                 "фактическая TX подтверждается Native статусом")
+        return True
 
     def stop_capture(self):
         if self._mode != "capture" or self._capture_root is None:

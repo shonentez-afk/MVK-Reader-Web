@@ -3205,8 +3205,30 @@ class MainWindow(QMainWindow):
             self._source_writer_export_worker=None
             worker.deleteLater()
 
+    def source_rate_selected(self,rate:int):
+        """Source mRate1Click; same Go socket, only if separately authorized."""
+        dlg=self._native_dialog
+        if dlg is None or not self._live_active or not dlg.source_rate_tx_active():
+            self.statusBar().showMessage("Источник ЧД доступен только в разрешённом активном измерении")
+            return False
+        from PySide6.QtWidgets import QMessageBox
+        reply=QMessageBox.question(
+            self,"Исходная установка частоты МВК01",
+            f"Передать SetRate({rate}) на подключённый прибор? "
+            "Изменение ЧД может повлиять на текущий процесс измерения.",
+            QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
+        if reply!=QMessageBox.Yes:return False
+        try:
+            ok=dlg.send_source_rate(rate)
+        except (ValueError,RuntimeError) as exc:
+            self.statusBar().showMessage("Исходная SetRate не отправлена: "+str(exc))
+            return False
+        if ok:self.statusBar().showMessage(
+            f"SetRate({rate}) поставлена в очередь. Факт TX ожидается от Go.")
+        return ok
+
     def open_native_capture(self):
-        """Use the already hardware-tested recorder; never send MVK commands."""
+        """One Go socket: passive by default, source SetRate only with consent."""
         from .native_capture_dialog import NativeCaptureDialog
         if self._native_dialog is not None and self._native_dialog.isVisible():
             self._native_dialog.raise_()

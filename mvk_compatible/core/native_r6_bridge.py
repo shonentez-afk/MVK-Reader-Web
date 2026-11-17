@@ -82,8 +82,11 @@ class CaptureSpec:
     seconds: int
     max_mb: int
     output_parent: Path
+    source_rate_tx: bool = False  # explicitly approved original Task2 rate writer
 
     def validate(self) -> None:
+        if type(self.source_rate_tx) is not bool:
+            raise ValueError("Неверный режим отправки оригинальных команд")
         validate_ipv4(self.device_ipv4, field="IP МВК")
         validate_ipv4(self.local_ipv4, field="IP Ethernet")
         if not isinstance(self.seconds, int) or not 1 <= self.seconds <= 300:
@@ -107,11 +110,15 @@ class CaptureSpec:
         stop_file = root / STOP_REQUEST
         if stop_file.exists() or stop_file.is_symlink():
             raise ValueError("Устаревший запрос остановки: запись не будет начата")
-        return ["-ip", self.device_ipv4, "-local-ip", self.local_ipv4,
+        args = ["-ip", self.device_ipv4, "-local-ip", self.local_ipv4,
                 "-seconds", str(self.seconds), "-max-mb", str(self.max_mb),
                 "-out", str(root), "-approve=true", "-export=true",
                 "-live-status=true", "-frame-marks=true",
                 "-stop-file", str(stop_file.resolve())]
+        if self.source_rate_tx:
+            # Two independent, explicitly reviewed flags. No Flash/Reboot.
+            args += ["-source-setrate-tx=true", "-source-setrate-tx-approved=true"]
+        return args
 
 
 def request_graceful_stop(root: Path) -> None:

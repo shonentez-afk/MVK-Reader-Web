@@ -285,6 +285,9 @@ class OriginalMeasureControls:
             self.freeze.blockSignals(False)
         self.freeze.setText("Продолжить приём" if state.frozen
                             else "Пауза приема")
+        dlg=getattr(self.window,"_native_dialog",None)
+        tx_enabled=bool(live and dlg is not None and dlg.source_rate_tx_active()
+                        and not self.window._measurement_exit_requested)
         self.rate.setEnabled(policy.rate_inspection_enabled)
         self.rate_menu.clear()
         hz=state.observed_sample_rate_hz if (live or offline) else None
@@ -299,14 +302,22 @@ class OriginalMeasureControls:
             trace.command_model.source_rate_code
             if trace is not None and trace.source_initial_rate_queued_offline
             else SOURCE_DEFAULT_MENU_TAG)
+        source_tx=(getattr(self.window,"_source_mode2_runtime",None))
+        proof=getattr(source_tx,"source_tx_observed",None) if source_tx is not None else None
+        if proof is not None and proof.get("source_tx_last_rate_hz"):
+            selected=proof["source_tx_last_rate_hz"]
         for option in original_rate_menu_items():
             action=self.rate_menu.addAction(option.caption)
             action.setCheckable(True)
             action.setChecked(option.tag==selected)
             action.setProperty("sourceOriginalRateTag",option.tag)
             action.setProperty("sourceOriginalRateMenuIndex",option.position)
-            action.setProperty("sourceRateChangesDisabledForNative",True)
-            action.setEnabled(False)
+            action.setProperty("sourceRateChangesDisabledForNative",not tx_enabled)
+            action.setEnabled(tx_enabled)
+            if tx_enabled:
+                action.triggered.connect(
+                    lambda checked=False,rate=option.tag:
+                    self.window.source_rate_selected(rate))
         self.rate_menu.setProperty(
             "sourceOriginalRateMenuProvenance",source_initial_rate_provenance())
         self.rate_menu.setProperty("sourceObservedNativeHz",hz)
@@ -385,7 +396,11 @@ class OriginalMeasureControls:
                 else "color:#888888")
             tx=trace.source_tx_observed if trace is not None else None
             self.status.setToolTip(
-                ("Исходная SetRate (36 байт): условие Stage1 подтверждено; "
+                (f"Исходная SetRate: реально отправлено {tx['source_go_bytes_actually_sent']} байт; "
+                 f"команд {tx['source_tx_sent_commands']}; "
+                 "входящие ACK не имеют ID и не подтверждают конкретную SetRate. "
+                 if tx is not None and tx["source_go_bytes_actually_sent"]>0
+                 else "Исходная SetRate (36 байт): условие Stage1 подтверждено; "
                  "Go физически отправил 0 байт. "
                  if tx is not None and tx["source_setrate_dispatch_candidate"]
                  else "")+
