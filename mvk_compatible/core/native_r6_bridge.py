@@ -83,8 +83,12 @@ class CaptureSpec:
     max_mb: int
     output_parent: Path
     source_rate_tx: bool = False  # explicitly approved original Task2 rate writer
+    source_auto_reconnect: bool = False  # separate opt-in AFTER first RAW byte
 
     def validate(self) -> None:
+        if type(self.source_auto_reconnect) is not bool or (
+                self.source_auto_reconnect and not self.source_rate_tx):
+            raise ValueError("Переподключение после RAW требует отдельного разрешения SetRate")
         if type(self.source_rate_tx) is not bool:
             raise ValueError("Неверный режим отправки оригинальных команд")
         validate_ipv4(self.device_ipv4, field="IP МВК")
@@ -116,8 +120,11 @@ class CaptureSpec:
                 "-live-status=true", "-frame-marks=true",
                 "-stop-file", str(stop_file.resolve())]
         if self.source_rate_tx:
-            # Two independent, explicitly reviewed flags. No Flash/Reboot.
+            # Only the five verified SetRate choices; never Flash/Reboot.
             args += ["-source-setrate-tx=true", "-source-setrate-tx-approved=true"]
+        if self.source_auto_reconnect:
+            args += ["-source-task2-reconnect=true",
+                     "-source-task2-reconnect-approved=true"]
         return args
 
 
