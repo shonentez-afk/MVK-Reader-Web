@@ -290,6 +290,7 @@ class LiveWindow(QtWidgets.QMainWindow):
     def _redraw_from_current(self,*_):
         self._apply_axes()
         self._render_spectrum()
+        self._update_markers()
 
     def _update_markers(self,*_):
         for line in self._marker_lines:
@@ -310,7 +311,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             markers=bearing_frequency_markers(self.rpm.value())
         for label,hz in markers.items():
             if hz<=0:continue
-            line=pg.InfiniteLine(pos=hz,movable=False,
+            line=pg.InfiniteLine(pos=(math.log10(hz) if self.xscale.currentData()=="log" else hz),movable=False,
                  pen=pg.mkPen("#6e8295",width=1,style=QtCore.Qt.DashLine),
                  label=label,labelOpts={"position":0.9,"color":"#6e8295"})
             self.spec.addItem(line)
@@ -485,6 +486,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._ipc_client=None
         self._gui_ring.clear()
         self._last_submitted_key=None
+        self._last_fft_submit=0.0
+        self._trend_points=[]
+        self._trend_key=None
+        self._waterfall_rows=[]
+        self._waterfall_key=None
         self._spectrum=None
         self._last_stamp=None
         self._generation+=1
@@ -497,7 +503,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._apply_axes()
         s=self._spectrum
         x=s.hz
-        y=plot_values(s,self.yscale.currentData(),reference=self.db_ref.currentData())
+        y=vibration_plot_values(s,self.yscale.currentData(),reference=self.db_ref.currentData())
         valid=np.isfinite(x)&np.isfinite(y)
         if self.xscale.currentData()=="log":valid &= x>0
         # Peak-preserving chart reduction: physics uses full FFT.
@@ -511,24 +517,57 @@ class LiveWindow(QtWidgets.QMainWindow):
             ix=np.array(sorted(set(chosen)),dtype=int)
         self.spec_curve.setData(x[ix],y[ix],connect="finite")
         self._cursor_text()
-        self.metrics.setText(
-            f"АЦП {self.adc.currentData()} · {s.nfft} отсчётов · Δf {s.resolution_hz:g} Гц · "
-            f"пик {s.peak[0]:.2f} Гц / {s.peak[1]:.5g} {s.units} СКЗ · "
-            + ("дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())+
-             " · локальная FFT, не DSP" if self.yscale.currentData()=="db"
-             else "· локальная FFT, не приборный DSP")
-        )
+        label=({"fft":"FFT","welch":"Welch PSD",
+               "third_octave":"1/3 октавы","envelope":"Hilbert огибающая"}[s.mode])
+        suffix="" if s.mode=="welch" else " СКЗ"
+        base=(f"{label} · АЦП {self.adc.currentData()} · N={s.nfft} · "
+              f"Δf={s.resolution_hz:g} Гц · пик {s.peak[0]:.2f} Гц / "
+              f"{s.peak[1]:.5g} {s.units}{suffix} · "
+              f"источник APP_DERIVED (НЕ AUX4700)")
+        if self.yscale.currentData()=="db":
+            base+=" · дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())
+        if s.mode in ("welch","third_octave"):
+            base+=f" · сегментов Welch: {s.segments} · HP от {s.floor_hz:g} Гц"
+        self.metrics.setText(base)
 
     def _cursor_text(self,*_):
         if self._spectrum is None:return
         f=self._spectrum.hz
-        i=int(np.argmin(np.abs(f-self.cursor.value())))
+        pos=float(self.cursor.value())
+        if self.xscale.currentData()=="log":
+            pos=10**np.clip(pos,-12,12)
+        i=int(np.argmin(np.abs(f-pos)))
         value=self._spectrum.rms[i]
+        unit=f"{self._spectrum.units}"+("" if self._spectrum.mode=="welch" else " СКЗ")
         if self.yscale.currentData()=="db":
-            dbv=plot_values(self._spectrum,"db",reference=self.db_ref.currentData())[i]
-            self.spec.setTitle(f"FFT · {f[i]:.2f} Гц · {dbv:.2f} дБ · {value:.5g} {self._spectrum.units} СКЗ")
+            dbv=vibration_plot_values(self._spectrum,"db",reference=self.db_ref.currentData())[i]
+            self.spec.setTitle(f"{self._spectrum.mode.upper()} · {f[i]:.2f} Гц · "
+                               f"{dbv:.2f} дБ · {value:.5g} {unit}")
         else:
-            self.spec.setTitle(f"FFT · курсор {f[i]:.2f} Гц · {value:.5g} {self._spectrum.units} СКЗ")
+            self.spec.setTitle(f"{self._spectrum.mode.upper()} · курсор {f[i]:.2f} Гц · "
+                               f"{value:.5g} {unit}")
+
+    def _update_waterfall(self,job_key):
+        if self._spectrum is None or self._spectrum.mode not in ("fft","welch"):
+            return
+        if job_key==self._waterfall_key:
+            return
+        s=self._spectrum
+        if len(s.hz)<2:return
+        self._waterfall_key=job_key
+        # A waterfall frame corresponds to one NEW source RxPos, never
+        # another paint of the same ADC. Convert power to dB BEFORE color.
+        db=vibration_plot_values(s,"db",reference=self.db_ref.currentData())
+        idx=np.linspace(1,len(s.hz)-1,min(1024,len(s.hz)-1),dtype=int)
+        row=np.nan_to_num(db[idx],nan=-180.0,neginf=-180.0,posinf=180.0)
+        if self._waterfall_rows and len(self._waterfall_rows[-1])!=len(row):
+            self._waterfall_rows=[]
+        self._waterfall_rows.append(np.asarray(row,dtype=np.float32))
+        self._waterfall_rows=self._waterfall_rows[-120:]
+        image=np.stack(self._waterfall_rows,axis=1)
+        self.waterfall_img.setImage(image,autoLevels=False,levels=(-120,120))
+        self.waterfall_img.setRect(QtCore.QRectF(0.0,0.0,
+                                   float(s.hz[-1]),float(len(self._waterfall_rows))))
 
     @staticmethod
     def _canonical_ipv4(value:str)->str:
