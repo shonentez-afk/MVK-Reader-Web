@@ -182,7 +182,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         else:
             yy=last
             xx=np.arange(len(last),dtype=float)/ch.rate_hz
-        xx=xx-(len(x)/ch.rate_hz)
+        xx=xx-(len(last)/ch.rate_hz)
         self.wave_curve.setData(xx,yy)
 
     def _schedule_fft(self):
@@ -210,10 +210,14 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.spec_curve.setData([],[])
                 self._spectrum=None
             else:
-                if job and job[0]==self._generation and job[2]==self._read_settings():
+                if job and job[2]==self._read_settings() and self._preview is not None:
+                    # A verified preview may arrive while the FFT worker runs.
+                    # Showing that completed result is preferable to starving
+                    # the graph when new previews arrive every 750-900 ms.
                     self._spectrum=result
                     self._render_spectrum()
             self._future=None
+            self._schedule_fft()
         if self._capture_root is None:return
         try:
             status=load_capture_live_status(self._capture_root,
