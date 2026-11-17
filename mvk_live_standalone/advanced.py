@@ -289,3 +289,71 @@ def real_cepstrum(acceleration: np.ndarray, fs: int, *,
     times=np.arange(len(x)//2)/fs
     keep=(times>=1/fs)&(times<=max_quefrency_s)
     return CepstrumView(times[keep],cep[:len(times)][keep])
+
+
+
+@dataclass(frozen=True)
+class GearMeshMarkers:
+    mesh_hz: float
+    harmonics_hz: tuple[float, ...]
+    sidebands_hz: tuple[float, ...]
+    source: str = "OPERATOR_RPM_AND_GEAR_TEETH_NO_TACH"
+
+
+def gear_mesh_markers(rpm: float, teeth: int, *, harmonics: int=3,
+                      sideband_orders: int=3) -> GearMeshMarkers:
+    """Gear-mesh hypothesis from operator's/manual-confirmed 1× and teeth."""
+    if (not np.isfinite(rpm) or not 0<rpm<=200000
+        or type(teeth) is not int or not 4<=teeth<=400
+        or type(harmonics) is not int or not 1<=harmonics<=6
+        or type(sideband_orders) is not int or not 1<=sideband_orders<=6):
+        raise ValueError("Requires explicitly provided RPM and gear tooth count")
+    fr=rpm/60.0
+    mesh=fr*teeth
+    bands=tuple(sorted([
+        freq for order in range(1,sideband_orders+1)
+        for freq in (mesh-order*fr,mesh+order*fr)
+        if freq>0
+    ]))
+    return GearMeshMarkers(mesh,tuple(mesh*i for i in range(1,harmonics+1)),bands)
+
+
+@dataclass(frozen=True)
+class InformativeSeverity:
+    zone: str
+    velocity_rms_mm_s: float
+    machine_class: int
+    limits_mm_s: tuple[float,float,float]
+    source: str = "HISTORICAL_ISO_10816_3_INDICATIVE_NOT_CERTIFIED"
+
+
+def indicative_iso10816_zone(
+    velocity_rms_mm_s: float, *,
+    machine_class: int,
+    rpm: float,
+    measured_band_hz: tuple[float,float] = (10.0,1000.0),
+) -> InformativeSeverity:
+    """Historical ISO 10816-3 chart, USER-OPT-IN and explicitly informative.
+
+    Not a reference measurement and NOT an ISO 20816 conformity statement.
+    Applicability of machine group, power, support and measuring positions
+    must be checked by a specialist before any real condition assessment.
+    """
+    if type(machine_class) is not int or machine_class not in (1,2,3,4):
+        raise ValueError("Machine class must be selected by operator")
+    if not np.isfinite(rpm) or not 120<=rpm<=15000:
+        raise ValueError("Historical ISO chart limited to 120..15000 RPM")
+    if (not np.isfinite(velocity_rms_mm_s) or velocity_rms_mm_s<0
+        or len(measured_band_hz)!=2 or
+        measured_band_hz[0]>10.0 or measured_band_hz[1]<1000.0):
+        raise ValueError("Full measured velocity RMS in 10..1000 Hz is required")
+    limits={
+        1:(2.3,4.5,7.1),
+        2:(3.5,7.1,11.0),
+        3:(3.5,7.1,11.0),
+        4:(7.1,11.0,18.0),
+    }[machine_class]
+    zone="A"
+    for limit,new_zone in zip(limits,("B","C","D")):
+        if velocity_rms_mm_s>=limit:zone=new_zone
+    return InformativeSeverity(zone,velocity_rms_mm_s,machine_class,limits)
