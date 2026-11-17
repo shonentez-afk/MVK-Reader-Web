@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from .original_connected_status import connected_system_status
 from .original_mode2_rx_evidence import OriginalMode2ReceiveEvidence
 from .original_mode2_status_cells import OriginalStatusCellsEvidence
+from .original_mode2_transmit_evidence import validate_original_task2_tx
 from .original_mode2_retry_timing import OriginalSourceRetryPlan
 from .original_mode2_received_frames import OriginalSourceReadFramer
 from .original_mode2_wire_word_candidate import plan_verified_source_rate_command
@@ -48,6 +49,7 @@ class OriginalMode2RuntimeTrace:
         self.fault_routes = OriginalMode2FaultRoutes()
         self.receive_evidence=OriginalMode2ReceiveEvidence()
         self.status_cells=OriginalStatusCellsEvidence()
+        self.source_tx_observed=None
         self.source_retry_plan=OriginalSourceRetryPlan()
         self.phase = "IDLE"
         self.capture_started = False
@@ -126,6 +128,9 @@ class OriginalMode2RuntimeTrace:
         # a command, because the Native Go client sends none.
         source_rx=self.receive_evidence.observe_native(status)
         source_cells=self.status_cells.observe_native(status)
+        tx_observed=validate_original_task2_tx(status)
+        self.source_tx_observed=(
+            tx_observed.receipt() if tx_observed is not None else None)
         if source_cells['new_source_system_error_from_go_register']:
             self._event('SOURCE_STATUSCELLS0_SYSTEM_ERROR_CONFIRMED')
         # Source 00807E92..00807F67 takes ONE command from TList only
@@ -259,6 +264,7 @@ class OriginalMode2RuntimeTrace:
             "original_queue": self.command_model.receipt(),
             "original_receive_protocol": self.receive_evidence.receipt(),
             "original_status_cells_14": self.status_cells.receipt(),
+            "source_mode2_tx_evidence": self.source_tx_observed,
             "original_stage3_system_error_condition_latched":
                 self.status_cells.system_error_latched,
             "original_delphi_stage3_physically_verified":False,

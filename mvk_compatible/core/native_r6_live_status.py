@@ -13,6 +13,7 @@ import re
 
 from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
 from .original_mode2_status_cells import parse_source_cells
+from .original_mode2_transmit_evidence import validate_original_task2_tx
 from .original_system_register_fields import verify_source_error_overlap
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
@@ -103,6 +104,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
     # cell is null/UNKNOWN, never the source Delphi FF init sentinel.
     status_cells=parse_source_cells(payload)
     verify_source_error_overlap(payload)
+    validated_source_tx=validate_original_task2_tx(payload)
     source_system_error=bool(status_cells and status_cells[0].valid
                              and status_cells[0].value>0)
     elapsed = payload.get("elapsed_seconds")
@@ -137,6 +139,8 @@ def validate_live_status(payload: dict, *, expected_run: str,
     result = dict(payload)
     result["channels"] = safe
     result["source_system_error_observed"] = source_system_error
+    result["original_source_tx_proof"] = (
+        validated_source_tx.receipt() if validated_source_tx is not None else None)
     result["snapshot_age_s"] = age
     result["snapshot_stale"] = age > 5.0 and result["phase"] in ("CONNECTING", "RECORDING")
     result["quality_alert"] = (

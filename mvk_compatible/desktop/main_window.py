@@ -2489,6 +2489,8 @@ class MainWindow(QMainWindow):
                                receipt['original_receive_protocol'])
             widget.setProperty('sourceOriginalStatusCells14Receipt',
                                receipt['original_status_cells_14'])
+            widget.setProperty('sourceOriginalOutboundEvidence',
+                               receipt['source_mode2_tx_evidence'])
 
     def _source_interface_tick(self):
         """Source 0084F7C8: 20ms ONLY the active source tab + pnMeasure.

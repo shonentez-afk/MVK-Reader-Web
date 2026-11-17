@@ -383,7 +383,12 @@ class OriginalMeasureControls:
             self.indicator.setStyleSheet(
                 "color:#459a4c" if state_view.transport_verified
                 else "color:#888888")
+            tx=trace.source_tx_observed if trace is not None else None
             self.status.setToolTip(
+                ("Исходная SetRate (36 байт): условие Stage1 подтверждено; "
+                 "Go физически отправил 0 байт. "
+                 if tx is not None and tx["source_setrate_dispatch_candidate"]
+                 else "")+
                 "Статус подтверждённого пассивного Native R6.1. "
                 "Он не является приборным регистром StatusIsError. "
                 "ACK/отказ входящего протокола не являются результатом "
