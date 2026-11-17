@@ -42,9 +42,8 @@ class OriginalMode2ReceiveEvidence:
         self.new_denial_observed = False
 
     def observe_native(self, status: dict) -> dict:
-        if not isinstance(status, dict) or status.get(
-                "read_only_no_app_payload_sent") is not True:
-            raise ValueError("Source RX evidence requires passive Native provenance")
+        from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
+        verify_source_native_tx_origin(status)
         present=[key in status for key in FIELDS]
         if any(present) and not all(present):
             raise ValueError("Source RX evidence must be an atomic counter group")

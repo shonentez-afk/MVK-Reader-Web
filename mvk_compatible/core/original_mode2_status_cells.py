@@ -73,8 +73,8 @@ def parse_source_cells(status: dict) -> tuple[SourceStatusCell,...] | None:
         raise ValueError("Source status cells require a Native status dictionary")
     if SOURCE_STATUS_FIELD not in status:
         return None
-    if status.get("read_only_no_app_payload_sent") is not True:
-        raise ValueError("Source StatusCells require read-only Native proof")
+    from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
+    verify_source_native_tx_origin(status)
     values=status[SOURCE_STATUS_FIELD]
     if not isinstance(values,list) or len(values)!=len(SOURCE_INDEX_ADDR):
         raise ValueError("Source StatusCells require exactly 14 records")

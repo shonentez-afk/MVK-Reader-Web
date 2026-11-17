@@ -129,8 +129,15 @@ class OriginalMode2RuntimeTrace:
         source_rx=self.receive_evidence.observe_native(status)
         source_cells=self.status_cells.observe_native(status)
         tx_observed=validate_original_task2_tx(status)
-        self.source_tx_observed=(
-            tx_observed.receipt() if tx_observed is not None else None)
+        incoming_tx=(tx_observed.receipt() if tx_observed is not None else None)
+        if self.source_tx_observed is not None and incoming_tx is not None:
+            old=self.source_tx_observed
+            if (incoming_tx["source_go_bytes_actually_sent"]<old["source_go_bytes_actually_sent"]
+                    or incoming_tx["source_tx_sent_commands"]<old["source_tx_sent_commands"]
+                    or (old["source_tx_explicitly_approved"] and
+                        not incoming_tx["source_tx_explicitly_approved"])):
+                raise ValueError("Original Task2 device TX receipt rolled back")
+        self.source_tx_observed=incoming_tx
         if source_cells['new_source_system_error_from_go_register']:
             self._event('SOURCE_STATUSCELLS0_SYSTEM_ERROR_CONFIRMED')
         # Source 00807E92..00807F67 takes ONE command from TList only
@@ -257,7 +264,8 @@ class OriginalMode2RuntimeTrace:
             "native_stop_requested": self.stop_requested,
             "native_run_bound": self.session_id is not None,
             "native_frames_decoded": self.frames_decoded,
-            "recording_commands_allowed": False,
+            "recording_commands_allowed": bool(
+                self.source_tx_observed and self.source_tx_observed["source_tx_explicitly_approved"]),
             "original_source_timer_ms": 20,
             "native_qt_status_poll_ms": 900,
             "original_timer_behavior_reproduced": False,
@@ -270,7 +278,8 @@ class OriginalMode2RuntimeTrace:
             "original_delphi_stage3_physically_verified":False,
             "source_initial_rate_write_calls_dry_run":
                 self.source_initial_rate_write_calls_dry_run,
-            "source_initial_write_calls_physically_sent": False,
+            "source_initial_write_calls_physically_sent": bool(
+                self.source_tx_observed and self.source_tx_observed["source_go_bytes_actually_sent"]),
             "original_retry_plan_only": self.source_retry_plan.receipt(),
             "source_preview_freeze_requested":
                 self.source_preview_freeze_requested,
@@ -284,12 +293,15 @@ class OriginalMode2RuntimeTrace:
                 SOURCE_DEFAULT_MENU_TAG if self.source_initial_rate_queued_offline
                 else None),
             "source_rate_menu_provenance": source_initial_rate_provenance(),
-            "source_initial_device_setrate_sent": False,
+            "source_initial_device_setrate_sent": bool(
+                self.source_tx_observed and self.source_tx_observed["source_tx_sent_commands"]),
             "original_faults": self.fault_routes.receipt(),
             "events_seen": self._event_total,
             "last_events": tuple(
                 (event.ordinal, event.name, event.phase)
                 for event in self._events[-12:]),
             "original_delphi_device_parity_verified": False,
-            "hardware_commands_sent": 0,
+            "hardware_commands_sent": (
+                self.source_tx_observed["source_tx_sent_commands"]
+                if self.source_tx_observed is not None else 0),
         }

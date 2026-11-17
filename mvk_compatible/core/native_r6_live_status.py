@@ -14,6 +14,7 @@ import re
 from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
 from .original_mode2_status_cells import parse_source_cells
 from .original_mode2_transmit_evidence import validate_original_task2_tx
+from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
 from .original_system_register_fields import verify_source_error_overlap
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
@@ -74,8 +75,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
         raise ValueError("Native live status: session identity mismatch")
     if payload.get("phase") not in PHASES:
         raise ValueError("Native live status: unexpected phase")
-    if payload.get("read_only_no_app_payload_sent") is not True:
-        raise ValueError("Native live status: receiver not marked read-only")
+    physical_source_tx=verify_source_native_tx_origin(payload)
     if instrument_ipv4 is not None and payload.get("instrument_ipv4") != instrument_ipv4:
         raise ValueError("Native live status: different MVK device")
     selected = payload.get("selected_local_ipv4")
@@ -139,6 +139,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
     result = dict(payload)
     result["channels"] = safe
     result["source_system_error_observed"] = source_system_error
+    result["source_original_setrate_physically_sent"] = physical_source_tx
     result["original_source_tx_proof"] = (
         validated_source_tx.receipt() if validated_source_tx is not None else None)
     result["snapshot_age_s"] = age

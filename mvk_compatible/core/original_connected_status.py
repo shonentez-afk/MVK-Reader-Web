@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .native_r6_live_status import SCHEMA
 from .original_mode2_live_health import live_transport_health
+from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
 from .original_system_register_fields import (
     SYSTEM_SOURCE_FIELDS,parse_source_system_registers,verify_source_error_overlap,
 )
@@ -92,11 +93,11 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
     else:
         if (not isinstance(native_status,dict)
                 or native_status.get("schema")!=SCHEMA
-                or native_status.get("read_only_no_app_payload_sent") is not True
                 or native_status.get("phase") not in (
                     "CONNECTING","RECORDING","VERIFYING",
                     "COMPLETED","REFUSED")):
             raise ValueError("Unverified Native read-only status")
+        verify_source_native_tx_origin(native_status)
         count=native_status.get("frames_decoded")
         if type(count) is not int or not 0<=count<=2**64-1:
             raise ValueError("Invalid Native decoded-frame counter")
