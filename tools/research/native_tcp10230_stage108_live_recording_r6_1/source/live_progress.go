@@ -50,6 +50,9 @@ type LiveStatus struct {
     SourcePageStatusFields []LiveSourcePageStatusField `json:"source_page_status_fields_15"`
     SourceMode2TxEvidence LiveOriginalTask2TxEvidence `json:"source_mode2_tx_evidence"`
     SourceRateTransition bool `json:"source_rate_transition_during_live"`
+    SourceTCPConnectionCount uint64 `json:"source_tcp_connection_count"`
+    SourceTCPMultiSocket bool `json:"source_tcp_multi_socket"`
+    SourceTCPReconnectAfterRAW uint64 `json:"source_tcp_reconnects_after_raw"`
     WarningCount           uint64              `json:"warning_count"`
     SecondsSinceLastPacket *float64            `json:"seconds_since_last_packet"`
     LastAUXUTC             *string             `json:"last_aux_received_utc"`
@@ -106,6 +109,9 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SourcePageStatusFields: m.snapshotSourcePageStatusFields(),
         SourceMode2TxEvidence: m.snapshotOriginalTask2TxEvidence(),
         SourceRateTransition: m.sourceRateTransitionDetected,
+        SourceTCPConnectionCount:report.SourceTCPConnectionCount,
+        SourceTCPMultiSocket:report.SourceTCPMultiSocket,
+        SourceTCPReconnectAfterRAW:report.SourceTCPReconnectAfterRAW,
         WarningCount: report.WarningCount, LastAUXUTC: lastAUX,
         SecondsSinceLastPacket: since, Channels: channels,
         EndReason: report.EndReason,
