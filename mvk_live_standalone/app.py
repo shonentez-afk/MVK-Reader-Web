@@ -27,6 +27,10 @@ from .spectrum import (
 )
 from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady
+from .vibration import (
+    VibrationView, analyze_vibration, vibration_plot_values,
+    vibration_y_label, time_features, bearing_frequency_markers,
+)
 
 MAX_CAPTURE_MB = 2048
 
@@ -44,7 +48,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._gui_ring = VerifiedLiveRing()
         self._last_submitted_key = None
         self._last_status = None
-        self._spectrum: Spectrum | None = None
+        self._spectrum: VibrationView | None = None
+        self._last_fft_submit=0.0
+        self._waterfall_rows=[]
+        self._waterfall_key=None
+        self._trend_points=[]
+        self._trend_key=None
+        self._marker_lines=[]
         self._future: Future | None = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-spectrum")
         self._ipc_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-local-IPC")
@@ -98,6 +108,14 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.kind = QtWidgets.QComboBox()
         for key,(name,unit) in KINDS.items():
             self.kind.addItem(f"{name} ({unit})", key)
+        self.analysis=QtWidgets.QComboBox()
+        for name,key in [
+            ("FFT · амплитуда СКЗ","fft"),
+            ("PSD Уэлча · мощность/Гц","welch"),
+            ("1/3 октавы · СКЗ полосы","third_octave"),
+            ("Спектр огибающей · Hilbert","envelope"),
+        ]:
+            self.analysis.addItem(name,key)
         self.yscale = QtWidgets.QComboBox()
         for txt,key in [("Линейная Y","linear"),("Логарифмическая Y (дБ)","db")]:
             self.yscale.addItem(txt,key)
@@ -114,18 +132,55 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.band = QtWidgets.QComboBox()
         for label,bounds in PRESET_BANDS.items():
             self.band.addItem(label,bounds)
+        self.envelope_band=QtWidgets.QComboBox()
+        for name,band in [
+            ("500–1500 Гц",(500.0,1500.0)),
+            ("1000–3000 Гц",(1000.0,3000.0)),
+            ("2000–6000 Гц",(2000.0,6000.0)),
+            ("4000–12000 Гц",(4000.0,12000.0)),
+        ]:
+            self.envelope_band.addItem(name,band)
+        self.envelope_band.setCurrentIndex(1)
         self.smooth = QtWidgets.QSpinBox()
         self.smooth.setRange(1,101)
         self.smooth.setSingleStep(2)
         self.smooth.setValue(1)
         for label,widget in [
-            ("Канал",self.adc),("Тип",self.kind),("Шкала Y",self.yscale),
+            ("Канал",self.adc),("Тип",self.kind),("Режим",self.analysis),("Шкала Y",self.yscale),
             ("Опора дБ",self.db_ref),
             ("Шкала X",self.xscale),("FFT",self.nfft),("Полоса",self.band),
             ("Сглаживание (бин)",self.smooth),
         ]:
             opts.addWidget(QtWidgets.QLabel(label))
             opts.addWidget(widget)
+        opts2=QtWidgets.QHBoxLayout()
+        main.addLayout(opts2)
+        opts2.addWidget(QtWidgets.QLabel("Полоса огибающей"))
+        opts2.addWidget(self.envelope_band)
+        opts2.addWidget(QtWidgets.QLabel("Обороты, вручную (0 — нет)"))
+        self.rpm=QtWidgets.QDoubleSpinBox()
+        self.rpm.setRange(0,200000)
+        self.rpm.setDecimals(1)
+        self.rpm.setSuffix(" об/мин")
+        opts2.addWidget(self.rpm)
+        opts2.addWidget(QtWidgets.QLabel("Тел качения"))
+        self.balls=QtWidgets.QSpinBox()
+        self.balls.setRange(0,80)
+        opts2.addWidget(self.balls)
+        opts2.addWidget(QtWidgets.QLabel("Шарик, мм"))
+        self.ball_diameter=QtWidgets.QDoubleSpinBox()
+        self.ball_diameter.setRange(0,300)
+        opts2.addWidget(self.ball_diameter)
+        opts2.addWidget(QtWidgets.QLabel("Делит. диаметр, мм"))
+        self.pitch_diameter=QtWidgets.QDoubleSpinBox()
+        self.pitch_diameter.setRange(0,3000)
+        opts2.addWidget(self.pitch_diameter)
+        opts2.addWidget(QtWidgets.QLabel("Угол"))
+        self.contact_angle=QtWidgets.QDoubleSpinBox()
+        self.contact_angle.setRange(0,90)
+        self.contact_angle.setSuffix("°")
+        opts2.addWidget(self.contact_angle)
+        opts2.addStretch(1)
         self.status = QtWidgets.QLabel("Нет подтверждённого Live-потока")
         main.addWidget(self.status)
         self.quality = QtWidgets.QLabel("Показания AUX4700 не подменяются локальной FFT.")
@@ -145,15 +200,32 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.cursor = pg.InfiniteLine(pos=100,movable=True,pen=pg.mkPen("#76838b",style=QtCore.Qt.DashLine))
         self.spec.addItem(self.cursor)
         self.cursor.sigPositionChanged.connect(self._cursor_text)
-        main.addWidget(self.spec,stretch=3)
+        self.views=QtWidgets.QTabWidget()
+        self.views.addTab(self.spec,"Спектр и курсор")
+        self.waterfall=pg.PlotWidget(title="Водопад · последовательные APP_DERIVED спектры")
+        self.waterfall.setLabel("bottom","Частота",units="Гц")
+        self.waterfall.setLabel("left","Новые измеренные кадры",units=" ")
+        self.waterfall_img=pg.ImageItem()
+        self.waterfall.addItem(self.waterfall_img)
+        self.views.addTab(self.waterfall,"Водопад")
+        self.trend_plot=pg.PlotWidget(title="Тренд · локальная СКЗ ускорения")
+        self.trend_plot.setLabel("bottom","Время с начала сеанса",units="с")
+        self.trend_plot.setLabel("left","Виброускорение СКЗ",units="м/с²")
+        self.trend_line=self.trend_plot.plot(pen=pg.mkPen("#21a179",width=1.4))
+        self.views.addTab(self.trend_plot,"Тренд СКЗ")
+        main.addWidget(self.views,stretch=3)
         self.metrics = QtWidgets.QLabel("Нет достоверных данных")
         main.addWidget(self.metrics)
+        self.features_label=QtWidgets.QLabel("Временные признаки: ожидание калиброванного канала")
+        main.addWidget(self.features_label)
         self._apply_axes()
 
-        for w in (self.adc,self.kind,self.nfft,self.band,self.smooth):
+        for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band):
             w.currentIndexChanged.connect(self._request_update) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._request_update)
         for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
+        for w in (self.rpm,self.balls,self.ball_diameter,self.pitch_diameter,self.contact_angle):
+            w.valueChanged.connect(self._update_markers)
         self._timer=QtCore.QTimer(self)
         self._timer.setInterval(900)  # current Native sidecar is published >=750 ms
         self._timer.timeout.connect(self._poll)
@@ -165,7 +237,8 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _read_settings(self):
         return (self.adc.currentData(),self.kind.currentData(),self.nfft.currentData(),
-                self.band.currentData(),self.smooth.value())
+                self.band.currentData(),self.smooth.value(),
+                self.analysis.currentData(),self.envelope_band.currentData())
 
     def _request_update(self,*_):
         self._generation += 1
