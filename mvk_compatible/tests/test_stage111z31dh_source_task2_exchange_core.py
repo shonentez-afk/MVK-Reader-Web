@@ -106,7 +106,7 @@ def test_incoming_denied_triggers_real_source_exception_route_and_retry_plan():
     assert not report["source_tcp_connected_simulated"]
     assert report["last_source_error"]=="operation_denied"
     assert report["source_denied_exceptions_simulated"]==1
-    assert report["source_retry"]["last_step"]["source_wait_ms"]==250
+    assert report["source_retry"]["last_step"]["source_wait_ms"]==260
     assert report["command_list"]["pending_count"]==1
     assert report["source_faults"]["events"][-1][
         "localization_key"]=="errOperationDenied"
@@ -128,7 +128,7 @@ def test_source_typed_network_fault_requeues_once_on_initial_pause():
     x.start()
     x.tcp_connected_in_offline_model()
     first=x.source_transport_failure("connect_timeout")
-    assert first.local_wait_ms==250
+    assert first.local_wait_ms==260
     assert first.source_requeues_set_rate
     assert x.receipt()["command_list"]["pending_count"]==2
     x.begin_next_retry_attempt()
@@ -164,7 +164,7 @@ def test_source_connect_timeout_before_socket_success_has_real_retry_semantics()
     x.start()
     assert x.receipt()["source_connection_phase_simulated"]=="CONNECTING"
     first=x.source_transport_failure("connect_timeout")
-    assert first.local_wait_ms==250
+    assert first.local_wait_ms==260
     assert first.source_requeues_set_rate
     assert x.receipt()["source_connection_phase_simulated"]=="WAITING_RETRY"
     with pytest.raises(ValueError):
@@ -172,7 +172,7 @@ def test_source_connect_timeout_before_socket_success_has_real_retry_semantics()
     x.begin_next_retry_attempt()
     # Second failed Connect before a successful TCP socket grows backoff.
     second=x.source_transport_failure("connect_timeout")
-    assert second.local_wait_ms==350
+    assert second.local_wait_ms==360
     assert not second.source_requeues_set_rate
     assert x.receipt()["command_list"]["pending_count"]==2
     x.begin_next_retry_attempt()
