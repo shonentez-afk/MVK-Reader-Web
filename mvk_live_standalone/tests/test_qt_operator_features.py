@@ -141,3 +141,23 @@ def test_stft_view_from_selected_real_buffer(gui):
     assert w.extra_button.isEnabled()
     assert w.views.currentWidget()==w.extra_plot
     assert "STFT" in w.extra_plot.getPlotItem().titleLabel.text
+
+
+
+def test_small_fft_ipc_starts_without_waiting_65536_samples(gui):
+    from mvk_live_standalone.live_ipc import IPCNotReady
+    w,app=gui
+    seen=[]
+    class FakeIPC:
+        session_id="SYNTHETIC_OFFLINE_TEST"
+        def read_channel(self,adc,count):
+            seen.append((adc,count))
+            raise IPCNotReady("only expected sample window")
+    w._ipc_client=FakeIPC()
+    w._last_status={"phase":"RECORDING","source_tcp_multi_socket":False}
+    w.nfft.setCurrentIndex(0)  # 8192
+    w._poll_ipc()
+    assert w._ipc_future is not None
+    with pytest.raises(IPCNotReady):
+        w._ipc_future.result(timeout=10)
+    assert seen==[(1,8192)]
