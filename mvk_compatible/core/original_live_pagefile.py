@@ -179,7 +179,7 @@ def live_pagefile_channel_rows(status:dict|None):
         rates=ch.get("sample_rates_hz")
         if rates is None:
             rates=[]
-        elif (not isinstance(rates,list) or len(rates)>3 or
+        elif (not isinstance(rates,list) or len(rates)>5 or
                 any(type(r) is not int or r<=0 or r>1_000_000
                     for r in rates)):
             raise ValueError("Unverified Native source Fs")
