@@ -43,12 +43,15 @@ type sourceTask2DuplexLab struct {
     inboundACK int
     inboundDENIED int
     image RegisterImage
+    sourceRawStatus0 uint32
+    sourceStatus0Observed bool
+    sourceSentinelTriggeredStage3 bool
     closed bool
 }
 
 func newSourceTask2DuplexLab(rate uint32) (*sourceTask2DuplexLab,error) {
     if !acceptedRates[rate] {return nil,errors.New("source rate unsupported")}
-    return &sourceTask2DuplexLab{rate:rate,pending:true},nil
+    return &sourceTask2DuplexLab{rate:rate,pending:true,sourceRawStatus0:0xFFFFFFFF},nil
 }
 
 func (s *sourceTask2DuplexLab) observeFrame(f Frame) error {
@@ -59,9 +62,15 @@ func (s *sourceTask2DuplexLab) observeFrame(f Frame) error {
         if e!=nil {s.closed=true;return e}
         for _,b:=range blocks {s.image.Put(b)}
         if len(blocks)>0 && s.stage==0 {s.stage=1}
-        // Safe laboratory interpretation: require a REAL complete two-word
-        // value, not Delphi's uninitialized 0xFFFFFFFF sentinel.
-        if value,e:=s.image.Uint32(0x1006);e==nil && value>0 {
+        // Literal _Unit125 0080872D: unsigned StatusCells0 > 0.
+        // Original initializes this field to 0xFFFFFFFF; this source
+        // false-positive Stage3 must not become a fake Go device error.
+        if value,e:=s.image.Uint32(0x1006);e==nil {
+            s.sourceRawStatus0=value
+            s.sourceStatus0Observed=true
+        }
+        if s.sourceRawStatus0>0 {
+            if !s.sourceStatus0Observed {s.sourceSentinelTriggeredStage3=true}
             s.stage=3
         }
     case typeAck:
@@ -94,6 +103,7 @@ type LiveOriginalTask2TxEvidence struct {
     OriginalWriterExists bool `json:"source_original_writer_present"`
     Stage1FromParam bool `json:"source_stage1_nonempty_param_observed"`
     Status0ValidZero bool `json:"source_system_status0_valid_zero"`
+    DelphiUnobservedStatus0SentinelRisk bool `json:"source_delphi_unobserved_status0_sentinel_stage3_risk"`
     ValidatedSourceCandidate bool `json:"source_setrate_candidate_after_param"`
     ActualGoAppBytesSent uint64 `json:"source_go_device_app_bytes_sent"`
     OriginalSetRateLength int `json:"source_setrate_frame_size_bytes"`
@@ -110,6 +120,7 @@ func (m *Monitor) snapshotOriginalTask2TxEvidence() LiveOriginalTask2TxEvidence 
         OriginalWriterExists:true,
         Stage1FromParam:seenParam,
         Status0ValidZero:validZero,
+        DelphiUnobservedStatus0SentinelRisk:seenParam && e!=nil,
         ValidatedSourceCandidate:seenParam && validZero && !m.captureOnly,
         ActualGoAppBytesSent:0,
         OriginalSetRateLength:sourceSetRateWriteLen,

@@ -45,6 +45,15 @@ func TestSourceTask2LabOnlySendsAfterNonemptyParam(t *testing.T){
         t.Fatal("original ACK does not positively correlate SetRate")
     }
 }
+func TestLiteralSourceFFStatus0SentinelCanPreventOriginalSend(t *testing.T){
+    l,_:=newSourceTask2DuplexLab(65536)
+    param:=makeParam([]RegBlock{{Addr:0x3100,Words:2,Payload:[]byte{0,0,0,0}}})
+    if e:=l.observeFrame(Frame{Type:typeParam,Raw:param});e!=nil{t.Fatal(e)}
+    if l.stage!=3||!l.sourceSentinelTriggeredStage3||l.sourceStatus0Observed {
+        t.Fatal("Delphi initial FF status can enter Stage3 without real 0x1006")
+    }
+    if n,e:=l.writeOneBeforeRead(&bytes.Buffer{});n!=0||e!=nil{t.Fatal("Stage3 TX")}
+}
 func TestSourceTask2LabSystemErrorPreventsWritesAndDeniedStops(t *testing.T){
     l,_:=newSourceTask2DuplexLab(65536)
     if e:=l.observeFrame(Frame{Type:typeParam,Raw:labStatus0(7)});e!=nil{t.Fatal(e)}
@@ -91,6 +100,7 @@ func TestSourceMode2GoReadOnlyReceiptNeverClaimsTransmittedCommands(t *testing.T
     m.image.Valid[0x1007]=true
     ready:=m.snapshotOriginalTask2TxEvidence()
     if !ready.Stage1FromParam||!ready.Status0ValidZero||!ready.ValidatedSourceCandidate||
+       ready.DelphiUnobservedStatus0SentinelRisk||
        ready.ActualGoAppBytesSent!=0{t.Fatal("source candidate must remain passive")}
     m.captureOnly=true
     if m.snapshotOriginalTask2TxEvidence().ValidatedSourceCandidate{t.Fatal("corrupt capture cannot claim ready")}

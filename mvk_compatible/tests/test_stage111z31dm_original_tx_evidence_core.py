@@ -28,6 +28,7 @@ def snapshot(value=0,param=1,capture_only=False):
         "source_original_writer_present":True,
         "source_stage1_nonempty_param_observed":seen,
         "source_system_status0_valid_zero":zero,
+        "source_delphi_unobserved_status0_sentinel_stage3_risk":seen and not known,
         "source_setrate_candidate_after_param":seen and zero and not capture_only,
         "source_go_device_app_bytes_sent":0,
         "source_setrate_frame_size_bytes":36,
@@ -50,12 +51,15 @@ def test_no_fake_send_when_system_unknown_error_no_param_or_bad_capture(value,pa
     r=validate_original_task2_tx(snapshot(value,param,capture_only))
     assert not r.source_send_candidate
     assert r.producer_sent_bytes==0
+    if value is None and param>0:
+        assert r.delphi_unobserved_ff_stage3_risk
 
 
 @pytest.mark.parametrize("key,value",[
     ("source_original_writer_present",False),
     ("source_stage1_nonempty_param_observed",False),
     ("source_system_status0_valid_zero",False),
+    ("source_delphi_unobserved_status0_sentinel_stage3_risk",True),
     ("source_setrate_candidate_after_param",False),
     ("source_go_device_app_bytes_sent",36),
     ("source_setrate_frame_size_bytes",32),
