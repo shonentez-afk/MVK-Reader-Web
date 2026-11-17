@@ -653,8 +653,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         self._timer.stop()
         self._ipc_timer.stop()
-        self._executor.shutdown(wait=False,cancel_futures=True)
-        self._ipc_executor.shutdown(wait=False,cancel_futures=True)
+        # Do not leave NumPy/SciPy workers alive while the PySide6 interpreter
+        # is tearing down: this can cause native Qt reference-count crashes.
+        self._executor.shutdown(wait=True,cancel_futures=True)
+        self._ipc_executor.shutdown(wait=True,cancel_futures=True)
         super().closeEvent(event)
 
 
