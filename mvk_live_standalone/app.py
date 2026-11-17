@@ -27,6 +27,7 @@ from .spectrum import (
 )
 from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady
+from .original_dsp import read_original_dsp_bands
 from .vibration import (
     VibrationView, analyze_vibration, vibration_plot_values,
     vibration_y_label, time_features, bearing_frequency_markers,
@@ -216,6 +217,18 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.waterfall_img=pg.ImageItem()
         self.waterfall.addItem(self.waterfall_img)
         self.views.addTab(self.waterfall,"Водопад")
+        dsp_panel=QtWidgets.QWidget()
+        dsp_layout=QtWidgets.QVBoxLayout(dsp_panel)
+        self.dsp_plot=pg.PlotWidget(title="Оригинальный DSP · AUX4700 · 43 третьоктавных СКЗ")
+        self.dsp_plot.setLabel("bottom","Центр полосы",units="Гц")
+        self.dsp_plot.setLabel("left","Виброускорение СКЗ",units="м/с²")
+        self.dsp_plot.showGrid(x=True,y=True,alpha=.2)
+        self.dsp_curve=self.dsp_plot.plot(pen=pg.mkPen("#6b8cbd",width=1.5),
+                                          symbol="o",symbolSize=4)
+        dsp_layout.addWidget(self.dsp_plot)
+        self.dsp_info=QtWidgets.QLabel("Данные AUX4700 от прибора ещё не получены")
+        dsp_layout.addWidget(self.dsp_info)
+        self.views.addTab(dsp_panel,"Оригинальный DSP")
         self.trend_plot=pg.PlotWidget(title="Тренд · локальная СКЗ ускорения")
         self.trend_plot.setLabel("bottom","Время с начала сеанса",units="с")
         self.trend_plot.setLabel("left","Виброускорение СКЗ",units="м/с²")
@@ -257,6 +270,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._waterfall_rows=[]
             self._waterfall_key=None
             self.waterfall_img.clear()
+        self._render_dsp()
         self._request_update()
 
     def _request_update(self,*_):
@@ -324,6 +338,31 @@ class LiveWindow(QtWidgets.QMainWindow):
                  label=label,labelOpts={"position":0.9,"color":"#6e8295"})
             self.spec.addItem(line)
             self._marker_lines.append(line)
+
+    def _render_dsp(self):
+        status=self._last_status
+        if status is None or status.get("phase")!="RECORDING":
+            self.dsp_curve.setData([],[])
+            self.dsp_info.setText("DSP: ожидание измерения МВК01")
+            return
+        try:
+            band=read_original_dsp_bands(status,self.adc.currentData())
+        except (ValueError,TypeError) as exc:
+            self.dsp_curve.setData([],[])
+            self.dsp_info.setText(f"Оригинальный AUX4700 отклонён: {exc}")
+            return
+        if band is None:
+            self.dsp_curve.setData([],[])
+            self.dsp_info.setText("AUX4700: нет реальных 43-полосных данных выбранного АЦП")
+            return
+        good=np.isfinite(band.acceleration_rms)
+        self.dsp_curve.setData(band.frequency_hz[good],band.acceleration_rms[good])
+        self.dsp_info.setText(
+            f"ИСТОЧНИК: MVK_DSP_ORIGINAL_AUX4700 · АЦП {band.adc} · "
+            f"пакет {band.update} · статус {band.status_hex} · "
+            f"неконечных полей: {band.nonfinite_fields} · "
+            "это оригинальный результат прибора, НЕ локальная PSD/FFT"
+        )
 
     def _update_features(self):
         ch=self._gui_ring.channel(self.adc.currentData())
@@ -418,6 +457,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.status.setText("Ожидание Native R6.1")
                 return
             self._last_status=status
+            self._render_dsp()
             self.status.setText(f"Native R6.1: {status['phase']} · RAW {status['raw_bytes']/1048576:.1f} МиБ · "
                                 f"кадров {status['frames_decoded']} · AUX {status['aux4700_updates']}")
             if status.get("source_tcp_multi_socket") or status["phase"]!="RECORDING":
