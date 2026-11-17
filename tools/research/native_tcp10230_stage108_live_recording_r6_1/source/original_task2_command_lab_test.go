@@ -1,11 +1,14 @@
 package main
 import (
     "bytes"
+    "context"
     "encoding/binary"
     "errors"
     "io"
     "net"
+    "path/filepath"
     "testing"
+    "time"
 )
 
 func labStatus0(value uint32) []byte {
@@ -106,4 +109,43 @@ func TestSourceMode2GoReadOnlyReceiptNeverClaimsTransmittedCommands(t *testing.T
     if m.snapshotOriginalTask2TxEvidence().ValidatedSourceCandidate{t.Fatal("corrupt capture cannot claim ready")}
     // Deliberately the lab's real writer is NOT installed on main.go.
     _=errors.New
+}
+
+func TestNativeReadOnlySocketSendsNothingEvenWhenParamReady(t *testing.T) {
+    // Real socket read path, but only a local ephemeral in-process fake
+    // server. Neither an MVK nor TCP/10230 is contacted by this test.
+    listener,e:=net.Listen("tcp4","127.0.0.1:0")
+    if e!=nil{t.Fatal(e)}
+    defer listener.Close()
+    deviceReceived:=make(chan int,1)
+    deviceError:=make(chan error,1)
+    go func(){
+        c,e:=listener.Accept()
+        if e!=nil{deviceError<-e;return}
+        defer c.Close()
+        if _,e=c.Write(labStatus0(0));e!=nil{deviceError<-e;return}
+        if e=c.SetReadDeadline(time.Now().Add(2*time.Second));e!=nil{deviceError<-e;return}
+        b:=make([]byte,100)
+        n,e:=c.Read(b)
+        if e!=nil && !(e==io.EOF){
+            if netErr,ok:=e.(net.Error);!ok||!netErr.Timeout(){deviceError<-e;return}
+        }
+        deviceReceived<-n
+    }()
+    m,e:=NewMonitor(filepath.Join(t.TempDir(),"source_readonly"),"LIVE_READ_ONLY","127.0.0.1")
+    if e!=nil{t.Fatal(e)}
+    defer m.CloseFiles()
+    reason,e:=liveCaptureAddress(context.Background(),m,listener.Addr().String(),1,4*1024*1024)
+    if e!=nil{t.Fatal(e)}
+    if reason!="DURATION_REACHED" && reason!="REMOTE_DISCONNECTED" {
+        t.Fatalf("passive source completion: %s",reason)
+    }
+    if m.summary.SourceNonemptyParameters==0 {t.Fatal("fake device PARAM was not received")}
+    if !m.summary.ReadOnly {t.Fatal("Native capture accidentally became active")}
+    select {
+    case n:=<-deviceReceived:
+        if n!=0{t.Fatalf("passive Native transmitted %d bytes to fake device",n)}
+    case e:=<-deviceError:t.Fatal(e)
+    case <-time.After(3*time.Second):t.Fatal("local fake server did not complete")
+    }
 }
