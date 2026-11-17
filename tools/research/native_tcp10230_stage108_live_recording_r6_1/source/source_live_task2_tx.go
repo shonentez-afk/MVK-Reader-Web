@@ -32,12 +32,21 @@ type sourceLiveTask2TX struct {
  lastSentRate uint32
  sentCommands uint64
  sentBytes uint64
+ paramCounterBase uint64
  ackAfterTX uint64
  deniedAfterTX uint64
  writeFault string
 }
 func newSourceLiveTask2TX() *sourceLiveTask2TX {
  return &sourceLiveTask2TX{enabled:true,pending:[]uint32{65536},lastQueuedRate:65536}
+}
+func (s *sourceLiveTask2TX) resetForNewSourceSocket(m *Monitor){
+ s.stage=0;s.status0Seen=false;s.status0=0;s.systemErrorLatched=false
+ s.paramCounterBase=m.summary.SourceNonemptyParameters
+ s.conn=nil
+ // A new socket may require the operator-approved original source rate.
+ // It is NEVER written until a fresh PARAM and valid STATUS0=0 arrive.
+ if len(s.pending)==0 && s.lastQueuedRate!=0 {s.pending=[]uint32{s.lastQueuedRate}}
 }
 func (s *sourceLiveTask2TX) queueRate(rate uint32) error {
  if !acceptedRates[rate] {return fmt.Errorf("original rate not supported: %d",rate)}
@@ -51,7 +60,7 @@ func (s *sourceLiveTask2TX) queueRate(rate uint32) error {
 func (s *sourceLiveTask2TX) afterReceivedFrame(m *Monitor,f Frame) error {
  switch f.Type {
  case typeParam:
-  if m.summary.SourceNonemptyParameters>0 && s.stage==0 {s.stage=1}
+  if m.summary.SourceNonemptyParameters>s.paramCounterBase && s.stage==0 {s.stage=1}
   if status0,e:=m.image.Uint32(0x1006);e==nil {
    s.status0Seen=true;s.status0=status0
    if status0>0 {s.stage=3;s.systemErrorLatched=true}
