@@ -108,11 +108,23 @@ type LiveOriginalTask2TxEvidence struct {
     ActualGoAppBytesSent uint64 `json:"source_go_device_app_bytes_sent"`
     OriginalSetRateLength int `json:"source_setrate_frame_size_bytes"`
     NoPhysicalCommandClaim bool `json:"original_source_command_physically_verified"`
+    SourceTXApproved bool `json:"source_tx_explicitly_approved"`
+    SourceTXSentCommands uint64 `json:"source_tx_sent_commands"`
+    SourceTXLastRate uint32 `json:"source_tx_last_rate_hz"`
+    SourceTXAcksAfterTX uint64 `json:"source_tx_ack_observed_after_send"`
+    SourceTXDenialsAfterTX uint64 `json:"source_tx_denied_observed_after_send"`
+    SourceTXWriteFault string `json:"source_tx_write_fault"`
 }
 
 func (m *Monitor) snapshotOriginalTask2TxEvidence() LiveOriginalTask2TxEvidence {
     status0,e:=m.image.Uint32(0x1006)
     validZero:=e==nil && status0==0
+    tx:=m.sourceTask2TX
+    var sent,count,acks,denials uint64
+    var rate uint32
+    var fault string
+    if tx!=nil {sent=tx.sentBytes;count=tx.sentCommands;acks=tx.ackAfterTX;
+        denials=tx.deniedAfterTX;rate=tx.lastSentRate;fault=tx.writeFault}
     seenParam:=m.summary.SourceNonemptyParameters>0
     // This is evidence of a potential original command, NOT an attempt to
     // transmit from the single production read-only Native R6 client.
@@ -122,8 +134,14 @@ func (m *Monitor) snapshotOriginalTask2TxEvidence() LiveOriginalTask2TxEvidence 
         Status0ValidZero:validZero,
         DelphiUnobservedStatus0SentinelRisk:seenParam && e!=nil,
         ValidatedSourceCandidate:seenParam && validZero && !m.captureOnly,
-        ActualGoAppBytesSent:func() uint64 {if m.sourceTask2TX != nil{return m.sourceTask2TX.sentBytes};return 0}(),
+        ActualGoAppBytesSent:sent,
         OriginalSetRateLength:sourceSetRateWriteLen,
         NoPhysicalCommandClaim:false,
+        SourceTXApproved:tx!=nil,
+        SourceTXSentCommands:count,
+        SourceTXLastRate:rate,
+        SourceTXAcksAfterTX:acks,
+        SourceTXDenialsAfterTX:denials,
+        SourceTXWriteFault:fault,
     }
 }

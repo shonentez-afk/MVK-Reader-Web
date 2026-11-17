@@ -340,6 +340,7 @@ func mainInner() int {
 		return 2
 	}
 	if *sourceTX {
+		m.summary.Mode="LIVE_SOURCE_SET_RATE_APPROVED"
 		m.sourceTask2TX=newSourceLiveTask2TX()
 		fmt.Println("Original MVKView Task2 SetRate ENABLED with separate operator approval; only 5 verified rates")
 	}

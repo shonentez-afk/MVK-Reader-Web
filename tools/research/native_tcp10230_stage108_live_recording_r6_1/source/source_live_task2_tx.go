@@ -118,7 +118,8 @@ func (m *Monitor) drainSourceOperatorRates(ch <-chan string) error {
    if !ok{return nil}
    if e:=m.sourceTask2TX.takeOperatorLine(m,line);e!=nil {
     m.warn("Original Task2 operator rate rejected: "+e.Error())
-    // Invalid user input never becomes an arbitrary device command.
+    if errors.Is(e,errTask2SourceWrite){return e}
+    // Bad rate/command names do not terminate otherwise-valid capture.
    }
   default:return nil
   }
