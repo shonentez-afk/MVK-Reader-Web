@@ -17,9 +17,17 @@ from mvk_compatible.core.native_r6_live_status import validate_live_status
 
 
 def make_preview(tmp_path, *, modify=None, tamper_adc=False, extra=False,
-                 count=MAX_SAMPLES, source_rate=65536):
+                 count=65536, source_rate=65536):
     root = tmp_path / "capture"
     state = fixture_state()
+    # Full-size 262144-sample synthetic preview requires a corresponding
+    # (still synthetic) same-run Go status with enough received ADC frames.
+    if count > state["channels"][0]["samples"]:
+        for ch in state["channels"][:8]:
+            ch["samples"] = count
+            ch["frames"] = count//256
+        state["raw_bytes"] = 32*count + 50_000
+        state["frames_decoded"] = 8*(count//256) + 100
     run = root / state["session_id"]
     run.mkdir(parents=True)
     state["run_directory"] = str(run)
@@ -67,7 +75,7 @@ def test_preview_fft_uses_existing_candidate_and_precalibrated_bits(tmp_path):
     assert set(preview.channels)==set(range(1,9))
     assert preview.channels[0+1].first_index==4096
     assert preview.channels[1].samples.dtype==np.dtype("<f4")
-    assert preview.channels[1].samples.size==MAX_SAMPLES
+    assert preview.channels[1].samples.size==65536
     signal=provisional_waveform(preview,1,ac=False)
     assert signal["source"]=="LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED"
     assert signal["provisional_not_audited"]
@@ -171,7 +179,7 @@ def test_late_tcp_attach_absolute_instrument_index_still_validates(tmp_path):
             row["first_sample_index"]+=offset
             row["next_sample_index"]+=offset
     root,status,_=make_preview(tmp_path,modify=large_device_cursor)
-    expected_next=offset+4096+MAX_SAMPLES
+    expected_next=offset+4096+65536
     for channel in status["channels"][:8]:
         channel["next_sample_index"]=expected_next
     preview=load_live_preview(root,status,now=now())
@@ -198,3 +206,51 @@ def test_legacy_status_without_source_device_cursor_is_not_invented(tmp_path):
     assert all(ch.get("next_sample_index") is None for ch in status["channels"])
     preview=load_live_preview(root,status,now=now())
     assert gate_live_preview(status,preview).allowed
+
+
+def test_source_full_original_n131072_and_n262144_use_real_bins(tmp_path):
+    # Original _Unit128:0084819A maps the two largest bSpecLines tags to
+    # actual GetSpectrum counts. No 65536 downshift and no zero-padding.
+    root,status,run=make_preview(tmp_path,count=MAX_SAMPLES)
+    preview=load_live_preview(root,status,now=now())
+    assert len(preview.channels)==8
+    assert preview.channels[1].samples.size==262144
+    for selected in (131072,262144):
+        spec=provisional_spectrum(preview,1,mode=1,n_fft=selected)
+        assert spec["n_fft"]==selected
+        assert spec["df_hz"]==pytest.approx(65536/selected)
+        assert spec["source_selected_fft_n"]==selected
+        assert spec["source_fft_full_power_bins"]==selected//2
+        assert spec["original_delphi_numerical_parity"] is False
+        assert len(spec["frequency_hz"])<=5000
+        assert spec["spectrum_summary"]
+        f=np.asarray(spec["frequency_hz"])
+        y=np.asarray(spec["amplitude"])
+        assert f[int(np.argmax(y))]==pytest.approx(1000.,abs=65536/selected)
+        assert y.max()>0
+    assert (run/NAME).is_file()
+    assert len(list(run.iterdir()))==1
+
+
+def test_large_live_ring_does_not_break_30_second_getsignal_window(tmp_path):
+    # At 512 Hz, 262144 samples represent 512 seconds; only display the
+    # measured latest <=30 s while preserving all FFT input samples.
+    root,status,_=make_preview(tmp_path,count=MAX_SAMPLES,source_rate=512)
+    for ch in status["channels"][:8]:
+        ch["sample_rates_hz"]=[512]
+    preview=load_live_preview(root,status,now=now())
+    wave=provisional_waveform(preview,1,ac=False)
+    assert wave["window_samples"]==30*512
+    assert wave["source_live_preview_ring_samples"]==MAX_SAMPLES
+    assert wave["source_waveform_latest_real_samples"]==30*512
+    assert wave["input_source_window"]["live_first_adc_sample_index"]==(
+        4096+MAX_SAMPLES-30*512)
+    assert wave["input_source_window"]["live_last_adc_sample_exclusive"]==(
+        4096+MAX_SAMPLES)
+
+
+def test_full_native_preview_rejects_source_nonfinite_and_oversized_row(tmp_path):
+    root,status,_=make_preview(tmp_path,count=MAX_SAMPLES)
+    status["channels"][0]["samples"]=MAX_SAMPLES-256
+    with pytest.raises(ValueError,match="channel count"):
+        load_live_preview(root,status,now=now())

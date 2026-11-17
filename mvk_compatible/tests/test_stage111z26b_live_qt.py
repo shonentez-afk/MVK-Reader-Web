@@ -69,8 +69,8 @@ def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_
     assert "FFT N=32768" in window.spec_mean.text()
     assert "2 Гц/лин" in window.spec_lines_button.text()
     assert len(window.spec_plot.listDataItems())==1
-    # Original 131072 requires history the 65536 bounded live ring
-    # cannot yet provide. Blank the prior spectrum, never lie about N.
+    # This synthetic source window has only 65536 real samples.
+    # Blank the prior spectrum until the larger selected N arrives.
     window.spec_n.setCurrentText("131072")
     qt_app.processEvents()
     assert "ожидание реальных данных" in window.spec_mean.text()
@@ -159,5 +159,44 @@ def test_qt_live_wave_and_fft_survive_late_attach_absolute_source_index(
         assert "Индекс отсчёта" in win.wave_plot.getAxis("bottom").labelText
     finally:
         if win._live_active:win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()
+
+
+def test_live_original_131072_and_262144_bSpecLines_on_real_qt_widgets(
+        tmp_path,qt_app):
+    from .test_stage111z26b_live_preview import make_preview,now
+    from mvk_compatible.core.native_r6_live_preview import (
+        MAX_SAMPLES,load_live_preview,
+    )
+    from mvk_compatible.desktop.main_window import MainWindow
+    root,status,_=make_preview(tmp_path,count=MAX_SAMPLES)
+    source=load_live_preview(root,status,now=now())
+    win=MainWindow()
+    try:
+        win._begin_live_capture()
+        win._receive_native_live_status(status)
+        win._receive_live_preview(source)
+        assert "FFT N=65536" in win.spec_mean.text()
+        for n,step in ((131072,"0.5"),(262144,"0.25")):
+            # Live bSpecLines is now bound to all six ORIGINAL values.
+            win.spec_n.setCurrentText(str(n))
+            qt_app.processEvents()
+            assert f"FFT N={n}" in win.spec_mean.text()
+            assert f"шаг {step} Гц" in win.spec_mean.text()
+            assert len(win.spec_plot.listDataItems())==1
+            line=win.spec_plot.listDataItems()[0]
+            assert len(line.xData)<=5000  # display-only peak-preserving reduction
+            assert not win.spec_copy_button.isEnabled()
+            assert not win.spec_save_button.isEnabled()
+        # Changing N back must restore the correct 65536 window, not
+        # a cached 262144 plot or the old 8192-point downshift.
+        win.spec_n.setCurrentText("65536")
+        qt_app.processEvents()
+        assert "FFT N=65536" in win.spec_mean.text()
+        assert len(win.spec_plot.listDataItems())==1
+        assert "1 Гц/лин" in win.spec_lines_button.text()
+    finally:
+        if win._live_active: win._end_live_capture(False)
         win.close()
         qt_app.processEvents()

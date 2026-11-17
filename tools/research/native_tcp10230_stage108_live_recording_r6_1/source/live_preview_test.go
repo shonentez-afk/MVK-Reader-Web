@@ -17,8 +17,9 @@ import (
 func TestPreviewRingSameBytesAsAlreadyCalibratedSpoolAndWrap(t *testing.T) {
     p:=newLivePreviewBuffer()
     initial:=uint32(1024)
-    complete:=make([]byte,0,300*1024)
-    for frame:=0; frame<300; frame++ { // wraps 65536 ring at 256 ADC packets
+    totalFrames:=livePreviewSamples/256+76 // wraps the complete 262144-point ring
+    complete:=make([]byte,0,totalFrames*1024)
+    for frame:=0; frame<totalFrames; frame++ {
         data:=make([]byte,1024)
         for j:=0;j<256;j++ {
             binary.LittleEndian.PutUint32(data[j*4:],uint32(frame*256+j))
@@ -28,7 +29,7 @@ func TestPreviewRingSameBytesAsAlreadyCalibratedSpoolAndWrap(t *testing.T) {
         complete=append(complete,data...)
     }
     captured,n,first:=p.channelBytes(3)
-    if n!=livePreviewSamples || first != initial+uint32((300-256)*256) ||
+    if n!=livePreviewSamples || first != initial+uint32((totalFrames-livePreviewSamples/256)*256) ||
         !bytes.Equal(captured,complete[len(complete)-len(captured):]) {
         t.Fatal("wrap/order/Float32 stored bits disagree with original spool byte sequence")
     }
@@ -46,6 +47,7 @@ func TestPreviewRingSameBytesAsAlreadyCalibratedSpoolAndWrap(t *testing.T) {
         if file.Name=="MANIFEST.json" {
             if e:=json.Unmarshal(b,&meta);e!=nil {t.Fatal(e)}
         } else if file.Name=="ADC4.f32" {
+            if file.Method!=zip.Store { t.Fatal("full-size live preview must not deflate on TCP goroutine") }
             if !bytes.Equal(b,captured) {t.Fatal("atomic ZIP changed any Float32 bits")}
         } else {t.Fatalf("unexpected channel or file %q",file.Name)}
     }

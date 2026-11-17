@@ -21,12 +21,12 @@ import (
 const livePreviewFile = "MVK_NATIVE_LIVE_PREVIEW.zip"
 const livePreviewSchema = "MVK_NATIVE_R6_CALIBRATED_PREVIEW_V1"
 const livePreviewDomain = "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
-// Source original _Unit128.pas 0084819A..00848200 reads Tag->N at
-// 008D3450; the default source bSpecLines is N=65536. A bounded
-// 8192-point preview MUST NOT silently impersonate that selected FFT.
-// This is an 8*256KiB optional ring (2 MiB), not a new TCP receiver.
-// Longer source presets 131072/262144 require verified extra history.
-const livePreviewSamples = 65536
+// Original _Unit128 0084819A..00848200 selects all six bSpecLines values,
+// including 131072 and 262144. Original GetSpectrum 007D13D4 accepts up to
+// 0x40000 actual ADC samples only after CheckDataAvailability 007D1998.
+// This is a bounded 8*1MiB secondary Float32 ring (8MiB max), NOT an
+// alternate TCP reader or a claim of original 2M-sample storage parity.
+const livePreviewSamples = 262144
 
 type LivePreviewBuffer struct {
     bytes [8][]byte
@@ -73,7 +73,7 @@ func (p *LivePreviewBuffer) appendCalibratedADC(h SampleHeader, written []byte) 
         p.bytes[ch] = make([]byte, livePreviewSamples*4)
     }
     start := int(p.samples[ch]%livePreviewSamples)*4
-    // 8192 is a multiple of 256; each received ADC frame is one contiguous
+    // 262144 is a multiple of 256; each received ADC frame is one contiguous
     // slice. These bits are the actual, already-calibrated native BIN bytes.
     copy(p.bytes[ch][start:start+len(written)], written)
     p.samples[ch] += uint64(h.Samples)
@@ -122,7 +122,10 @@ func writePreviewAtomic(dir string, p *LivePreviewBuffer, summary Summary, now t
         raw,n,first:=p.channelBytes(ch)
         if n==0 { continue }
         name:=fmt.Sprintf("ADC%d.f32",ch+1)
-        w,e:=z.Create(name)
+        // Full original N=262144 at 8 ADC channels is 8 MiB.
+        // STORE the already-calibrated bytes (rather than deflating on the
+        // sole receive goroutine) so optional UI preview does not stall RAW.
+        w,e:=z.CreateHeader(&zip.FileHeader{Name:name,Method:zip.Store})
         if e!=nil { z.Close(); tmp.Close(); return e }
         if _,e=w.Write(raw); e!=nil { z.Close(); tmp.Close(); return e }
         digest:=sha256.Sum256(raw)

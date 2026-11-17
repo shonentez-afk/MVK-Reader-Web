@@ -22,11 +22,11 @@ from .offline_export import waveform_for_zip, spectrum_for_zip
 NAME = "MVK_NATIVE_LIVE_PREVIEW.zip"
 SCHEMA = "MVK_NATIVE_R6_CALIBRATED_PREVIEW_V1"
 DOMAIN = "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
-# Original bSpecLines default is 65536, not the old 8192-point
-# preview approximation. Keep the sidecar strict and bounded: at most
-# 8 channels * 65536 Float32 samples (2MiB) plus small metadata.
-MAX_SAMPLES = 65536
-MAX_DISK_BYTES = 3_000_000
+# Source bSpecLines includes up to N=262144; the same sole Native Go
+# receiver's calibrated Float32 sidecar is bounded to 8*262144*4=8 MiB.
+# This is still PROVISIONAL and smaller than original TMvkChannelStorage.
+MAX_SAMPLES = 262144
+MAX_DISK_BYTES = 9_000_000
 MAX_MANIFEST = 16_384
 MAX_UNCOMPRESSED_BYTES = MAX_SAMPLES * 4 * 8 + MAX_MANIFEST
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
@@ -205,9 +205,16 @@ def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) ->
     channel = preview.channels.get(adc)
     if channel is None:
         raise ValueError("Live ADC window not yet available")
-    duration = len(channel.samples)/channel.rate_hz
+    # GetSignal's existing offline window contract caps one displayed
+    # window at 30 seconds. A 262144-sample ring can represent >30 s at
+    # lower source Fs; show its real latest window, NEVER invent a new Fs
+    # or truncate the source buffer silently during FFT.
+    total = len(channel.samples)
+    visible = min(total, int(channel.rate_hz) * 30)
+    start = total - visible
+    duration = visible / channel.rate_hz
     out = waveform_for_zip(
-        Path("NOT_OPENED"), adc, 0, duration,
+        Path("NOT_OPENED"), adc, start/channel.rate_hz, duration,
         mode="ac" if ac else "acdc", display_order="chronological",
         sample_provider=preview.samples_for_offline_candidate)
     offset = channel.first_index/channel.rate_hz
@@ -215,6 +222,9 @@ def provisional_waveform(preview: LivePreview, adc: int, *, ac: bool = False) ->
     _mark_absolute_live_source_window(out,channel)
     out["source"] = "LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED"
     out["provisional_not_audited"] = True
+    out["source_waveform_latest_real_samples"] = visible
+    out["source_waveform_max_display_seconds"] = 30
+    out["source_live_preview_ring_samples"] = total
     out["warning"] = ("Предварительный GetSignal-кандидат по уже калиброванным "
                       "битам R6.1. Не результат оригинального MVKView.")
     return out
@@ -245,7 +255,10 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
             "уменьшение N или нулевое дополнение запрещено")
     out = spectrum_for_zip(
         Path("NOT_OPENED"), adc, n_fft, mode, None,
-        max_hz=channel.rate_hz/2, max_points=n_fft//2,
+        # Full N/2 power and summary are still computed. Only the
+        # on-screen pyqtgraph polyline is reduced to peak-preserving
+        # <=5000 bins, avoiding a 131072-point repaint every tick.
+        max_hz=channel.rate_hz/2, max_points=5000,
         backend="idr_float32",
         f_range=1.0, input_domain="calibrated_bin",
         sample_provider=preview.samples_for_offline_candidate)
@@ -256,6 +269,9 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
     out["source_fft_n_matches_requested_bSpecLines"] = True
     out["original_bSpecLines_source"] = "_Unit128.pas:0084819A-00848200"
     out["source_history_uses_exact_calibrated_float32"] = True
+    out["source_fft_full_power_bins"] = n_fft//2
+    out["source_plot_peak_preserving_max_points"] = 5000
+    out["original_delphi_numerical_parity"] = False
     out["warning"] = (
         "Live FFT из реальных калиброванных отсчётов R6.1 (FRange=1 после "
         "BIN spool, без второго gain). Оригинальный MVKView parity НЕ доказан.")

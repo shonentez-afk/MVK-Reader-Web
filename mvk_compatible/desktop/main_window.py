@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from fractions import Fraction
 from hashlib import sha256
 import math
+import time
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QTimer
@@ -138,6 +139,10 @@ class MainWindow(QMainWindow):
         self._measurement_exit_requested=False
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
+        # High-N live FFT is full numerical work, never a 50Hz UI-timer
+        # re-render. The 20ms original dispatcher still runs untouched.
+        self._source_large_fft_key=None
+        self._source_large_fft_at=0.0
         self._native_live_status=None  # validated Go read-only transport, never device STATUS
         self._live_prior_session=None
         self._pending_native_pagefile_plan=None  # set only by accepted Native event
@@ -2804,6 +2809,8 @@ class MainWindow(QMainWindow):
         self._measurement_exit_requested=False
         self._native_live_status=None
         self._live_preview=None
+        self._source_large_fft_key=None
+        self._source_large_fft_at=0.0
         self.session=None
         self._source_envelope_menu_fs=None
         self._sync_original_envelope_menu_ui()
@@ -2983,7 +2990,17 @@ class MainWindow(QMainWindow):
         if self._source_live_view_frozen:
             return
         self._render_live_wave()
-        self._render_live_spectrum()
+        # The full 262144-point source FFT is materially more expensive
+        # than the original 20ms UI dispatcher. Recompute in the live
+        # stream only on the visible PageSpectrum, or for the existing
+        # default smaller preset; an explicit bSpecLines click always
+        # triggers an immediate computation even on another page.
+        tabs=self.original_root_tabs
+        index=tabs.currentIndex()
+        active_page=tabs.tabData(index) if index>=0 else None
+        if (int(self.spec_n.currentData())<=65536 or
+                active_page=='PageSpectrum'):
+            self._render_live_spectrum()
 
     def _invalidate_live_preview(self, reason):
         if not self._live_active:
@@ -2992,6 +3009,8 @@ class MainWindow(QMainWindow):
         if self._live_preview is None:
             return
         self._live_preview=None
+        self._source_large_fft_key=None
+        self._source_large_fft_at=0.0
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
         self.spec_plot.clear_source_tqgr_series()
@@ -3043,9 +3062,24 @@ class MainWindow(QMainWindow):
             channel=self._live_preview.channels.get(ch)
             if channel is not None:
                 self._sync_spec_lines_presentation(channel.rate_hz)
+            # N=131072/262144 uses the EXACT original requested window.
+            # Repaint the current selected big N at most once per 2.5s
+            # unless source ADC/mode/N changes. Always recompute on a
+            # changed selection and on first appearance after history.
+            clock=time.monotonic()
+            key=(self._live_preview.session_id,ch,selected_n,
+                 self.spec_mode.currentIndex())
+            if selected_n < 131072:
+                self._source_large_fft_key=None
+            elif (key==self._source_large_fft_key
+                    and clock-self._source_large_fft_at < 2.5):
+                return
             d=provisional_spectrum(
                 self._live_preview,ch,mode=self.spec_mode.currentIndex(),
                 n_fft=selected_n)
+            if selected_n>=131072:
+                self._source_large_fft_key=key
+                self._source_large_fft_at=clock
             xs=np.asarray(d['frequency_hz'],dtype=float)
             ys=np.asarray(d['amplitude'],dtype=float)
             self.spec_plot.clear_source_tqgr_series()
@@ -3072,6 +3106,7 @@ class MainWindow(QMainWindow):
                 'результат не предназначен для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
+            self._source_large_fft_key=None
             # No stale 8192-point FFT may remain on screen when the
             # operator explicitly requested N=65536/131072/262144.
             self.spec_plot.clear_source_tqgr_series()
