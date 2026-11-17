@@ -275,3 +275,71 @@ def test_real_qt_original_page_adc_hscale_live_signal_length_and_cursor(
         if win._live_active:win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_original_measure_mode2_operator_controls_before_and_during_live(qt_app):
+    """Real source tool buttons remain clickable without a real TCP socket.
+
+    _Unit128.pas 00846D24: tab reveal precedes TMVKThread creation.
+    00847F0D/0084819A: bAdcHScale and bSpecLines stay usable in Mode2.
+    The additional research FFT sizes are not original operator choices.
+    """
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.mvk_spectrum_menu_runtime_idr_candidate import (
+        RESEARCH_FFT_SIZES,
+    )
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win.spec_n.setCurrentText("1024")
+        assert int(win.spec_n.currentData())==1024
+        assert win.enter_measurement_mode()
+        assert win._measurement_mode_selected and not win._live_active
+        assert win.wave_advanced_button.isHidden()
+        assert win.spec_advanced_button.isHidden()
+        assert int(win.spec_n.currentData())==65536
+        assert all(
+            not action.isVisible()
+            for action in win._spec_lines_actions
+            if int(action.data()) in RESEARCH_FFT_SIZES
+        )
+        # This is the same UI transition used for the authorized Native run.
+        # The test does NOT create a socket or transmit instrument commands.
+        win._begin_live_capture()
+        assert win._live_active
+        assert win.wave_hscale_button.isEnabled()
+        assert win.wave_filter_button.isEnabled()
+        assert win.spec_lines_button.isEnabled()
+        hscale=next(
+            action for action in win.wave_hscale_menu.actions()
+            if int(action.data())==5
+        )
+        assert hscale.isEnabled()
+        hscale.trigger()  # Actual Qt menu action, not a direct Python callback
+        assert win._wave_hscale_tag==5
+        assert win.wave_seconds.value()==0.5
+        fft=next(
+            action for action in win._spec_lines_actions
+            if int(action.data())==32768
+        )
+        assert fft.isVisible() and fft.isEnabled()
+        fft.trigger()
+        assert int(win.spec_n.currentData())==32768
+        win._end_live_capture(False)
+        # A failed Native run retains Mode2 tabs and source operator-only UI.
+        assert win._measurement_mode_selected
+        assert win.wave_advanced_button.isHidden()
+        assert win.leave_measurement_mode()
+        assert not win.wave_advanced_button.isHidden()
+        assert not win.spec_advanced_button.isHidden()
+        assert all(
+            action.isVisible() for action in win._spec_lines_actions
+        )
+    finally:
+        if win._live_active:
+            win._end_live_capture(False)
+        if win._measurement_mode_selected:
+            win.leave_measurement_mode()
+        win.close()
+        qt_app.processEvents()
