@@ -89,7 +89,7 @@ def test_source_task0_proof_populates_existing_original_basic_grid(qt_app):
         assert panel.apply_device_task0_read(proof)>0
         first=panel.basic_table.item(0,3)
         second=panel.basic_table.item(1,3)
-        assert first.text()=="0x01020304"
+        assert first.text()=="4.3.2.1"
         assert second.text()=="—"
         assert "Task0" in panel.source_note.text()
         assert panel.save_button.isEnabled() is False
@@ -140,4 +140,77 @@ def test_original_task0_modal_requires_explicit_consent_and_selected_eth(
         dlg._mode=None
     finally:
         dlg.close()
+        qt_app.processEvents()
+
+
+def test_source_measure_preflight_cannot_connect_after_second_click(qt_app):
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        assert win.enter_measurement_mode()
+        win.open_native_capture()
+        qt_app.processEvents()
+        dlg=win._native_dialog
+        assert dlg is not None
+        assert not dlg._source_mode2_disarmed
+        assert win.leave_measurement_mode()
+        assert dlg._source_mode2_disarmed
+        assert not dlg.isVisible()
+        # Even if an old NIC selection and consent later appears,
+        # a stale native consent dialog cannot open a socket.
+        dlg.adapters.addItem("synthetic ethernet","192.168.0.31")
+        dlg.confirm.setChecked(True)
+        dlg._available=True
+        dlg._sync_buttons()
+        assert not dlg.start_button.isEnabled()
+        assert dlg.start_capture() is False
+        assert not win._measurement_mode_selected
+    finally:
+        win.close()
+        qt_app.processEvents()
+
+
+def test_measure_cannot_start_second_tcp_during_task0(qt_app):
+    from types import SimpleNamespace
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        panel=win.original_config_panel
+        panel._task0_dialog=SimpleNamespace(_mode="read")
+        assert not win.original_start_controller.open_capture_dialog()
+        assert not win._measurement_mode_selected
+        assert not win._live_active
+        assert win.original_root_tabs.count()>=1
+    finally:
+        win.original_config_panel._task0_dialog=None
+        win.close()
+        qt_app.processEvents()
+
+
+def test_task0_cannot_start_while_original_measurement_selected(
+        qt_app,monkeypatch,tmp_path):
+    from ..desktop.main_window import MainWindow
+    from ..desktop import original_task0_download_dialog as module
+    monkeypatch.setattr(module,"native_executable",lambda:tmp_path/"fixture.exe")
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    dlg=module.OriginalTask0DownloadDialog("192.168.0.30",win)
+    try:
+        dlg.interfaces.addItem("fake Ethernet","192.168.0.31")
+        dlg.confirm.setChecked(True)
+        assert dlg.download.isEnabled()
+        assert win.enter_measurement_mode()
+        dlg._buttons()
+        assert not dlg.download.isEnabled()
+        assert dlg.start_read() is False
+        assert "второе соединение" in dlg.status.text()
+        assert not dlg._busy()
+    finally:
+        dlg.close()
+        win.close()
         qt_app.processEvents()

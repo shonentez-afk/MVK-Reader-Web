@@ -24,6 +24,7 @@ from ..core.original_config_input_draft import (
     SourceInputRejected, encode_source_text,
 )
 from ..core.original_config_local_workflow import OriginalLocalConfigWorkspace
+from ..core.original_task0_config_live import original_task0_field_text
 from .original_value_edit_dialog import OriginalValueEditDialog
 
 
@@ -238,8 +239,8 @@ class OriginalConfigReadOnlyPanel:
             if task0 is not None:
                 entry=task0["fields"].get(info["source_key"])
                 if entry is not None:
-                    value=("0x"+entry["raw_hex_le"] if entry["valid"]
-                           else UNKNOWN)
+                    value=original_task0_field_text(
+                        info["source_key"],entry)
                 elif info["source_key"]=="ConfigWifiPassword":
                     value="•••••••• (скрыто)"
             values=(name,info["address"],
@@ -323,8 +324,8 @@ class OriginalConfigReadOnlyPanel:
         if self.source_mode==4 and self._task0_receipt is not None:
             entry=self._task0_receipt["fields"].get(info["source_key"])
             if entry is not None:
-                value=("0x"+entry["raw_hex_le"] if entry["valid"]
-                       else UNKNOWN)
+                value=original_task0_field_text(
+                    info["source_key"],entry)
             elif info["source_key"]=="ConfigWifiPassword":
                 value="•••••••• (скрыто)"
         return OriginalValueEditDialog(

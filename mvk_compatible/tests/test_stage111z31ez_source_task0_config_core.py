@@ -133,3 +133,20 @@ def test_task0_rejects_unbounded_timeout(tmp_path,duration):
         SourceTask0DownloadSpec(
             "192.168.0.30","192.168.0.31",tmp_path,
             seconds=duration).validate()
+
+
+def test_original_task0_idp_ip_netmask_and_port_text_preserves_raw():
+    from ..core.original_task0_config_live import original_task0_field_text
+    raw={"valid":True,"raw_hex_le":"01020304"}
+    assert original_task0_field_text("ConfigIP",raw)=="4.3.2.1"
+    assert original_task0_field_text("ConfigNetmask",raw)=="4.3.2.1"
+    assert original_task0_field_text("ConfigGateway",raw)=="4.3.2.1"
+    assert original_task0_field_text("ConfigWifiIP",raw)=="4.3.2.1"
+    assert original_task0_field_text("ConfigModbusPort",raw)=="67305985"
+    assert original_task0_field_text("ConfigOption",raw)=="0x01020304"
+    assert original_task0_field_text(
+        "ConfigWifiPassword",raw)=="•••••••• (скрыто)"
+    assert original_task0_field_text("ConfigIP",{
+        "valid":False,"raw_hex_le":None})=="—"
+    with pytest.raises(ValueError):
+        original_task0_field_text("ConfigIP",{"valid":True,"raw_hex_le":"0000"})

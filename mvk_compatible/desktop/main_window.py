@@ -2659,6 +2659,14 @@ class MainWindow(QMainWindow):
         """Second Mode2 click before recording: reset to idle."""
         if self._live_active or not self._measurement_mode_selected:
             return False
+        # Source 00846B48 Mode2->idle invalidates a prepared (not yet
+        # started) Go TCP consent. Otherwise a stale QDialog could start
+        # a socket even after the original «Отключить» was pressed.
+        dialog=self._native_dialog
+        if dialog is not None:
+            disarm=getattr(dialog,"disarm_before_tcp",None)
+            if callable(disarm):
+                disarm()
         parked=self._live_prior_session
         self._live_prior_session=None
         self._measurement_mode_selected=False

@@ -111,8 +111,18 @@ class OriginalTask0DownloadDialog(QDialog):
     def _busy(self)->bool:
         return self._mode in ("interfaces","read")
 
+    def _owner_available_for_task0(self):
+        owner=self.parent()
+        return not (
+            owner is not None and
+            (getattr(owner,"_measurement_mode_selected",False) or
+             getattr(owner,"_live_active",False))
+        )
+
     def _buttons(self,*_):
-        free=not self._busy() and self._process.state()==QProcess.NotRunning
+        free=(not self._busy()
+              and self._process.state()==QProcess.NotRunning
+              and self._owner_available_for_task0())
         self.refresh_button.setEnabled(free and self._native is not None)
         self.download.setEnabled(
             free and self._native is not None and
@@ -148,6 +158,11 @@ class OriginalTask0DownloadDialog(QDialog):
             self._buttons()
 
     def start_read(self):
+        if not self._owner_available_for_task0():
+            self.status.setText(
+                "Task0 запрещён во время измерения: "
+                "нельзя создавать второе соединение с МВК01.")
+            return False
         if (self._busy() or self._native is None or not self.confirm.isChecked()
                 or self.interfaces.currentData() is None):
             return False

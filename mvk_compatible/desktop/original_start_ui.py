@@ -352,10 +352,18 @@ class OriginalStartController:
         if self.window._measurement_mode_selected:
             # Native Go has a tested, file-backed graceful stop protocol.
             return self.window.request_measurement_stop()
+        panel=getattr(self.window,"original_config_panel",None)
+        task0=getattr(panel,"_task0_dialog",None)
+        if task0 is not None and getattr(task0,"_mode",None)=="read":
+            self.status.setText(
+                "Task0 считывает конфигурацию. "
+                "Сначала завершите текущее TCP-соединение.")
+            return False
         if not self.commit_ip():
             return False
         self.workspace.source_route("bTaskConnect")
-        self.window.enter_measurement_mode()
+        if not self.window.enter_measurement_mode():
+            return False
         self.window.open_native_capture()
         dialog=getattr(self.window,"_native_dialog",None)
         if dialog is not None:

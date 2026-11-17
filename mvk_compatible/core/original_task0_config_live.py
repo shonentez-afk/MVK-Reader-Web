@@ -228,3 +228,38 @@ def load_source_task0_config(root:Path|str,*,expected_ip:str)->dict:
         "device_commands_sent":False,
         "original_delphi_byte_parity_verified":False,
     }
+
+
+# _Unit115.pas sub_007CE6E4 dispatches CellType 7 and 15 to
+# _Unit114.pas 007B29D4: DWORD >> 24,16,8,0 -> dotted IPv4 text.
+# CellType 2 uses source 007B1CFC then IntToStr for the port.
+_SOURCE_IPV4_KEYS=frozenset((
+    "ConfigIP","ConfigNetmask","ConfigGateway",
+    "ConfigWifiIP","ConfigWifiNetmask","ConfigWifiGateway",
+))
+_SOURCE_PORT_KEYS=frozenset(("ConfigModbusPort","ConfigWifiModbusPort"))
+
+
+def original_task0_field_text(key:str,field:dict)->str:
+    """Format independently verified read-only Task0 source cell.
+
+    Core preserves exact raw_hex_le; this is a **display** conversion.
+    No unknown register, credential, or vendor advanced enum is inferred.
+    """
+    if key in _SENSITIVE:
+        return "•••••••• (скрыто)"
+    if (type(key) is not str or not isinstance(field,dict) or
+            type(field.get("valid")) is not bool):
+        raise ValueError("Original Task0 field evidence required")
+    if not field["valid"]:
+        return "—"
+    payload=field.get("raw_hex_le")
+    if (not isinstance(payload,str) or len(payload)!=8 or
+            re.fullmatch(r"[0-9a-f]{8}",payload) is None):
+        raise ValueError("Task0 source field is not a verified DWORD")
+    raw=bytes.fromhex(payload)
+    if key in _SOURCE_IPV4_KEYS:
+        return ".".join(str(x) for x in reversed(raw))
+    if key in _SOURCE_PORT_KEYS:
+        return str(struct.unpack("<I",raw)[0])
+    return "0x"+payload.upper()

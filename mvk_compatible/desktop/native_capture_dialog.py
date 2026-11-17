@@ -61,6 +61,7 @@ class NativeCaptureDialog(QDialog):
         self.resize(750, 650)
         self.setMinimumSize(550, 500)
         self._mode = None
+        self._source_mode2_disarmed = False
         self._capture_root = None
         self._zip = None
         self._raw_only_dir = None
@@ -364,11 +365,42 @@ class NativeCaptureDialog(QDialog):
     def is_busy(self):
         return self._mode is not None or self._worker is not None
 
+    def _original_mode2_authorized(self):
+        """The selected source Mode2 must still own this preflight dialog.
+
+        This check prevents a previously opened consent form from
+        starting an industrial socket after «Отключить» was clicked.
+        """
+        if self._source_mode2_disarmed:
+            return False
+        owner=self.parent()
+        return (owner is None or
+                not hasattr(owner,"_measurement_mode_selected") or
+                bool(owner._measurement_mode_selected))
+
+    def disarm_before_tcp(self):
+        """Detach an unused source preflight after the second Measure click.
+
+        Never kills an approved live process; the owner may only call
+        this while _live_active is false.
+        """
+        if self._mode=="capture":
+            return False
+        self._source_mode2_disarmed=True
+        self.confirm.setChecked(False)
+        self.status_label.setText(
+            "Измерение отменено до TCP; ранее открытое подтверждение "
+            "не даёт права нового подключения.")
+        self._sync_buttons()
+        self.hide()
+        return True
+
     def _sync_buttons(self, *_):
         idle = not self.is_busy() and self._process.state() == QProcess.NotRunning
         self.refresh_button.setEnabled(idle and self._available)
         self.start_button.setEnabled(
-            idle and self._available and self.confirm.isChecked() and
+            idle and self._available and self._original_mode2_authorized()
+            and self.confirm.isChecked() and
             self.adapters.currentData() is not None)
         self.stop_button.setEnabled(self._mode == "capture")
         self.open_button.setEnabled(self._zip is not None or self._raw_only_dir is not None)
@@ -504,8 +536,12 @@ class NativeCaptureDialog(QDialog):
         self._sync_buttons()
 
     def start_capture(self):
+        if not self._original_mode2_authorized():
+            self.status_label.setText(
+                "Запуск запрещён: исходный режим «Измерить» уже отключён.")
+            return False
         if self.is_busy() or not self._available:
-            return
+            return False
         try:
             local_ip = self.adapters.currentData()
             if local_ip is None:
