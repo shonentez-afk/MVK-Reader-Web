@@ -289,6 +289,12 @@ class OriginalMeasureControls:
         tx_enabled=bool(live and dlg is not None and dlg.source_rate_tx_active()
                         and not self.window._measurement_exit_requested)
         self.rate.setEnabled(policy.rate_inspection_enabled)
+        self.rate.setToolTip(
+            "Изменить ЧД прибора через исходную SetRate: отдельное разрешение получено; "
+            "будет отправлено 36 байт по существующему соединению."
+            if tx_enabled else
+            "Исходные значения частот восстановлены. Реальная SetRate отключена; "
+            "включить её можно только при отдельном разрешении подключения.")
         self.rate_menu.clear()
         hz=state.observed_sample_rate_hz if (live or offline) else None
         self.rate.setText("ЧД "+str(hz)+" Гц" if hz else "ЧД —")
@@ -381,9 +387,14 @@ class OriginalMeasureControls:
                 f"Системная ошибка прибора (0x{code:08X})"
                 if system_error and isinstance(code,int) and code>0
                 else "Системная ошибка прибора (ранее подтверждена)")
+            tx_bytes=(trace.source_tx_observed.get("source_go_bytes_actually_sent",0)
+                      if trace is not None and trace.source_tx_observed is not None
+                      else 0)
             self.status.setText(
                 error_text if system_error
-                else "Прибор: отказ операции (наш клиент команд не отправлял)"
+                else ("Прибор: отказ операции после отправки SetRate (ACK без ID)"
+                      if tx_bytes else
+                      "Прибор: отказ операции (наш клиент команд не отправлял)")
                 if denied else state_view.text)
             bad=(state_view.indicator=="bad" or denied or system_error)
             self.bad_indicator.setStyleSheet("color:#cc3636")
@@ -406,8 +417,8 @@ class OriginalMeasureControls:
                  else "")+
                 "Статус подтверждённого пассивного Native R6.1. "
                 "Он не является приборным регистром StatusIsError. "
-                "ACK/отказ входящего протокола не являются результатом "
-                "нашей SetRate: исходящие команды выключены. "
+                "ACK/отказ входящего протокола не имеют transaction ID: "
+                "нельзя приписывать их конкретной SetRate без проверки. "
                 "Системная ошибка StatusCells[0] выводится только при "
                 "полученных из Go двух валидных 16-битных регистрах.")
         else:

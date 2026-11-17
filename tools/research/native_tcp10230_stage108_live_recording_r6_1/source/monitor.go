@@ -41,6 +41,12 @@ type Summary struct {
 	SocketLocalAddr        string            `json:"connected_local_address,omitempty"`
 	SocketRemoteAddr       string            `json:"connected_remote_address,omitempty"`
 	ReadOnly               bool              `json:"read_only_no_app_payload_sent"`
+	SourceSetRateApproved bool `json:"source_setrate_tx_approved,omitempty"`
+	SourceSetRateCount uint64 `json:"source_setrate_sent_commands,omitempty"`
+	SourceSetRateBytes uint64 `json:"source_setrate_sent_bytes,omitempty"`
+	SourceSetRateLastRate uint32 `json:"source_setrate_last_rate_hz,omitempty"`
+	SourceRateACKAfter uint64 `json:"source_rate_ack_temporal,omitempty"`
+	SourceRateDeniedAfter uint64 `json:"source_rate_denied_temporal,omitempty"`
 	StartedUTC             string            `json:"started_utc"`
 	EndedUTC               string            `json:"ended_utc"`
 	DurationSeconds        float64           `json:"duration_seconds"`
@@ -373,6 +379,14 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 
 func (m *Monitor) Snapshot() Summary {
 	result := m.summary
+	if s:=m.sourceTask2TX;s!=nil {
+		result.SourceSetRateApproved=s.enabled
+		result.SourceSetRateCount=s.sentCommands
+		result.SourceSetRateBytes=s.sentBytes
+		result.SourceSetRateLastRate=s.lastSentRate
+		result.SourceRateACKAfter=s.ackAfterTX
+		result.SourceRateDeniedAfter=s.deniedAfterTX
+	}
 	result.Channels = make([]ChannelStats, len(m.summary.Channels))
 	for i, c := range m.summary.Channels {
 		out := c

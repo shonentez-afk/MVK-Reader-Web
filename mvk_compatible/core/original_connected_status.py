@@ -54,6 +54,7 @@ class ConnectedSystemStatus:
     native_nonfinite_samples:int=0
     source_system_error_observed:bool=False
     source_fields_proven:int=0
+    source_rate_commands_sent:int=0
     provenance:str=SOURCE
 
     @property
@@ -64,7 +65,10 @@ class ConnectedSystemStatus:
         return {
             "source":SOURCE,"row_count":len(self.rows),
             "original_device_system_fields_proven":self.source_fields_proven,
-            "connected_readonly_transport_verified":self.connection_verified,
+            "connected_readonly_transport_verified":(
+                self.connection_verified and self.source_rate_commands_sent==0),
+            "connected_transport_verified":self.connection_verified,
+            "original_source_rate_commands_sent":self.source_rate_commands_sent,
             "transport_phase":self.transport_phase,
             "transport_frames":self.frame_count,
             "native_channels_observed":self.native_channel_count,
@@ -75,7 +79,7 @@ class ConnectedSystemStatus:
             "native_nonfinite_samples":self.native_nonfinite_samples,
             "source_statuscells0_real_system_error":self.source_system_error_observed,
             "source_system_error_from_14_not_15_table":True,
-            "original_modbus_or_device_commands_issued":False,
+            "original_modbus_or_device_commands_issued":bool(self.source_rate_commands_sent),
         }
 
 
@@ -122,6 +126,10 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
     rows=tuple((caption,fields[i].value() if fields is not None else UNKNOWN)
                for i,(_,caption) in enumerate(SYSTEM_STATUS_KEYS))
     proven=sum(int(f.valid) for f in fields) if fields is not None else 0
+    tx_count=(native_status.get("source_mode2_tx_evidence",{}).get(
+        "source_tx_sent_commands",0)
+        if isinstance(native_status,dict) and isinstance(
+            native_status.get("source_mode2_tx_evidence"),dict) else 0)
     return ConnectedSystemStatus(
         rows,connected,phase,frame_count,
         stream_silent=health.stream_silent,
@@ -131,7 +139,8 @@ def connected_system_status(native_status:dict|None=None)->ConnectedSystemStatus
         native_sequence_gaps=health.sequence_gaps,
         native_nonfinite_samples=health.nonfinite_samples,
         source_system_error_observed=health.source_system_error_observed,
-        source_fields_proven=proven)
+        source_fields_proven=proven,
+        source_rate_commands_sent=tx_count)
 
 
 assert len(SYSTEM_STATUS_KEYS)==15
