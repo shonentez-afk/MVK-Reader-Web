@@ -105,6 +105,23 @@ def validate_live_status(payload: dict, *, expected_run: str,
     status_cells=parse_source_cells(payload)
     verify_source_error_overlap(payload)
     validated_source_tx=validate_original_task2_tx(payload)
+    tcp_keys=("source_tcp_connection_count","source_tcp_multi_socket",
+              "source_tcp_reconnects_after_raw")
+    tcp_present=[k in payload for k in tcp_keys]
+    if any(tcp_present) and not all(tcp_present):
+        raise ValueError("Partial original source TCP reconnection evidence")
+    if all(tcp_present):
+        tcp_count=_positive_int(payload[tcp_keys[0]],tcp_keys[0])
+        tcp_multi=payload[tcp_keys[1]]
+        tcp_retries=_positive_int(payload[tcp_keys[2]],tcp_keys[2])
+        if (type(tcp_multi) is not bool or tcp_multi!=(tcp_count>1)
+                or tcp_count>128 or tcp_retries>100000
+                or (tcp_retries>0 and tcp_count==0)):
+            raise ValueError("Contradictory source TCP connection/retry proof")
+    else:
+        tcp_count=0
+        tcp_multi=False
+        tcp_retries=0
     rate_transition=payload.get("source_rate_transition_during_live",False)
     if type(rate_transition) is not bool:
         raise ValueError("Invalid real Task2 rate transition flag")
@@ -144,6 +161,9 @@ def validate_live_status(payload: dict, *, expected_run: str,
     result["source_system_error_observed"] = source_system_error
     result["source_original_setrate_physically_sent"] = physical_source_tx
     result["source_rate_transition_during_live"] = rate_transition
+    result["source_tcp_connection_count"] = tcp_count
+    result["source_tcp_multi_socket"] = tcp_multi
+    result["source_tcp_reconnects_after_raw"] = tcp_retries
     result["original_source_tx_proof"] = (
         validated_source_tx.receipt() if validated_source_tx is not None else None)
     result["snapshot_age_s"] = age
@@ -153,7 +173,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
         result["snapshot_stale"] or
         (silent is not None and silent > 4.0) or
         (all(source_fields) and payload[SOURCE_RX_FIELDS[2]]>0) or
-        source_system_error or rate_transition or
+        source_system_error or rate_transition or tcp_multi or
         any(ch["quality"] in ("ОШИБКА ПОТОКА", "DSP: ПРЕДУПРЕЖДЕНИЕ") for ch in safe))
     return result
 
