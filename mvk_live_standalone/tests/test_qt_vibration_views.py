@@ -65,7 +65,7 @@ def test_all_derived_views_and_waterfall_with_real_synthetic_samples(app):
         assert widget._spectrum.mode=="welch"
         assert "Гц" in widget.spec.getPlotItem().getAxis("left").label.toPlainText()
 
-        widget.analysis.setCurrentIndex(2)
+        widget.analysis.setCurrentIndex(widget.analysis.findData("third_octave"))
         _complete(widget,app)
         assert widget._spectrum is not None
         assert widget._spectrum.mode=="third_octave"
@@ -99,7 +99,7 @@ def test_no_unsupported_envelope_in_velocity_mode_and_manual_source_label(app):
         widget._gui_ring.ingest_preview(preview)
         widget._preview=preview
         widget.nfft.setCurrentIndex(0)
-        widget.analysis.setCurrentIndex(3)
+        widget.analysis.setCurrentIndex(widget.analysis.findData("envelope"))
         _complete(widget,app)
         assert widget._spectrum is not None and widget._spectrum.mode=="envelope"
         assert widget._spectrum.peak[0]==pytest.approx(50,abs=1)
