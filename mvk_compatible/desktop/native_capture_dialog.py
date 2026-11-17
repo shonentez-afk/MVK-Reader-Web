@@ -380,6 +380,23 @@ class NativeCaptureDialog(QDialog):
             self._mode = None
             self._sync_buttons()
 
+    def _expose_verified_socket_raw(self):
+        """Open local raw-only evidence when uninterrupted BIN is impossible.
+
+        No second network client and no fake ZIP accepted by original pages.
+        """
+        if self._capture_root is None:
+            return False
+        try:
+            receipt=verify_source_tcp_session_segments(self._capture_root)
+        except (OSError,ValueError):
+            return False
+        self._raw_only_dir=self._capture_root
+        self.log.appendPlainText(
+            f"RAW TCP-сеансов проверены: {receipt['connection_count']}; "
+            "отдельные SHA256 и SOURCE_TASK2_TCP_SEGMENTS.json подтверждены.")
+        return True
+
     def _process_finished(self, exit_code, exit_status):
         mode = self._mode
         self._read_process()
@@ -404,9 +421,15 @@ class NativeCaptureDialog(QDialog):
                 "Не удалось получить подходящие IPv4; подключение не выполнялось.")
         elif mode == "capture":
             if exit_code != 0 or exit_status != QProcess.NormalExit:
-                self.status_label.setText(
-                    "Native R6.1 завершился с ошибкой. RAW/диагностика оставлены в "
-                    f"{self._capture_root}; неподтверждённый BIN не открывается.")
+                if self._expose_verified_socket_raw():
+                    self.status_label.setText(
+                        "Измерение завершено. TCP-сеансы и отдельные RAW с SHA256 "
+                        "сохранены и проверены. Единый BIN/TSXML не создаётся; "
+                        "кнопка «Открыть результат» откроет локальную папку.")
+                else:
+                    self.status_label.setText(
+                        "Native R6.1 завершился с ошибкой. RAW/диагностика оставлены в "
+                        f"{self._capture_root}; неподтверждённый BIN не открывается.")
                 self.captureEnded.emit(False)
             else:
                 self.status_label.setText(
@@ -435,8 +458,12 @@ class NativeCaptureDialog(QDialog):
     def _pack_failed(self, message):
         self.captureEnded.emit(False)
         self.status_label.setText("Автоматическое открытие отклонено: " + message)
-        self.log.appendPlainText(
-            "Проверка отказала. Исходный RAW остался нетронутым.")
+        if self._expose_verified_socket_raw():
+            self.log.appendPlainText(
+                "BIN отклонён; отдельные TCP RAW с SHA256 доступны по кнопке результата.")
+        else:
+            self.log.appendPlainText(
+                "Проверка отказала. Исходный RAW остался нетронутым.")
         worker = self._worker
         self._worker = None
         if worker is not None:
