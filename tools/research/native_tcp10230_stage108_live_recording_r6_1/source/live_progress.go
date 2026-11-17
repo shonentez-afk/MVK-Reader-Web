@@ -54,6 +54,10 @@ type LiveStatus struct {
     SourceTCPConnectionCount uint64 `json:"source_tcp_connection_count"`
     SourceTCPMultiSocket bool `json:"source_tcp_multi_socket"`
     SourceTCPReconnectAfterRAW uint64 `json:"source_tcp_reconnects_after_raw"`
+    SourceInitialRetryAttempts uint64 `json:"source_initial_retry_attempts"`
+    SourceRetryLastError string `json:"source_retry_last_error,omitempty"`
+    SourceRetryWaitMS int64 `json:"source_retry_wait_ms"`
+    SourceReconnectApproved bool `json:"source_reconnect_approved"`
     WarningCount           uint64              `json:"warning_count"`
     SecondsSinceLastPacket *float64            `json:"seconds_since_last_packet"`
     LastAUXUTC             *string             `json:"last_aux_received_utc"`
@@ -114,6 +118,10 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SourceTCPConnectionCount:report.SourceTCPConnectionCount,
         SourceTCPMultiSocket:report.SourceTCPMultiSocket,
         SourceTCPReconnectAfterRAW:report.SourceTCPReconnectAfterRAW,
+        SourceInitialRetryAttempts:report.SourceInitialRetryAttempts,
+        SourceRetryLastError:m.sourceLastRetryReason,
+        SourceRetryWaitMS:m.sourceLastRetryWaitMS,
+        SourceReconnectApproved:m.sourceAfterRAWReconnect,
         WarningCount: report.WarningCount, LastAUXUTC: lastAUX,
         SecondsSinceLastPacket: since, Channels: channels,
         EndReason: report.EndReason,

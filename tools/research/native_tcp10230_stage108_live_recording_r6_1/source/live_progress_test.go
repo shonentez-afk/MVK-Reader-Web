@@ -77,3 +77,22 @@ func TestLiveStatusJSONWriteFailureDoesNotInterruptCapture(t *testing.T) {
         t.Fatal("telemetry error must be logged and disabled, not hidden")
     }
 }
+
+
+func TestSourceRetryTelemetryIsTransportOnlyNotHardwareStatus(t *testing.T){
+ dir:=filepath.Join(t.TempDir(),"TEST_source_retry_telemetry")
+ m,e:=NewMonitor(dir,"LIVE_TASK2_PASSIVE_RECONNECT_APPROVED","127.0.0.1")
+ if e!=nil{t.Fatal(e)}
+ defer m.CloseFiles()
+ m.sourceAfterRAWReconnect=true
+ m.summary.SourceInitialRetryAttempts=2
+ m.sourceLastRetryReason="REMOTE_DISCONNECTED"
+ m.sourceLastRetryWaitMS=360
+ s:=m.snapshotLiveStatus("CONNECTING",time.Now())
+ if s.SourceInitialRetryAttempts!=2||
+   s.SourceRetryLastError!="REMOTE_DISCONNECTED"||
+   s.SourceRetryWaitMS!=360||!s.SourceReconnectApproved||
+   !s.ReadOnly{
+  t.Fatal("source retry must not imply completed connection or hardware TX")
+ }
+}

@@ -14,13 +14,13 @@ def test_original_connect_read_timeouts_and_backoff_initial_steps():
     assert model.receipt()["original_read_timeout_ms"]==5000
     assert model.pause_centiseconds==25.0
     first=model.after_failure()
-    assert first.local_wait_ms==250
+    assert first.local_wait_ms==260
     assert first.source_requeues_set_rate
     assert first.pause_after_centiseconds==model.pause_centiseconds
     assert math.isclose(model.pause_centiseconds,25*math.sqrt(2),rel_tol=1e-7)
     second=model.after_failure()
     assert not second.source_requeues_set_rate
-    assert second.local_wait_ms==350  # round(35.355) *10
+    assert second.local_wait_ms==360  # (round(35.355)+1) *10
     assert model.receipt()["source_task2_attempts_modeled"]==2
     assert not model.receipt()["automated_hardware_retry_enabled"]
     assert model.receipt()["device_command_sent"] is False
@@ -35,11 +35,14 @@ def test_source_pause_is_bounded_and_resets_only_after_actual_connection():
         history[-1].pause_before_centiseconds)
     assert model.pause_centiseconds>=801
     assert model.pause_centiseconds<1603
+    assert history[11].local_wait_ms==11320
+    assert history[-1].local_wait_ms==11320
+    assert model.receipt()["source_stable_max_wait_ms"]==11320
     model.connected()
     assert model.pause_centiseconds==START_PAUSE_CENTISECONDS
     again=model.after_failure()
     assert again.source_requeues_set_rate
-    assert again.local_wait_ms==250
+    assert again.local_wait_ms==260
     assert model.receipt()["device_command_sent"] is False
 
 

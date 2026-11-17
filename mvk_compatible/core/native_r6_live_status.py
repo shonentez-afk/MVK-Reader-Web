@@ -14,10 +14,15 @@ import re
 from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
 from .original_mode2_status_cells import parse_source_cells
 from .original_mode2_transmit_evidence import validate_original_task2_tx
+from .original_mode2_retry_timing import SOURCE_BACKOFF_WAITS_MS
 from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
 from .original_system_register_fields import verify_source_error_overlap
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
+_SOURCE_TCP_RETRY_CAUSES = frozenset((
+    "CONNECT_FAILED", "REMOTE_DISCONNECTED",
+    "SOURCE_READ_TIMEOUT", "SOCKET_READ_FAILED",
+))
 FILENAME = "MVK_NATIVE_LIVE_STATUS.json"
 PHASES = frozenset({"CONNECTING", "RECORDING", "VERIFYING", "COMPLETED", "REFUSED"})
 _MAX_STATUS_BYTES = 128_000
@@ -131,6 +136,31 @@ def validate_live_status(payload: dict, *, expected_run: str,
         tcp_count=0
         tcp_multi=False
         tcp_retries=0
+    # Local original Task2 network retry evidence; not a Delphi device
+    # status register, file row, source command or vendor error text.
+    retry_keys=("source_initial_retry_attempts","source_retry_wait_ms",
+                "source_reconnect_approved")
+    retry_present=[key in payload for key in retry_keys]
+    if any(retry_present) and not all(retry_present):
+        raise ValueError("Partial source Task2 TCP retry evidence")
+    if all(retry_present):
+        retry_attempts=_positive_int(payload[retry_keys[0]],retry_keys[0])
+        retry_wait=_positive_int(payload[retry_keys[1]],retry_keys[1])
+        approved=payload[retry_keys[2]]
+        reason=payload.get("source_retry_last_error","")
+        if (type(approved) is not bool or
+                not isinstance(reason,str) or retry_attempts>100_000 or
+                (retry_attempts==0 and (retry_wait!=0 or reason)) or
+                (retry_attempts>0 and
+                    (reason not in _SOURCE_TCP_RETRY_CAUSES or
+                     retry_wait not in SOURCE_BACKOFF_WAITS_MS)) or
+                (tcp_retries>0 and not approved)):
+            raise ValueError("Contradictory original Task2 TCP retry evidence")
+    else:
+        retry_attempts=0
+        retry_wait=0
+        approved=False
+        reason=""
     rate_transition=payload.get("source_rate_transition_during_live",False)
     if type(rate_transition) is not bool:
         raise ValueError("Invalid real Task2 rate transition flag")
@@ -174,6 +204,11 @@ def validate_live_status(payload: dict, *, expected_run: str,
     result["source_tcp_connection_count"] = tcp_count
     result["source_tcp_multi_socket"] = tcp_multi
     result["source_tcp_reconnects_after_raw"] = tcp_retries
+    result["source_initial_retry_attempts"] = retry_attempts
+    result["source_retry_wait_ms"] = retry_wait
+    result["source_reconnect_approved"] = approved
+    result["source_retry_last_error"] = reason
+    result["source_retry_evidence_verified"] = all(retry_present)
     result["original_source_tx_proof"] = (
         validated_source_tx.receipt() if validated_source_tx is not None else None)
     result["snapshot_age_s"] = age

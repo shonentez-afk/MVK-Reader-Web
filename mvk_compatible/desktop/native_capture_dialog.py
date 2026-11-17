@@ -277,6 +277,17 @@ class NativeCaptureDialog(QDialog):
             "COMPLETED": "Проверенный экспорт Native готов",
             "REFUSED": "Native отказал в проверенном экспорте",
         }
+        attempts=snapshot.get("source_initial_retry_attempts",0)
+        if phase=="CONNECTING" and attempts:
+            causes={
+                "CONNECT_FAILED":"ошибки установления TCP",
+                "REMOTE_DISCONNECTED":"разрыва соединения",
+                "SOURCE_READ_TIMEOUT":"тайм-аута чтения 5 с",
+                "SOCKET_READ_FAILED":"ошибки чтения сокета",
+            }
+            reason=causes.get(snapshot.get("source_retry_last_error"),"обрыва связи")
+            phase_names["CONNECTING"]=(
+                f"Повторное подключение TCP #{attempts} после {reason}")
         freshness = (" · УСТАРЕВШИЙ статус" if snapshot["snapshot_stale"] else "")
         self.status_label.setText(
             f'{phase_names.get(phase, phase)}: {duration}, '
@@ -304,6 +315,11 @@ class NativeCaptureDialog(QDialog):
             label += (" · ПЕРЕПОДКЛЮЧЕНИЕ: TCP-сеансов "
                       f"{snapshot['source_tcp_connection_count']}; "
                       "отдельные RAW, единый BIN не допускается.")
+        if attempts and phase=="CONNECTING":
+            label += (
+                f" · Исходная пауза перед повтором: "
+                f"{snapshot.get('source_retry_wait_ms',0)} мс."
+                " Соединение ещё НЕ подтверждено.")
         self.live_quality.setText(label)
         for i, ch in enumerate(snapshot["channels"]):
             fs = ", ".join(str(x) for x in ch["sample_rates_hz"]) or "—"

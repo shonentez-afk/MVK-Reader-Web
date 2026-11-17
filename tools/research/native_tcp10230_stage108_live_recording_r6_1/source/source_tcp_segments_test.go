@@ -20,9 +20,9 @@ func TestOriginalTask2ExactBackoffSourceRoundPlusOne(t *testing.T){
   if got:=sourceRetryWait(ticks);got!=want{
    t.Fatalf("source PauseValue step %d: got %v want %v",i,got,want)
   }
-  ticks*=1.4142135623730951
+  ticks=sourceRetryNextTicks(ticks)
  }
- if sourceRetryWait(50000)!=8020*time.Millisecond{t.Fatal("source upper pause cap")}
+ if sourceRetryWait(50000)!=11320*time.Millisecond{t.Fatal("source upper pause cap")}
 }
 func TestSourceTask2TwoSocketsHaveIndependentRAWAndFreshRegisters(t *testing.T){
  dir:=filepath.Join(t.TempDir(),"TEST_2026-11-17_01-01-01.001")

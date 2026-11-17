@@ -16,10 +16,19 @@ import (
  "strconv"
  "time"
 )
+// 00808AAF..00808AD8: Delphi @ROUND (ties-to-even) + INC,
+// then Terminated-gated Sleep(10) repeated that many times.
+// 00808ADD..00808B0E grows while PauseValue<801; the last
+// multiplication from 800 intentionally OVERSHOOTS to ~1131.37.
+const sourceFinalPauseFloat32 = 1131.370849609375
 func sourceRetryWait(ticks float64)time.Duration{
  if ticks<25{ticks=25}
- if ticks>801{ticks=801}
- return time.Duration(math.Round(ticks)+1)*10*time.Millisecond
+ if ticks>sourceFinalPauseFloat32{ticks=sourceFinalPauseFloat32}
+ return time.Duration(math.RoundToEven(ticks)+1)*10*time.Millisecond
+}
+func sourceRetryNextTicks(ticks float64)float64{
+ if ticks>=801{return ticks}
+ return float64(float32(ticks*math.Sqrt2)) // Win32 Single field +58
 }
 func sourceTask2CaptureInitialRetry(ctx context.Context,m *Monitor,ip string,
  seconds int,maxBytes uint64,nic *LocalNIC)(string,error){
@@ -51,7 +60,11 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
    remaining=int(math.Ceil(time.Until(deadline).Seconds()))
    if remaining<1{return "SOURCE_RETRY_TIMEOUT",errors.New("source Task2 connection deadline exceeded")}
   }
+  // _Unit125 00807CD9 resets PauseValue after each real TCP
+  // connection. A new socket is tracked by independent RAW ledger.
+  socketsBefore:=m.summary.SourceTCPConnectionCount
   reason,err:=liveCaptureAddressOnNIC(ctx,m,addr,remaining,maxBytes,nic)
+  if m.summary.SourceTCPConnectionCount>socketsBefore {ticks=25}
   if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
   if m.captureOnly || (m.sourceTask2TX!=nil && m.sourceTask2TX.writeFault!=""){return reason,err}
   if reason!="CONNECT_FAILED" && reason!="REMOTE_DISCONNECTED" &&
@@ -65,6 +78,10 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
   if !deadline.IsZero() && time.Until(deadline)<wait{return reason,err}
   m.summary.SourceInitialRetryAttempts++
   if m.summary.RawBytes>0{m.summary.SourceTCPReconnectAfterRAW++}
+  // Source-aligned retry status belongs to this receiver; the
+  // current TCP link is NOT healthy while in this waiting state.
+  m.sourceLastRetryReason=reason
+  m.sourceLastRetryWaitMS=int64(wait/time.Millisecond)
   m.note(fmt.Sprintf("Task2 new socket attempt %d after %v; retained RAW=%d bytes; source TX=%d",
    m.summary.SourceInitialRetryAttempts,wait,m.summary.RawBytes,m.sourceSentBytes()))
   m.publishLiveStatus("CONNECTING",true,"")
@@ -75,6 +92,6 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
    if !timer.Stop(){select{case <-timer.C:default:}}
    return "STOPPED_BY_USER",nil
   }
-  ticks=math.Min(801,ticks*math.Sqrt2)
+  ticks=sourceRetryNextTicks(ticks)
  }
 }

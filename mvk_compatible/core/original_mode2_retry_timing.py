@@ -8,7 +8,7 @@ Private source _Unit125.pas:
 - 008089C5..008089F3 if PauseValue < 26, synchronizes
   00809364 (QueueCommand(1,0x0E,MvkSampleRate)) once
 - 00808A45 PauseValue/100 formatted as waiting seconds
-- 00808AAF..00808ADA Round(PauseValue) sleeps in 10 ms units
+- 00808AAF..00808ADA (Round(PauseValue)+1) sleeps in 10 ms units
 - 00808ADD..00808B0E if PauseValue < 801, multiplies by sqrt(2)
   and stores back in Win32 Single.
 
@@ -28,6 +28,12 @@ SOURCE_READ_TIMEOUT_MS = 5000
 START_PAUSE_CENTISECONDS = 25.0
 SOURCE_REQUEUE_THRESHOLD = 26.0
 SOURCE_GROWTH_CEILING = 801.0
+# Distinct Sleep(10) counts reached by the original Win32 Single field.
+# 800 < 801, so the last sqrt(2) multiplication overshoots to ~1131.37.
+SOURCE_BACKOFF_WAITS_MS = (
+    260, 360, 510, 720, 1010, 1420,
+    2010, 2840, 4010, 5670, 8010, 11320,
+)
 
 
 def _single(value: float) -> float:
@@ -68,7 +74,7 @@ class OriginalSourceRetryPlan:
     def after_failure(self) -> SourceRetryStep:
         self.attempts+=1
         before=self.pause_centiseconds
-        ms=10*round(before)  # Delphi @ROUND, ties-to-even
+        ms=10*(round(before)+1)  # Delphi @ROUND, then 00808ABE INC
         after=_single(before*math.sqrt(2.0)) if before<SOURCE_GROWTH_CEILING else before
         self.pause_centiseconds=after
         self.last_step=SourceRetryStep(
@@ -82,6 +88,8 @@ class OriginalSourceRetryPlan:
             "original_read_timeout_ms": SOURCE_READ_TIMEOUT_MS,
             "source_pause_start_centiseconds": START_PAUSE_CENTISECONDS,
             "source_backoff_sqrt2_until_801": True,
+            "source_last_pause_overshoots_to_single_1131": True,
+            "source_stable_max_wait_ms": 11320,
             "source_task2_attempts_modeled": self.attempts,
             "source_pause_current_centiseconds": self.pause_centiseconds,
             "last_step": self.last_step.receipt() if self.last_step else None,

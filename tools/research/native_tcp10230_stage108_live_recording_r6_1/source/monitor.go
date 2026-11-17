@@ -111,6 +111,8 @@ type Monitor struct {
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
 	sourceTCP *sourceTCPLedger
 	sourceAfterRAWReconnect bool
+	sourceLastRetryReason string // exact Go transport class, not a Delphi message
+	sourceLastRetryWaitMS int64 // source (Round(PauseValue)+1)*10ms
 	sourceOperatorRateChan <-chan string
 	sourceRateTransitionDetected bool // valid RAW but no single-rate BIN parity
 	// Opt-in Stage111Z26 UI-only telemetry, never part of original RAW/BIN.

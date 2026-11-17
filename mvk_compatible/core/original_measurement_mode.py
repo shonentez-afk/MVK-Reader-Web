@@ -99,6 +99,11 @@ def source_connection_display(*,selected:bool,capture_started:bool=False,
         return SourceConnectionDisplay(
             True,True,True,
             "Подключен к прибору","good",proof.transport_phase)
+    if (proof.transport_phase=="CONNECTING"
+            and status.get("source_initial_retry_attempts",0)>0):
+        return SourceConnectionDisplay(
+            True,True,False,
+            "Повторное подключение к прибору","waiting","RECONNECTING")
     if proof.transport_phase=="REFUSED":
         return SourceConnectionDisplay(
             True,True,False,
