@@ -17,6 +17,9 @@ No programmatic device connection or background scans happen here.
 from __future__ import annotations
 
 from pathlib import Path
+from ..core.original_device_ip_settings import (
+    startup_device_address,save_compatible_device_address,
+)
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
@@ -43,7 +46,9 @@ class OriginalStartController:
     def __init__(self,window,navigation):
         self.window=window
         self.navigation=navigation
-        self.workspace=OriginalStartWorkspace()
+        source_ip,self._settings_origin=startup_device_address()
+        self.workspace=OriginalStartWorkspace(device_ipv4=source_ip)
+        self._saved_device_ip=source_ip
         home=window.task_subpages.widget(0)
         # The SOURCE PageStart hosts the whole 992x766 logical TTabSheet.
         # A fixed 494px Qt-only wrapper cropped source imLogo at y568 and
@@ -101,7 +106,7 @@ class OriginalStartController:
         self.ip_edit=QLineEdit(self.host)
         self.ip_edit.setObjectName("edIpAddr")
         self.ip_edit.setGeometry(*START_IP_RECT)
-        self.ip_edit.setText(START_IP_DEFAULT)
+        self.ip_edit.setText(self.workspace.device_ipv4)
         self.ip_edit.setToolTip(
             "Исходное значение из DFM, не подтверждённый IP подключённого "
             "прибора. Числовой IPv4 проверяется при явном выборе захвата.")
@@ -231,9 +236,25 @@ class OriginalStartController:
         self.workspace=next_state
         self.ip_edit.setStyleSheet("")
         self.status.setText(
-            f"Числовой IP сохранён только в интерфейсе: "
-            f"{self.workspace.device_ipv4} · прибор не опрашивался")
+            f"Выбран IP: {self.workspace.device_ipv4}; "
+            "прибор не опрашивался")
+        if self._saved_device_ip!=self.workspace.device_ipv4:
+            try:
+                save_compatible_device_address(self.workspace.device_ipv4)
+                self._saved_device_ip=self.workspace.device_ipv4
+            except (ValueError,OSError) as exc:
+                self.status.setText("IP изменён локально, но сохранение отклонено: "+str(exc))
         return True
+
+    def apply_capture_device_ip(self,ip):
+        """The operator explicitly approved this dialog IPv4 for ONE capture.
+
+        Mirror the verified choice in source edIpAddr. Never change a NIC
+        address, start another socket, or edit the vendor's original XML.
+        """
+        next_state=self.workspace.with_device_ip(ip)
+        self.ip_edit.setText(next_state.device_ipv4)
+        return self.commit_ip()
 
     def set_library(self,path):
         self.workspace=self.workspace.with_library(path)

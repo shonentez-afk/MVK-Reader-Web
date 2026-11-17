@@ -428,6 +428,12 @@ class NativeCaptureDialog(QDialog):
         self._stdout = ""
         self._active_device_ipv4 = spec.device_ipv4
         self._active_local_ipv4 = spec.local_ipv4
+        # Source edIpAddr remains the one operator-selected device address.
+        # A dialog override is reflected into PageStart before Go starts;
+        # this is not Ethernet NIC autodetection or a second TCP socket.
+        controller=getattr(self.parent(),"original_start_controller",None)
+        if controller is not None:
+            controller.apply_capture_device_ip(spec.device_ipv4)
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
