@@ -24,7 +24,7 @@ from mvk_compatible.core.native_r6_live_status import load_capture_live_status
 from mvk_compatible.core.native_r6_live_preview import load_live_preview
 from .spectrum import (
     FFT_SIZES, KINDS, PRESET_BANDS, Spectrum,
-    calculate_spectrum, plot_values, y_axis_label, db_reference_text,
+    calculate_spectrum, plot_values, y_axis_label, db_reference_text, db_reference,
 )
 from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
@@ -427,10 +427,13 @@ class LiveWindow(QtWidgets.QMainWindow):
                           f"{prefix} · {unit}/√Гц" if mode=="asd" else
                           f"{prefix} · {unit} СКЗ")
             else:
-                ref=db_reference_text(kind,self.db_ref.currentData())
-                vertical=f"{prefix} · дБ (отн. {ref})"
-                if mode=="welch":vertical+="²/Гц"
-                if mode=="asd":vertical+="/√Гц"
+                ref=db_reference(kind,self.db_ref.currentData())
+                if mode=="welch":
+                    vertical=f"{prefix} · дБ отн. ({ref:g} {unit})²/Гц"
+                elif mode=="asd":
+                    vertical=f"{prefix} · дБ отн. {ref:g} {unit}/√Гц"
+                else:
+                    vertical=f"{prefix} · дБ отн. {db_reference_text(kind,self.db_ref.currentData())}"
         self.spec.setLabel("left",vertical)
         # Numerical amplitudes are ALREADY logarithmic dB. A second log-Y
         # transformation would distort negative and zero dB values.
@@ -790,7 +793,13 @@ class LiveWindow(QtWidgets.QMainWindow):
               f"{s.peak[1]:.5g} {s.units}{suffix} · "
               f"источник APP_DERIVED (НЕ AUX4700)")
         if self.yscale.currentData()=="db":
-            base+=" · дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())
+            ref=db_reference(s.kind,self.db_ref.currentData())
+            if s.mode=="welch":
+                base+=f" · дБ отн. ({ref:g} {KINDS[s.kind][1]})²/Гц"
+            elif s.mode=="asd":
+                base+=f" · дБ отн. {ref:g} {KINDS[s.kind][1]}/√Гц"
+            else:
+                base+=" · дБ отн. "+db_reference_text(s.kind,self.db_ref.currentData())
         if s.mode in ("welch","asd","third_octave"):
             base+=f" · сегментов Welch: {s.segments} · HP от {s.floor_hz:g} Гц"
         self.metrics.setText(base)
