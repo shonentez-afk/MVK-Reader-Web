@@ -180,6 +180,15 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         raise ValueError("Local operator events differ from Go frame receipts")
     end_frames=_strict_int(doc.get("end_frames_decoded"),"end frames")
     end_aux=_strict_int(doc.get("end_aux4700_updates"),"end AUX")
+    end_source_tick=doc.get("end_source_values_ticks_address_3100")
+    summary_source_tick=summary.get("values_ticks_address_3100")
+    if (end_source_tick is None)!=(summary_source_tick is None):
+        raise ValueError("Original Values PARAM 0x3100 tick proof incomplete")
+    if end_source_tick is not None:
+        end_source_tick=_strict_int(end_source_tick,"Go original 0x3100 row triggers")
+        if (end_source_tick!=_strict_int(summary_source_tick,"Go VALUES ticks")
+                or end_source_tick>end_frames):
+            raise ValueError("Source 0x3100 VALUES row count and summary disagree")
     end_counts=_counts(doc.get("end_channel_samples"))
     if (end_frames!=_strict_int(summary.get("frames_decoded"),"summary frames")
             or end_aux!=_strict_int(summary.get("aux4700_updates"),"summary AUX")
@@ -193,6 +202,7 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
     by_kind={}
     reconstructed=[]
     command_seen=False
+    previous_source_tick=0
     for idx,(issued,receipt) in enumerate(
             zip(ledger.frame_mark_actions,entries),1):
         if not isinstance(receipt,dict):
@@ -219,6 +229,14 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         samples=_counts(receipt.get("channel_samples"))
         frames=_strict_int(receipt.get("frames_decoded"),"frames")
         aux=_strict_int(receipt.get("aux4700_updates"),"AUX")
+        source_tick=receipt.get("source_values_ticks_address_3100")
+        if end_source_tick is not None:
+            source_tick=_strict_int(source_tick,"Go frame mark source VALUES tick")
+            if source_tick<previous_source_tick or source_tick>end_source_tick:
+                raise ValueError("Go source 0x3100 row trigger rolled back")
+            previous_source_tick=source_tick
+        elif source_tick is not None:
+            raise ValueError("Go source VALUES event without final 0x3100 proof")
         if frames>end_frames or aux>end_aux or any(
                 samples[i]>end_counts[i] for i in range(10)):
             raise ValueError("Source frame mark after accepted RAW end")
@@ -226,11 +244,11 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         if part=="begin":
             if kind in by_kind:
                 raise ValueError("Repeated source mark start before stop")
-            by_kind[kind]=(receipt,samples,frames,aux)
+            by_kind[kind]=(receipt,samples,frames,aux,source_tick)
         else:
             if kind not in by_kind:
                 raise ValueError("Source stop mark has no start")
-            start,start_samples,start_frames,start_aux=by_kind.pop(kind)
+            start,start_samples,start_frames,start_aux,start_source_tick=by_kind.pop(kind)
             if (frames<start_frames or aux<start_aux or
                     any(x<y for x,y in zip(samples,start_samples))):
                 raise ValueError("Go source frame mark counter rollback")
@@ -242,6 +260,8 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
                 "end_frames":frames,
                 "start_aux":start_aux,
                 "end_aux":aux,
+                "start_source_values_ticks":start_source_tick,
+                "end_source_values_ticks":source_tick,
                 "start_utc":start.get("requested_utc"),
                 "end_utc":receipt.get("requested_utc"),
             })
@@ -256,6 +276,8 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
             end_samples=real["end_samples"],
             start_aux=real["start_aux"],end_aux=real["end_aux"],
             start_frames=real["start_frames"],end_frames=real["end_frames"],
+            start_source_values_ticks=real["start_source_values_ticks"],
+            end_source_values_ticks=real["end_source_values_ticks"],
             boundary_mode=FRAME_BOUNDARY))
     ledger.windows=corrected
     ledger.frame_marks_verified=True
@@ -266,6 +288,8 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         "accepted_events":len(entries),
         "device_commands_sent":sent_bytes>0,
         "source_setrate_sent_bytes":sent_bytes,
+        "real_source_values_ticks_0x3100":end_source_tick,
+        "selected_export_aux_is_not_source_0x3100_values_writer":True,
         "full_original_delphi_parity_verified":False,
     }
 
