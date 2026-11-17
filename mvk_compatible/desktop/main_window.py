@@ -3179,7 +3179,8 @@ class MainWindow(QMainWindow):
         worker.finished.connect(self._source_write_export_done)
         self.statusBar().showMessage(
             f"SHA-проверка и локальный экспорт {len(ledger.windows)} "
-            "выбранных исходных интервалов; прибору ничего не отправлено")
+            "выбранных исходных интервалов. Кнопки записи не отправляют команд прибора; "
+            "SetRate учитывается отдельно, если она разрешена.")
         worker.start()
 
     def _source_write_export_ready(self,report):
