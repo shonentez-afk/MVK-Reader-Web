@@ -941,6 +941,160 @@ class LiveWindow(QtWidgets.QMainWindow):
         except (OSError,ValueError,RuntimeError) as exc:
             QtWidgets.QMessageBox.warning(self,"PNG не сохранён",str(exc))
 
+    def _show_bearing_diagnostics(self):
+        view=self._spectrum
+        if view is None or view.mode!="envelope":
+            self.bearing_diagnostics.setText(
+                "Для локального анализа BPFO/BPFI/BSF/FTF выберите спектр огибающей")
+            return
+        if self.rpm.value()<=0 or self.balls.value()<3:
+            self.bearing_diagnostics.setText(
+                "Подшипники: укажите 1× и геометрию. Обороты только вручную/по ВС, без TACH")
+            return
+        try:
+            lines=envelope_fault_lines(
+                view,float(self.rpm.value()),balls=int(self.balls.value()),
+                ball_diameter_mm=float(self.ball_diameter.value()),
+                pitch_diameter_mm=float(self.pitch_diameter.value()),
+                contact_angle_deg=float(self.contact_angle.value()))
+        except (ValueError,TypeError) as exc:
+            self.bearing_diagnostics.setText(f"Геометрия/спектр ещё не готовы: {exc}")
+            return
+        observations=[]
+        for item in lines:
+            status="выделяется" if item.noteworthy else "не выделяется"
+            observations.append(
+                f"{item.label} {item.expected_hz:.1f} Гц: {item.snr_db:.1f} дБ, "
+                f"гарм. {item.harmonics_found} ({status})")
+        self.bearing_diagnostics.setText(
+            "APP_DERIVED · локальный фон текущей записи, НЕ диагноз и НЕ эталон · "+
+            ("; ".join(observations) if observations else "Нет разрешённых линий")
+        )
+
+    def _calculate_extra(self):
+        if self._extra_future is not None and not self._extra_future.done():
+            return
+        mode=self.extra_mode.currentData()
+        try:
+            ch=self._gui_ring.channel(self.adc.currentData())
+            if self.freeze.isChecked() and self._freeze_samples is not None:
+                fs=self._freeze_rate
+                limit=len(self._freeze_samples)-int(self.history.value()*fs)
+                if limit<1024:raise ValueError("Недостаточно сохранённых отсчётов")
+                data=self._freeze_samples[max(0,limit-32768):limit].copy()
+            else:
+                if ch is None or ch.available<1024:
+                    raise ValueError("Недостаточно подтверждённых отсчётов")
+                fs=ch.rate_hz
+                data=ch.latest(min(ch.available,32768))
+            if mode=="stft":
+                work=stft_vibration
+                kwargs={"nperseg":1024}
+            elif mode=="cwt":
+                work=cwt_morlet_vibration
+                kwargs={"scales":40,"min_frequency_hz":max(10.,fs/4096)}
+            else:
+                work=real_cepstrum
+                kwargs={}
+            self._extra_kind=mode
+            self._extra_future=self._extra_executor.submit(work,data,fs,**kwargs)
+            self.extra_button.setEnabled(False)
+            self.status.setText(f"Расчёт {mode.upper()} по текущему окну (без эталонов)")
+        except (ValueError,RuntimeError) as exc:
+            self.status.setText(f"Дополнительный анализ: {exc}")
+
+    def _poll_extra(self):
+        if self._speed_future is not None and self._speed_future.done():
+            pending=self._speed_future
+            self._speed_future=None
+            try:
+                candidate=pending.result()
+            except (ValueError,RuntimeError,FloatingPointError) as exc:
+                self._speed_candidate=None
+                self.rpm_accept.setEnabled(False)
+                self.rotation_info.setText(f"1× по спектру ВС не определена: {exc}")
+            else:
+                self._speed_candidate=candidate
+                self.rpm_accept.setEnabled(True)
+                self.rotation_info.setText(candidate.description)
+        if self._extra_future is None or not self._extra_future.done():
+            return
+        pending=self._extra_future
+        self._extra_future=None
+        self.extra_button.setEnabled(True)
+        try:
+            view=pending.result()
+        except (ValueError,RuntimeError,FloatingPointError) as exc:
+            self.status.setText(f"Специальный анализ: {exc}")
+            return
+        mode=self._extra_kind
+        self.views.setCurrentWidget(self.extra_plot)
+        if mode=="cepstrum":
+            self.extra_image.clear()
+            self.extra_line.setData(view.quefrency_s,view.magnitude)
+            self.extra_plot.setLabel("bottom","Кэфренция",units="с")
+            self.extra_plot.setLabel("left","Вещественный кепстр",units="отн.")
+            self.extra_plot.setTitle(view.description)
+        else:
+            self.extra_line.setData([],[])
+            mag=view.magnitude
+            if view.calibrated_amplitude:
+                values=20*np.log10(np.maximum(mag,1e-15)/1e-6)
+                self.extra_plot.setTitle(view.description+" · дБ отн. 10⁻⁶ м/с²")
+            else:
+                values=20*np.log10(
+                    np.maximum(mag,1e-15)/max(float(np.max(mag)),1e-15))
+                self.extra_plot.setTitle(view.description+" · дБ отн. локального максимума")
+            self.extra_image.setImage(
+                np.asarray(values,dtype=np.float32),
+                autoLevels=False,levels=(-120,120))
+            t=view.time_s
+            freqs=view.frequency_hz
+            width=max(float(t[-1]-t[0]),1e-9)
+            height=max(float(freqs[-1]-freqs[0]),1e-9)
+            self.extra_image.setRect(QtCore.QRectF(float(t[0]),float(freqs[0]),
+                                                  width,height))
+            self.extra_plot.setLabel("bottom","Время",units="с")
+            self.extra_plot.setLabel("left","Частота",units="Гц")
+        self.extra_plot.enableAutoRange()
+        self.status.setText(
+            f"Дополнительный анализ {mode.upper()} · APP_DERIVED, без внешнего эталона")
+
+    def _edit_axes(self):
+        dlg=QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Ручные пределы графика · по физическим координатам")
+        form=QtWidgets.QFormLayout(dlg)
+        axis=[]
+        mode=self.yscale.currentData()
+        for name,value in [
+            ("X минимум, Гц",1.0 if self.xscale.currentData()=="log" else 0.0),
+            ("X максимум, Гц",1000.0),
+            ("Y минимум, дБ/ед.",-120.0 if mode=="db" else 0.0),
+            ("Y максимум, дБ/ед.",80.0 if mode=="db" else 10.0)]:
+            box=QtWidgets.QDoubleSpinBox(dlg)
+            box.setDecimals(3)
+            box.setRange(-1e12,1e12)
+            box.setValue(value)
+            form.addRow(name,box)
+            axis.append(box)
+        buttons=QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok|
+            QtWidgets.QDialogButtonBox.Cancel,dlg)
+        form.addRow(buttons)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        if dlg.exec()!=QtWidgets.QDialog.DialogCode.Accepted:return
+        xmin,xmax,ymin,ymax=[w.value() for w in axis]
+        if xmin>=xmax or ymin>=ymax or (
+                self.xscale.currentData()=="log" and xmin<=0):
+            self.status.setText("Неверные пределы: Xmin < Xmax, Ymin < Ymax, Xlog > 0")
+            return
+        if self.xscale.currentData()=="log":
+            xmin,xmax=math.log10(xmin),math.log10(xmax)
+        self.spec.setXRange(xmin,xmax,padding=0)
+        self.spec.setYRange(ymin,ymax,padding=0)
+        self.status.setText("Ручной масштаб осей установлен (только представление)")
+
     @staticmethod
     def _canonical_ipv4(value:str)->str:
         ip=ipaddress.IPv4Address(value)
