@@ -440,3 +440,98 @@ def test_original_source_2m_storage_is_attached_only_to_verified_live_qt(
         if win._live_active:win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_original_long_20s_getsignal_renders_full_source_ring_in_real_qt(
+        tmp_path,qt_app):
+    """Actual PageAdc widget accepts 1,310,720 real samples, no 262144 N cut."""
+    from datetime import datetime,timezone
+    from hashlib import sha256
+    import numpy as np
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.original_source_long_window import (
+        SourceLongWindow,SourceWindowRequest,
+    )
+    from mvk_compatible.core.native_r6_live_preview import (
+        LivePreview,PreviewADC,
+    )
+    status,_=_preview(tmp_path)
+    n=65536*20
+    status["channels"][0]["samples"]=n
+    status["channels"][0]["frames"]=n//256
+    status["channels"][0]["next_sample_index"]=4096
+    status["frames_decoded"]=max(status["frames_decoded"],n//256*8)
+    status["raw_bytes"]=max(status["raw_bytes"],n*4*8)
+    values=np.zeros(n,dtype="<f4")
+    req=SourceWindowRequest(status["session_id"],
+        "0123456789abcdef0123456789abcdef",1,0,n,n,65536,4096)
+    payload=values.tobytes()
+    preview=LivePreview(
+        status["session_id"],datetime.now(timezone.utc),
+        status["raw_bytes"],status["frames_decoded"],
+        {1:PreviewADC(1,65536,(4096-n)&0xffffffff,4096,values,
+                      sha256(payload).hexdigest(),n)})
+    window=MainWindow()
+    try:
+        window._begin_live_capture()
+        window._receive_native_live_status(status)
+        window._select_original_wave_hscale(0)
+        assert not window.wave_plot.listDataItems()
+        window._receive_source_long_window(SourceLongWindow(req,preview))
+        assert len(window.wave_plot.listDataItems())==1
+        assert "LIVE SOURCE 2M КОЛЬЦО" in window.wave_hint.text()
+        assert str(n) in window.wave_hint.text()
+        assert window._source_getsignal_last_processed
+        key=window._live_long_rendered_key
+        window._render_live_wave()  # no 1.3M repeated processing at 50Hz
+        assert window._live_long_rendered_key==key
+        window._invalidate_native_live_status("Live status source rejected")
+        assert window._live_long_window is None
+        assert not window.wave_plot.listDataItems()
+    finally:
+        if window._live_active:window._end_live_capture(False)
+        window.close()
+        qt_app.processEvents()
+
+
+def test_original_qt_long_window_request_only_for_selected_page_and_tag(
+        tmp_path,qt_app):
+    """Qt local IPC never starts a second network stream or changes Fs."""
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.desktop.native_capture_dialog import NativeCaptureDialog
+    from .test_stage111z31fj_original_long_window import long_source_status
+    from mvk_compatible.core.original_source_long_window import REQUEST_NAME
+    root,status=long_source_status(tmp_path)
+    window=MainWindow()
+    dialog=NativeCaptureDialog(window)
+    try:
+        window._begin_live_capture()
+        dialog._mode="capture"   # simulate already-authorized local Go run
+        dialog._capture_root=root
+        dialog._poll_source_long_window(status)
+        assert not (root/REQUEST_NAME).exists() # initial PageStatus
+        tabs=window.original_root_tabs
+        adc_page=next(i for i in range(tabs.count())
+                      if tabs.tabData(i)=="PageAdc")
+        tabs.setCurrentIndex(adc_page)
+        window._select_original_wave_hscale(0)
+        dialog._poll_source_long_window(status)
+        assert (root/REQUEST_NAME).exists()
+        request=(root/REQUEST_NAME).read_bytes()
+        assert b'"source_h_tag":0' in request
+        assert b'"samples":1310720' in request
+        before=dialog._source_long_request
+        dialog._poll_source_long_window(status)
+        assert dialog._source_long_request is before
+        # Freeze does not ask the device for new samples.
+        window._source_live_view_frozen=True
+        dialog._poll_source_long_window(status)
+        assert (root/REQUEST_NAME).read_bytes()==request
+        window._measurement_exit_requested=True
+        dialog._poll_source_long_window(status)
+        assert (root/REQUEST_NAME).read_bytes()==request
+    finally:
+        if window._live_active:window._end_live_capture(False)
+        dialog.close()
+        window.close()
+        qt_app.processEvents()
