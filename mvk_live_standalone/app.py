@@ -196,40 +196,37 @@ class LiveWindow(QtWidgets.QMainWindow):
             row,col=divmod(idx,4)
             opts.addWidget(QtWidgets.QLabel(label),row,col*2)
             opts.addWidget(widget,row,col*2+1)
-        opts2=QtWidgets.QHBoxLayout()
+        opts2=QtWidgets.QGridLayout()
         main.addLayout(opts2)
-        opts2.addWidget(QtWidgets.QLabel("Полоса огибающей"))
-        opts2.addWidget(self.envelope_band)
-        opts2.addWidget(QtWidgets.QLabel("Notch (внимание: скрывает механич. гармоники)"))
         self.notch=QtWidgets.QComboBox()
         self.notch.addItem("Откл.",None)
         self.notch.addItem("50 Гц",50.0)
         self.notch.addItem("60 Гц",60.0)
-        opts2.addWidget(self.notch)
-        opts2.addWidget(QtWidgets.QLabel("Обороты, вручную (0 — нет)"))
         self.rpm=QtWidgets.QDoubleSpinBox()
         self.rpm.setRange(0,200000)
         self.rpm.setDecimals(1)
         self.rpm.setSuffix(" об/мин")
-        opts2.addWidget(self.rpm)
-        opts2.addWidget(QtWidgets.QLabel("Тел качения"))
         self.balls=QtWidgets.QSpinBox()
         self.balls.setRange(0,80)
-        opts2.addWidget(self.balls)
-        opts2.addWidget(QtWidgets.QLabel("Шарик, мм"))
         self.ball_diameter=QtWidgets.QDoubleSpinBox()
         self.ball_diameter.setRange(0,300)
-        opts2.addWidget(self.ball_diameter)
-        opts2.addWidget(QtWidgets.QLabel("Делит. диаметр, мм"))
         self.pitch_diameter=QtWidgets.QDoubleSpinBox()
         self.pitch_diameter.setRange(0,3000)
-        opts2.addWidget(self.pitch_diameter)
-        opts2.addWidget(QtWidgets.QLabel("Угол"))
         self.contact_angle=QtWidgets.QDoubleSpinBox()
         self.contact_angle.setRange(0,90)
         self.contact_angle.setSuffix("°")
-        opts2.addWidget(self.contact_angle)
-        opts2.addStretch(1)
+        for idx,(label,widget) in enumerate([
+            ("Полоса огибающей",self.envelope_band),
+            ("Notch (по умолчанию выкл.)",self.notch),
+            ("Обороты, ручной ввод",self.rpm),
+            ("Тел качения",self.balls),
+            ("Диаметр тела, мм",self.ball_diameter),
+            ("Делит. диаметр, мм",self.pitch_diameter),
+            ("Угол контакта",self.contact_angle),
+        ]):
+            row,col=divmod(idx,4)
+            opts2.addWidget(QtWidgets.QLabel(label),row,col*2)
+            opts2.addWidget(widget,row,col*2+1)
         gears=QtWidgets.QHBoxLayout()
         main.addLayout(gears)
         gears.addWidget(QtWidgets.QLabel("Редуктор: зубьев шестерни"))
