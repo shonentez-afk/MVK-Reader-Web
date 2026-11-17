@@ -122,7 +122,7 @@ def _filter_waveform(wave: np.ndarray, fs: int, low: float, high: float | None) 
     if high is not None and (not np.isfinite(high) or high <= 0 or low >= high):
         raise ValueError("High cutoff must exceed low cutoff")
     if high is not None and high >= nyquist:
-        high = None  # no meaningful low-pass beyond current Nyquist
+        raise ValueError("High cutoff exceeds Nyquist; choose a valid filter band")
     if low >= nyquist:
         raise ValueError("Low cutoff exceeds Nyquist")
     if low == 0 and high is None:
