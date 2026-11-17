@@ -145,7 +145,22 @@ def verify(idp: Path, archive: Path, sqlite_path: Path) -> dict:
                 if event != (addr,):
                     raise ValueError('DFM event and binary handler address disagree')
             result[name] = addr
+        # Type-layout records inside IDP contain these TMVKThread boolean
+        # offsets; the archive Pascal instruction bodies independently use
+        # the same offsets rather than merely repeating function names.
+        field_markers = {
+            'TMVKThread.WriteData': (b'\xce\x00\x04\x00\x09WriteData', b'+400CE'),
+            'TMVKThread.WriteValues': (b'\xcf\x00\x04\x00\x0bWriteValues', b'+400CF'),
+        }
+        for field_name, (binary_marker, source_marker) in field_markers.items():
+            if (binary_marker not in idp_bytes or
+                    source_marker not in pas['_Unit128.pas']):
+                raise ValueError('Original IDP field offset and Pascal disagree')
         return {
+            'original_thread_write_field_offsets_verified': {
+                'TMVKThread.WriteData': '0x400CE',
+                'TMVKThread.WriteValues': '0x400CF',
+            },
             'triple_source_verification': True,
             'idp_header_and_hash_verified': True,
             'archive_pascal_and_dfm_sha256_match_sqlite': True,
