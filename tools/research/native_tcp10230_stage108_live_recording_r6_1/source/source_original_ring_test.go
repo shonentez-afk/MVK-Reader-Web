@@ -2,8 +2,10 @@ package main
 
 import (
     "bytes"
+    "crypto/sha256"
     "encoding/binary"
     "math"
+    "os"
     "path/filepath"
     "testing"
     "time"
@@ -141,5 +143,45 @@ func TestOriginalSourceRingMonitorReceivesAndProvesAllTenChannels(t *testing.T) 
     if status.SourceOriginalStorage==nil ||
        status.SourceOriginalStorage.Channels[9].SampleWidthBytes!=1 {
         t.Fatal("Live status must carry truthful source ring proof")
+    }
+}
+
+
+func TestOriginalRingAndCalibratedSpoolUseIdenticalAcceptedFloat32Bytes(t *testing.T) {
+    // 0080828C calls ProcessBufferChunk after the verified ADC packet.
+    // Our Native calibrated spool is already gain-applied; inserting it
+    // into the new original ring must never apply a second FRange.
+    r:=newSourceOriginalStorageRing()
+    spool:=&LiveBinSpool{begun:true,sourceOriginalStorage:r}
+    f,e:=os.Create(filepath.Join(t.TempDir(),"verified_adc1.partial"))
+    if e!=nil {t.Fatal(e)}
+    defer f.Close()
+    spool.files[0]=f
+    spool.digest[0]=sha256.New()
+    spool.gain[0]=2.0
+    payload:=make([]byte,1052)
+    for i:=0;i<256;i++ {
+        binary.LittleEndian.PutUint32(payload[28+i*4:],
+            math.Float32bits(1.25))
+    }
+    header:=SampleHeader{Channel:0,Rate:65536,Index:0xFFFFFF00,Samples:256}
+    if e:=spool.adcFrame(Frame{Type:typeADC,Raw:payload},header);e!=nil {
+        t.Fatal(e)
+    }
+    win,e:=r.window(0,0,256)
+    if e!=nil {t.Fatal(e)}
+    if e:=f.Sync();e!=nil {t.Fatal(e)}
+    disk,e:=os.ReadFile(f.Name())
+    if e!=nil {t.Fatal(e)}
+    if !bytes.Equal(disk,win) {
+        t.Fatal("full original Float32 ring changed the verified calibrated BIN spool")
+    }
+    if got:=math.Float32frombits(binary.LittleEndian.Uint32(win));got!=2.5 {
+        t.Fatalf("source range applied zero/two times: %f",got)
+    }
+    info:=r.receipt().Channels[0]
+    if info.Domain!=sourceStorageCalibratedADC ||
+       info.RxPos!=256 || info.NextDeviceIndex==nil || *info.NextDeviceIndex!=0 {
+        t.Fatalf("lost independent uint32/uint64 original cursor: %+v",info)
     }
 }

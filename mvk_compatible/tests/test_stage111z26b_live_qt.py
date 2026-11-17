@@ -390,3 +390,53 @@ def test_qt_getsignal_new_window_survives_source_uint32_rollover(
         if win._live_active:win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_original_source_2m_storage_is_attached_only_to_verified_live_qt(
+        tmp_path,qt_app):
+    from .test_stage111z26b_live_preview import make_preview,now
+    from mvk_compatible.core.native_r6_live_status import validate_live_status
+    from mvk_compatible.core.original_source_ring_receipt import (
+        SCHEMA,BUFFER_ELEMENTS,TACH_DOMAIN,
+    )
+    from mvk_compatible.desktop.main_window import MainWindow
+    root,status,_=make_preview(tmp_path)
+    # The mock Go Status and original 10-channel ring share one immutable
+    # instrument/device cursor and a separate received-local count.
+    rows=[]
+    for i,ch in enumerate(status["channels"]):
+        adc=i<8
+        count=ch["samples"] if adc else ch["samples"]*4
+        next_index=(100000+ch["samples"])&0xFFFFFFFF
+        ch["next_sample_index"]=next_index
+        rows.append(dict(channel=i+1,sample_width_bytes=4 if adc else 1,
+            rx_pos_64=count,valid_pos_64=0,first_readable_pos_64=0,
+            available_elements=count,last_sample_rate_hz=ch["sample_rates_hz"][0],
+            next_device_sample_index=next_index,
+            input_domain=("CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32" if adc
+                          else TACH_DOMAIN),
+            sequence_gaps=0,rate_changes=0,rejected_nonfinite_frames=0))
+    status["source_original_storage"]=dict(
+        schema=SCHEMA,buffer_elements_per_channel=BUFFER_ELEMENTS,
+        channels=rows)
+    validated=validate_live_status(
+        status,expected_run=status["session_id"],now=now())
+    assert validated["source_original_storage_verified"]
+    win=MainWindow()
+    try:
+        win._begin_live_capture()
+        assert win.original_shell.status_page.property(
+            "sourceOriginalTenChannelStorageProof") is None
+        win._receive_native_live_status(validated)
+        proof=win.original_shell.status_page.property(
+            "sourceOriginalTenChannelStorageProof")
+        assert proof is not None and len(proof["channels"])==10
+        assert proof["channels"][8]["sample_width_bytes"]==1
+        # A rejected/stopped capture may not retain any old 2M proof.
+        win._invalidate_native_live_status("Live status source rejected")
+        assert win.original_shell.status_page.property(
+            "sourceOriginalTenChannelStorageProof") is None
+    finally:
+        if win._live_active:win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()
