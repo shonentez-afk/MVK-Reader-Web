@@ -296,10 +296,18 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		m.note(fmt.Sprintf("identity message length=%d", len(f.Raw)))
 	case typeAck:
 		m.summary.ACK++
-		m.warn("unexpected operation ACK received; this program has issued NO command")
+		if m.sourceTask2TX!=nil && m.sourceTask2TX.sentCommands>0 {
+			m.note("operation ACK after source SetRate TX: no transaction ID, cannot prove matching command")
+		} else {
+			m.warn("unexpected operation ACK received; this program has issued NO command")
+		}
 	case typeDenied:
 		m.summary.Denials++
-		m.warn("device reported operation denied; this program has issued NO command")
+		if m.sourceTask2TX!=nil && m.sourceTask2TX.sentCommands>0 {
+			m.warn("operation DENIED observed after source SetRate; no transaction ID, aborting current attempt")
+		} else {
+			m.warn("device reported operation denied; this program has issued NO command")
+		}
 	case typeADC, typeTach:
 		c := &m.summary.Channels[sample.Channel]
 		c.Frames++

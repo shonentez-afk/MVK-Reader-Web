@@ -235,9 +235,17 @@ func mainInner() int {
 	}
 	fmt.Println("==============================================================")
 	fmt.Println("     MVK Reader Web - Native TCP/10230 LIVE R6.1 / Stage108")
-	fmt.Println("     ПАССИВНЫЙ ПРИЕМ - НИКАКИХ КОМАНД ПРИБОРУ")
+	if *sourceTX {
+		fmt.Println("     ОРИГИНАЛЬНЫЙ TASK2 SETRATE - ОТДЕЛЬНО РАЗРЕШЁН")
+	} else {
+		fmt.Println("     ПАССИВНЫЙ ПРИЕМ - НИКАКИХ КОМАНД ПРИБОРУ")
+	}
 	fmt.Println("==============================================================")
-	fmt.Println("Программа НЕ отправляет настройки, частоту или команду Flash.")
+	if *sourceTX {
+		fmt.Println("SetRate(65536) и выбор пяти частот передают только 36-байтные проверенные команды, Flash/Reboot НЕ доступны.")
+	} else {
+		fmt.Println("Программа НЕ отправляет настройки, частоту или команду Flash.")
+	}
 	fmt.Println("TCP-подключение само активирует передачу МВК01, команды не нужны.")
 	fmt.Println("После завершения измерения автоматический встроенный экспорт 8 BIN + TSXML + VALUES + TABLE (без дополнительного соединения).")
 	fmt.Println("Для LIVE требуется явно выбрать локальный Ethernet-интерфейс.")
@@ -421,7 +429,7 @@ func mainInner() int {
 		fmt.Printf("Stage108: экспорт %s: %s. Оригинальный RAW сохранён.\n", exportStatus.State, exportStatus.Error)
 	}
 	if report.RawBytes == 0 {
-		fmt.Println("Нет входящего потока. Возможно прибор ожидает команду; программа её НЕ отправляет.")
+		fmt.Println("Нет входящего потока. До корректного PARAM/Status0 исходная SetRate не отправляется.")
 	}
 	if report.CaptureOnly {
 		fmt.Println("Найден неизвестный/ошибочный кадр. Все последующие байты сохранены в incoming.raw.")
