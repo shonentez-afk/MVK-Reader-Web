@@ -874,6 +874,12 @@ class OriginalRootShell:
             except (ValueError,OSError,KeyError,zipfile.BadZipFile):
                 tach_receipt=None
         self.status_page.setProperty("sourceNativeTachReceipt",tach_receipt)
+        # Original TACH storage fallback, not a calibration or PageStatus Hz.
+        # Preserve original user-visible cells and unscaled Native bytes.
+        self.status_page.setProperty(
+            "sourceOriginalTachStorageGainUnits",
+            tach_receipt["original_source_storage_gain_units"]
+            if tach_receipt is not None and tach_receipt["present"] else None)
         if tach_receipt is not None and tach_receipt["present"]:
             self.status_note.setText(
                 self.status_note.text()+" · "
@@ -1396,6 +1402,7 @@ class OriginalRootShell:
         self.file_record_selection=None
         self.file_page.setProperty("sourceAppliedLiveFilePlanReceipt",None)
         self.file_page.setProperty("sourceNativeTachExportEvidence",None)
+        self.file_page.setProperty("sourceOriginalTachStorageGainUnits",None)
         blocked=self.file_channels.blockSignals(True)
         try:
             self.file_channels.clear()
@@ -1413,9 +1420,16 @@ class OriginalRootShell:
                                                        "channel_files",())}
             native_tach=(None if flow.direct_bin
                          else read_tach_evidence(flow.session.path))
+            native_tach_receipt=(native_tach.receipt()
+                                 if native_tach is not None else None)
             self.file_page.setProperty(
-                "sourceNativeTachExportEvidence",
-                native_tach.receipt() if native_tach is not None else None)
+                "sourceNativeTachExportEvidence", native_tach_receipt)
+            self.file_page.setProperty(
+                "sourceOriginalTachStorageGainUnits",
+                tuple(item["original_source_storage_gain_units"]
+                      for item in native_tach_receipt["channels"]
+                      if item["present"])
+                if native_tach_receipt is not None else None)
             for i in range(CHANNEL_COUNT):
                 adc=i+1
                 if i>=8:

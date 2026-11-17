@@ -16,6 +16,8 @@ from pathlib import Path
 import re
 import zipfile
 
+from .original_mode2_gain_fallback import resolve_channel_gain_units
+
 SCHEMA="MVK_NATIVE_R6_TACH_RAW_INPUT_V1"
 FILENAME="TACH_RAW_SOURCE_AUDIT.json"
 DOMAIN="DEVICE_TACH_INPUT_FLOAT32_UNSCALED"
@@ -62,7 +64,11 @@ class NativeTachChannel:
         return self.present and self.continuous and not self.source_calibrated
 
     def receipt(self):
+        # Original TMvkChannelStorage for 8/9 has static unity gain and
+        # empty storage units; Native raw TACH bytes are NOT rescaled.
+        source_storage = resolve_channel_gain_units(self.number - 1).receipt()
         return {
+            "original_source_storage_gain_units":source_storage,
             "native_channel":self.number,
             "source_tab":"TACH"+str(self.number-8),
             "present":self.present,

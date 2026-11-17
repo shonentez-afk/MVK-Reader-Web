@@ -41,6 +41,13 @@ def test_tach_channels_9_10_show_verified_input_not_original_rpm(
         assert receipt["safe_native_tach_channels"]==[9,10]
         assert receipt["physical_rpm_calibration_verified"] is False
         assert not receipt["device_commands_sent"]
+        for source_index, tach in enumerate(receipt["channels"], 8):
+            storage=tach["original_source_storage_gain_units"]
+            assert storage["channel"] == source_index
+            assert storage["gain"] == 1.0 and storage["units"] == ""
+            assert not storage["native_tach_samples_rescaled"]
+        assert len(shell.file_page.property(
+            "sourceOriginalTachStorageGainUnits")) == 2
         # Two independent tab modes from DFM. No invented TACH waveform.
         win.original_status_mode.setCurrentIndex(13)
         shell.refresh_status()
@@ -50,6 +57,11 @@ def test_tach_channels_9_10_show_verified_input_not_original_rpm(
         assert tach["samples"]==128
         assert tach["rate_hz"]==32768
         assert not tach["physical_rpm_verified"]
+        storage=shell.status_page.property(
+            "sourceOriginalTachStorageGainUnits")
+        assert storage["channel"] == 8
+        assert (storage["gain"], storage["units"]) == (1.0, "")
+        assert not storage["original_tach_rpm_verified"]
         assert "неотмасштабированный Float32" in shell.status_note.text()
         assert "калибровка НЕ подтверждены" in shell.status_note.text()
         win.original_status_mode.setCurrentIndex(14)
@@ -57,6 +69,8 @@ def test_tach_channels_9_10_show_verified_input_not_original_rpm(
         qt_app.processEvents()
         assert shell.status_page.property(
             "sourceNativeTachReceipt")["native_channel"]==10
+        assert shell.status_page.property(
+            "sourceOriginalTachStorageGainUnits")["channel"] == 9
         win.original_visual_skin.reveal_page(5)
         qt_app.processEvents()
         _capture_source_mode2(win,"20_cy_native_tach_sha_100_150")
