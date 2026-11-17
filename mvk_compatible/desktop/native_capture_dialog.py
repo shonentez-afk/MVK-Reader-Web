@@ -9,7 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from PySide6.QtCore import QProcess, QThread, QTimer, Signal
+from PySide6.QtCore import QProcess, QThread, QTimer, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
@@ -22,6 +23,7 @@ from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview
 from ..core.source_frame_mark_protocol import submit_native_frame_mark
 from ..core.original_mode2_source_rate_input import source_setrate_stdin_line
+from ..core.source_tcp_segments import verify_source_tcp_session_segments
 
 
 class ExportPackWorker(QThread):
@@ -61,11 +63,13 @@ class NativeCaptureDialog(QDialog):
         self._mode = None
         self._capture_root = None
         self._zip = None
+        self._raw_only_dir = None
         self._worker = None
         self._stdout = ""
         self._active_device_ipv4 = None
         self._active_local_ipv4 = None
         self._source_rate_tx_enabled = False
+        self._source_auto_reconnect_enabled = False
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
@@ -159,6 +163,21 @@ class NativeCaptureDialog(QDialog):
             "Не включайте без допуска к управлению прибором. "
             "Flash, reboot и запись конфигурации не разрешаются.")
         root.addWidget(self.source_rate_tx)
+        self.source_auto_reconnect=QCheckBox(
+            "Автоматически переподключаться после обрыва измерения; "
+            "сохранять каждый TCP-сеанс как отдельный RAW с SHA256")
+        self.source_auto_reconnect.setObjectName("r6OriginalTask2ReconnectAfterRAW")
+        self.source_auto_reconnect.setChecked(False)
+        self.source_auto_reconnect.setEnabled(False)
+        self.source_auto_reconnect.setToolTip(
+            "Отдельное разрешение: после разрыва Go может повторно соединяться "
+            "с тем же IP и отправлять разрешённую SetRate. "
+            "RAW по разным сокетам разделяются; общий BIN запрещён.")
+        self.source_rate_tx.toggled.connect(self.source_auto_reconnect.setEnabled)
+        self.source_rate_tx.toggled.connect(
+            lambda checked: self.source_auto_reconnect.setChecked(False)
+            if not checked else None)
+        root.addWidget(self.source_auto_reconnect)
 
         actions = QHBoxLayout()
         self.start_button = QPushButton("Начать запись")
@@ -265,6 +284,10 @@ class NativeCaptureDialog(QDialog):
         if snapshot.get("source_rate_transition_during_live"):
             label += (" · ИЗМЕНЕНИЕ ЧД: весь RAW сохраняется, но одиночный "
                       "BIN не может считаться проверенным; экспорт будет отклонён.")
+        if snapshot.get("source_tcp_multi_socket"):
+            label += (" · ПЕРЕПОДКЛЮЧЕНИЕ: TCP-сеансов "
+                      f"{snapshot[\"source_tcp_connection_count\"]}; "
+                      "отдельные RAW, единый BIN не допускается.")
         self.live_quality.setText(label)
         for i, ch in enumerate(snapshot["channels"]):
             fs = ", ".join(str(x) for x in ch["sample_rates_hz"]) or "—"
@@ -277,6 +300,11 @@ class NativeCaptureDialog(QDialog):
         # At most one bounded preview per new atomic snapshot, never a second
         # TCP client and never an on-disk partial BIN. Failed provenance must
         # CLEAR any previously displayed provisional data.
+        if snapshot.get("source_tcp_multi_socket"):
+            self.previewInvalid.emit(
+                "После переподключения исходная история графиков не может "
+                "считаться непрерывной; RAW разделён по TCP-сеансам")
+            return
         if snapshot.get("source_rate_transition_during_live"):
             self.previewInvalid.emit(
                 "Исходная ЧД изменилась в текущем сеансе; прежнее "
@@ -311,7 +339,7 @@ class NativeCaptureDialog(QDialog):
             idle and self._available and self.confirm.isChecked() and
             self.adapters.currentData() is not None)
         self.stop_button.setEnabled(self._mode == "capture")
-        self.open_button.setEnabled(self._zip is not None)
+        self.open_button.setEnabled(self._zip is not None or self._raw_only_dir is not None)
         self.browse_button.setEnabled(idle)
 
     def choose_folder(self):
@@ -360,6 +388,7 @@ class NativeCaptureDialog(QDialog):
             self._timer.stop()
         self._mode = None
         self._source_rate_tx_enabled = False
+        self._source_auto_reconnect_enabled = False
         if mode == "interfaces":
             self.adapters.clear()
             if exit_code == 0 and exit_status == QProcess.NormalExit:
@@ -425,7 +454,8 @@ class NativeCaptureDialog(QDialog):
             spec = CaptureSpec(self.device_ip.text(), str(local_ip),
                                int(self.seconds.value()), int(self.max_mb.value()),
                                Path(self.output_path.text()),
-                               source_rate_tx=self.source_rate_tx.isChecked())
+                               source_rate_tx=self.source_rate_tx.isChecked(),
+                               source_auto_reconnect=self.source_auto_reconnect.isChecked())
             spec.validate()
             if not self.confirm.isChecked():
                 raise ValueError("Отсутствует разрешение оператора")
@@ -441,6 +471,9 @@ class NativeCaptureDialog(QDialog):
              "Это может изменить частоту прибора. Flash/Reboot исключены. "
              if spec.source_rate_tx else
              "Пассивный режим: клиент только читает. ")+
+            ("ПОСЛЕ РАЗРЫВА возможны повторные TCP-подключения и SetRate; "
+             "каждый сеанс будет отдельным RAW, единый BIN не создаётся. "
+             if spec.source_auto_reconnect else "")+
             "Сам TCP Connect может влиять на прибор. Подтвердите производственный допуск.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if response != QMessageBox.Yes:
@@ -452,10 +485,12 @@ class NativeCaptureDialog(QDialog):
             QMessageBox.warning(self, "Ошибка подготовки", str(exc))
             return
         self._zip = None
+        self._raw_only_dir = None
         self._stdout = ""
         self._active_device_ipv4 = spec.device_ipv4
         self._active_local_ipv4 = spec.local_ipv4
         self._source_rate_tx_enabled = spec.source_rate_tx
+        self._source_auto_reconnect_enabled=spec.source_auto_reconnect
         # Source edIpAddr remains the one operator-selected device address.
         # A dialog override is reflected into PageStart before Go starts;
         # this is not Ethernet NIC autodetection or a second TCP socket.
@@ -472,6 +507,7 @@ class NativeCaptureDialog(QDialog):
         self.log.clear()
         self.confirm.setChecked(False)  # every separate live session needs fresh consent
         self.source_rate_tx.setChecked(False)  # reset dangerous permission after use
+        self.source_auto_reconnect.setChecked(False)
         self._mode = "capture"
         self.status_label.setText(
             "Запись запускается через Native R6.1. RAW сохраняется без изменений.")
@@ -545,6 +581,8 @@ class NativeCaptureDialog(QDialog):
     def open_result(self):
         if self._zip is not None:
             self.archiveReady.emit(self._zip)
+        elif self._raw_only_dir is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._raw_only_dir)))
 
     def closeEvent(self, event):
         if self.is_busy():
