@@ -15,7 +15,7 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
 Kind = Literal["acceleration", "velocity", "displacement"]
-Scale = Literal["linear", "log", "db"]
+Scale = Literal["linear", "db", "log"]
 KINDS: dict[str, tuple[str, str]] = {
     "acceleration": ("ВУ · Виброускорение", "м/с²"),
     "velocity": ("ВС · Виброскорость", "мм/с"),
@@ -31,6 +31,30 @@ PRESET_BANDS: dict[str, tuple[float, float | None]] = {
     "10–3000 Гц": (10.0, 3000.0),
 }
 FFT_SIZES = (8192, 16384, 32768, 65536, 131072, 262144)
+
+# ISO 1683 vibratory RMS reference levels, expressed in the same units
+# as the already-calibrated one-sided FFT amplitude for each spectrum kind.
+# 1e-6 m/s², 1e-9 m/s == 1e-6 mm/s, 1e-12 m == 1e-6 um.
+# These are NOT the device's proprietary dB references. Every result is
+# explicitly labeled with the reference; the user can select 1 physical unit.
+DB_REFERENCES: dict[str, dict[str, float]] = {
+    "iso": {key: 1e-6 for key in KINDS},
+    "unit": {key: 1.0 for key in KINDS},
+}
+DEFAULT_DB_FLOOR = -180.0  # display floor, never a physical measurement
+
+
+def db_reference(kind: Kind, reference: str = "iso") -> float:
+    if kind not in KINDS or reference not in DB_REFERENCES:
+        raise ValueError("Unknown decibel reference")
+    return DB_REFERENCES[reference][kind]
+
+
+def db_reference_text(kind: Kind, reference: str = "iso") -> str:
+    value = db_reference(kind, reference)
+    number = "1×10⁻⁶" if value == 1e-6 else f"{value:g}"
+    return f"{number} {KINDS[kind][1]} СКЗ"
+
 
 
 @dataclass(frozen=True)
@@ -58,27 +82,36 @@ class Spectrum:
         return (float(self.hz[i]), float(self.rms[i]))
 
 
-def y_axis_label(kind: Kind, scale: Scale = "linear") -> str:
+def y_axis_label(kind: Kind, scale: Scale = "linear",
+                 reference: str = "iso") -> str:
     if kind not in KINDS:
         raise ValueError("Unknown physical spectrum kind")
-    if scale in ("linear", "log"):
+    if scale == "linear":
         return f"{KINDS[kind][0]}, {KINDS[kind][1]} СКЗ"
-    if scale == "db":
-        return f"{KINDS[kind][0]}, дБ (отн. 1 {KINDS[kind][1]} СКЗ)"
+    if scale in ("log", "db"):  # legacy log == dB, never pyqtgraph log-Y
+        return f"{KINDS[kind][0]}, дБ (отн. {db_reference_text(kind, reference)})"
     raise ValueError("Unknown Y scale")
 
 
-def plot_values(spectrum: Spectrum, scale: Scale) -> np.ndarray:
-    """Log axis receives physical values; dB uses a declared 1-unit reference."""
+def plot_values(spectrum: Spectrum, scale: Scale, *,
+                reference: str = "iso",
+                floor_db: float = DEFAULT_DB_FLOOR) -> np.ndarray:
+    """dB = 20*log10(RMS / explicit reference), returned as LINEAR-Y dB data.
+
+    The display floor prevents -Inf for silence and is never reported as a
+    real measurement. In the Qt plot the Y axis MUST NOT be log-transformed
+    again. The optional legacy "log" spelling means this SAME dB mode.
+    """
     y = spectrum.rms.astype(np.float64, copy=True)
     if scale == "linear":
         return y
-    if scale == "log":
-        y[y <= 0] = np.nan  # cannot plot zero on logarithmic Y
-        return y
-    if scale == "db":
-        return 20.0 * np.log10(np.maximum(y, 1e-20))  # reference = 1 physical unit
-    raise ValueError("Unknown Y scale")
+    if scale not in ("db", "log"):
+        raise ValueError("Unknown Y scale")
+    ref = db_reference(spectrum.kind, reference)
+    if not np.isfinite(floor_db) or not -400 < floor_db < 0:
+        raise ValueError("Invalid dB display floor")
+    floor = ref * (10.0 ** (floor_db / 20.0))
+    return 20.0 * np.log10(np.maximum(y, floor) / ref)
 
 
 def _filter_waveform(wave: np.ndarray, fs: int, low: float, high: float | None) -> np.ndarray:
