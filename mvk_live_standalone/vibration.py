@@ -139,6 +139,7 @@ def analyze_vibration(
     nfft: int=32768,
     band_hz: tuple[float,float|None]=(0.0,None),
     envelope_band_hz: tuple[float,float]=(1000.0,3000.0),
+    smooth_bins: int=1,
 ) -> VibrationView:
     x=_checked_input(calibrated_acceleration,fs,nfft)
     if kind not in KINDS or mode not in ("fft","welch","third_octave","envelope"):
@@ -147,7 +148,7 @@ def analyze_vibration(
         raise ValueError("Bearing envelope uses acceleration units only; select VU")
     if mode=="fft":
         # Existing physically validated one-sided line RMS; no second gain.
-        result: Spectrum=calculate_spectrum(x,fs,kind=kind,nfft=nfft,band_hz=band_hz)
+        result: Spectrum=calculate_spectrum(x,fs,kind=kind,nfft=nfft,band_hz=band_hz,smooth_bins=smooth_bins)
         return VibrationView(result.hz,result.rms,kind,result.units,fs,nfft,mode,
                              result.waveform,1,float(fs/nfft),0.0)
     if mode=="envelope":
