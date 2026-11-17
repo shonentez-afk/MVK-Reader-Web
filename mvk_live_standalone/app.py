@@ -32,7 +32,8 @@ from .original_dsp import read_original_dsp_bands
 from .rotation import estimate_rotation_from_velocity
 from .pipeline import analyze_live, AnalysisResult
 from .advanced import (envelope_fault_lines, stft_vibration,
-                       cwt_morlet_vibration, real_cepstrum)
+                       cwt_morlet_vibration, real_cepstrum,
+                       gear_mesh_markers, indicative_iso10816_zone)
 from .recordings import save_snapshot, load_snapshot, save_spectrum_csv
 from .vibration import (
     VibrationView, analyze_vibration, vibration_plot_values,
@@ -229,6 +230,21 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.contact_angle.setSuffix("°")
         opts2.addWidget(self.contact_angle)
         opts2.addStretch(1)
+        gears=QtWidgets.QHBoxLayout()
+        main.addLayout(gears)
+        gears.addWidget(QtWidgets.QLabel("Редуктор: зубьев шестерни"))
+        self.gear_teeth=QtWidgets.QSpinBox()
+        self.gear_teeth.setRange(0,400)
+        self.gear_teeth.setSpecialValueText("Не задано")
+        self.gear_teeth.valueChanged.connect(self._update_markers)
+        gears.addWidget(self.gear_teeth)
+        self.severity_button=QtWidgets.QPushButton(
+            "Оценка виброскорости (ISO 10816-3, справочно)")
+        self.severity_button.clicked.connect(self._show_severity)
+        gears.addWidget(self.severity_button)
+        gears.addWidget(QtWidgets.QLabel(
+            "Обороты: вручную или подтверждённая гипотеза по ВС; TACH отключён"))
+        gears.addStretch(1)
         review=QtWidgets.QHBoxLayout()
         main.addLayout(review)
         self.freeze=QtWidgets.QPushButton("Заморозить графики")
@@ -441,6 +457,17 @@ class LiveWindow(QtWidgets.QMainWindow):
                 markers=bearing_frequency_markers(self.rpm.value())
         except ValueError:
             markers=bearing_frequency_markers(self.rpm.value())
+        if self.gear_teeth.value()>0:
+            try:
+                gear=gear_mesh_markers(
+                    self.rpm.value(),self.gear_teeth.value())
+                markers["GMF"]=gear.mesh_hz
+                for i,hz in enumerate(gear.harmonics_hz[1:],start=2):
+                    markers[f"{i}GMF"]=hz
+                for hz in gear.sidebands_hz:
+                    markers[f"GMF±{abs(hz-gear.mesh_hz)/self.rpm.value()*60:.0f}×"]=hz
+            except ValueError:
+                pass  # invalid user geometry cannot inject arbitrary lines
         for label,hz in markers.items():
             if hz<=0:continue
             line=pg.InfiniteLine(pos=(math.log10(hz) if self.xscale.currentData()=="log" else hz),movable=False,
@@ -1018,6 +1045,35 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.status.setText(f"График сохранён: {path}")
         except (OSError,ValueError,RuntimeError) as exc:
             QtWidgets.QMessageBox.warning(self,"PNG не сохранён",str(exc))
+
+    def _show_severity(self):
+        result=self._last_result
+        if result is None or result.broadband_velocity is None or (
+                not result.broadband_velocity.valid):
+            self.status.setText("Для оценки требуется полноценная ВС СКЗ 10–1000 Гц")
+            return
+        options=["Класс 1","Класс 2","Класс 3","Класс 4"]
+        selected,ok=QtWidgets.QInputDialog.getItem(
+            self,"Справочная диаграмма ISO 10816-3",
+            "Класс и область применения машины должны быть известны оператору.",
+            options,0,False)
+        if not ok:return
+        try:
+            v=result.broadband_velocity
+            out=indicative_iso10816_zone(
+                v.rms,machine_class=options.index(selected)+1,
+                rpm=self.rpm.value(),
+                measured_band_hz=(v.low_hz,v.high_hz))
+        except ValueError as exc:
+            self.status.setText(f"Оценка неприменима: {exc}")
+            return
+        QtWidgets.QMessageBox.information(
+            self,"Справочная оценка (НЕ аттестация)",
+            f"Скорость {out.velocity_rms_mm_s:.3g} мм/с СКЗ; класс {out.machine_class}, "
+            f"ориентировочная зона {out.zone} по исторической ISO 10816-3.\n"
+            "Не является проверкой по эталонному измерению, "
+            "официальной оценкой ISO 20816 или диагнозом."
+        )
 
     def _show_bearing_diagnostics(self):
         view=self._spectrum
