@@ -71,6 +71,13 @@ def test_unproven_source_tx_fails_closed(mutation):
         validate_original_task2_tx(p)
 
 
+def test_active_source_rate_change_rejects_stale_preview(tmp_path):
+    from ..core.native_r6_live_preview import load_live_preview
+    status={"phase":"RECORDING","source_rate_transition_during_live":True}
+    with pytest.raises(ValueError,match="changed Fs"):
+        load_live_preview(tmp_path,status)
+
+
 def test_capture_args_require_separate_approval_for_source_tx(tmp_path):
     for tx in (False,True):
         spec=CaptureSpec("192.168.0.30","192.168.0.2",10,256,tmp_path,

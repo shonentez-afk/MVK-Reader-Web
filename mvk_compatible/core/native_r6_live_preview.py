@@ -152,6 +152,8 @@ def load_live_preview(capture_root: str | Path, status: dict, *,
     """One local atomic preview per approved GUI capture root; no TCP calls."""
     if status["phase"] != "RECORDING":
         return None
+    if status.get("source_rate_transition_during_live",False):
+        raise ValueError("Native live preview: original SetRate changed Fs; old single-rate preview is invalid")
     if (status["capture_only"] or status["invalid_frames"] or
             status["snapshot_stale"] or
             (status["seconds_since_last_packet"] is not None and

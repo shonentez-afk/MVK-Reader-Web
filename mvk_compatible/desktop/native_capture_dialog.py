@@ -277,6 +277,11 @@ class NativeCaptureDialog(QDialog):
         # At most one bounded preview per new atomic snapshot, never a second
         # TCP client and never an on-disk partial BIN. Failed provenance must
         # CLEAR any previously displayed provisional data.
+        if snapshot.get("source_rate_transition_during_live"):
+            self.previewInvalid.emit(
+                "Исходная ЧД изменилась в текущем сеансе; прежнее "
+                "превью скрыто, полный RAW продолжает сохраняться")
+            return
         if snapshot["phase"] != "RECORDING":
             self.previewInvalid.emit("Запись не в фазе RECORDING: предварительные графики скрыты")
             return
