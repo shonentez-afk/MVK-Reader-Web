@@ -99,7 +99,7 @@ def test_operator_gear_mesh_harmonics_and_sidebands_without_tach():
     assert m.harmonics_hz==(800,1600,2400)
     assert m.sidebands_hz==(725,750,775,825,850,875)
     assert "NO_TACH" in m.source
-    with pytest.raises(ValueError,match="teeth"):
+    with pytest.raises(ValueError,match="tooth"):
         gear_mesh_markers(1500,0)
 
 
