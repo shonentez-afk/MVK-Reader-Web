@@ -62,6 +62,9 @@ func validIPv4(ip string) bool {
 }
 
 func liveCapture(ctx context.Context, m *Monitor, ip string, seconds int, maxBytes uint64, nic *LocalNIC) (string, error) {
+	if m.sourceTask2TX != nil {
+		return sourceTask2CaptureInitialRetry(ctx,m,ip,seconds,maxBytes,nic)
+	}
 	return liveCaptureAddressOnNIC(ctx, m, net.JoinHostPort(ip, strconv.Itoa(instrumentPort)), seconds, maxBytes, nic)
 }
 
@@ -82,6 +85,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		fmt.Printf("Ethernet-интерфейс: %s | индекс %d | локальный IPv4 %s\n", nic.Name, nic.Index, nic.IP)
 	}
 	dialer, e := newInterfaceDialer(nic)
+	if e == nil && m.sourceTask2TX != nil {dialer.Timeout=time.Second} // original ConnectTimeout=1000ms
 	if e != nil {
 		return "LOCAL_INTERFACE_INVALID", e
 	}
@@ -103,6 +107,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 	m.note(fmt.Sprintf("Connected TCP local=%s remote=%s (source SetRate enabled=%v)", c.LocalAddr(), c.RemoteAddr(),m.sourceTask2TX!=nil))
 	fmt.Printf("TCP: %s -> %s\n", c.LocalAddr(), c.RemoteAddr())
 	start := time.Now()
+	lastPacket := start // source ReadTimeout=5000ms when TX approved
 	deadline := start.Add(time.Duration(seconds) * time.Second)
 	buf := make([]byte, 64*1024)
 	lastPrinted := time.Time{}
@@ -132,6 +137,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		}
 		n, e := c.Read(buf)
 		if n > 0 {
+			lastPacket=time.Now()
 			remaining := maxBytes - m.summary.RawBytes
 			limit := false
 			if uint64(n) > remaining {
@@ -159,6 +165,9 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			}
 			if ne, ok := e.(net.Error); ok && ne.Timeout() {
 				m.publishLiveStatus("RECORDING", false, "")
+				if m.sourceTask2TX!=nil && time.Since(lastPacket)>=5*time.Second {
+					return "SOURCE_READ_TIMEOUT",fmt.Errorf("original Task2 read timeout 5000ms")
+				}
 				continue
 			}
 			if ctx.Err() != nil {

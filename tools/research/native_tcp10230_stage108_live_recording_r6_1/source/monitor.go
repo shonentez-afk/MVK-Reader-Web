@@ -41,6 +41,7 @@ type Summary struct {
 	SocketLocalAddr        string            `json:"connected_local_address,omitempty"`
 	SocketRemoteAddr       string            `json:"connected_remote_address,omitempty"`
 	ReadOnly               bool              `json:"read_only_no_app_payload_sent"`
+	SourceInitialRetryAttempts uint64 `json:"source_initial_retry_attempts,omitempty"`
 	SourceSetRateApproved bool `json:"source_setrate_tx_approved,omitempty"`
 	SourceSetRateCount uint64 `json:"source_setrate_sent_commands,omitempty"`
 	SourceSetRateBytes uint64 `json:"source_setrate_sent_bytes,omitempty"`
