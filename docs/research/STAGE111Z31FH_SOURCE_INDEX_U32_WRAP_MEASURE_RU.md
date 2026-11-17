@@ -23,3 +23,12 @@ Go декодирует `SampleHeader.Index` как **uint32** и при ест�
 ## Регрессия и открытые вопросы
 
 Добавлены: Go 2 кадра через `0xFFFFFFFF` с byte-identical BIN и 64-битным счётчиком в ZIP; Python Core validates wrap/newer/forged/stale/legacy epoch; Qt реальный QWidget с переходом `0xFFFFF000 → 0x0000F000` и запретом повторного кадра. Проверять **все четыре** Jobs CI и автономный Windows EXE до приёмки. Физический MVK01, оригинальный 2^21 storage ring, исходящий hardware WriteData/WriteValues, точный TQGrapher/x87/Delphi parity остаются OPEN.
+
+## Доработки и точная приёмка кода
+
+- Основной атомарный Go/Core/Qt пакет `e06a66be59f8d3a87e74ddd9c1dd18cabbb8a6e2` (9 файлов).
+- `785767ac8d17ebb003526cc85ce6edad54936315`: согласован тестовый Go status c действительно записанным `captured_samples`. Production-проверка источника НЕ ослаблена.
+- `1af533131cbb34c7e232e4648a15328aa1c72922`: в непрерывном Measure Python ранее ошибочно обрезал `raw_bytes` и `frames_decoded` на границе 32 бит, хотя Go хранит эти независимые счётчики в uint64. Теперь только эти счётчики допускают 64-битный диапазон; сетевые `first_sample_index/next_sample_index` остаются строго uint32. Добавлен метаданный регрессионный тест >4GiB без создания огромных файлов.
+- `ad7448233b03a8ce10592c753276790c76e963aa`: уточнено ожидаемое сообщение теста при отклонении индекса `2^32`; ядро продолжает fail-closed.
+- GitHub Actions [#44060616414](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44060616414) для последнего кода. Linux Core: **2333 passed, 133 skipped, 30 subtests PASS**; Windows Core/Qt, native QPA, Windows EXE ещё не были завершены при проверке. **Не объявлять 4/4, пока CI не завершится.**
+
