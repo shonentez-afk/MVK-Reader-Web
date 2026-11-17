@@ -128,7 +128,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         panel.addWidget(self.connect_button, 0, 4)
         panel.addWidget(self.stop_button, 0, 5, 2, 1)
 
-        opts = QtWidgets.QHBoxLayout()
+        opts = QtWidgets.QGridLayout()
         main.addLayout(opts)
         self.adc = QtWidgets.QComboBox()
         for i in range(8):
@@ -169,18 +169,32 @@ class LiveWindow(QtWidgets.QMainWindow):
         ]:
             self.envelope_band.addItem(name,band)
         self.envelope_band.setCurrentIndex(1)
+        self.envelope_band.addItem("Авто по импульсности (картограмма)", "auto")
+        self.band.addItem("Свой диапазон", "custom")
+        self.custom_low = QtWidgets.QDoubleSpinBox()
+        self.custom_low.setRange(0.0,32768.0)
+        self.custom_low.setDecimals(2)
+        self.custom_low.setSuffix(" Гц")
+        self.custom_low.setValue(10.0)
+        self.custom_high = QtWidgets.QDoubleSpinBox()
+        self.custom_high.setRange(0.0,32768.0)
+        self.custom_high.setDecimals(2)
+        self.custom_high.setSuffix(" Гц (0=Nyquist)")
+        self.custom_high.setValue(1000.0)
         self.smooth = QtWidgets.QSpinBox()
         self.smooth.setRange(1,101)
         self.smooth.setSingleStep(2)
         self.smooth.setValue(1)
-        for label,widget in [
+        for idx,(label,widget) in enumerate([
             ("Канал",self.adc),("Тип",self.kind),("Режим",self.analysis),("Шкала Y",self.yscale),
             ("Опора дБ",self.db_ref),
             ("Шкала X",self.xscale),("FFT",self.nfft),("Полоса",self.band),
             ("Сглаживание (бин)",self.smooth),
-        ]:
-            opts.addWidget(QtWidgets.QLabel(label))
-            opts.addWidget(widget)
+            ("Нижняя граница",self.custom_low),("Верхняя граница",self.custom_high),
+        ]):
+            row,col=divmod(idx,4)
+            opts.addWidget(QtWidgets.QLabel(label),row,col*2)
+            opts.addWidget(widget,row,col*2+1)
         opts2=QtWidgets.QHBoxLayout()
         main.addLayout(opts2)
         opts2.addWidget(QtWidgets.QLabel("Полоса огибающей"))
@@ -266,7 +280,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         main.addWidget(self.features_label)
         self._apply_axes()
 
-        for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band,self.notch):
+        for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band,self.notch,self.custom_low,self.custom_high):
             w.currentIndexChanged.connect(self._on_control_change) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._on_control_change)
         for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
@@ -282,8 +296,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._ipc_timer.start()
 
     def _read_settings(self):
+        band=self.band.currentData()
+        if band=="custom":
+            high=float(self.custom_high.value())
+            band=(float(self.custom_low.value()),high if high>0 else None)
         return (self.adc.currentData(),self.kind.currentData(),self.nfft.currentData(),
-                self.band.currentData(),self.smooth.value(),
+                band,self.smooth.value(),
                 self.analysis.currentData(),self.envelope_band.currentData(),self.notch.currentData())
 
     def _on_control_change(self,*_):
