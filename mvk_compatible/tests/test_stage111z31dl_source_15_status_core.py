@@ -57,6 +57,9 @@ def test_actual_register_bytes_render_and_do_not_invent_delphi_enums():
 
 def test_page_system_error_is_same_register_as_source_statuscells0():
     payload={"read_only_no_app_payload_sent":True,
+             "source_rx_nonempty_parameter_frames":1,
+             "source_rx_ack_observed_no_command_issued":0,
+             "source_rx_denied_responses":0,
              SOURCE_FIELD_KEY:visible_field_rows({2:struct.pack("<I",0x1234)}),
              SOURCE_STATUS_FIELD:[
                 dict(index=i,register_address=addr,valid=i==0,
