@@ -48,6 +48,7 @@ type LiveStatus struct {
     SourceRXDenials         uint64              `json:"source_rx_denied_responses"`
     SourceStatusCells      []LiveSourceStatusCell `json:"source_status_cells_14"`
     SourcePageStatusFields []LiveSourcePageStatusField `json:"source_page_status_fields_15"`
+    SourceMode2TxEvidence LiveOriginalTask2TxEvidence `json:"source_mode2_tx_evidence"`
     WarningCount           uint64              `json:"warning_count"`
     SecondsSinceLastPacket *float64            `json:"seconds_since_last_packet"`
     LastAUXUTC             *string             `json:"last_aux_received_utc"`
@@ -102,6 +103,7 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SourceRXACKObserved: report.ACK, SourceRXDenials: report.Denials,
         SourceStatusCells: m.snapshotSourceStatusCells(),
         SourcePageStatusFields: m.snapshotSourcePageStatusFields(),
+        SourceMode2TxEvidence: m.snapshotOriginalTask2TxEvidence(),
         WarningCount: report.WarningCount, LastAUXUTC: lastAUX,
         SecondsSinceLastPacket: since, Channels: channels,
         EndReason: report.EndReason,
