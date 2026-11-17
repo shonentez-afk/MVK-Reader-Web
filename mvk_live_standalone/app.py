@@ -12,6 +12,8 @@ import hashlib
 import ipaddress
 import math
 import tempfile
+import time
+import sys
 
 import numpy as np
 from PySide6 import QtCore, QtWidgets
@@ -24,6 +26,7 @@ from .spectrum import (
     calculate_spectrum, plot_values, y_axis_label, db_reference_text,
 )
 from .live_ring import VerifiedLiveRing
+from .live_ipc import discover_local_ipc, IPCNotReady
 
 MAX_CAPTURE_MB = 2048
 
@@ -44,6 +47,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._spectrum: Spectrum | None = None
         self._future: Future | None = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-spectrum")
+        self._ipc_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-local-IPC")
+        self._ipc_client = None
+        self._ipc_future: Future | None = None
+        self._ipc_channel: int | None = None
+        self._last_ipc_ok = None
         self._job_settings = None
         self._generation = 0
         self._native = QtCore.QProcess(self)
@@ -150,6 +158,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._timer.setInterval(900)  # current Native sidecar is published >=750 ms
         self._timer.timeout.connect(self._poll)
         self._timer.start()
+        self._ipc_timer=QtCore.QTimer(self)
+        self._ipc_timer.setInterval(75)  # bounded fresh ring snapshots at up to 13 Hz
+        self._ipc_timer.timeout.connect(self._poll_ipc)
+        self._ipc_timer.start()
 
     def _read_settings(self):
         return (self.adc.currentData(),self.kind.currentData(),self.nfft.currentData(),
@@ -249,6 +261,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             if status.get("source_tcp_multi_socket") or status["phase"]!="RECORDING":
                 self._clear(f"Источник недоступен: {status['phase']}")
                 return
+            if self._ipc_client is None:
+                self._ipc_client=discover_local_ipc(self._capture_root,status)
+            if self._ipc_client is not None:
+                return  # fast IPC is the sole GUI producer, never mix ZIP data
             preview=load_live_preview(self._capture_root,status)
             if preview is None or preview.updated_utc==self._last_stamp:return
             updated=self._gui_ring.ingest_preview(preview)
@@ -265,8 +281,48 @@ class LiveWindow(QtWidgets.QMainWindow):
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             self._clear(f"Превью отклонено: {exc}")
 
+    def _poll_ipc(self):
+        # QApplication thread owns GUI ring. HTTP is handled ONLY by worker.
+        if self._ipc_future is not None and self._ipc_future.done():
+            pending=self._ipc_future
+            self._ipc_future=None
+            try:
+                preview=pending.result()
+            except IPCNotReady:
+                pass  # verified source needs more real samples for selected N
+            except (ValueError,OSError,TimeoutError,RuntimeError) as exc:
+                self.quality.setText(f"Локальный IPC: {exc}")
+                # A failed authenticated source must never be shown as a
+                # successful measurement or silently substituted by stale ZIP.
+            else:
+                if (self._ipc_client is not None and
+                    preview.session_id==self._ipc_client.session_id and
+                    self._last_status is not None and
+                    self._last_status.get("phase")=="RECORDING"):
+                    changed=self._gui_ring.ingest_preview(preview)
+                    if changed:
+                        self._preview=preview
+                        self._last_stamp=preview.updated_utc
+                        self._last_ipc_ok=time.monotonic()
+                        self._render_wave()
+                        self._request_update()
+        if (self._ipc_client is None or self._ipc_future is not None or
+            self._last_status is None or
+            self._last_status.get("phase")!="RECORDING" or
+            self._last_status.get("snapshot_stale") or
+            self._last_status.get("capture_only") or
+            self._last_status.get("source_tcp_multi_socket")):
+            return
+        # IPC transfers the selected ADC only, not a periodic 8 MiB ZIP.
+        # Welch/1/3 octave use the extra available history when configured.
+        count=min(self._gui_ring.capacity,max(65536,int(self.nfft.currentData())))
+        self._ipc_channel=self.adc.currentData()
+        self._ipc_future=self._ipc_executor.submit(
+            self._ipc_client.read_channel,self._ipc_channel,count)
+
     def _clear(self,message):
         self._preview=None
+        self._ipc_client=None
         self._gui_ring.clear()
         self._last_submitted_key=None
         self._spectrum=None
@@ -360,6 +416,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         args=["-ip",ip,"-local-ip",local,"-seconds","0",
               "-max-mb",str(MAX_CAPTURE_MB),"-out",str(root),
               "-approve=true","-export=true","-live-status=true",
+              "-live-ipc=true",
               "-stop-file",str(stop)]
         self._native.start(str(exe),args)
         self.stop_button.setEnabled(True)
@@ -388,7 +445,9 @@ class LiveWindow(QtWidgets.QMainWindow):
             event.ignore()
             return
         self._timer.stop()
+        self._ipc_timer.stop()
         self._executor.shutdown(wait=False,cancel_futures=True)
+        self._ipc_executor.shutdown(wait=False,cancel_futures=True)
         super().closeEvent(event)
 
 
