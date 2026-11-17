@@ -398,5 +398,5 @@ def test_continuous_measure_go_uint64_raw_and_frame_counters_do_not_truncate(
         meta["channels"][0]["next_sample_index"]=1<<32
     other=tmp_path/"invalid"
     root2,status2,_=make_preview(other,modify=source_invalid_index)
-    with pytest.raises(ValueError,match="invalid calibrated sample metadata"):
+    with pytest.raises(ValueError,match="invalid next_index"):
         load_live_preview(root2,status2,now=now())
