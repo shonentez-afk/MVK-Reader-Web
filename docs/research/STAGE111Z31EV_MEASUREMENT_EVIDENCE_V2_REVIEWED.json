@@ -1,0 +1,153 @@
+{
+  "review_id": "MVK_STAGE111Z31EV_HARNESS_V2_THREE_SOURCE_REVIEW",
+  "created_date": "2026-11-17",
+  "review_target": "MVK_MEASUREMENT_EVIDENCE(1).json (version 2)",
+  "review_sources": {
+    "idp": "IDR v3 header/segments/hash checked; object records not fully decoded",
+    "pas_dfm": "_Unit125.pas, _Unit128.pas and mvkform.dfm from Projects.7z, SHA256 matched sqlite source_files",
+    "sqlite": "mvk_idr(1).sqlite read-only, functions/calls/events",
+    "core_qt": "research/stage111-mvkview-desktop-20261029 selected public source modules"
+  },
+  "source_contract_test": {
+    "status": "PASS",
+    "checks": 63,
+    "passed": 63,
+    "tool": "tools/research/verify_mvk_measurement_evidence_v2.py"
+  },
+  "harness_report_acceptance": "REJECT_FULL_CHAIN_CLAIM",
+  "corrective_facts": [
+    {
+      "key": "mode1",
+      "affected_findings": [
+        "F-002",
+        "F-003"
+      ],
+      "original": "00848E84 bTaskViewClick Mode1 -> TOpenDialog archive",
+      "mode2_stop": "same Mode2 button -> 00847040 when already in mode 2",
+      "severity": "critical"
+    },
+    {
+      "key": "dispatcher_internal",
+      "affected_findings": [],
+      "original": "00846DCC is internal instruction of function 00846AD4",
+      "severity": "address",
+      "affected_section": "critical_correction.addresses:00846DCC"
+    },
+    {
+      "key": "gui_timer",
+      "affected_findings": [
+        "F-020"
+      ],
+      "original": "0084F7C8 calls 00847248 then RET; 0084F7D0 is distinct offline viewed-file/trackbar function",
+      "severity": "critical"
+    },
+    {
+      "key": "background_entry",
+      "affected_findings": [
+        "F-012"
+      ],
+      "original": "Entry 0084FA6C, ADD ESP -16 at 0084FA70, not ADD ESP +240 at 0084FA68",
+      "severity": "critical"
+    },
+    {
+      "key": "sync_terminated_guard",
+      "affected_findings": [
+        "F-015"
+      ],
+      "original": "0084FB10 JNE 0084FB57 skips Synchronize when FTerminated != 0",
+      "severity": "critical"
+    },
+    {
+      "key": "write_timestamps",
+      "affected_findings": [
+        "F-018",
+        "F-019"
+      ],
+      "original": "WriteDataTime +0x404E0 at 0084E936; WriteValuesTime +0x404E8 at 0084E9B3",
+      "severity": "critical"
+    },
+    {
+      "key": "channel_count_location",
+      "affected_findings": [
+        "F-017"
+      ],
+      "original": "CMP ESI,0A at 0084E95A (not 0084E960)",
+      "severity": "address"
+    },
+    {
+      "key": "except_keys",
+      "affected_findings": [
+        "F-010"
+      ],
+      "original": "errDisconnected, errNotResponding, errCannotConnect, errTransferError; plus generic Exception",
+      "severity": "missed_source"
+    },
+    {
+      "key": "setrate_queue",
+      "affected_findings": [],
+      "original": "00809400 -> 00809364 -> QueueCommand(1, 0x0E, rate), later TCP sender",
+      "severity": "critical",
+      "affected_section": "section 7 / unverified queue-to-wire link"
+    },
+    {
+      "key": "pause_vs_retry",
+      "affected_findings": [
+        "F-011"
+      ],
+      "original": "00808AAF round PauseValue, sleep loop; 00808B15 can jump to 00807BC2 if not terminated",
+      "severity": "misleading_inference"
+    },
+    {
+      "key": "last_epilogue",
+      "affected_findings": [],
+      "original": "00808B60 JMP 00808B35; 00808B62 POP EDI; 00808B68 RET",
+      "severity": "address",
+      "affected_section": "execute_boundary_correction / section 5.8"
+    },
+    {
+      "key": "spectrum_call_owners",
+      "affected_findings": [
+        "F-023"
+      ],
+      "original": "0084C50A owner 0084C4C8 mSpecLines1Click; 0084C5A0 owner 0084C514 mSpecType1Click",
+      "severity": "address"
+    },
+    {
+      "key": "framing",
+      "affected_findings": [
+        "F-009"
+      ],
+      "original": "Two ReadUInt32 header words, second total frame length incl 8-byte header, not all payload values proven float32",
+      "severity": "overclaim"
+    },
+    {
+      "key": "core_qt_status",
+      "affected_findings": [],
+      "original": "Mode2 five tabs, 15 PageStatus modes including two TACH, five rate tags already exist in current branch",
+      "severity": "incorrect_gap_claim",
+      "affected_section": "compatible_comparison"
+    }
+  ],
+  "verified_static_scope": [
+    "Mode2 click and reset",
+    "Mode1 archive view",
+    "TCP/10230 and 1000/5000ms",
+    "read and write code paths",
+    "10 channel handling",
+    "separate background GetSignal/GetSpectrum",
+    "GUI timer and Synchronize",
+    "exception localization keys"
+  ],
+  "not_accepted": [
+    "all outgoing wire payloads byte-exact",
+    "all RX frame types and parsers",
+    "all channel values and calibration",
+    "exact error and reconnect timing",
+    "all Qt behavior and numerical parity",
+    "binary identity of local Windows EXE vs IDP",
+    "live device verification"
+  ],
+  "binary_modified": false,
+  "device_io_performed": false,
+  "raw_private_sources_embedded": false
+}
