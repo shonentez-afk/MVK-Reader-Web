@@ -727,6 +727,220 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.waterfall_img.setRect(QtCore.QRectF(0.0,0.0,
                                    float(s.hz[-1]),float(len(self._waterfall_rows))))
 
+    def _current_window(self, minimum: int, *, for_fft: bool=True):
+        """Immutable, physically contiguous window for the selected ADC.
+
+        Freeze stops only local presentation, NOT the Native RAW recorder,
+        and review never requests old packets or writes to the instrument.
+        """
+        adc=self.adc.currentData()
+        if self.freeze.isChecked() and self._freeze_samples is not None:
+            if adc!=self._freeze_channel:
+                raise ValueError("Заморожен другой АЦП; сначала вернитесь в Live")
+            raw=self._freeze_samples
+            fs=self._freeze_rate
+            offset=min(int(round(self.history.value()*fs)),len(raw))
+            end=len(raw)-offset
+            if end<minimum:
+                raise ValueError("В выбранном участке истории недостаточно реальных отсчётов")
+            key=("FROZEN",self._freeze_session,adc,self._freeze_end-offset)
+            return raw[:end][-minimum:].copy(),fs,key
+        ch=self._gui_ring.channel(adc)
+        if ch is None or ch.available<minimum:
+            raise ValueError(f"Ожидание {minimum} подтверждённых отсчётов АЦП {adc}")
+        return ch.latest(minimum),ch.rate_hz,(self._gui_ring.session_id,adc,ch.end)
+
+    def _review_changed(self,*_):
+        if self.freeze.isChecked() and self._freeze_samples is not None:
+            self._last_submitted_key=None
+            self._last_fft_submit=0.0
+            self._generation+=1
+            self._render_wave()
+            self._schedule_fft()
+        else:
+            self._render_wave()
+
+    def _toggle_freeze(self,checked):
+        if checked:
+            channel=self._gui_ring.channel(self.adc.currentData())
+            if channel is None or channel.available<256:
+                self.freeze.setChecked(False)
+                self.status.setText("Для заморозки нужен подтверждённый поток АЦП")
+                return
+            self._freeze_samples=channel.latest(channel.available)
+            self._freeze_rate=channel.rate_hz
+            self._freeze_session=self._gui_ring.session_id
+            self._freeze_channel=channel.number
+            self._freeze_end=channel.end
+            self.freeze.setText("Вернуться в Live")
+            max_history=max(0.0,(len(self._freeze_samples)-256)/channel.rate_hz)
+            self.history.setRange(0.0,max_history)
+            self.status.setText("ЗАМОРОЖЕН ТОЛЬКО ПРОСМОТР · Native RAW продолжает запись")
+        else:
+            self.freeze.setText("Заморозить графики")
+            self._freeze_samples=None
+            self._freeze_rate=None
+            self._freeze_channel=None
+            self._freeze_session=None
+            self._freeze_end=None
+            self.history.setRange(0.0,0.0)
+            self.history.setValue(0.0)
+        self._last_submitted_key=None
+        self._last_fft_submit=0.0
+        self._generation+=1
+        self._render_wave()
+        self._schedule_fft()
+
+    def _rpm_changed(self,value):
+        if not self._setting_rpm_from_candidate:
+            self._rpm_source="MANUAL"
+            self._speed_candidate=None
+            self.rpm_accept.setEnabled(False)
+            self.rotation_info.setText(
+                f"1×: {value/60:.3f} Гц (введено вручную)" if value>0
+                else "1×: не задана; можно получить гипотезу по спектру ВС")
+        self._show_bearing_diagnostics()
+
+    def _propose_rotation(self):
+        if self._speed_future is not None and not self._speed_future.done():
+            return
+        try:
+            x,fs,key=self._current_window(self.nfft.currentData())
+        except ValueError as exc:
+            self.rotation_info.setText(str(exc))
+            return
+        self._speed_candidate=None
+        self.rpm_accept.setEnabled(False)
+        self.rotation_info.setText("Расчёт первой гармоники по ВС · TACH не используется")
+        self._speed_future=self._extra_executor.submit(
+            estimate_rotation_from_velocity,x,fs,nfft=self.nfft.currentData())
+
+    def _accept_rotation(self):
+        proposal=self._speed_candidate
+        if proposal is None:
+            return
+        self._setting_rpm_from_candidate=True
+        try:
+            self.rpm.setValue(proposal.rpm)
+        finally:
+            self._setting_rpm_from_candidate=False
+        self._rpm_source="VELOCITY_FFT_OPERATOR_ACCEPTED"
+        self.rpm_accept.setEnabled(False)
+        self.rotation_info.setText(
+            f"1× принята оператором по ВС: {proposal.hz:.2f} Гц / "
+            f"{proposal.rpm:.1f} об/мин · {proposal.confidence}. НЕ тахометр.")
+        self._update_markers()
+        self._show_bearing_diagnostics()
+
+    def _save_snapshot(self):
+        try:
+            if self.freeze.isChecked() and self._freeze_samples is not None:
+                x=self._freeze_samples.copy()
+                rate=self._freeze_rate
+                session=self._freeze_session
+                end=self._freeze_end
+                adc=self._freeze_channel
+            else:
+                ch=self._gui_ring.channel(self.adc.currentData())
+                if ch is None or ch.available<256:
+                    raise ValueError("Нет подтверждённых отсчётов для сохранения")
+                x=ch.latest(ch.available)
+                rate=ch.rate_hz
+                session=self._gui_ring.session_id
+                end=ch.end
+                adc=ch.number
+            name,_=QtWidgets.QFileDialog.getSaveFileName(
+                self,"Сохранить калиброванный фрагмент",
+                "MVK_Live_Window.npz","MVK Live (*.npz)")
+            if not name:return
+            out=save_snapshot(name,x,adc=adc,rate_hz=rate,
+                              session_id=session,capture_end=end)
+            self.status.setText(f"Сохранён локальный фрагмент: {out}")
+        except (OSError,ValueError,FileExistsError) as exc:
+            QtWidgets.QMessageBox.warning(self,"Сохранение не выполнено",str(exc))
+
+    def _open_snapshot(self):
+        if self._native.state()!=QtCore.QProcess.ProcessState.NotRunning:
+            QtWidgets.QMessageBox.warning(
+                self,"Нельзя сменить источник","Сначала остановите текущую Native запись")
+            return
+        file,_=QtWidgets.QFileDialog.getOpenFileName(
+            self,"Открыть локальное окно MVK Live","","MVK Live (*.npz)")
+        if not file:return
+        try:
+            record=load_snapshot(file)
+            # A local hash detects accidental archive corruption, not original
+            # MVK origin. The independent OFFLINE session avoids implying
+            # the receiver is still measuring or connected to the instrument.
+            session="OFFLINE_"+record.sha256[:20]
+            adc=record.adc
+            data=record.acceleration_m_s2
+            preview=IPCPreview(session,DOMAIN,True,datetime.now(timezone.utc),{
+                adc: IPCChannel(adc,record.rate_hz,data,
+                    record.capture_end%(1<<32),record.capture_end,
+                    record.sha256)})
+            self._capture_root=None
+            self._active_ip=None
+            self._local_ip=None
+            self._ipc_client=None
+            self._last_status=None
+            self._gui_ring.clear()
+            self._gui_ring.ingest_preview(preview)
+            self._preview=preview
+            if self.freeze.isChecked():
+                self.freeze.setChecked(False)
+                self._toggle_freeze(False)
+            self.adc.setCurrentIndex(adc-1)
+            self._waterfall_rows=[]
+            self._waterfall_key=None
+            self._trend_points=[]
+            self._trend_key=None
+            self._on_control_change()
+            self.status.setText(
+                f"OFFLINE · локальная запись АЦП {adc}, Fs={record.rate_hz}; "
+                "не эталон и не активное соединение МВК01")
+            self.quality.setText(
+                "OFFLINE · SHA внутреннего файла проверен; происхождение от прибора не заверяется")
+        except (OSError,ValueError,KeyError,RuntimeError) as exc:
+            QtWidgets.QMessageBox.warning(self,"Запись отклонена",str(exc))
+
+    def _export_csv(self):
+        if self._spectrum is None:
+            self.status.setText("Нет вычисленного спектра для CSV")
+            return
+        path,_=QtWidgets.QFileDialog.getSaveFileName(
+            self,"Сохранить рассчитанный спектр","","CSV (*.csv)")
+        if not path:return
+        try:
+            view=self._spectrum
+            s=save_spectrum_csv(
+                path,view.hz,view.rms,
+                vibration_plot_values(view,self.yscale.currentData(),
+                                     reference=self.db_ref.currentData()),
+                mode=view.mode,unit=view.units,
+                scale=self.yscale.currentData(),reference=self.db_ref.currentData(),
+                adc=self.adc.currentData(),
+                session_id=self._gui_ring.session_id or "NO_SESSION")
+            self.status.setText(f"CSV экспортирован: {s} (APP_DERIVED, без эталонов)")
+        except (OSError,ValueError,FileExistsError) as exc:
+            QtWidgets.QMessageBox.warning(self,"CSV не сохранён",str(exc))
+
+    def _export_plot_png(self):
+        if self._spectrum is None:
+            self.status.setText("Нет графика для PNG")
+            return
+        path,_=QtWidgets.QFileDialog.getSaveFileName(
+            self,"Сохранить изображение спектра","","PNG (*.png)")
+        if not path:return
+        try:
+            from pyqtgraph.exporters import ImageExporter
+            exporter=ImageExporter(self.spec.plotItem)
+            exporter.parameters()["width"]=1920
+            exporter.export(path)
+            self.status.setText(f"График сохранён: {path}")
+        except (OSError,ValueError,RuntimeError) as exc:
+            QtWidgets.QMessageBox.warning(self,"PNG не сохранён",str(exc))
+
     @staticmethod
     def _canonical_ipv4(value:str)->str:
         ip=ipaddress.IPv4Address(value)
