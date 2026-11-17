@@ -7,6 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 def test_qt_modes_scale_update_labels_and_no_network_on_open():
     pytest.importorskip("PySide6")
     pytest.importorskip("pyqtgraph")
+    from PySide6 import QtCore
     from PySide6.QtWidgets import QApplication
     from mvk_live_standalone.app import LiveWindow
     app=QApplication.instance() or QApplication([])
