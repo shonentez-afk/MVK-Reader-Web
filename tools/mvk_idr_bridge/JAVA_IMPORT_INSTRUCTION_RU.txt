@@ -1,0 +1,20 @@
+MVKView: Java-импорт меток IDR для Ghidra 12.2
+
+Причина ошибки: обычный ghidraRun.bat не включает PyGhidra, и *.py не запускается.
+
+РЕШЕНИЕ БЕЗ PYTHON:
+1. Убедись, что в CodeBrowser открыт импортированный mvkview.exe, ImageBase = 00400000.
+2. Скопируй MVK_Import_IDR_Labels.java в %USERPROFILE%\ghidra_scripts\
+   (папку можно создать вручную).
+3. В CodeBrowser: Window -> Script Manager, затем обнови список скриптов.
+4. В поиске Script Manager введи MVK_Import_IDR_Labels.
+5. Запусти скрипт (зелёный треугольник).
+6. В появившемся окне выбора файла укажи ghidra_labels.csv из этого архива.
+7. Дождись строки "MVK IDR labels: ..." в консоли.
+
+Скрипт на Java. Не требует PyGhidra, не запускает оригинальную MVKView,
+не меняет mvkview.exe. Меняется только текущая база проекта Ghidra.
+При повторном запуске уже существующие метки пропускаются.
+
+Если нет нужного скрипта в списке, проверь наличие файла в папке
+%USERPROFILE%\ghidra_scripts\ и нажми Refresh в Script Manager.
