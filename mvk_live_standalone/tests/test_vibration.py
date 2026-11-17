@@ -117,3 +117,19 @@ def test_optional_notch_is_never_implicit_and_preserves_other_orders():
     assert filtered.rms[i128]==pytest.approx(normal.rms[i128],rel=.01)
     with pytest.raises(ValueError,match="Nyquist"):
         analyze_vibration(x,fs,nfft=8192,notch_hz=5000)
+
+
+
+def test_asd_is_sqrt_psd_and_uses_amplitude_not_power_db():
+    fs=8192
+    x=_sine()
+    psd=analyze_vibration(x,fs,mode="welch",kind="velocity",nfft=8192)
+    asd=analyze_vibration(x,fs,mode="asd",kind="velocity",nfft=8192)
+    np.testing.assert_allclose(asd.rms*asd.rms,psd.rms,rtol=1e-12,atol=1e-18)
+    assert asd.units=="мм/с/√Гц"
+    assert "мм/с/√Гц" in vibration_y_label(asd,"db","unit")
+    np.testing.assert_allclose(
+        vibration_plot_values(asd,"db",reference="unit"),
+        vibration_plot_values(psd,"db",reference="unit"),
+        atol=1e-8,
+    )
