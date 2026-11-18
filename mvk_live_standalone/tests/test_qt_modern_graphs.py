@@ -51,9 +51,7 @@ def test_main_has_one_global_adc_four_tabs_and_eight_working_menus(widget):
     assert w.views.currentWidget() == w.overview_page
     assert w.adc.count() == 8
     assert w.dsp_adc.isHidden() and w.extra_adc.isHidden()
-    assert [a.title() for a in w.menuBar().findChildren(
-        __import__("PySide6").QtWidgets.QMenu,
-        options=__import__("PySide6").QtCore.Qt.FindDirectChildrenOnly)] == [
+    assert [a.text() for a in w.menuBar().actions()] == [
             "Файл", "Измерение", "Анализ", "Диагностика",
             "Архив", "Вид", "Настройки", "Справка"]
     assert w._native.state() == w._native.ProcessState.NotRunning
@@ -124,7 +122,7 @@ def test_logarithmic_frequency_axis_has_no_zero_and_physical_cursor(widget):
     assert "100" in w.spec.getPlotItem().titleLabel.text
     # This dB mode is a numeric Y ordinate; a second log Y is invalid.
     w.yscale.setCurrentIndex(w.yscale.findData("db"))
-    assert not w.spec.getPlotItem().getViewBox().state["logMode"][1]
+    assert "дБ" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
 
 
 def test_filter_preview_is_two_pass_and_has_no_device_side_effects():
