@@ -561,6 +561,9 @@ class LiveWindow(QtWidgets.QMainWindow):
             title="PySDKit Fast Kurtogram · ожидание реального АЦП")
         self.kurtogram_plot.setLabel("bottom","Центральная частота",units="Гц")
         self.kurtogram_plot.setLabel("left","Уровень разложения, k")
+        # Antoni / PySDKit layout: level 0 at the TOP, deeper (narrower)
+        # frequency bands towards the bottom.
+        self.kurtogram_plot.getViewBox().invertY(True)
         self.kurtogram_plot.showGrid(x=False,y=False)
         self.kurtogram_img=pg.ImageItem()
         self.kurtogram_plot.addItem(self.kurtogram_img)

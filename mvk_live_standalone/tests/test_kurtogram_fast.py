@@ -70,3 +70,18 @@ def test_auto_envelope_uses_genuine_pysdkit_not_legacy_approximation():
     assert result.auto_envelope.method=="PYSDKIT_FAST_KURTOGRAM_ANTONI_2007"
     assert "не доказательство" in result.auto_envelope.confidence
     assert 0<result.auto_envelope.low_hz<result.auto_envelope.high_hz<fs/2
+
+
+def test_clicking_duplicate_raster_cells_selects_same_real_packet_node():
+    rng=np.random.default_rng(59)
+    x=rng.normal(size=8192)
+    view=compute_fast_kurtogram(x,8192,nlevel=4)
+    # 48 heatmap columns but only one wide packet at k=0,
+    # two packets at k=1, three at k=log2(3) and so forth.
+    for col in (0,1,13,47):
+        assert view.cell_band(0,col)[:4]==pytest.approx(view.cell_band(0,0)[:4])
+    for col in (0,1,12,23):
+        assert view.cell_band(1,col)[:4]==pytest.approx(view.cell_band(1,0)[:4])
+    assert view.cell_band(1,24)[2]!=view.cell_band(1,0)[2]
+    assert view.cell_band(2,15)[2]==pytest.approx(view.cell_band(2,0)[2])
+    assert view.cell_band(2,16)[2]!=view.cell_band(2,0)[2]
