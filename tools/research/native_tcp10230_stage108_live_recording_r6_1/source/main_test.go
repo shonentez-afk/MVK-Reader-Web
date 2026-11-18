@@ -151,21 +151,38 @@ func TestSequenceDiscontinuityRecorded(t *testing.T) {
 	}
 }
 func TestUnknownFrameRetainsOriginalRaw(t *testing.T) {
-	bad := make([]byte, 8)
-	binary.LittleEndian.PutUint32(bad[:4], 0xDEADBEEF)
-	binary.LittleEndian.PutUint32(bad[4:], 8)
-	stream := append(makeIdentity(), bad...)
-	res, z := runTestMonitor(t, stream, 1000)
-	if res.TotalFrames != 1 || !res.CaptureOnly || res.InvalidFrames != 1 {
-		t.Fatalf("bad handling %+v", res)
-	}
-	saved, e := os.ReadFile(filepath.Join(filepath.Dir(z), "incoming.raw"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	if !bytes.Equal(saved, stream) {
-		t.Fatal("raw capture changed during diagnostic")
-	}
+    // Original _Unit125.pas 008087BB..0080884C ignores a well-framed
+    // unrecognized type only AFTER consuming all its payload bytes.
+    // Split the frame across TCP chunks and prove later ADC still runs.
+    unknown:=make([]byte,20)
+    binary.LittleEndian.PutUint32(unknown[:4],0xDEADBEEF)
+    binary.LittleEndian.PutUint32(unknown[4:8],uint32(len(unknown)))
+    copy(unknown[8:],[]byte("source-data!"))
+    adc:=makeSample(typeADC,0,65536,512)
+    stream:=append(append(makeIdentity(),unknown...),adc...)
+    res,z:=runTestMonitor(t,stream,7)
+    if res.TotalFrames!=3 || res.CaptureOnly || res.InvalidFrames!=0 ||
+        res.IdentityFrames!=1 || res.Channels[0].Samples!=256 {
+        t.Fatalf("original unknown packet must be skipped: %+v",res)
+    }
+    if res.FrameCounts["DEADBEEF/20"]!=1 {
+        t.Fatalf("unknown frame type missing from source ledger: %+v",res.FrameCounts)
+    }
+    saved,e:=os.ReadFile(filepath.Join(filepath.Dir(z),"incoming.raw"))
+    if e!=nil{t.Fatal(e)}
+    if !bytes.Equal(saved,stream) {
+        t.Fatal("original RX packets changed during source skip")
+    }
+}
+func TestMalformedUnknownFrameStillRejectsBrokenEnvelope(t *testing.T) {
+    malformed:=make([]byte,8)
+    binary.LittleEndian.PutUint32(malformed[:4],0xDEADBEEF)
+    binary.LittleEndian.PutUint32(malformed[4:8],10) // not DWORD aligned
+    res,_:=runTestMonitor(t,malformed,3)
+    if !res.CaptureOnly || res.InvalidFrames!=1 ||
+        res.TotalFrames!=0 {
+        t.Fatalf("invalid source frame envelope must fail closed: %+v",res)
+    }
 }
 func TestIncompleteAtEndIsMarked(t *testing.T) {
 	res, _ := runTestMonitor(t, makeAux()[:983], 13)
