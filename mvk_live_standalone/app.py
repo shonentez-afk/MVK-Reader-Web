@@ -1353,6 +1353,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         # Headless CI runs deterministic injected tests instead of probing
         # the runner's network adapters or contacting any remote endpoint.
         if (not self._ethernet_detection_started and sys.platform=="win32"
+                and self._capture_root is None
                 and str(__import__("os").environ.get("QT_QPA_PLATFORM","")).lower()!="offscreen"):
             self._ethernet_detection_started=True
             QtCore.QTimer.singleShot(0,self._begin_ethernet_discovery)
