@@ -410,32 +410,71 @@ class MeasurementHistory:
             name.unlink(missing_ok=True)
             raise
 
-    def entries(self,adc:int,kind:str="all",limit:int=300)->list[HistoryEntry]:
+    def entries(self,adc:int,kind:str="all",limit:int=300,*,
+                after_utc:str|None=None,before_utc:str|None=None)->list[HistoryEntry]:
+        """Bounded date-filtered historical table; all original data remains."""
         if type(adc) is not int or not 1<=adc<=8:
             raise ValueError("Неверный выбранный АЦП")
         if kind not in ("all","vendor","window") or not 1<=limit<=2000:
             raise ValueError("Неверный архивный фильтр")
+        lo=_utc(after_utc) if after_utc else ""
+        hi=_utc(before_utc) if before_utc else "9999"
+        if lo>hi:raise ValueError("Начальная дата позже конечной")
         entries=[]
         with self._db() as con:
             if kind in ("vendor","all"):
                 for idx,session,utc,tick in con.execute("""
                     SELECT id,session,measured_utc,update_tick
-                    FROM vendor_frames WHERE adc=?
+                    FROM vendor_frames WHERE adc=? AND measured_utc>=?
+                    AND measured_utc<=?
                     ORDER BY measured_utc DESC LIMIT ?
-                """,(adc,limit)).fetchall():
+                """,(adc,lo,hi,limit)).fetchall():
                     entries.append(HistoryEntry(
                         f"V:{idx}",VENDOR,adc,utc,session,
                         f"МВК01 AUX4700 · пакет {tick}"))
             if kind in ("window","all"):
                 for idx,session,utc,fs in con.execute("""
                     SELECT id,session,saved_utc,rate_hz
-                    FROM saved_windows WHERE adc=?
+                    FROM saved_windows WHERE adc=? AND saved_utc>=?
+                    AND saved_utc<=?
                     ORDER BY saved_utc DESC LIMIT ?
-                """,(adc,limit)).fetchall():
+                """,(adc,lo,hi,limit)).fetchall():
                     entries.append(HistoryEntry(
                         f"W:{idx}",LOCAL,adc,utc,session,
                         f"АЦП окно · сохранено в архив · Fs={fs} Гц",fs))
         return sorted(entries,key=lambda x:x.time_utc,reverse=True)[:limit]
+
+    def exact_entry(self,adc:int,kind:str,utc:str)->HistoryEntry|None:
+        """Trend click must navigate to EXACT same ADC/source/timestamp.
+
+        Never silently choose the nearest unrelated measurement when many
+        AUX4700 frames per day exceed the 500-row UI cap.
+        """
+        if kind not in ("vendor","window") or type(adc) is not int or not 1<=adc<=8:
+            raise ValueError("Неизвестный АЦП или источник истории")
+        timestamp=_utc(utc)
+        with self._db() as con:
+            if kind=="vendor":
+                rows=con.execute("""
+                  SELECT id,session,update_tick
+                  FROM vendor_frames
+                  WHERE adc=? AND measured_utc=? LIMIT 2
+                """,(adc,timestamp)).fetchall()
+            else:
+                rows=con.execute("""
+                  SELECT id,session,rate_hz
+                  FROM saved_windows
+                  WHERE adc=? AND saved_utc=? LIMIT 2
+                """,(adc,timestamp)).fetchall()
+        if not rows:return None
+        if len(rows)>1:
+            raise ValueError("Две записи одного АЦП имеют одинаковое время; нужен ручной выбор")
+        idx,session,value=rows[0]
+        return (HistoryEntry(f"V:{idx}",VENDOR,adc,timestamp,session,
+                              f"МВК01 AUX4700 · пакет {value}")
+                if kind=="vendor" else
+                HistoryEntry(f"W:{idx}",LOCAL,adc,timestamp,session,
+                              f"АЦП окно · сохранено в архив · Fs={value} Гц",value))
 
     def trend(self,adc:int,metric:str,days:int|None=None,
               limit:int=MAX_PLOT_ROWS)->tuple[list[tuple[datetime,float]],str,str,bool]:
