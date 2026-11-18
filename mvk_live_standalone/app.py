@@ -40,6 +40,7 @@ from .spectrum_controls import (VIEW_MODES, FILTER_CHOICES, X_LIMITS_HZ,
                                 visible_y_range)
 from .rotation import estimate_rotation_from_velocity
 from .pipeline import analyze_live, AnalysisResult
+from .kurtogram import KurtogramResult, compute_fast_kurtogram
 from .advanced import (envelope_fault_lines, stft_vibration,
                        cwt_morlet_vibration, real_cepstrum,
                        gear_mesh_markers, indicative_iso10816_zone)
@@ -114,6 +115,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._last_result: AnalysisResult | None=None
         self._extra_future=None
         self._extra_kind=None
+        self._kurt_future=None
+        self._kurt_result: KurtogramResult | None=None
+        self._kurt_selected: tuple[int,int] | None=None
+        self._kurt_adc: int | None=None
+        self._kurt_session: str | None=None
+        self._kurt_frozen: bool | None=None
+        self._kurt_request_generation=0
         self._extra_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix="MVK-advanced")
         self._future: Future | None = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-spectrum")
@@ -517,6 +525,68 @@ class LiveWindow(QtWidgets.QMainWindow):
         waterfall_layout.addLayout(waterfall_settings)
         waterfall_layout.addWidget(self.waterfall,stretch=1)
         self.extra_pages.addTab(self.waterfall_page,"Водопад")
+        # Genuine PySDKit Fast Kurtogram: binary/ternary analytic FIR tree.
+        # The heatmap is a new APP_DERIVED analytic tool, not MVK01 DSP.
+        self.kurtogram_page=QtWidgets.QWidget()
+        kurt_layout=QtWidgets.QVBoxLayout(self.kurtogram_page)
+        kurt_controls=QtWidgets.QHBoxLayout()
+        kurt_controls.addWidget(QtWidgets.QLabel("Окно кюртограммы"))
+        self.kurtogram_window=QtWidgets.QComboBox()
+        for count in (4096,8192,16384,32768):
+            self.kurtogram_window.addItem(f"{count} отсчётов",count)
+        self.kurtogram_window.setCurrentIndex(
+            self.kurtogram_window.findData(8192))
+        kurt_controls.addWidget(self.kurtogram_window)
+        kurt_controls.addWidget(QtWidgets.QLabel("Уровни дерева"))
+        self.kurtogram_levels=QtWidgets.QComboBox()
+        for depth in (2,3,4,5,6):
+            self.kurtogram_levels.addItem(str(depth),depth)
+        self.kurtogram_levels.setCurrentIndex(
+            self.kurtogram_levels.findData(4))
+        kurt_controls.addWidget(self.kurtogram_levels)
+        self.kurtogram_run=QtWidgets.QPushButton("Рассчитать Fast Kurtogram")
+        self.kurtogram_run.clicked.connect(self._calculate_kurtogram)
+        kurt_controls.addWidget(self.kurtogram_run)
+        self.kurtogram_best=QtWidgets.QPushButton("Выбрать максимум")
+        self.kurtogram_best.setEnabled(False)
+        self.kurtogram_best.clicked.connect(self._select_kurt_best)
+        kurt_controls.addWidget(self.kurtogram_best)
+        self.kurtogram_apply=QtWidgets.QPushButton("Полоса → огибающая")
+        self.kurtogram_apply.setEnabled(False)
+        self.kurtogram_apply.clicked.connect(self._apply_kurt_band)
+        kurt_controls.addWidget(self.kurtogram_apply)
+        kurt_controls.addStretch(1)
+        kurt_layout.addLayout(kurt_controls)
+        self.kurtogram_plot=pg.PlotWidget(
+            title="PySDKit Fast Kurtogram · ожидание реального АЦП")
+        self.kurtogram_plot.setLabel("bottom","Центральная частота",units="Гц")
+        self.kurtogram_plot.setLabel("left","Уровень разложения, k")
+        self.kurtogram_plot.showGrid(x=False,y=False)
+        self.kurtogram_img=pg.ImageItem()
+        self.kurtogram_plot.addItem(self.kurtogram_img)
+        self.kurtogram_marker=pg.ScatterPlotItem(
+            size=12,pen=pg.mkPen("#ffffff",width=2),
+            brush=pg.mkBrush("#222222"))
+        self.kurtogram_plot.addItem(self.kurtogram_marker)
+        self.kurtogram_colormap=pg.ColorMap(
+            [0.,.25,.5,.75,1.],
+            [(26,27,92),(41,88,150),(27,155,146),
+             (249,191,58),(249,241,191)])
+        self.kurtogram_bar=pg.ColorBarItem(
+            values=(0.,5.),colorMap=self.kurtogram_colormap,
+            label="Эксцесс спектрального куртозиса")
+        self.kurtogram_bar.setImageItem(
+            self.kurtogram_img,insert_in=self.kurtogram_plot.getPlotItem())
+        self.kurtogram_plot.scene().sigMouseClicked.connect(
+            self._kurtogram_clicked)
+        kurt_layout.addWidget(self.kurtogram_plot,stretch=1)
+        self.kurtogram_info=QtWidgets.QLabel(
+            "Выберите окно и уровень дерева. Вычисляется Fast Kurtogram "
+            "PySDKit (MIT), без команд в прибор и без повторного FRange. "
+            "Тёплая область означает импульсность, не диагноз.")
+        self.kurtogram_info.setWordWrap(True)
+        kurt_layout.addWidget(self.kurtogram_info)
+        self.extra_pages.addTab(self.kurtogram_page,"Кюртограмма")
         dsp_panel=QtWidgets.QWidget()
         dsp_layout=QtWidgets.QVBoxLayout(dsp_panel)
         adc_row=QtWidgets.QHBoxLayout()
@@ -1440,6 +1510,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._redraw_short_trend()
 
     def _advanced_adc_changed(self,*_):
+        self._invalidate_kurtogram(
+            f"АЦП {self.adc.currentData()}: кюртограмму нужно пересчитать")
         # A former channel's short-term Live results must never appear as
         # current ADC after changing channel from any of the workspaces.
         self._waterfall_rows.clear()
@@ -1833,6 +1905,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._ipc_client.read_channel,self._ipc_channel,count)
 
     def _clear(self,message):
+        self._invalidate_kurtogram("Нет проверенных отсчётов нового сеанса")
         self._preview=None
         self._ipc_client=None
         if self.freeze.isChecked():
@@ -1988,6 +2061,8 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._render_wave()
 
     def _toggle_freeze(self,checked):
+        self._invalidate_kurtogram(
+            "Режим Freeze/Live изменён: требуется новая кюртограмма")
         if checked:
             channel=self._gui_ring.channel(self.adc.currentData())
             if channel is None or channel.available<256:
@@ -2404,6 +2479,149 @@ class LiveWindow(QtWidgets.QMainWindow):
             ("; ".join(observations) if observations else "Нет разрешённых линий")
         )
 
+    def _invalidate_kurtogram(self,reason: str):
+        self._kurt_result=None
+        self._kurt_selected=None
+        self.kurtogram_img.clear()
+        self.kurtogram_marker.setData([],[])
+        self.kurtogram_best.setEnabled(False)
+        self.kurtogram_apply.setEnabled(False)
+        self.kurtogram_plot.setTitle("Fast Kurtogram · нет расчёта этого АЦП")
+        self.kurtogram_info.setText(reason)
+
+    def _calculate_kurtogram(self):
+        if self._kurt_future is not None and not self._kurt_future.done():
+            return
+        try:
+            length=int(self.kurtogram_window.currentData())
+            samples,fs,stamp=self._current_window(length)
+            level=int(self.kurtogram_levels.currentData())
+            # Once the window was copied, heavy FIR processing runs OFF the
+            # Qt thread; the hardware, Go RX and AUX4700 never change.
+            self._invalidate_kurtogram(
+                f"Fast Kurtogram: вычисление {length} реальных отсчётов "
+                f"АЦП {self.adc.currentData()} · Fs={fs} · уровень {level}")
+            self._kurt_adc=self.adc.currentData()
+            self._kurt_session=self._gui_ring.session_id
+            self._kurt_frozen=self.freeze.isChecked()
+            self._kurt_request_generation=self._generation
+            self._kurt_future=self._extra_executor.submit(
+                compute_fast_kurtogram,samples,fs,nlevel=level)
+            self.kurtogram_run.setEnabled(False)
+        except (ValueError,TypeError) as exc:
+            self.kurtogram_info.setText(f"Кюртограмма: {exc}")
+
+    def _poll_kurtogram(self):
+        if self._kurt_future is None or not self._kurt_future.done():
+            return
+        job=self._kurt_future
+        self._kurt_future=None
+        self.kurtogram_run.setEnabled(True)
+        try:
+            result=job.result()
+        except (ValueError,RuntimeError,FloatingPointError) as exc:
+            self._invalidate_kurtogram(f"Fast Kurtogram отклонён: {exc}")
+            return
+        if (self._kurt_adc!=self.adc.currentData() or
+                self._kurt_session!=self._gui_ring.session_id or
+                self._kurt_frozen!=self.freeze.isChecked() or
+                self._kurt_request_generation!=self._generation):
+            self._invalidate_kurtogram(
+                "АЦП, сеанс или режим просмотра изменились: результат "
+                "прежнего снимка отброшен")
+            return
+        self._display_kurtogram(result)
+
+    def _display_kurtogram(self,result: KurtogramResult):
+        self._kurt_result=result
+        # PySDKit scores rows = levels, columns = frequency. Pyqtgraph
+        # images have horizontal samples in their FIRST axis.
+        scores=np.ascontiguousarray(result.scores.T,dtype=np.float32)
+        max_k=max(1.,float(result.best_score))
+        self.kurtogram_img.setImage(
+            scores,autoLevels=False,levels=(0.,max_k))
+        self.kurtogram_img.setRect(QtCore.QRectF(
+            0.,0.,result.fs/2.,result.scores.shape[0]))
+        self.kurtogram_bar.setLevels((0.,max_k))
+        axis_ticks=[(i+.5,f"{level:.2f}") for i,level in
+                    enumerate(result.levels)]
+        self.kurtogram_plot.getAxis("left").setTicks([axis_ticks])
+        self.kurtogram_plot.setXRange(0,result.fs/2.,padding=0)
+        self.kurtogram_plot.setYRange(0,result.scores.shape[0],padding=0)
+        self.kurtogram_plot.setTitle(
+            f"PySDKit Fast Kurtogram · АЦП {self._kurt_adc} · "
+            f"Fs={result.fs} Гц · N={result.n_samples} · APP_DERIVED")
+        self.kurtogram_best.setEnabled(True)
+        self._pick_kurt_cell(result.best_row,result.best_col)
+
+    def _pick_kurt_cell(self,row:int,col:int):
+        view=self._kurt_result
+        if view is None:return
+        try:
+            low,high,fc,bw,score=view.cell_band(row,col)
+        except ValueError:
+            return
+        self._kurt_selected=(row,col)
+        self.kurtogram_marker.setData([fc],[row+.5])
+        self.kurtogram_apply.setEnabled(score>0)
+        self.kurtogram_info.setText(
+            f"PySDKit Fast Kurtogram · АЦП {self._kurt_adc} · "
+            f"центр {fc:.1f} Гц · ширина {bw:.1f} Гц · "
+            f"полоса {low:.1f}–{high:.1f} Гц · "
+            f"эксцесс SK={score:.3g} · уровень k={view.levels[row]:.2f}. "
+            "Выбор полосы локальный; импульсность НЕ означает дефект.")
+
+    def _select_kurt_best(self):
+        if self._kurt_result is not None:
+            self._pick_kurt_cell(
+                self._kurt_result.best_row,self._kurt_result.best_col)
+
+    def _kurtogram_clicked(self,event):
+        if (self._kurt_result is None or
+                event.button()!=QtCore.Qt.MouseButton.LeftButton):
+            return
+        vb=self.kurtogram_plot.getViewBox()
+        if not vb.sceneBoundingRect().contains(event.scenePos()):
+            return
+        p=vb.mapSceneToView(event.scenePos())
+        view=self._kurt_result
+        row=int(math.floor(p.y()))
+        col=int(math.floor(p.x()/(view.fs/2.)*view.scores.shape[1]))
+        self._pick_kurt_cell(row,col)
+
+    def _apply_kurt_band(self):
+        view=self._kurt_result
+        selected=self._kurt_selected
+        if view is None or selected is None:
+            return
+        if (self._kurt_adc!=self.adc.currentData() or
+                self._kurt_session!=self._gui_ring.session_id or
+                self._kurt_frozen!=self.freeze.isChecked()):
+            self._invalidate_kurtogram(
+                "Результат другого АЦП/сеанса не может выбирать фильтр")
+            return
+        low,high,fc,bw,score=view.cell_band(*selected)
+        if score<=0:
+            self.kurtogram_info.setText(
+                "Ненулевая импульсность не найдена: автоматический выбор недоступен")
+            return
+        # Reuse the existing Hilbert-envelope spectrum, not a second
+        # allegedly OEM spectrum or the decimated PySDKit envelope.
+        label=f"Fast Kurtogram: {low:.1f}–{high:.1f} Гц"
+        for combo in (self.envelope_band,self.bearing_resonance):
+            for i in range(combo.count()-1,-1,-1):
+                if combo.itemText(i).startswith("Fast Kurtogram:"):
+                    combo.removeItem(i)
+            combo.addItem(label,(low,high))
+            combo.setCurrentIndex(combo.count()-1)
+        self._run_bearing_page()
+        self.views.setCurrentWidget(self.extra_panel)
+        self.extra_pages.setCurrentWidget(self.diagnostics_page)
+        self.kurtogram_info.setText(
+            f"Полоса {low:.1f}–{high:.1f} Гц передана в локальную "
+            "Hilbert-огибающую; частотная карта рассчитана PySDKit. "
+            "Обе операции APP_DERIVED, не заводской алгоритм МВК01.")
+
     def _start_extra_mode(self,mode):
         if mode not in self.extra_method_pages:
             raise ValueError("Неизвестный дополнительный метод")
@@ -2450,6 +2668,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.status.setText(f"Дополнительный анализ: {exc}")
 
     def _poll_extra(self):
+        self._poll_kurtogram()
         if self._speed_future is not None and self._speed_future.done():
             pending=self._speed_future
             self._speed_future=None

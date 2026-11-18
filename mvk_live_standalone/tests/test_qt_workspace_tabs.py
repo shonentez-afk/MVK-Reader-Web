@@ -61,7 +61,7 @@ def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
         "Показатели MVK Live",
     ]
     assert [w.extra_pages.tabText(i) for i in range(w.extra_pages.count())]==[
-        "Водопад","Тренд СКЗ","STFT","CWT Morlet","Кепстр",
+        "Водопад","Кюртограмма","Тренд СКЗ","STFT","CWT Morlet","Кепстр",
         "Подшипники","Редукторы",
     ]
     assert w.dsp_pages.widget(0)!=w.dsp_pages.widget(2)
@@ -204,3 +204,37 @@ def test_time_original_mvkview_32_labels_have_independent_selection(gui):
     assert "локальный фильтр" in w.wave_info.text()
     assert w.filter_choice.currentData()=="none"
     assert not w.time_filter_button.isEnabled()
+
+
+
+def test_full_pysdkit_kurtogram_tab_and_band_handoff(gui):
+    w,_=gui
+    from mvk_live_standalone.kurtogram import compute_fast_kurtogram
+    _feed(w)
+    assert w.extra_pages.indexOf(w.kurtogram_page)>0
+    assert w.kurtogram_apply.isEnabled() is False
+    assert w.kurtogram_levels.currentData()==4
+    ch=w._gui_ring.channel(1)
+    x=ch.latest(8192)
+    view=compute_fast_kurtogram(x,ch.rate_hz,nlevel=4)
+    w._kurt_adc=1
+    w._kurt_session=w._gui_ring.session_id
+    w._kurt_frozen=False
+    w._display_kurtogram(view)
+    assert w.kurtogram_apply.isEnabled()
+    assert "PySDKit Fast Kurtogram" in w.kurtogram_info.text()
+    assert w._kurt_selected==(view.best_row,view.best_col)
+    assert w.kurtogram_img.image.shape==(48,8)
+    w._pick_kurt_cell(0,0)
+    assert w._kurt_selected==(0,0)
+    w._select_kurt_best()
+    lo,hi,_,_,_=view.best_band()
+    w._apply_kurt_band()
+    assert w.views.currentWidget()==w.extra_panel
+    assert w.extra_pages.currentWidget()==w.diagnostics_page
+    assert w.analysis.currentData()=="envelope"
+    assert w.envelope_band.currentData()==pytest.approx((lo,hi))
+    assert w.bearing_resonance.currentData()==pytest.approx((lo,hi))
+    w.adc.setCurrentIndex(1)
+    assert w._kurt_result is None
+    assert not w.kurtogram_apply.isEnabled()

@@ -54,6 +54,7 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name MVK_Live --paths . --collect-all pyqtgraph --add-binary "build\MVK_Native_R6_1_LiveIPC_Windows_x64.exe;mvk_native" --add-data "build\NATIVE_SHA256SUMS.txt;mvk_native" mvk_live_standalone/launcher.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item "mvk_live_standalone\README_RU.md" "dist\MVK_Live\README_RU.md"
+          Copy-Item "mvk_live_standalone\PYSDKIT_LICENSE_MIT.txt" "dist\MVK_Live\PYSDKIT_LICENSE_MIT.txt"
           $exe="dist\MVK_Live\MVK_Live.exe"
           if (!(Test-Path $exe)) { throw "Standalone EXE was not produced" }
           # --help exits before QApplication or any connection attempt.
