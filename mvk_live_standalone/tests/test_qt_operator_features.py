@@ -139,8 +139,8 @@ def test_stft_view_from_selected_real_buffer(gui):
     w._poll_extra()
     assert w._extra_future is None
     assert w.extra_button.isEnabled()
-    assert w.views.currentWidget()==w.extra_panel
-    assert w.extra_pages.currentWidget()==w.extra_method_pages["stft"]
+    assert w._modern_windows["stft"].centralWidget()==w.extra_method_pages["stft"]
+    assert w.views.indexOf(w.extra_panel) == -1
     assert "STFT" in w.extra_plot.getPlotItem().titleLabel.text
 
 
@@ -185,7 +185,7 @@ def test_cwt_and_cepstrum_dedicated_result_tabs(gui):
         assert w._extra_future is not None
         w._extra_future.result(timeout=15)
         w._poll_extra()
-        assert w.extra_pages.currentWidget()==w.extra_method_pages[mode]
+        assert w._modern_windows[mode].centralWidget()==w.extra_method_pages[mode]
         assert w.extra_method_buttons[mode].isEnabled()
         assert "APP_DERIVED" in w.extra_method_infos[mode].text()
     # Stale CWT pixels must not disappear when a cepstrum is computed.
