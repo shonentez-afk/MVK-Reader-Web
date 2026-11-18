@@ -850,4 +850,9 @@ def install_modern_shell(win, main, panel, review, storage):
     if os.environ.get("QT_QPA_PLATFORM", "").lower() != "offscreen":
         theme = QtCore.QSettings("MVK", "MVK Live").value("ui/theme_v1", "system")
     apply_theme(win, theme)
+    # The overview is attached after the original app's first _apply_axes.
+    # Initialize actual FFT/dB/PSD axis units and configured X limits now;
+    # an empty source still must never render synthetic samples.
+    win._apply_axes()
+    win._apply_operator_ranges()
     win._modern_installed = True
