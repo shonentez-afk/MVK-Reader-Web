@@ -3483,6 +3483,14 @@ class MainWindow(QMainWindow):
             "реальных событий PARAM 0x3100; " if
             report.get("source_values_export_anchored_to_verified_3100") else
             "")
+        live_values_note=(
+            f"Go WriteValues: {report.get('source_live_values_3100_events',0)} "
+            "событий непосредственно при приёме; " if
+            report.get("source_live_values_3100_verified") else "")
+        tsxml_note=(
+            f"TSXML: {report.get('source_original_tsxml_structural_sidecars',0)} "
+            "проверенных структурных файлов; " if
+            report.get("source_original_tsxml_structural_sidecars",0) else "")
         auto_closed=report.get("source_thread_auto_closed_writers",0)
         close_note=(
             f"Go закрыл {auto_closed} исходные записи при отключении; "
@@ -3503,7 +3511,8 @@ class MainWindow(QMainWindow):
             +("Go подтвердил границы кадров; " if
              report.get("verified_frame_boundaries") else
              "Границы по периодическому статусу; ")
-            +values_note+wire_note+source_gate_note+close_note+
+            +values_note+live_values_note+wire_note+source_gate_note+
+            tsxml_note+close_note+
             "тайминг Win32 и побайтные Delphi BIN/CSV/TSXML ещё не сверены.")
 
     def _source_write_export_failed(self,message):
