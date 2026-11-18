@@ -1,0 +1,295 @@
+{
+  "schema": "mvk-main-graph-design-v1",
+  "created_at": "2026-11-18",
+  "state": "DESIGN_NOT_IMPLEMENTED",
+  "application": "MVK Live Standalone",
+  "current_source_evidence": {
+    "spectrum_fft_sizes": [
+      8192,
+      16384,
+      32768,
+      65536,
+      131072,
+      262144
+    ],
+    "spectrum_default_nfft": 32768,
+    "spectrum_window": "hann_fixed",
+    "spectrum_amplitude": "one_sided_rms_per_fft_line",
+    "welch_window": "hann",
+    "welch_overlap_ratio": 0.5,
+    "waveform_default_span_s": 1,
+    "calibrated_source": "Verified Native ADC Float32, FRange applied exactly once",
+    "one_global_adc_existing": "self.adc; extra_adc and dsp_adc must be removed from visible UI",
+    "original_data_rule": "AUX4700 scalars cannot generate FFT/time waveform"
+  },
+  "main_window": {
+    "top_menu": [
+      "Файл",
+      "Измерение",
+      "Анализ",
+      "Диагностика",
+      "Архив",
+      "Вид",
+      "Настройки",
+      "Справка"
+    ],
+    "main_tabs": [
+      "Обзор",
+      "Спектр",
+      "Временной сигнал",
+      "Расчётные данные"
+    ],
+    "overview": [
+      "metric_strip",
+      "fft_chart",
+      "waveform_chart",
+      "single_active_chart_inspector"
+    ],
+    "toolbar": [
+      "connection_profile",
+      "measure",
+      "stop",
+      "freeze_display",
+      "save_window",
+      "selected_live_adc",
+      "native_status",
+      "raw_status",
+      "open_windows"
+    ],
+    "single_adc": "selected_live_adc",
+    "plot_splitter": "vertical",
+    "inspector": "right_collapsible_QDockWidget",
+    "qsettings_keys": [
+      "theme",
+      "main.geometry",
+      "main.windowState",
+      "overview.splitterState",
+      "inspector.width",
+      "inspector.collapsed",
+      "graphs.spectrum.axisState",
+      "graphs.wave.axisState",
+      "last_main_tab"
+    ]
+  },
+  "graph_settings": {
+    "spectrum": {
+      "initial_intended_ui_preset": {
+        "quantity": "acceleration",
+        "estimator": "fft",
+        "ordinate": "linear",
+        "db_reference": "display_explicit_only_if_db",
+        "x_axis_scale": "linear",
+        "x_range": "0..min(1000 Hz, physical Nyquist), or last valid operator preset",
+        "y_range": "stable_auto",
+        "filter": "none",
+        "fft_n": "current 32768; planned auto bounded by verified samples",
+        "smoothing_bins": 1,
+        "markers": "off unless real evidence or known RPM"
+      },
+      "quick_settings": [
+        "quantity_VU_VS_VP",
+        "estimator_FFT_WelchPSD_ASD",
+        "ordinate_linear_or_db_with_reference",
+        "x_range_auto_preset_manual",
+        "y_range_stable_auto_or_manual",
+        "filter_none_hp_lp_bp_octave_notch"
+      ],
+      "advanced_settings": [
+        "verified_adc_fs_readonly",
+        "fft_n_samples",
+        "actual_window_duration_s",
+        "fft_bin_spacing_hz",
+        "hann_window_fixed",
+        "detrending",
+        "psd_welch_overlap_50_percent",
+        "smoothing_odd_bins",
+        "db_reference",
+        "cutoffs_validated_against_nyquist",
+        "axis_manual_ranges",
+        "two_cursors",
+        "harmonic_overlays",
+        "export_presets"
+      ],
+      "physical_units": {
+        "acceleration": {
+          "fft": "м/с² RMS/line",
+          "psd": "(м/с²)²/Гц",
+          "asd": "м/с²/√Гц"
+        },
+        "velocity": {
+          "fft": "мм/с RMS/line",
+          "psd": "(мм/с)²/Гц",
+          "asd": "мм/с/√Гц"
+        },
+        "displacement": {
+          "fft": "мкм RMS/line",
+          "psd": "(мкм)²/Гц",
+          "asd": "мкм/√Гц"
+        }
+      },
+      "rules": [
+        "FFT=one-sided coherent-gain-calibrated Hann RMS per spectral line; not PSD",
+        "Welch PSD=power per Hz; integrate PSD*df for RMS squared in valid band",
+        "ASD=sqrt(PSD), different unit, not FFT RMS",
+        "dB amplitude and ASD use 20log10(value/reference), PSD uses 10log10(power/reference_power)",
+        "dB plot uses ordinary linear Y axis with numeric dB values, not second logarithm",
+        "frequency_log_x minimum strictly positive; exclude DC",
+        "Nyquist bound Fs/2 never exceeded; Fs comes only from Native",
+        "manual_axis preserved across new FFT frames until explicit reset",
+        "peak locations and spectral integrals always use full-resolution data, never downsampled plot",
+        "theoretical markers are dashed and distinct from measured peaks",
+        "no diagnosis based on single peak"
+      ]
+    },
+    "waveform": {
+      "intended_defaults": {
+        "span_s": 1,
+        "quantity": "acceleration_signed_m_s2",
+        "y_range": "auto_symmetric",
+        "filter": "none",
+        "x_coordinates": "seconds_relative_to_true_capture_end"
+      },
+      "quick_settings": [
+        "span_s",
+        "symmetric_y_auto_manual",
+        "filter_independent_from_fft",
+        "freeze_or_live",
+        "cursor_A_B",
+        "x_axis_window"
+      ],
+      "advanced_settings": [
+        "filter_type_cutoffs_and_zero_phase_provenance",
+        "save_sample_range",
+        "display_AC_RMS",
+        "absolute_peak",
+        "peak_to_peak",
+        "source_counter_and_data_gap",
+        "DC_or_mean_if_computed"
+      ],
+      "rules": [
+        "Wave Y is signed instantaneous m/s2; do not label as spectral RMS",
+        "Auto Y symmetric around 0 with headroom, preserve negative peaks",
+        "Actual source duration shown if shorter than requested visible span",
+        "No assumed UTC when only capture counter is known",
+        "Filtered time and filtered spectrum remain independent unless user explicitly links",
+        "Display decimation preserves min and max, statistics use full physical window",
+        "Freeze display does not stop Native recording"
+      ]
+    }
+  },
+  "plot_state": {
+    "modes": [
+      "AUTO_STABLE",
+      "MANUAL_ZOOM",
+      "MANUAL_LIMITS"
+    ],
+    "auto_y_policy": "fast_expand_slow_contract_after_benchmark",
+    "on_new_frame": "update rendered series without resetting user zoom",
+    "on_adc_change": "invalidate incompatible physical Y and clamp X to current Nyquist with explicit message",
+    "on_invalid_input": "empty plot + reason; no synthetic zeros",
+    "cursor_mode": [
+      "hover_crosshair",
+      "A_fixed",
+      "B_fixed"
+    ],
+    "cursor_data": "full_resolution_measured_values",
+    "graph_overview_vs_detailed": "two distinct view widgets sharing immutable result model"
+  },
+  "style": {
+    "theme_mode": "system_by_default; user can select graphite_dark / cloud_light",
+    "dark": {
+      "canvas": "#0D141C",
+      "surface": "#17212D",
+      "plot": "#101A24",
+      "border": "#293847",
+      "text_primary": "#EBF1F7",
+      "text_secondary": "#A7B6C7",
+      "accent": "#4CAFCB",
+      "fft_trace": "#F3B85C",
+      "time_trace": "#5CCFC5",
+      "predicted": "#A8A1D9",
+      "alert": "#E36A69"
+    },
+    "light": {
+      "canvas": "#F5F7FA",
+      "surface": "#FFFFFF",
+      "plot": "#FFFFFF",
+      "border": "#DFE5EB",
+      "text_primary": "#182633",
+      "text_secondary": "#566575",
+      "accent": "#167F9C",
+      "fft_trace": "#A85F0C",
+      "time_trace": "#007C78",
+      "predicted": "#7062A2",
+      "alert": "#B33232"
+    },
+    "typography": "system Segoe UI or Segoe UI Variable, fallback to native UI font",
+    "spacing_dp": [
+      4,
+      8,
+      12,
+      16,
+      24,
+      32
+    ],
+    "targets": "controls min 30-36 logical px high; top action bar 40-44 logical px",
+    "chart_trace_px": "1-1.5 logical px subject to performance benchmark",
+    "focus": "clear accessible keyboard focus; labels not color-only",
+    "minimum_text_contrast": "4.5:1 for standard text",
+    "plot_grid_alpha": "0.10-0.14",
+    "avoid": [
+      "skeuomorphism",
+      "glossy_buttons",
+      "thick_groupbox_frames",
+      "non_semantic_colored_cards",
+      "per_method_tabs_on_main",
+      "multiple_adc_selectors",
+      "invalid_qt_log_coordinates",
+      "fake_live_graphs"
+    ]
+  },
+  "routing": {
+    "graph_click": "focus one inspector without running DSP",
+    "graph_expand": "main Spectrum/Time detail tab; not W-method window",
+    "advanced_method": "open independent W01-W43 window with immutable verified source",
+    "plot_save_source": "NPZ V1 existing, sidecar settings later, no raw overwrite"
+  },
+  "dependencies": {
+    "build": "PySide6 QMainWindow + QDockWidget + QSplitter + QPalette/QSS + pyqtgraph",
+    "source_files": [
+      "app.py",
+      "spectrum.py",
+      "spectrum_controls.py",
+      "vibration.py",
+      "time_controls.py"
+    ],
+    "proposed_modules": [
+      "graph_state.py",
+      "plot_inspector.py",
+      "plot_controller.py",
+      "theme.py",
+      "graph_presets.py"
+    ],
+    "tests": [
+      "manual_zoom_not_reset_by_repaint",
+      "log_x_positive_and_marker_coordinate_valid",
+      "db_not_double_logged",
+      "fft_psd_asd_correct_units",
+      "NFFT_requires_real_samples",
+      "time_auto_y_signed",
+      "no_secondary_adc_ui",
+      "independent_W_sources",
+      "QT_100_150_200_percent_DPI",
+      "Native_TCP_and_RAW_unchanged"
+    ]
+  },
+  "primary_spec": "MAIN_SCREEN_MODERN_UI_AND_GRAPH_SETTINGS_20261118_RU.md",
+  "source_links": [
+    "https://dewesoft.com/blog/dewesoftx-2026-3-released",
+    "https://manual.dewesoft.com/x/setupmodule/modules/freqdomain/fftapplication",
+    "https://pyqtgraph.readthedocs.io/en/pyqtgraph-0.14.0/api_reference/graphicsItems/plotdataitem.html",
+    "https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QMainWindow.html",
+    "https://fluent2.microsoft.design/layout",
+    "https://fluent2.microsoft.design/accessibility"
+  ]
+}
