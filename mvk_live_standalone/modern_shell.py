@@ -47,10 +47,32 @@ def _hide_layout(layout):
             _hide_layout(item.layout())
 
 
-def _field(form, text, widget):
-    form.addRow(text, widget)
+def _field(column, text, widget):
+    """Responsive vertical label+control, never a 2-column legacy form."""
+    row = QtWidgets.QWidget()
+    body = QtWidgets.QVBoxLayout(row)
+    body.setContentsMargins(0, 0, 0, 0)
+    body.setSpacing(3)
+    label = QtWidgets.QLabel(text)
+    label.setProperty("fieldLabel", True)
+    label.setWordWrap(True)
+    body.addWidget(label)
+    # Long MVKView labels must not enlarge the inspector beyond the dock.
+    widget.setMinimumWidth(0)
+    widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                         QtWidgets.QSizePolicy.Policy.Fixed)
+    body.addWidget(widget)
+    column.addWidget(row)
+    row.show()
     widget.show()
-    return widget
+    if isinstance(widget, QtWidgets.QComboBox):
+        widget.setSizeAdjustPolicy(
+            QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        widget.setMinimumContentsLength(8)
+        if not widget.toolTip():
+            widget.setToolTip(widget.currentText())
+            widget.currentTextChanged.connect(widget.setToolTip)
+    return row
 
 
 def _title(text):
@@ -99,6 +121,10 @@ def apply_theme(win, theme="system"):
             alternate-background-color: %(canvas)s; gridline-color: %(border)s; }
         QLabel[sectionTitle="true"] { font-weight: 600; font-size: 15px; }
         QLabel[metricLabel="true"] { color: %(muted)s; font-size: 11px; }
+        QLabel[fieldLabel="true"] { color: %(muted)s; font-size: 12px; }
+        QLabel[metricValue="true"] { font-weight: 600; font-size: 18px; }
+        QFrame#kpiCard { background-color: %(panel)s;
+             border-radius: 8px; border: 1px solid %(border)s; }
     """ % c)
     for plot in (getattr(win, "spec", None),
                  getattr(win, "wave", None),
@@ -483,7 +509,7 @@ def _refresh_status(win):
         win._native.state() == QtCore.QProcess.ProcessState.NotRunning)
     win._modern_actions["stop"].setEnabled(
         win._native.state() != QtCore.QProcess.ProcessState.NotRunning)
-    if hasattr(win, "overview_metrics"):
+    if hasattr(win, "_modern_metric_values"):
         res = getattr(win, "_last_result", None)
         if res is not None and getattr(win, "_spectrum", None) is not None:
             try:
@@ -491,13 +517,19 @@ def _refresh_status(win):
                 velocity = getattr(res, "broadband_velocity", None)
                 v = (f"{velocity.rms:.3g} мм/с"
                      if velocity is not None and velocity.valid else "—")
-                win.overview_metrics.setText(
-                    f"ВУ RMS  {f.rms_m_s2:.4g} м/с²    ·    "
-                    f"ВС RMS  {v}    ·    "
-                    f"Пик  {f.peak_m_s2:.4g} м/с²    ·    "
-                    f"Crest  {f.crest_factor:.3g}")
+                values = {
+                    "rms": f"{f.rms_m_s2:.4g} м/с²",
+                    "velocity": v,
+                    "peak": f"{f.peak_m_s2:.4g} м/с²",
+                    "crest": f"{f.crest_factor:.3g}",
+                }
+                for key, text in values.items():
+                    win._modern_metric_values[key].setText(text)
             except (AttributeError, TypeError, ValueError):
                 pass
+        else:
+            for label in win._modern_metric_values.values():
+                label.setText("—")
 
 
 def _chart_focus(win, kind):
@@ -555,7 +587,8 @@ def install_modern_shell(win, main, panel, review, storage):
     line.addWidget(QtWidgets.QLabel("АЦП"))
     line.addWidget(win.adc)
     win.adc.show()
-    win._modern_windows_button = QtWidgets.QPushButton("Окна…")
+    win._modern_windows_button = QtWidgets.QPushButton("Открытые окна…")
+    win._modern_windows_button.setMinimumWidth(110)
     win._modern_windows_button.clicked.connect(lambda: _open_windows_dialog(win))
     line.addWidget(win._modern_windows_button)
     main.addWidget(tools)
@@ -566,17 +599,36 @@ def install_modern_shell(win, main, panel, review, storage):
     layout = QtWidgets.QVBoxLayout(overview)
     layout.setContentsMargins(6, 4, 6, 4)
     layout.setSpacing(6)
-    win.overview_metrics = QtWidgets.QLabel(
-        "ВУ RMS  —    ·    ВС RMS  —    ·    Пик  —    ·    Crest  —")
-    win.overview_metrics.setObjectName("overviewMetrics")
-    layout.addWidget(win.overview_metrics)
+    # Four compact metric cards, instead of one tiny run-on text label.
+    win.overview_metrics = QtWidgets.QLabel("—")
+    win.overview_metrics.hide()  # compatibility alias only
+    win._modern_metric_values = {}
+    metric_strip = QtWidgets.QHBoxLayout()
+    metric_strip.setSpacing(8)
+    for key, title in (
+        ("rms", "ВУ · СКЗ"), ("velocity", "ВС · СКЗ"),
+        ("peak", "Пиковая ВУ"), ("crest", "Крест-фактор")):
+        card = QtWidgets.QFrame()
+        card.setObjectName("kpiCard")
+        column = QtWidgets.QVBoxLayout(card)
+        column.setContentsMargins(10, 6, 10, 6)
+        column.setSpacing(2)
+        heading = QtWidgets.QLabel(title)
+        heading.setProperty("metricLabel", True)
+        value = QtWidgets.QLabel("—")
+        value.setProperty("metricValue", True)
+        column.addWidget(heading)
+        column.addWidget(value)
+        metric_strip.addWidget(card, stretch=1)
+        win._modern_metric_values[key] = value
+    layout.addLayout(metric_strip)
     splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-    win.overview_spec = pg.PlotWidget()
+    win.overview_spec = pg.PlotWidget(title="Спектр · ожидание реального АЦП")
     win.overview_spec.setLabel("bottom", "Частота", units="Гц")
     win.overview_spec.setLabel("left", "FFT", units="м/с²")
     win.overview_spec.showGrid(x=True, y=True, alpha=0.14)
     win.overview_spec_curve = win.overview_spec.plot(pen=pg.mkPen("#F3B85C"))
-    win.overview_wave = pg.PlotWidget()
+    win.overview_wave = pg.PlotWidget(title="Временной сигнал · нет отсчётов")
     win.overview_wave.setLabel("bottom", "Время", units="с")
     win.overview_wave.setLabel("left", "ВУ", units="м/с²")
     win.overview_wave.showGrid(x=True, y=True, alpha=0.14)
@@ -615,56 +667,118 @@ def install_modern_shell(win, main, panel, review, storage):
     inspector = QtWidgets.QStackedWidget()
     spectrum_panel = QtWidgets.QWidget()
     ss = QtWidgets.QVBoxLayout(spectrum_panel)
+    ss.setContentsMargins(12, 12, 12, 12)
+    ss.setSpacing(10)
     ss.addWidget(_title("Спектр"))
-    basic = QtWidgets.QFormLayout()
+    basic = QtWidgets.QVBoxLayout()
+    basic.setSpacing(9)
     for label, widget in (
-        ("Быстрый вид MVKView", win.spectrum_view),
-        ("Величина ВУ / ВС / ВП", win.kind),
-        ("Метод FFT / PSD / ASD", win.analysis),
-        ("Шкала Y", win.yscale),
+        ("Величина", win.kind),
+        ("Анализ", win.analysis),
+        ("Шкала амплитуды Y", win.yscale),
         ("Шкала частоты X", win.xscale),
-        ("Предел X", win.x_limit_choice),
-        ("Масштаб Y", win.y_height_choice),
-        ("Локальный фильтр", win.filter_choice),
-        ("Полоса / центр", win.filter_center),
+        ("Предел частоты", win.x_limit_choice),
+        ("Амплитуда / автомасштаб", win.y_height_choice),
+        ("Фильтр спектра", win.filter_choice),
     ):
         _field(basic, label, widget)
+    centre = _field(basic, "Центральная полоса", win.filter_center)
+    def spectrum_filter_visibility(*_):
+        enabled = win.filter_choice.currentData()
+        centre.setVisible(enabled in (
+            "original_preset", "octave", "third_octave", "double_octave"))
+        win.filter_button.setVisible(enabled in (
+            "highpass", "lowpass", "bandpass"))
+    win.filter_choice.currentIndexChanged.connect(spectrum_filter_visibility)
     ss.addLayout(basic)
     ss.addWidget(win.filter_button)
-    _field(basic, "FFT, N отсчётов", win.nfft)
-    _field(basic, "Опора дБ", win.db_ref)
-    _field(basic, "Сглаживание", win.smooth)
-    ss.addWidget(win.axis_button)
+    spectrum_filter_visibility()
+
+    advanced_toggle = QtWidgets.QToolButton()
+    advanced_toggle.setText("Точные параметры спектра")
+    advanced_toggle.setCheckable(True)
+    advanced_toggle.setArrowType(QtCore.Qt.RightArrow)
+    advanced_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+    ss.addWidget(advanced_toggle)
+    advanced_frame = QtWidgets.QWidget()
+    advanced_column = QtWidgets.QVBoxLayout(advanced_frame)
+    advanced_column.setContentsMargins(0, 0, 0, 0)
+    advanced_column.setSpacing(9)
+    for label, widget in (
+        ("Быстрый пресет MVKView", win.spectrum_view),
+        ("FFT · число реальных отсчётов N", win.nfft),
+        ("Опорный уровень дБ", win.db_ref),
+        ("Сглаживание по частоте", win.smooth),
+    ):
+        _field(advanced_column, label, widget)
+    advanced_column.addWidget(win.axis_button)
     auto = QtWidgets.QPushButton("Вернуть автомасштаб")
     auto.clicked.connect(win._reset_spectrum_axis)
-    ss.addWidget(auto)
-    response = QtWidgets.QPushButton("Показать АЧХ локального фильтра…")
+    advanced_column.addWidget(auto)
+    response = QtWidgets.QPushButton("АЧХ локального фильтра…")
     response.clicked.connect(lambda: _filter_response_dialog(win, "spectrum"))
-    ss.addWidget(response)
+    advanced_column.addWidget(response)
+    ss.addWidget(advanced_frame)
+    advanced_frame.setVisible(False)
+    def toggle_advanced(checked):
+        advanced_frame.setVisible(checked)
+        advanced_toggle.setArrowType(
+            QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow)
+    advanced_toggle.toggled.connect(toggle_advanced)
+    win.operator_info.setWordWrap(True)
+    win.operator_info.setProperty("fieldLabel", True)
     ss.addWidget(win.operator_info)
     ss.addStretch(1)
     inspector.addWidget(spectrum_panel)
 
     time_panel = QtWidgets.QWidget()
     ts = QtWidgets.QVBoxLayout(time_panel)
+    ts.setContentsMargins(12, 12, 12, 12)
+    ts.setSpacing(10)
     ts.addWidget(_title("Временной сигнал"))
-    tform = QtWidgets.QFormLayout()
+    tform = QtWidgets.QVBoxLayout()
+    tform.setSpacing(9)
     for label, widget in (
-        ("Развёртка", win.timebase),
-        ("Масштаб ±Y", win.time_y_width),
+        ("Развёртка X", win.timebase),
+        ("Мгновенная амплитуда ±Y", win.time_y_width),
         ("Фильтр времени", win.time_filter_choice),
-        ("Октавная полоса", win.time_filter_center),
-        ("Смещение Freeze", win.history),
     ):
         _field(tform, label, widget)
+    time_centre = _field(tform, "Центральная полоса", win.time_filter_center)
+    def time_filter_visibility(*_):
+        mode = win.time_filter_choice.currentData()
+        time_centre.setVisible(mode in (
+            "original_preset", "octave", "third_octave", "double_octave"))
+        win.time_filter_button.setVisible(mode in (
+            "highpass", "lowpass", "bandpass"))
+    win.time_filter_choice.currentIndexChanged.connect(time_filter_visibility)
     ts.addLayout(tform)
     ts.addWidget(win.time_filter_button)
-    response_time = QtWidgets.QPushButton("Показать АЧХ фильтра времени…")
+    time_filter_visibility()
+    time_detail = QtWidgets.QToolButton()
+    time_detail.setText("Просмотр / расширенные")
+    time_detail.setCheckable(True)
+    time_detail.setArrowType(QtCore.Qt.RightArrow)
+    time_detail.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+    ts.addWidget(time_detail)
+    time_advanced = QtWidgets.QWidget()
+    time_advanced_layout = QtWidgets.QVBoxLayout(time_advanced)
+    time_advanced_layout.setContentsMargins(0,0,0,0)
+    _field(time_advanced_layout, "Смещение Freeze", win.history)
+    response_time = QtWidgets.QPushButton("АЧХ фильтра времени…")
     response_time.clicked.connect(lambda: _filter_response_dialog(win, "time"))
-    ts.addWidget(response_time)
-    ts.addWidget(QtWidgets.QLabel(
-        "Мгновенная знаковая амплитуда ±м/с²; фильтр времени "
-        "не меняет спектральный фильтр."))
+    time_advanced_layout.addWidget(response_time)
+    ts.addWidget(time_advanced)
+    time_advanced.hide()
+    time_detail.toggled.connect(lambda enabled: (
+        time_advanced.setVisible(enabled),
+        time_detail.setArrowType(
+            QtCore.Qt.DownArrow if enabled else QtCore.Qt.RightArrow)))
+    info = QtWidgets.QLabel(
+        "Знаковая амплитуда м/с². Фильтр времени не изменяет FFT.")
+    info.setWordWrap(True)
+    info.setProperty("fieldLabel", True)
+    ts.addWidget(info)
     ts.addStretch(1)
     inspector.addWidget(time_panel)
     win._modern_inspector = inspector
@@ -672,12 +786,15 @@ def install_modern_shell(win, main, panel, review, storage):
     dock.setObjectName("mainGraphInspector")
     dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
     scroll = QtWidgets.QScrollArea()
+    scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
     scroll.setWidgetResizable(True)
+    scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
     scroll.setWidget(inspector)
     dock.setWidget(scroll)
+    dock.setMinimumWidth(246)
     win.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
     win._modern_inspector_dock = dock
-    win.resizeDocks([dock], [310], QtCore.Qt.Horizontal)
+    win.resizeDocks([dock], [318], QtCore.Qt.Horizontal)
 
     # Clicking a plot switches the inspector. The main tab navigation
     # is deliberately separate from the 43 standalone method windows.
