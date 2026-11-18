@@ -64,6 +64,9 @@ type Summary struct {
 	RawSHA256              string            `json:"raw_sha256"`
 	FrameMarksSHA256       string            `json:"source_frame_marks_sha256,omitempty"`
 	FrameMarkCount         uint64            `json:"source_frame_marks_count,omitempty"`
+    SourceLiveWriteDataAuditSHA256 string `json:"source_live_write_data_audit_sha256,omitempty"`
+    SourceLiveWriteDataWindows uint64 `json:"source_live_write_data_windows,omitempty"`
+    SourceLiveWriteDataPacketRecords uint64 `json:"source_live_write_data_packet_records,omitempty"`
 	Chunks                 uint64            `json:"tcp_read_chunks"`
 	TotalFrames            uint64            `json:"frames_decoded"`
 	FrameCounts            map[string]uint64 `json:"frame_counts"`
@@ -113,6 +116,7 @@ type Monitor struct {
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
+    sourceLiveDataWriter *sourceLiveDataWriter // original rate/freeze/ADC1-gated live file writing
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
 	sourceTask0ConfigRead bool // separate original bConfigDownload Task=0, passive
 	sourceTCP *sourceTCPLedger
@@ -246,6 +250,14 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
 	// apply any queued LOCAL operator source marks before consuming it.
 	if parseErr == nil && len(frames) > 0 && m.frameMarks != nil {
 		m.frameMarks.poll(m, at)
+        // Apply operator toggles BEFORE processing the first complete
+        // application frame, exactly where the original source thread
+        // checks WriteData/WriteValues flags prior to its ReadUInt32.
+        if m.sourceLiveDataWriter!=nil {
+            if e:=m.sourceLiveDataWriter.applyFrameMarks(m);e!=nil {
+                return fmt.Errorf("original source WriteData mark: %w",e)
+            }
+        }
 	}
 	for _, f := range frames {
 		if e := m.consume(f, at); e != nil {
@@ -374,6 +386,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // FreezeUpdate is false. No device TX is inferred or performed.
         sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
             m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
+        if m.sourceLiveDataWriter!=nil {
+            if e:=m.sourceLiveDataWriter.onSample(
+                m,*sample,f.Raw[28:],sourceStoreAllowed);e!=nil {return e}
+        }
 		// Original channel 8/9 store the 256 raw payload BYTES, not
         // 64 Float32 samples; FRxPos is byte count for TACH in Delphi.
         if typ==typeTach && sourceStoreAllowed &&
@@ -508,6 +524,7 @@ func (m *Monitor) CloseFiles() error {
 			first = e
 		}
 	}
+    if m.sourceLiveDataWriter!=nil {m.sourceLiveDataWriter.cleanup()}
 	return first
 }
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
@@ -518,6 +535,15 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
 		m.summary.CaptureOnly = m.captureOnly
 		m.summary.TailBytes = len(m.f.Tail)
 		m.summary.RawSHA256 = hex.EncodeToString(m.sum.Sum(nil))
+        if m.sourceLiveDataWriter!=nil {
+            if e:=m.sourceLiveDataWriter.finalize(m);e!=nil {
+                // Preserve incoming.raw even if LOCAL original writer fails;
+                // a bad audit must never masquerade as an accepted session.
+                m.warn("source WriteData file/audit failure: "+e.Error())
+                m.captureOnly=true
+                m.summary.CaptureOnly=true
+            }
+        }
 		if m.frameMarks != nil {
 			if markErr := m.frameMarks.finalize(m); markErr != nil {
 				m.warn("Local frame mark audit unavailable: " + markErr.Error())
