@@ -14,8 +14,9 @@ import (
 // The original TCP protocol has ten channels, including TACH channels 8/9
 // (zero based). TACH is NOT an ADC, so Float32 samples MUST NOT receive ADC
 // calibration or be passed off as original MVKView BIN/TSXML recordings.
-// Here the EXACT 256 payload bytes from each verified 284-byte TACH frame
-// are copied to a separately named, SHA-checked Native evidence file.
+// Here ALL exact payload bytes from each verified TACH frame, of the
+// variable length accepted by source _Unit125:0080819E, are copied to
+// separately SHA-checked Native evidence files.
 // The instrument is never contacted or commanded by this module.
 const tachEvidenceSchema = "MVK_NATIVE_R6_TACH_RAW_INPUT_V1"
 const tachEvidenceName = "TACH_RAW_SOURCE_AUDIT.json"
@@ -74,9 +75,12 @@ func (t *tachRawDumper) closeFiles() error {
 }
 
 func (t *tachRawDumper) add(stage string, f Frame, h SampleHeader) error {
-    if f.Type != typeTach || len(f.Raw) != 284 ||
-        h.Channel < 8 || h.Channel > 9 ||
-        h.Samples != 64 || h.NonFinite != 0 || !acceptedRates[h.Rate] {
+    if f.Type!=typeTach || h.Channel<8 || h.Channel>9 ||
+       h.Samples<1 || len(f.Raw)!=28+h.Samples*4 ||
+       h.Samples>32761 || !acceptedRates[h.Rate] {
+        // _Unit115:007D1B60 stores TACH as BYTES. Its arbitrary
+        // payload bits must not be rejected just because interpreting
+        // four bytes as Float32 would yield NaN/Inf.
         return errors.New("untrusted TACH frame cannot be exported")
     }
     idx := h.Channel-8
@@ -100,16 +104,16 @@ func (t *tachRawDumper) add(stage string, f Frame, h SampleHeader) error {
         if h.Index != t.next[idx] { record.SequenceGaps++ }
         if h.Rate != t.rate[idx] { record.RateChanges++ }
     }
-    payload := f.Raw[28:284]
+    payload := f.Raw[28:]
     n, err := t.files[idx].Write(payload)
     if err != nil { return err }
     if n != len(payload) { return errors.New("short TACH payload write") }
     if _, err := t.hashes[idx].Write(payload); err != nil { return err }
     record.Frames++
-    record.Samples += 64
+    record.Samples += uint64(h.Samples)
     record.Bytes += uint64(len(payload))
     record.LastFrameIndex = h.Index
-    t.next[idx] = h.Index+64
+    t.next[idx] = h.Index+uint32(h.Samples)
     return nil
 }
 

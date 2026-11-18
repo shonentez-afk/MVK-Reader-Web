@@ -1,6 +1,7 @@
 package main
 
 import (
+    "bytes"
     "crypto/sha256"
     "encoding/binary"
     "encoding/hex"
@@ -104,15 +105,27 @@ func TestTachGapIsAuditedNotFakeContinuousWaveform(t *testing.T) {
     }
 }
 
-func TestNonFiniteTachRejectsExportAndPreservesRaw(t *testing.T) {
+func TestNonFiniteTachByteStoragePreservesExactOriginalRawBits(t *testing.T) {
+    // Original _Unit115:007D1B60 receives TACH as BYTE, not Float32.
+    // The TACH forensic payload is NOT numerical/physical calibration:
+    // NaN bit patterns are still real bytes and must remain unchanged.
     frames:=append(makeFixture(),syntheticFrame(9,0,float32(math.NaN())))
     raw,csvFile,summary:=writeFixture(t,frames)
     out:=filepath.Join(t.TempDir(),"export")
-    if _,err:=export(raw,csvFile,summary,out,0);err==nil {
-        t.Fatal("non-finite tachometer data accepted")
+    report,e:=export(raw,csvFile,summary,out,0)
+    if e!=nil {t.Fatal("source byte TACH incorrectly rejected: ",e)}
+    if _,e:=os.Stat(raw);e!=nil {t.Fatal("original RAW must remain untouched")}
+    evidence:=readTachAudit(t,out)
+    if evidence.OriginalBINParity || evidence.Channels[1].Calibrated {
+        t.Fatal("nonfinite TACH bytes incorrectly certified as physical waveform")
     }
-    if _,err:=os.Stat(raw);err!=nil {t.Fatal("original RAW must remain untouched")}
-    if _,err:=os.Stat(out);!os.IsNotExist(err) {
-        t.Fatal("failed TACH export published as completed")
+    path:=filepath.Join(out,evidence.Channels[1].Filename)
+    got,e:=os.ReadFile(path)
+    if e!=nil {t.Fatal(e)}
+    if len(got)!=256 {t.Fatal("wrong source TACH byte count")}
+    wanted:=frames[len(frames)-1][28:]
+    if !bytes.Equal(got,wanted) {t.Fatal("source byte TACH bits changed")}
+    if report.GeneratedFiles[evidence.Channels[1].Filename]=="" {
+        t.Fatal("missing SHA of original TACH byte payload")
     }
 }

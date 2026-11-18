@@ -466,8 +466,11 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 			if e != nil {
 				return rep, e
 			}
-			if sampleHeader.NonFinite != 0 {
-				return rep, fmt.Errorf("non-finite samples in ADC/TACH channel %d", sampleHeader.Channel+1)
+			if sampleHeader.NonFinite != 0 && typ==typeADC {
+                // Original ADC is Float32; never certify invalid
+                // numerical input as a calibrated export. Original
+                // TACH storage is BYTE and must preserve any 4-byte bits.
+				return rep, fmt.Errorf("non-finite source ADC%d", sampleHeader.Channel+1)
 			}
 			smph = &sampleHeader
 		}
@@ -482,6 +485,7 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 			}
 			gotIdentity = true
 		case typeADC:
+            if sampleHeader.Samples==0 { break }
 			if !calibrated {
 				return rep, fmt.Errorf("ADC before valid initial snapshot at frame %d", count)
 			}
@@ -497,10 +501,11 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 				rate[ch] = sampleHeader.Rate
 			}
 			lastIndex[ch] = sampleHeader.Index
-			next[ch] = sampleHeader.Index + 256
-			// native Float32 channel payload: every raw value is converted once with the SAME session's verified gain
-			dst := make([]byte, 1024)
-			for i := 0; i < 256; i++ {
+			next[ch] = sampleHeader.Index + uint32(sampleHeader.Samples)
+			// _Unit125:0080819E uses actual sample count, not fixed 256.
+            // Preserve exact real bytes and SHA across fragmented TCP.
+			dst := make([]byte, sampleHeader.Samples*4)
+			for i := 0; i < sampleHeader.Samples; i++ {
 				orig := math.Float32frombits(binary.LittleEndian.Uint32(buf[28+4*i : 32+4*i]))
 				v := float32(float64(orig) * float64(gains[ch]))
 				if !finiteF32(v) {
@@ -513,8 +518,9 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 			}
 			hstates[ch].Write(dst)
 			framesPer[ch]++
-			samplesPer[ch] += 256
+			samplesPer[ch] += uint64(sampleHeader.Samples)
 		case typeTach:
+            if sampleHeader.Samples==0 { break }
 			// TACH channels 9/10: exact unswapped, unscaled 64xFloat32
 			// payload bytes per authenticated original TCP frame. Never
 			// name them original BIN, nor infer sensor calibration.

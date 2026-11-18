@@ -82,9 +82,14 @@ func (s *LiveBinSpool) adcFrame(f Frame, h SampleHeader) error {
 	if !s.begun {
 		return errors.New("ADC received before initial full register image")
 	}
-	if h.Channel >= 8 || h.Samples != 256 || h.NonFinite != 0 || h.Rate == 0 {
-		return fmt.Errorf("invalid live ADC header: ch=%d samples=%d nonfinite=%d rate=%d", h.Channel, h.Samples, h.NonFinite, h.Rate)
-	}
+    // Original TMVKThread passes the real (size-28) payload, not
+    // a mandatory 256-sample frame. Only store complete real Float32
+    // words, never pad or fabricate missing samples.
+    if h.Channel>=8 || h.Samples<1 || h.Samples>32761 ||
+       len(f.Raw)!=28+4*h.Samples || h.NonFinite!=0 || h.Rate==0 {
+        return fmt.Errorf("invalid live ADC header: ch=%d samples=%d nonfinite=%d rate=%d",
+            h.Channel,h.Samples,h.NonFinite,h.Rate)
+    }
 	ch := h.Channel
 	if s.samples[ch] != 0 && (h.Index != s.next[ch] || h.Rate != s.rate[ch]) {
 		return fmt.Errorf("ADC%d live gap/rate change at index=%d; expected=%d", ch+1, h.Index, s.next[ch])
@@ -92,8 +97,8 @@ func (s *LiveBinSpool) adcFrame(f Frame, h SampleHeader) error {
 	if s.samples[ch] == 0 {
 		s.rate[ch] = h.Rate
 	}
-	var bytesOut [1024]byte
-	for i := 0; i < 256; i++ {
+    bytesOut:=make([]byte,h.Samples*4)
+    for i:=0;i<h.Samples;i++ {
 		original := math.Float32frombits(binary.LittleEndian.Uint32(f.Raw[28+i*4 : 32+i*4]))
 		scaled := float32(float64(original) * float64(s.gain[ch]))
 		if !finiteF32(scaled) {
@@ -109,8 +114,8 @@ func (s *LiveBinSpool) adcFrame(f Frame, h SampleHeader) error {
 		return errors.New("short live BIN spool write")
 	}
 	_, _ = s.digest[ch].Write(bytesOut[:])
-	s.samples[ch] += 256
-	s.next[ch] = h.Index + 256
+	s.samples[ch] += uint64(h.Samples)
+	s.next[ch] = h.Index + uint32(h.Samples)
     // Real original float32 storage, after the verified calibrated spool
     // write; Go captures exactly the SAME already-scaled bytes. Original
     // GetSignal must not apply FRange a second time to this domain.

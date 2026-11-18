@@ -257,7 +257,9 @@ def test_real_qt_original_page_adc_hscale_live_signal_length_and_cursor(
         win._select_original_wave_hscale(0)
         qt_app.processEvents()
         assert not win.wave_plot.listDataItems()
-        assert "GetSignal 20000 мс" in win.wave_hint.text()
+        assert "Ожидание исходного длинного GetSignal" in win.wave_hint.text()
+        assert "1310720" in win.wave_hint.text()
+        assert win._live_long_window is None  # no invented 20s from 1s preview
         assert "ожидание реальных отсчётов" in win.wave_mean_primary.text()
         # Restore source Tag4 without reopening TCP or applying gain twice.
         win._select_original_wave_hscale(4)

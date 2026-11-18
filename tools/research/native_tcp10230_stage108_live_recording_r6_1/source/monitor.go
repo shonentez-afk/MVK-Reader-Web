@@ -329,6 +329,12 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 			m.warn("device reported operation denied; this program has issued NO command")
 		}
 	case typeADC, typeTach:
+        // _Unit125:008081E0 skips zero-length source packets without
+        // changing TMvkChannelStorage or receiving data counters.
+        if sample.Samples==0 {
+            m.note("empty source sample packet (header only); original ring unchanged")
+            break
+        }
 		c := &m.summary.Channels[sample.Channel]
 		c.Frames++
 		c.Samples += uint64(sample.Samples)

@@ -68,16 +68,17 @@ func (r *sourceOriginalStorageRing) appendFrame(
     if width == 0 || !acceptedRates[h.Rate] {
         return fmt.Errorf("invalid original channel/rate %d/%d",h.Channel,h.Rate)
     }
-    expectBytes:=1024
-    expectSamples:=256
+    // _Unit115:007D1B08 permits variable source chunks up to a
+    // wrap boundary, and _Unit125:0080819E passes the actual byte
+    // length (not an invented fixed 256-ADC/64-TACH count).
+    if h.Samples<1 || h.Samples>32761 || len(payload)!=h.Samples*4 ||
+       len(payload)/width>sourceOriginalStorageSamples {
+        return fmt.Errorf("incorrect source storage packet: ch=%d samples=%d bytes=%d",
+            h.Channel,h.Samples,len(payload))
+    }
     expectDomain:=sourceStorageCalibratedADC
     if h.Channel >= 8 {
-        expectBytes=256
-        expectSamples=64
         expectDomain=sourceStorageTachBytes
-    }
-    if len(payload) != expectBytes || h.Samples != expectSamples {
-        return fmt.Errorf("incorrect original storage packet length: ch=%d size=%d",h.Channel,len(payload))
     }
     if h.Channel < 8 {
         if domain != expectDomain && domain != sourceStorageUnscaledADC {

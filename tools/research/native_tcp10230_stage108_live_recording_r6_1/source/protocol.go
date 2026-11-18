@@ -43,14 +43,15 @@ func (f *Framer) Feed(chunk []byte) ([]Frame, error) {
 			return result, fmt.Errorf("%w: size=%d type=%08X", errMalformed, n, typ)
 		}
 		switch typ {
-		case typeADC:
-			if n != 1052 {
-				return result, fmt.Errorf("%w: ADC size=%d", errMalformed, n)
-			}
-		case typeTach:
-			if n != 284 {
-				return result, fmt.Errorf("%w: TACH size=%d", errMalformed, n)
-			}
+		case typeADC, typeTach:
+            // Source TMVKThread.Execute _Unit125:008080EB..00808339
+            // reads five u32 header fields, then (size-28) payload
+            // bytes in AllocBufferChunk/ProcessBufferChunk iterations.
+            // 1052/284 are observed full packets, NOT required by Delphi.
+            // n==28 is a valid empty source sample packet.
+            if n<28 {
+                return result,fmt.Errorf("%w: source sample header size=%d",errMalformed,n)
+            }
 		case typeParam:
 			if n < 32 {
 				return result, fmt.Errorf("%w: PARAM size=%d", errMalformed, n)
@@ -129,13 +130,13 @@ func decodeSampleHeader(f Frame) (SampleHeader, error) {
 	if f.Type != typeADC && f.Type != typeTach {
 		return SampleHeader{}, fmt.Errorf("%w: not ADC or TACH", errMalformed)
 	}
-	required, samples := 1052, 256
-	if f.Type == typeTach {
-		required, samples = 284, 64
-	}
-	if len(f.Raw) != required {
-		return SampleHeader{}, fmt.Errorf("%w: incorrect sample length", errMalformed)
-	}
+    // Original 0080819E: payload bytes = (frame_size_words-7)*4.
+    // Both ADC and TACH read a variable count of 4-byte wire words;
+    // the TACH storage records these bytes individually.
+    if len(f.Raw)<28 || len(f.Raw)%4!=0 || len(f.Raw)>maxFrameSize {
+        return SampleHeader{},fmt.Errorf("%w: invalid source sample frame length",errMalformed)
+    }
+    samples:=(len(f.Raw)-28)/4
 	channel := binary.LittleEndian.Uint32(f.Raw[20:24])
 	rate := binary.LittleEndian.Uint32(f.Raw[24:28])
 	if (f.Type == typeADC && channel >= 8) || (f.Type == typeTach && (channel < 8 || channel > 9)) || !acceptedRates[rate] {

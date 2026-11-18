@@ -66,7 +66,8 @@ func newLivePreviewBuffer() *LivePreviewBuffer { return &LivePreviewBuffer{} }
 // the sole receiver goroutine. No new calibration arithmetic or file I/O.
 func (p *LivePreviewBuffer) appendCalibratedADC(h SampleHeader, written []byte) error {
     if p == nil { return nil }
-    if h.Channel >= 8 || h.Samples != 256 || len(written) != 1024 || h.Rate == 0 {
+    if h.Channel>=8 || h.Samples<1 || h.Samples>livePreviewSamples ||
+       len(written)!=4*h.Samples || h.Rate==0 {
         return fmt.Errorf("preview received invalid verified spool block")
     }
     ch := int(h.Channel)
@@ -76,11 +77,14 @@ func (p *LivePreviewBuffer) appendCalibratedADC(h SampleHeader, written []byte) 
     start := int(p.samples[ch]%livePreviewSamples)*4
     // SampleHeader.Index is uint32 (wraps), captured_samples is a separate
     // monotonic uint64 received-count proof. Never conflate them.
-    // 262144 is a multiple of 256; each received ADC frame is one contiguous
-    // slice. These bits are the actual, already-calibrated native BIN bytes.
-    copy(p.bytes[ch][start:start+len(written)], written)
+    // Original 008081EA loops over the real number of bytes, splitting
+    // at the ring boundary. Frames need NOT contain exactly 256 samples.
+    n:=copy(p.bytes[ch][start:],written)
+    if n<len(written) {
+        copy(p.bytes[ch],written[n:])
+    }
     p.samples[ch] += uint64(h.Samples)
-    p.next[ch] = h.Index + 256
+    p.next[ch] = h.Index + uint32(h.Samples)
     p.rate[ch] = h.Rate
     return nil
 }
