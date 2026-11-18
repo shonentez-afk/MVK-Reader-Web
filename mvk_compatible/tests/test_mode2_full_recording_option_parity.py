@@ -48,7 +48,7 @@ def test_unchecked_original_tsxml_flag_does_not_create_xml_after_capture(tmp_pat
     assert not list(output.glob("*.tsxml"))
     assert (output/"SOURCE_W01_ADC1_LIVE_RX_UNSCALED.bin").is_file()
     evidence=json.loads((output/"SOURCE_WRITE_WINDOWS_AUDIT.json").read_text())
-    skipped=[s for s in evidence["skipped"]
+    skipped=[s for s in evidence["missing_source_channels"]
              if s.get("reason")=="ORIGINAL_XML_CHECKBOX_OFF"]
     assert len(skipped)==8
 
