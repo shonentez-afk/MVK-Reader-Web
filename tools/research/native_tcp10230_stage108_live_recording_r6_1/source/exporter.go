@@ -617,7 +617,13 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 		case typeAck, typeDenied:
 			return rep, fmt.Errorf("unexpected ACK/DENIED in read-only capture at frame %d", count)
 		default:
-			return rep, fmt.Errorf("unknown message type %08X", typ)
+			// TMVKThread.Execute _Unit125:008087BB..0080884C consumes
+			// unknown but structurally valid packets and continues RX.
+			// This exporter independently verified the exact RAW bytes,
+			// frames.csv correspondence and envelope length above: do
+			// not discard an otherwise fully verified ADC/BIN session.
+			// Malformed frames remain rejected before this switch.
+			continue
 		}
 	}
 	if byteTotal != sum.RawBytes || hex.EncodeToString(srcHash.Sum(nil)) != strings.ToLower(sum.RawSHA) {
