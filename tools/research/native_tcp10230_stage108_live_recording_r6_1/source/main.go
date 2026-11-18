@@ -158,6 +158,15 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		if m.summary.RawBytes >= maxBytes {
 			return "SIZE_LIMIT_REACHED", nil
 		}
+		// Source _Unit125:00807E8F..00807F6A: pop and transmit exactly
+		// ONE queued command before the next packet read. Never send a
+		// burst from a QProcess operator callback or an RX frame callback.
+		// The socket is this one already approved Task2 connection.
+		if m.sourceTask2TX!=nil {
+			if e:=m.sourceTask2TX.sendNext(m);e!=nil {
+				return "SOURCE_RATE_TX_FAILED",e
+			}
+		}
 		timeout := time.Now().Add(time.Second)
 		if !deadline.IsZero() && timeout.After(deadline) {
 			timeout = deadline
