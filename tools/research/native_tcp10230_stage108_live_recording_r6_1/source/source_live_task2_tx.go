@@ -32,6 +32,7 @@ type sourceLiveTask2TX struct {
  lastSentRate uint32
  sentCommands uint64
  sentBytes uint64
+ sentInSocket uint64 // do not attach a new socket ACK to the prior socket's TX
  paramCounterBase uint64
  ackAfterTX uint64
  deniedAfterTX uint64
@@ -42,6 +43,7 @@ func newSourceLiveTask2TX() *sourceLiveTask2TX {
 }
 func (s *sourceLiveTask2TX) resetForNewSourceSocket(m *Monitor){
  s.stage=0;s.status0Seen=false;s.status0=0;s.systemErrorLatched=false
+ s.sentInSocket=0
  s.paramCounterBase=m.summary.SourceNonemptyParameters
  s.conn=nil
  // A new socket may require the operator-approved original source rate.
@@ -66,13 +68,15 @@ func (s *sourceLiveTask2TX) afterReceivedFrame(m *Monitor,f Frame) error {
    if status0>0 {s.stage=3;s.systemErrorLatched=true}
   }
  case typeAck:
-  if s.sentCommands>0{s.ackAfterTX++} // temporal ONLY; no transaction ID
+  if s.sentInSocket>0{s.ackAfterTX++} // SAME socket, temporal only; no transaction ID
  case typeDenied:
-  if s.sentCommands>0{s.deniedAfterTX++}
+  if s.sentInSocket>0{s.deniedAfterTX++}
   // Original source throws errOperationDenied; fail closed and finalize RAW.
   return errTask2SourceDenied
  }
- return s.sendNext(m)
+ // Delphi 00807E8F..00807F6A: dispatch is BEFORE the next network
+ // read, not during a response callback. The sole Go read loop owns TX.
+ return nil
 }
 func (s *sourceLiveTask2TX) sendNext(m *Monitor) error {
  if !s.enabled || s.stage!=1 || !s.status0Seen || s.status0!=0 ||
@@ -96,6 +100,7 @@ func (s *sourceLiveTask2TX) sendNext(m *Monitor) error {
   return fmt.Errorf("%w: wrote %d/36 bytes: %v",errTask2SourceWrite,n,e)
  }
  s.sentCommands++
+ s.sentInSocket++
  s.lastSentRate=rate
  m.note(fmt.Sprintf("SOURCE TASK2 TX authorized: SetRate(%d) on SAME TCP socket; %d bytes",rate,n))
  return nil
@@ -113,7 +118,9 @@ func (s *sourceLiveTask2TX) takeOperatorLine(m *Monitor,line string) error {
  if m.sourceOriginalRXGate!=nil {
     if e=m.sourceOriginalRXGate.selectRate(uint32(n));e!=nil{return e}
  }
- return s.sendNext(m)
+ // SetRate only ENQUEUES here. Original Execute sends at most one
+ // FIFO command in each receive iteration, before its next ReadUInt32.
+ return nil
 }
 // QProcess stdin is a LOCAL per-process control plane, never a new TCP
 // connection. Scanner is bounded; main capture goroutine owns all socket TX.
