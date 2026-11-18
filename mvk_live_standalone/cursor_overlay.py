@@ -258,7 +258,7 @@ class MeasurementCursors(QtCore.QObject):
 
     def _mode_changed(self, *_):
         mode = self.mode.currentData()
-        self.active_row.setVisible(mode in ("dual", "band"))
+        self.active.setEnabled(mode in ("dual", "band"))
         self.harmonics_row.setVisible(mode == "harmonics")
         self.sideband_row.setVisible(mode == "sidebands")
         self._comb_key = None
