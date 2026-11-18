@@ -3478,13 +3478,23 @@ class MainWindow(QMainWindow):
 
     def _source_write_export_ready(self,report):
         self._source_writer_last_export=report
+        values_note=(
+            f"VALUES: {report.get('source_3100_trigger_events_replayed',0)} "
+            "реальных событий PARAM 0x3100; " if
+            report.get("source_values_export_anchored_to_verified_3100") else
+            "")
+        auto_closed=report.get("source_thread_auto_closed_writers",0)
+        close_note=(
+            f"Go закрыл {auto_closed} исходные записи при отключении; "
+            if auto_closed else "")
         self.statusBar().showMessage(
             "Оригинальная запись: проверенные локальные интервалы сохранены "
             f"({report['files_written']} файлов, {report['windows']} окон). "
             +("Go подтвердил границы кадров; " if
              report.get("verified_frame_boundaries") else
              "Границы по периодическому статусу; ")
-            +"не исходные Delphi BIN/CSV.")
+            +values_note+close_note+
+            "не исходные Delphi BIN/CSV.")
 
     def _source_write_export_failed(self,message):
         self._source_writer_last_export={
