@@ -13,7 +13,7 @@
 
 0. [Автоматический анализ и диагностика D01–D44](AUTOMATIC_DIAGNOSTICS_METHODS_AND_RULES_CATALOG_RU.md) — отдельный новый блок. Названия/признаки, зависимости от RPM/геометрии/истории, оригинальный код, UI, настройки и отрицательные тесты.
 1. [Главная спецификация пяти пробелов и четырёх направлений исследования](FIVE_GAPS_AND_DIAGNOSTIC_RESEARCH_PLAN_RU.md) — ключевой документ, проверка code facts, план пакетов D1–D4 и приёмка.
-2. [Полный каталог методов, режимов LIVE/ОКНО/АРХИВ и форм настроек](FULL_VIBRATION_METHODS_REALTIME_RECORDINGS_SETTINGS_SCREENS_RU.md) — сейчас **82 позиции**: 19 LIVE, 43 ОКНО, 20 АРХИВ/условно. Это **не 82 внедрённых метода**.
+2. [Полный каталог методов, режимов LIVE/ОКНО/АРХИВ и форм настроек](FULL_VIBRATION_METHODS_REALTIME_RECORDINGS_SETTINGS_SCREENS_RU.md) — **82 базовых позиции**: 19 LIVE, 43 ОКНО, 20 АРХИВ/условно, плюс **44 диагностические позиции** в D-каталоге. Всего 126 требований, **не 126 внедрённых методов**.
 3. [Подшипники и спектр огибающей](BEARING_ENVELOPE_DIAGNOSTICS_AND_OVERLAYS_AUDIT_RU.md), [гармоники/коллизии/маркеры](HARMONIC_OVERLAYS_AND_DIAGNOSTIC_METHODS_CATALOG_RU.md), [сравнение Fast Kurtogram/Protrugram/Infogram/Gini + качество и стандарты](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md).
 4. [История, архив и overlay](HISTORY_TRENDS_OVERLAY_DESIGN_RU.md), [W32/A20 поиск признаков и IP-профили](CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md), [README](README_RU.md).
 5. В новом чате снова проверить **HEAD ветки и GitHub Actions**. Не считать прошлый PASS достаточным для нового коммита, реальный МВК01 или поверки.
