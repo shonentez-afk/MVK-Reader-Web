@@ -446,6 +446,10 @@ func mainInner() int {
 			return 2
 		}
 		m.frameMarks = marks
+        // Native source writer observes actual channel frames while
+        // receiving. It never relies on post-capture status snapshots
+        // to guess MvkSampleRate / FreezeUpdate / first ADC1.
+        m.sourceLiveDataWriter=newSourceLiveDataWriter(dir)
 	}
 	if *liveStatus {
 		m.liveProgressEnabled = true
