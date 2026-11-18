@@ -257,7 +257,10 @@ def test_real_qt_original_page_adc_hscale_live_signal_length_and_cursor(
         win._select_original_wave_hscale(0)
         qt_app.processEvents()
         assert not win.wave_plot.listDataItems()
-        assert "Ожидание исходного длинного GetSignal" in win.wave_hint.text()
+        # All original HTags now use the same 2M source-ring contract.
+        # The pending label reports an exact N rather than implying that
+        # only the >262144-length windows must come from the ring.
+        assert "Ожидание 1310720 реальных GetSignal" in win.wave_hint.text()
         assert "1310720" in win.wave_hint.text()
         assert win._live_long_window is None  # no invented 20s from 1s preview
         assert "ожидание реальных отсчётов" in win.wave_mean_primary.text()
@@ -457,26 +460,55 @@ def test_original_long_20s_getsignal_renders_full_source_ring_in_real_qt(
     from mvk_compatible.core.native_r6_live_preview import (
         LivePreview,PreviewADC,
     )
+    from mvk_compatible.core.original_source_ring_receipt import (
+        SCHEMA,BUFFER_ELEMENTS,TACH_DOMAIN,
+    )
+    from mvk_compatible.core.native_r6_live_status import validate_live_status
+    from .test_stage111z26_native_live_status import now
     status,_=_preview(tmp_path)
     n=65536*20
     status["channels"][0]["samples"]=n
     status["channels"][0]["frames"]=n//256
-    status["channels"][0]["next_sample_index"]=4096
     status["frames_decoded"]=max(status["frames_decoded"],n//256*8)
     status["raw_bytes"]=max(status["raw_bytes"],n*4*8)
+    # Qt may render an explicit SHA-bound source-ring window ONLY when
+    # the same live Go status has independently validated all 10 source
+    # ring cursors. A manually constructed large Preview is not proof.
+    rows=[]
+    for i,ch in enumerate(status["channels"]):
+        adc=i<8
+        count=ch["samples"] if adc else ch["samples"]*4
+        device_end=4096 if i==0 else (100000+ch["samples"])&0xFFFFFFFF
+        ch["next_sample_index"]=device_end
+        rows.append(dict(
+            channel=i+1,sample_width_bytes=4 if adc else 1,
+            rx_pos_64=count,valid_pos_64=0,
+            first_readable_pos_64=0,available_elements=count,
+            last_sample_rate_hz=ch["sample_rates_hz"][0],
+            next_device_sample_index=device_end,
+            input_domain=("CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
+                          if adc else TACH_DOMAIN),
+            sequence_gaps=0,rate_changes=0,rejected_nonfinite_frames=0))
+    status["source_original_storage"]=dict(
+        schema=SCHEMA,buffer_elements_per_channel=BUFFER_ELEMENTS,
+        channels=rows)
+    trusted=validate_live_status(
+        status,expected_run=status["session_id"],now=now())
+    assert trusted["source_original_storage_verified"]
     values=np.zeros(n,dtype="<f4")
     req=SourceWindowRequest(status["session_id"],
         "0123456789abcdef0123456789abcdef",1,0,n,n,65536,4096)
     payload=values.tobytes()
     preview=LivePreview(
         status["session_id"],datetime.now(timezone.utc),
-        status["raw_bytes"],status["frames_decoded"],
+        trusted["raw_bytes"],trusted["frames_decoded"],
         {1:PreviewADC(1,65536,(4096-n)&0xffffffff,4096,values,
-                      sha256(payload).hexdigest(),n)})
+                      sha256(payload).hexdigest(),n)},
+        source_ring_provenance_verified=True)
     window=MainWindow()
     try:
         window._begin_live_capture()
-        window._receive_native_live_status(status)
+        window._receive_native_live_status(trusted)
         window._select_original_wave_hscale(0)
         assert not window.wave_plot.listDataItems()
         window._receive_source_long_window(SourceLongWindow(req,preview))
