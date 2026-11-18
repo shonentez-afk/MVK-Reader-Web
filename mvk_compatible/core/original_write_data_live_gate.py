@@ -163,6 +163,7 @@ def verify_native_live_write_data(
     if raw_path.stat().st_size!=raw_len:
         raise ValueError("Original native WriteData: RAW file changed")
     file_checks={}
+    packet_rates={}
     packet_sum=sha256()
     raw_sum=sha256()
     actual_samples=[0]*10
@@ -176,8 +177,9 @@ def verify_native_live_write_data(
                 if file.stat().st_size!=item["bytes"]:
                     raise ValueError("Original native WriteData: file length mismatch")
                 handle=resources.enter_context(file.open("rb"))
-                file_checks[(check["window"]["window"],channel)]=(
-                    handle,sha256(),0,0,item)
+                key=(check["window"]["window"],channel)
+                file_checks[key]=(handle,sha256(),0,0,item)
+                packet_rates[key]=set()
         data=resources.enter_context(raw_path.open("rb"))
         receipts=resources.enter_context(packet_path.open("rb"))
         for frame_index in range(1,raw_frames+1):
@@ -268,6 +270,7 @@ def verify_native_live_write_data(
                     raise ValueError("Original native WriteData: emitted bytes differ from RX")
                 h.update(copied)
                 file_checks[key]=(handle,h,total+len(copied),packets+1,item)
+                packet_rates[key].add(rate)
         final=data.read(MAX_FRAME)
         if len(final)!=raw_tail or data.read(1):
             raise ValueError("Original native WriteData: source terminal tail changed")
@@ -297,6 +300,8 @@ def verify_native_live_write_data(
                     "name":item["name"],"bytes":total,"packets":packets,
                     "sha256":item["sha256"],"source_raw_sha256":source_digest,
                     "original_live_source_rate_freeze_gate_verified":True,
+                    "verified_packet_rates_hz":sorted(packet_rates[
+                        (window["window"],channel)]),
                     "original_delphi_file_parity_verified":False,
                 })
     return {
