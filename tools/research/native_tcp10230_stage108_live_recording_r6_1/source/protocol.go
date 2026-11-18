@@ -63,7 +63,12 @@ func (f *Framer) Feed(chunk []byte) ([]Frame, error) {
 		case typeIdentity:
 			// Identity size is variable in the original protocol.
 		default:
-			return result, fmt.Errorf("%w: unknown type=%08X size=%d", errMalformed, typ, n)
+			// Original TMVKThread.Execute _Unit125:008087BB..0080884C
+			// logs unknown packet types, consumes exactly (size-8) payload
+			// bytes, and continues receiving. An unknown but correctly
+			// framed packet must NOT permanently disable ADC/PARAM decoding.
+			// Keep its complete raw bytes in Frame for the audit ledger;
+			// malformed lengths above remain a hard framing error.
 		}
 		if len(f.Tail) < int(n) {
 			break
