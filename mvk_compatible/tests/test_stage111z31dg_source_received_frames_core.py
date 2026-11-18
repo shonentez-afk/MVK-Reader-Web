@@ -148,15 +148,22 @@ def test_source_type_to_channel_8adc_2tach_gate(kind,ch):
     assert src.receipt()["source_buffer_chunks_drained"]==1
 
 
-def test_original_source_ack_and_undersized_empty_param_do_not_mark_readiness():
+def test_original_source_ack_and_valid_empty_param_do_not_mark_readiness():
     src=OriginalSourceReadFramer()
     assert src.feed(frame(TYPE_ACK))[0].source_stage==0
     assert src.receipt()["frames_with_register_blocks"]==0
-    # 0080839E requires at least 6 body DWORDS. With 0 descriptor
-    # count a raw 5-word header is undersized (28 bytes), so it cannot
-    # transition Stage 0 -> 1 or silently become a synthetic status.
+    # _Unit125.pas 0080841B..0080844F reads FIVE body DWORDs:
+    # the fifth is the descriptor count. Zero descriptors make a valid
+    # 28-byte PARAM, which must NOT enter Stage1 or mark the stream bad.
     empty=frame(TYPE_REGISTERS,[0,0,0,0,0])
-    with pytest.raises(OriginalSourceRxError):
-        src.feed(empty)
-    assert src.receipt()["original_source_stage_simulated"]==0
-    assert src.receipt()["failed_closed"]
+    assert len(empty)==28
+    out=src.feed(empty)
+    assert len(out)==1 and out[0].kind=="PARAM"
+    assert out[0].register_block_count==0
+    assert not out[0].processed
+    assert out[0].source_stage==0
+    assert src.receipt()["frames_with_register_blocks"]==0
+    assert not src.receipt()["failed_closed"]
+    # An actual nonempty register PARAM must still advance Task2.
+    nonempty=src.feed(param())
+    assert nonempty[0].processed and nonempty[0].source_stage==1
