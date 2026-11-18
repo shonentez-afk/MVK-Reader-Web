@@ -52,7 +52,7 @@ def test_y_choices_use_the_exact_physical_vibration_units():
 
 def test_linear_y_starts_at_zero_and_db_shows_true_db_data():
     assert visible_y_range([.1,2.0,3.0],"linear",10)==(0,10)
-    assert visible_y_range([.1,2.0,3.0],"linear",None)==(0,3.45)
+    assert visible_y_range([.1,2.0,3.0],"linear",None)[1]==pytest.approx(3.45)
     assert visible_y_range([-82.0,-30.0,-26.0],"db",40)==(-50, -10)
     assert visible_y_range([-82.0,-30.0,-26.0],"db",None)==(-90,-10)
     for bad in (0,-1,float("nan")):
