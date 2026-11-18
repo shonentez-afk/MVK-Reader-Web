@@ -556,6 +556,14 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_bands_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         dsp_rms_layout.addWidget(self.dsp_bands_table,stretch=1)
+        self.dsp_band_trend_button=QtWidgets.QPushButton(
+            "Тренд выделенной оригинальной 1/3-октавной полосы")
+        self.dsp_band_trend_button.setToolTip(
+            "Поиск сохранённых AUX4700 выбранного АЦП и частоты; "
+            "локальные 1/1 сводки нельзя выдать за приборную полосу.")
+        self.dsp_band_trend_button.clicked.connect(
+            self._open_dsp_band_trend)
+        dsp_rms_layout.addWidget(self.dsp_band_trend_button)
         self.dsp_band_note=QtWidgets.QLabel(
             "1/3: оригинальные 43 СКЗ AUX4700. "
             "1/1: APP_DERIVED RSS трёх исходных 1/3 полос; "
@@ -592,6 +600,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp24_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.dsp24_table.setAlternatingRowColors(True)
         dsp_extra_layout.addWidget(self.dsp24_table,stretch=2)
+        self.dsp24_trend_button=QtWidgets.QPushButton(
+            "Тренд выбранной позиции и параметра из AUX4700")
+        self.dsp24_trend_button.clicked.connect(self._open_dsp_24_trend)
+        dsp_extra_layout.addWidget(self.dsp24_trend_button)
         self.dsp24_note=QtWidgets.QLabel(
             "Частоты, физические единицы и точная трактовка peak/span для этих 24 позиций "
             "пока не подтверждены оригинальной схемой. Данные показаны без пересчёта.")
@@ -741,6 +753,18 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.local_values_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.derived_layout.insertWidget(3,self.local_values_table,stretch=1)
+        self.local_trend_metric_ids=(
+            "time_rms","time_peak","time_pp","crest","kurtosis",
+            "skew","impulse","shape","clearance","velocity_rms_10_1000")
+        self.local_values_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.local_trend_button=QtWidgets.QPushButton(
+            "Тренд выделенного локального показателя из сохранённых окон")
+        self.local_trend_button.setToolTip(
+            "Локальный тренд требует предварительно сохранить окна АЦП "
+            "в архив NPZ; Live-обновления не подменяют измерения.")
+        self.local_trend_button.clicked.connect(self._open_local_metric_trend)
+        self.derived_layout.insertWidget(4,self.local_trend_button)
         self.dsp_pages.addTab(self.derived_page,"Показатели MVK Live")
         self.bearing_diagnostics=QtWidgets.QLabel(
             "Подшипники: введите 1× и геометрию; локальное SNR, без эталонных измерений")
@@ -1188,6 +1212,52 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.spec.addItem(line)
             self._marker_lines.append(line)
 
+    def _open_calculated_trend(self,group,position=None):
+        # One operator click connects a displayed value to the exact
+        # historical metric family already backed by persistent SQLite.
+        index=self.history_ui.trend_group.findData(group)
+        if index<0:
+            self.dsp_info.setText(
+                f"Для показателя {group} архивный тренд пока не поддерживается")
+            return
+        self.views.setCurrentWidget(self.history_ui.trend_page)
+        self.history_ui.trend_group.setCurrentIndex(index)
+        if position is not None:
+            ix=self.history_ui.trend_position.findData(position)
+            if ix<0:
+                self.history_ui.trend_info.setText(
+                    "Эта архивная позиция недоступна: выбор не подменён")
+                return
+            self.history_ui.trend_position.setCurrentIndex(ix)
+        self.history_ui._plot_trend()
+
+    def _open_dsp_band_trend(self):
+        if self.dsp_band_mode.currentData()!="third":
+            self.dsp_band_note.setText(
+                "Сводная 1/1-октавная полоса не является исходной "
+                "приборной метрикой AUX4700, поэтому в приборный "
+                "исторический тренд не подставляется.")
+            return
+        row=self.dsp_bands_table.currentRow()
+        if row<0 or row>=43:
+            self.dsp_band_note.setText("Выберите одну из 43 исходных полос")
+            return
+        self._open_calculated_trend("third_octave",row)
+
+    def _open_dsp_24_trend(self):
+        row=self.dsp24_table.currentRow()
+        if row<0 or row>=24:
+            self.dsp24_note.setText("Выберите расчётную позицию 1–24")
+            return
+        self._open_calculated_trend(self.dsp24_mode.currentData(),row)
+
+    def _open_local_metric_trend(self):
+        row=self.local_values_table.currentRow()
+        if row<0 or row>=len(self.local_trend_metric_ids):
+            self.features_label.setText("Выберите локальный показатель в таблице")
+            return
+        self._open_calculated_trend(self.local_trend_metric_ids[row])
+
     def _plot_dsp_24(self,*_):
         packet=self._dsp_last
         if packet is None or not packet.has_extended:
@@ -1210,6 +1280,8 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _plot_dsp_bands(self,*_):
         packet=self._dsp_last
+        self.dsp_band_trend_button.setEnabled(
+            self.dsp_band_mode.currentData()=="third")
         if packet is None:
             self.dsp_curve.setData([],[])
             self.dsp_bands_table.setRowCount(0)

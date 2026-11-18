@@ -107,3 +107,43 @@ def test_original_third_bands_and_derived_octave_switch(window):
     assert "APP_DERIVED" in w.dsp_band_note.text()
     w.dsp_band_mode.setCurrentIndex(w.dsp_band_mode.findData("third"))
     assert w.dsp_curve.getData()[0].size==43
+
+def test_calculated_original_band_to_exact_metric_trend_navigation(window):
+    w=window
+    raw=_payload()
+    w._last_status=raw
+    w.adc.setCurrentIndex(2)
+    w._render_dsp()
+    from mvk_live_standalone.original_dsp import _THIRD_HZ
+    index=list(_THIRD_HZ).index(1000.)
+    w.dsp_bands_table.setCurrentCell(index,0)
+    w.dsp_band_trend_button.click()
+    ui=w.history_ui
+    assert w.views.currentWidget()==ui.trend_page
+    assert ui.trend_group.currentData()=="third_octave"
+    assert ui.trend_position.currentData()==index
+    assert w.adc.currentData()==3
+    w.views.setCurrentWidget(w.calculated_page)
+    w.dsp_band_mode.setCurrentIndex(w.dsp_band_mode.findData("octave"))
+    assert not w.dsp_band_trend_button.isEnabled()
+    w.dsp_band_mode.setCurrentIndex(w.dsp_band_mode.findData("third"))
+    assert w.dsp_band_trend_button.isEnabled()
+
+
+def test_calculated_24_position_and_local_metric_navigate_to_own_provenance(window):
+    w=window
+    w._last_status=_payload()
+    w.adc.setCurrentIndex(2)
+    w._render_dsp()
+    w.dsp24_mode.setCurrentIndex(w.dsp24_mode.findData("band_peak_equiv"))
+    w.dsp24_table.setCurrentCell(5,2)
+    w.dsp24_trend_button.click()
+    ui=w.history_ui
+    assert ui.trend_group.currentData()=="band_peak_equiv"
+    assert ui.trend_position.currentData()==5
+    w.views.setCurrentWidget(w.calculated_page)
+    w.local_values_table.setCurrentCell(9,0)
+    w.local_trend_button.click()
+    assert ui.trend_group.currentData()=="velocity_rms_10_1000"
+    assert ui.trend_adc.currentData()==3
+    assert w.views.currentWidget()==ui.trend_page
