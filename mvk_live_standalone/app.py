@@ -1684,6 +1684,11 @@ class LiveWindow(QtWidgets.QMainWindow):
     def _clear_overview_plot(self, domain):
         """Blank obsolete cloned LIVE data instead of displaying wrong ADC."""
         if domain=="time":
+            self._cursor_time_samples=None
+            self._cursor_time_fs=None
+            cursors=getattr(self,"_professional_cursors",None)
+            if cursors is not None:
+                cursors.refresh_time()
             curve=getattr(self,"overview_wave_curve",None)
             view=getattr(self,"overview_wave",None)
             text="Временной сигнал · нет подтверждённых отсчётов"
@@ -1752,6 +1757,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._clear_overview_plot("time")
             self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
             return
+        # Cursor measurements read the COMPLETE locally filtered physical window.
+        # Screen min/max decimation below never changes cursor amplitudes/intervals.
+        self._cursor_time_samples=np.asarray(physical,dtype=np.float64).copy()
+        self._cursor_time_fs=int(fs)
         # Peak-preserving min/max decimation is strictly for presentation.
         # All stats below use the FULL filtered source window, not the
         # decimated trace or any AUX4700 sensor DSP registers.
@@ -1778,6 +1787,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave.setYRange(ymin,ymax,padding=0)
         available_seconds=len(physical)/fs
         self.wave.setXRange(-available_seconds,0,padding=0)
+        cursors=getattr(self,"_professional_cursors",None)
+        if cursors is not None:
+            cursors.refresh_time()
         overview_plot=getattr(self,"overview_wave",None)
         if overview_plot is not None:
             overview_plot.setTitle(
@@ -2098,6 +2110,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.metrics.setText(base)
 
     def _cursor_text(self,*_):
+        layer=getattr(self, "_professional_cursors", None)
+        if layer is not None:
+            if _:
+                layer.on_primary_moved()
+            else:
+                layer.refresh_spectrum()
+            return
         if self._spectrum is None:return
         f=self._spectrum.hz
         pos=float(self.cursor.value())
@@ -2568,10 +2587,16 @@ class LiveWindow(QtWidgets.QMainWindow):
         view=self._spectrum
         if view is None or view.mode!="envelope":
             self.bearing_curve.setData([],[])
+            cursors=getattr(self,"_professional_cursors",None)
+            if cursors is not None:
+                cursors.refresh_bearing()
             self.bearing_diagnostics.setText(
                 "Нажмите «Рассчитать огибающую» с выбранной полосой и FFT N.")
             return
         self.bearing_curve.setData(view.hz,view.rms)
+        cursors=getattr(self,"_professional_cursors",None)
+        if cursors is not None:
+            cursors.refresh_bearing()
         self.bearing_plot.setTitle(
             f"APP_DERIVED · FFT огибающей · Fs={view.rate_hz} Гц")
         self.bearing_plot.enableAutoRange()
