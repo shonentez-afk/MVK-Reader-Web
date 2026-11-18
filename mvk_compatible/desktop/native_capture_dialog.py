@@ -399,6 +399,17 @@ class NativeCaptureDialog(QDialog):
         page=tabs.tabData(idx) if idx>=0 else None
         if page not in ("PageAdc","PageSpectrum"):
             return
+        # Source _Unit115: GetSignal/GetSpectrum with envelope_code>0
+        # requires DIFFERENT pre-FIR history, not bAdcHScale or ordinary
+        # bSpecLines raw input. Until the original filter/position/Win32
+        # numeric parity is proven, do not request an unfiltered FFT and
+        # silently display it as an envelope. No Go socket is changed.
+        if (page=="PageAdc" and
+                int(parent.wave_envelope_code.currentData() or 0)>0):
+            return
+        if (page=="PageSpectrum" and
+                parent.spec_envelope_button.isChecked()):
+            return
         adc=parent._ch()
         if page=="PageAdc":
             tag=getattr(parent,"_wave_hscale_tag",None)

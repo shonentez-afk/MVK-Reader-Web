@@ -36,6 +36,7 @@ from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
 )
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
+from ..core.original_live_envelope_provenance import active_live_envelope_gate
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from ..core.original_view_time_source import (
@@ -3176,6 +3177,34 @@ class MainWindow(QMainWindow):
         try:
             ch=self._ch()
             tag=self._wave_hscale_tag
+            # Original _Unit115 GetSignal 007D0C30: EnvelopeCode>0
+            # changes the actual sample processing (NoDC -> optional
+            # decimation -> I/Q FIR -> |I+jQ|), not just its plot label.
+            # This live client does not yet possess a source-audited
+            # full FIR return window. Never replace that with unfiltered
+            # GetSignal just because Go has a normal 2M ring snapshot.
+            fir_code=int(self.wave_envelope_code.currentData() or 0)
+            if fir_code:
+                status=self._native_live_status or {}
+                rows=(status.get("source_original_storage") or {}).get("channels") or []
+                row=rows[ch-1] if len(rows)>=ch else {}
+                seen=self._live_preview.channels.get(ch) if self._live_preview else None
+                fs=(row.get("last_sample_rate_hz")
+                    if status.get("source_original_storage_verified") is True
+                    else seen.rate_hz if seen is not None else None)
+                proof=active_live_envelope_gate(
+                    kind="GetSignal",code=fir_code,n_fft=0,
+                    sample_rate_hz=fs,
+                    profile_available=self.envelope_profile is not None,
+                    source_ring_verified=(
+                        status.get("source_original_storage_verified") is True),
+                    available_elements=row.get("available_elements",0))
+                raise ValueError(
+                    f"Огибающая Code{fir_code} не рассчитана в LIVE: "
+                    f"FIR/IQ GetSignal требует отдельного проверенного "
+                    f"окна и обратного порядка выходного массива "
+                    f"({proof['reason_code']}). Обычный сигнал не "
+                    "подменяет огибающую; выберите «Без фильтра».")
             channels=(self._native_live_status or {}).get('channels') or []
             if (len(channels)<=ch-1 or
                     type(channels[ch-1].get('samples')) is not int):
@@ -3299,6 +3328,39 @@ class MainWindow(QMainWindow):
             selected_n=int(self.spec_n.currentData())
             status=self._native_live_status or {}
             ring_selected=status.get("source_original_storage_verified") is True
+            # Source _Unit115:007D14B3..007D1546 invokes the ORIGINAL
+            # pre-FFT decimation and I/Q envelope when EnvelopeCode>0.
+            # The SHA-verified unfiltered FFT window from Go is not a
+            # filtered envelope spectrum. It is unsafe to show it with
+            # popEnvelopeType Tag1..31 active, even if a local IDP exists.
+            if self.spec_envelope_button.isChecked():
+                code=int(self.spec_envelope_code.currentData() or 0)
+                if not code:
+                    raise ValueError(
+                        "Огибающая включена без выбранного кода фильтра")
+                rows=(status.get("source_original_storage") or {}).get("channels") or []
+                row=rows[ch-1] if len(rows)>=ch else {}
+                seen=self._live_preview.channels.get(ch) if self._live_preview else None
+                fs=(row.get("last_sample_rate_hz")
+                    if ring_selected else
+                    seen.rate_hz if seen is not None else None)
+                proof=active_live_envelope_gate(
+                    kind="GetSpectrum",code=code,n_fft=selected_n,
+                    sample_rate_hz=fs,
+                    profile_available=self.envelope_profile is not None,
+                    source_ring_verified=ring_selected,
+                    available_elements=row.get("available_elements",0))
+                required=proof.get("research_inverse_exact_fft_n_history_samples")
+                requested=proof.get("source_get_adjusted_envelope_length_samples")
+                lengths=(f"Исходный GetAdjustedEnvelopeLength={requested}, "
+                         f"отдельная исследовательская FIR-история={required} "
+                         f"отсчётов. " if requested is not None else "")
+                raise ValueError(
+                    f"Огибающая Code{code} не рассчитана в LIVE: "
+                    +lengths + proof["reason_code"]
+                    + ". Обычная FFT не подменяет огибающую; "
+                    "выберите «Без фильтра».")
+            
             if ring_selected:
                 source_window=self._live_fft_window
                 if (source_window is None or
@@ -3359,8 +3421,9 @@ class MainWindow(QMainWindow):
             self.spec_hint.setText(
                 ('SHA исходного окна Go 2M · '
                  if ring_selected else 'Непроверенный исходный Preview · ')
-                + f'{d["source"]} · FRange повторно НЕ применялся · '
-                'результат не предназначен для оригинального Copy/Save')
+                + f'{d["source"]} · Native Go BIN уже калиброван; '
+                'в локальной FFT FRange=1, оригинальный коэффициент '
+                'не установлен · результат не для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
             self._source_large_fft_key=None
@@ -3370,10 +3433,20 @@ class MainWindow(QMainWindow):
             self.spec_plot.clear()
             self._full_spectrum=None
             self._spectrum_summary=None
+            # Source ring / FIR provenance was rejected: old research
+            # Copy/Save and cursor controls must NOT expose a stale FFT.
+            self.spec_copy_button.setEnabled(False)
+            self.spec_save_button.setEnabled(False)
+            self.spec_original_copy_compare.setEnabled(False)
+            self.spec_canvas_geometry_button.setEnabled(False)
+            self.spec_cursor_primary.setText(
+                'LIVE: исходный FFT/FIR-курсор не подтверждён')
             self.spec_mean.setText(
                 f'LIVE · FFT N={int(self.spec_n.currentData())}: '
                 'ожидание реальных данных; паритет Delphi не доказан')
             self.spec_mean_primary.setText(
+                'LIVE FIR · исходная цепочка не подтверждена'
+                if self.spec_envelope_button.isChecked() else
                 'LIVE FFT · недостаточная исходная история')
             self.spec_hint.setText('Live FFT недоступен: '+str(exc))
 
