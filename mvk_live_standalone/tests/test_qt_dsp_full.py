@@ -80,6 +80,7 @@ def test_qt_original_missing_or_unavailable_never_falls_back_to_fft(window):
     assert w._dsp_last is None
     assert not any(w.dsp24_table.item(0,j) is not None for j in range(4))
     assert "ещё не получены" in w.dsp_info.text()
+    w.adc.setCurrentIndex(2)  # ADC 3 is the only channel with a real fake AUX packet
     w._last_status["phase"]="COMPLETED"
     w._render_dsp()
     assert "НЕ Live" in w.dsp_info.text()
