@@ -143,7 +143,7 @@ def test_original_live_gate_export_byte_exact_and_non_delphi_label(tmp_path):
         xml=output/(item["name"]+".tsxml")
         assert xml.exists() and xml.read_bytes().startswith(b'<?xml')
         docxml=ET.parse(xml)
-        assert docxml.findtext("DataFileName")==r".\\"+item["name"]
+        assert docxml.findtext("DataFileName")==".\\"+item["name"]
         assert docxml.findtext("Channels/Channel/DataLength")==str(len(copied))
         assert docxml.findtext("Channels/Channel/RealDataType")=="Single"
     rec=json.loads((output/"SOURCE_WRITE_WINDOWS_AUDIT.json").read_text())
