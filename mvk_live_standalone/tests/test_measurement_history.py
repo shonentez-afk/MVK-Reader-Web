@@ -21,7 +21,7 @@ def vendor_row(adc,update,utc="2026-11-18T08:00:00Z"):
         "adc":adc,"time_utc":utc,"update":update,"status_raw":0,
         "status_hex":"0x00000000",
         "not_ready":{"fs16":False,"fs64":False,"fs512":False},
-        "nonfinite_fields":1,
+        "nonfinite_fields":0,
         "third_octave_hz":_THIRD_HZ.tolist(),
         "third_octave_acceleration_rms":[adc*update*.1+i*.01 for i in range(43)],
         "band_rms":[adc*update*.2+i for i in range(24)],
