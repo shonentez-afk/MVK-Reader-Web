@@ -102,23 +102,46 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
         source_gate=(status.get("source_original_receive_gate")
                      if status.get("source_original_receive_gate_verified") is True
                      else None)
-        if source_gate is not None:
-            admitted=source_gate["channels"][number-1]
-            last_excluded=admitted["last_skipped_native_samples"]
-            if (last_excluded and
-                    (ch.captured_samples is None or
-                     ch.captured_samples<len(ch.samples) or
-                     ch.captured_samples-len(ch.samples)<last_excluded)):
-                return deny(
-                    "Окно содержит отсчёты, исключённые исходным "
-                    "MvkSampleRate/FreezeUpdate",
-                    "SOURCE_STORAGE_EXCLUDED")
-        # Original source SampleHeader.Index is absolute; the JSON
-        # "samples" above counts ONLY bytes captured during this session.
-        # The previous <= samples test rejected valid late-attach windows.
-        source_end=source.get("next_sample_index")
+        full_ring=(status.get("source_original_storage")
+                   if status.get("source_original_storage_verified") is True
+                   else None)
+        # A long Source GetSignal is taken from original FRxPos, not
+        # Native forensic TCP.Samples: these diverge after FreezeUpdate
+        # or a mismatched rate. Preserve the exact 64-bit receive proof.
+        from_source_ring=bool(full_ring is not None and
+                              len(ch.samples)>262144)
+        if from_source_ring:
+            row=full_ring["channels"][number-1]
+            if (source_gate is not None and source_gate["freeze_update"] or
+                    row["input_domain"]!="CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32" or
+                    ch.captured_samples is None or
+                    ch.captured_samples<len(ch.samples) or
+                    ch.captured_samples>row["rx_pos_64"] or
+                    ch.captured_samples-len(ch.samples)<
+                    row["first_readable_pos_64"]):
+                return deny("Исходный длинный сигнал больше не находится "
+                            "в подтверждённом кольце", "SOURCE_RING_STALE")
+            status_count=row["rx_pos_64"]
+            status_index=row["next_device_sample_index"]
+        else:
+            if source_gate is not None:
+                admitted=source_gate["channels"][number-1]
+                last_excluded=admitted["last_skipped_native_samples"]
+                if (last_excluded and
+                        (ch.captured_samples is None or
+                         ch.captured_samples<len(ch.samples) or
+                         ch.captured_samples-len(ch.samples)<last_excluded)):
+                    return deny(
+                        "Окно содержит отсчёты, исключённые исходным "
+                        "MvkSampleRate/FreezeUpdate",
+                        "SOURCE_STORAGE_EXCLUDED")
+            status_count=samples
+            status_index=source.get("next_sample_index")
+        # Original source SampleHeader.Index is absolute and uint32;
+        # local Native.Samples or original ring FRxPos are independent
+        # uint64 counters. Only the matched provenance is compared.
         if not u32_matches_go_status(
-                ch.next_index,source_end,status_samples=samples,
+                ch.next_index,status_index,status_samples=status_count,
                 window_samples=len(ch.samples),
                 captured_samples=ch.captured_samples):
             return deny("Абсолютный индекс АЦП не подтверждён Go",

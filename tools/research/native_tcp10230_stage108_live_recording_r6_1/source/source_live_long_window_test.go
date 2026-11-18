@@ -172,3 +172,35 @@ func TestSourceLongWindowRequiresOriginalRateTagAndSameSession(t *testing.T) {
         }
     }
 }
+
+func TestSourceLongWindowAfterFreezeRequiresFullPostThawOriginalRingHistory(t *testing.T) {
+    // The Native TCP counter includes 256 frozen packet words, but
+    // original FRxPos advances only on accepted packet data. Once the
+    // requested entire 20s resides after thaw, the on-demand GetSignal
+    // must recover instead of being permanently denied by unequal counts.
+    n:=65536*20
+    m:=sourceLongTestMonitor(t,n/256)
+    g:=newSourceOriginalReceiveGate()
+    g.allowed[0]=uint64(n)
+    g.skippedFrozen[0]=256
+    g.skippedFrozenFrames[0]=1
+    g.lastSkippedNativeSample[0]=256
+    g.freezeChanges=2
+    m.sourceOriginalRXGate=g
+    m.summary.Channels[0].Samples=uint64(n)+256
+    req:=sourceLongTestRequest(t,m,"dddddddddddddddddddddddddddddddd",0)
+    if e:=m.handleSourceLongWindowRequest(time.Now());e!=nil {
+        t.Fatal("source post-freeze long signal rejected: ",e)
+    }
+    if _,e:=os.Stat(filepath.Join(m.dir,sourceLongWindowResultName));e!=nil {
+        t.Fatal("post-thaw real source Float32 not published",e)
+    }
+    g.setFreeze(true)
+    req.RequestID="eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    data,_:=json.Marshal(req)
+    if e:=os.WriteFile(filepath.Join(m.dir,sourceLongWindowRequestName),
+        data,0600);e!=nil {t.Fatal(e)}
+    if e:=m.handleSourceLongWindowRequest(time.Now());e==nil {
+        t.Fatal("source Go published a new GetSignal while FreezeUpdate active")
+    }
+}

@@ -90,12 +90,28 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
     row=status["source_original_storage"]["channels"][adc-1]
     live=status["channels"][adc-1]
     rate=row["last_sample_rate_hz"]
+    gate=(status.get("source_original_receive_gate")
+          if status.get("source_original_receive_gate_verified") is True
+          else None)
+    admissible=live["samples"]
+    skipped=0
+    allowed_source_gaps=0
+    if gate is not None:
+        g=gate["channels"][adc-1]
+        skipped=g["rate_skipped_elements"]+g["freeze_skipped_elements"]
+        allowed_source_gaps=(g["rate_skipped_frames"]+
+                             g["freeze_skipped_frames"])
+        if gate["freeze_update"] or gate["selected_rate_hz"]!=rate:
+            raise ValueError("Source GetSignal: MvkSampleRate/FreezeUpdate gate active")
+        admissible=g["accepted_elements"]
+        if admissible+skipped!=live["samples"]:
+            raise ValueError("Source GetSignal: source gate/native RX mismatch")
     if (row["input_domain"]!=DOMAIN or rate==0 or
             rate not in live["sample_rates_hz"] or
             live["sequence_discontinuities"] or live["nonfinite_samples"] or
-            row["sequence_gaps"] or row["rate_changes"] or
-            row["rejected_nonfinite_frames"] or
-            row["rx_pos_64"]!=live["samples"] or
+            row["rate_changes"] or row["rejected_nonfinite_frames"] or
+            row["rx_pos_64"]!=admissible or
+            row["sequence_gaps"]>allowed_source_gaps or
             row["next_device_sample_index"]!=live["next_sample_index"]):
         raise ValueError("Source GetSignal: uncalibrated/discontinuous ADC")
     count=rate*ADC_HORIZONTAL_MS[h_tag]//1000
@@ -226,8 +242,8 @@ def load_source_long_window(root:str|Path,status:dict,
                                            meta["next_sample_index"],count) or
                     not u32_matches_go_status(
                         request.device_end_index,
-                        live["next_sample_index"],
-                        status_samples=live["samples"],
+                        row["next_device_sample_index"],
+                        status_samples=row["rx_pos_64"],
                         window_samples=count,
                         captured_samples=request.capture_end)):
                 raise ValueError("Source GetSignal: stale original storage source index")

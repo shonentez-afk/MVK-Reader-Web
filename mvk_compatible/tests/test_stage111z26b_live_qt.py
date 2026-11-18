@@ -594,3 +594,25 @@ def test_original_qt_freeze_sends_local_go_gate_without_device_tx(
         dlg.close()
         win.close()
         qt_app.processEvents()
+
+
+def test_original_short_live_preview_excludes_frozen_adc_bytes(tmp_path,qt_app):
+    """A valid forensic Native ZIP is not automatically original GetSignal."""
+    from mvk_compatible.core.original_live_view_gate import gate_live_preview
+    status,preview=_preview(tmp_path)
+    ch=preview.channels[1]
+    last=max(1,ch.captured_samples-len(ch.samples)//2)
+    source=[dict(channel=i+1,last_skipped_native_samples=0)
+            for i in range(10)]
+    source[0]["last_skipped_native_samples"]=last
+    status["source_original_receive_gate_verified"]=True
+    status["source_original_receive_gate"]={
+        "freeze_update":False,"selected_rate_hz":65536,
+        "channels":source}
+    denied=gate_live_preview(status,preview)
+    assert not denied.allowed and denied.phase=="SOURCE_STORAGE_EXCLUDED"
+    # Only a complete fresh window AFTER the last dropped word can
+    # become original source data; changing the menu does not invent it.
+    source[0]["last_skipped_native_samples"]=0
+    approved=gate_live_preview(status,preview)
+    assert approved.allowed

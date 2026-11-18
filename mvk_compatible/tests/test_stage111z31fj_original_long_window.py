@@ -164,3 +164,36 @@ def test_source_long_window_refuses_missing_history_or_other_run(tmp_path):
     status["source_tcp_multi_socket"]=False
     with pytest.raises(ValueError,match="foreign"):
         submit_source_long_window(tmp_path,status,1,0)
+
+
+def test_long_source_getsignal_recovers_after_original_freeze_thaw(tmp_path):
+    root,status=long_source_status(tmp_path)
+    n=65536*20
+    # Frozen native packets were still read as RAW, but were never
+    # admitted into Delphi-compatible FRxPos. The fresh real 20s window
+    # AFTER thaw is still available and must not be permanently blocked.
+    status["channels"][0]["samples"]=n+256
+    status["channels"][0]["frames"]+=(1)
+    rows=[]
+    for i,live in enumerate(status["channels"]):
+        admitted=live["samples"]*(4 if i>=8 else 1)
+        skipped=256 if i==0 else 0
+        rows.append(dict(channel=i+1,
+            accepted_elements=admitted-skipped,
+            freeze_skipped_elements=skipped,rate_skipped_elements=0,
+            freeze_skipped_frames=1 if i==0 else 0,
+            rate_skipped_frames=0,
+            last_skipped_native_samples=256 if i==0 else 0))
+    status["source_original_receive_gate_verified"]=True
+    status["source_original_receive_gate"]=dict(
+        selected_rate_hz=65536,freeze_update=False,
+        channels=rows)
+    req=submit_source_long_window(root,status,1,0)
+    assert req is not None and req.samples==n
+    response_fixture(root,status,req)
+    answer=load_source_long_window(root,status,req)
+    assert answer is not None and answer.received_samples==n
+    assert len(answer.preview.channels[1].samples)==n
+    status["source_original_receive_gate"]["freeze_update"]=True
+    with pytest.raises(ValueError,match="FreezeUpdate"):
+        submit_source_long_window(root,status,1,0)

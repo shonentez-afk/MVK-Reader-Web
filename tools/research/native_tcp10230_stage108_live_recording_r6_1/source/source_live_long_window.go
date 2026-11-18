@@ -121,9 +121,23 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     idx:=req.ADC-1
     channel:=&m.sourceOriginalStorage.channels[idx]
     summary:=m.summary.Channels[idx]
+    // Original FreezeUpdate/MvkSampleRate deliberately skip TCP frames.
+    // After thaw, source FRxPos is smaller than forensic Native.Samples.
+    // It must equal the count admitted to ORIGINAL ring by the exact
+    // rate/freeze gate, not the count of every packet read from TCP.
+    allowedCount:=summary.Samples
+    if m.sourceOriginalRXGate!=nil {
+        g:=m.sourceOriginalRXGate
+        allowedCount=g.allowed[idx]
+        if (g.frozen || g.rate!=req.SampleRateHz ||
+                g.allowed[idx]+g.skippedRate[idx]+g.skippedFrozen[idx]!=
+                    summary.Samples) {
+            return errors.New("source original gate not ready for long GetSignal")
+        }
+    }
     if !channel.seen || channel.domain!=sourceStorageCalibratedADC ||
        channel.sampleRate!=req.SampleRateHz ||
-       channel.rxPos!=summary.Samples ||
+       channel.rxPos!=allowedCount ||
        summary.SequenceDiscontinuities>0 || summary.NonFiniteSamples>0 ||
        len(summary.rates)!=1 {
         return errors.New("source long window not a confirmed contiguous calibrated ADC stream")
