@@ -29,3 +29,7 @@
 **Для CI:** тестировать последний кодовый SHA по всем jobs (Go RX/export, Linux Core, Windows Core/Qt, Windows QPA, EXE), не засчитывать отменённые runs. Старый тест `TestStage108RefusesCaptureOnlyAndKeepsRaw` должен подавать **malformed DWORD length 10**, а не корректный unknown-frame length 8.
 
 Приватные IDP/PAS/DFM/SQLite, исходные EXE и операторские PCAP/RAW/BIN не публиковать.
+
+## Дополнение FO: согласованный строгий экспорт
+
+В процессе сквозной проверки выявлен **второй** необоснованный отказ: старый `exporter.go` в независимой проверке `RAW → BIN/TSXML/VALUES/TABLE` отклонял корректный неизвестный тип, хотя основной Go RX его уже принял. Исправлен [`f6b6da4`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f6b6da4e71011cf78e8ee1e27918e4b367a1be97): пакет пропускается только после строгой проверки длины, точного соответствия `frames.csv`, полного учёта в `RAW SHA256` и `FrameCounts`. Новая [регрессия `99de069`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/99de0698f1bcee669780b576fd99c1847bb3af9c) прогоняет полный исходный тестовый набор через `Monitor` и проверенный Stage108 exporter с неизвестным 16-байтным кадром между identity и ADC/PARAM; восемь BIN должны быть сформированы без изменения RAW. Повреждённые пакеты по-прежнему отклоняются. **Обязателен CI для `99de069`; старые PASS относятся к предыдущему SHA.**
