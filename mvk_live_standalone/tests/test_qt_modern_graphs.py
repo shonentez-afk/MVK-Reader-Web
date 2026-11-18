@@ -154,3 +154,39 @@ def test_detached_method_windows_are_not_extra_main_tabs(widget):
     assert len(w._modern_windows)==2
     assert w.views.count()==4
     assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+def test_original_four_views_are_presets_not_forced_x_or_psd_modes(widget):
+    w,_=widget
+    w.analysis.setCurrentIndex(w.analysis.findData("welch"))
+    w.xscale.setCurrentIndex(w.xscale.findData("log"))
+    w.spectrum_view.setCurrentIndex(w.spectrum_view.findData("linear_vs"))
+    assert w.kind.currentData()=="velocity"
+    assert w.yscale.currentData()=="linear"
+    assert w.xscale.currentData()=="log"
+    assert w.analysis.currentData()=="welch"
+    assert "мм/с" in w.y_height_choice.itemText(1)
+    assert not w.y_height_choice.isEnabled()  # PSD has power density units
+    w.analysis.setCurrentIndex(w.analysis.findData("fft"))
+    assert w.y_height_choice.isEnabled()
+
+
+def test_standalone_stft_is_pinned_and_survives_main_adc_switch(widget):
+    w,_=widget
+    from mvk_live_standalone.modern_shell import open_advanced_window
+    _feed(w)
+    child=open_advanced_window(w,"stft")
+    pin=w._modern_method_pins["stft"]
+    assert pin["adc"]==1 and pin["fs"]==8192
+    assert not pin["samples"].flags.writeable
+    assert len(pin["samples"])==8192
+    w.adc.setCurrentIndex(1)  # ADC 2 has no samples
+    assert pin["adc"]==1
+    w._start_extra_mode("stft")
+    assert w._extra_future is not None
+    w._extra_future.result(timeout=40)
+    w._poll_extra()
+    assert w._extra_future is None
+    assert w._modern_windows["stft"] is child
+    assert "APP_DERIVED" in w.extra_method_infos["stft"].text()
+    assert "старый результат отброшен" not in w.extra_method_infos["stft"].text()
