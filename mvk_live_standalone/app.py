@@ -33,7 +33,8 @@ from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, D
 from .original_dsp import read_original_dsp_bands
 from .frange import original_applied_frange
 from .octave_filters import (FAMILIES, nominal_centres, preset_band,
-                             preset_description, octave_rss_from_thirds)
+                             preset_description, octave_rss_from_thirds,
+                             ORIGINAL_MVK_MENU)
 from .spectrum_controls import (VIEW_MODES, FILTER_CHOICES, X_LIMITS_HZ,
                                 view_settings, x_limit_hz, y_height_options,
                                 visible_y_range)
@@ -934,12 +935,21 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.filter_center.setCurrentIndex(
                     selected if selected>=0 else self.filter_center.count()//2)
             self._filter_center_family=mode
-        self.filter_center.setVisible(mode in FAMILIES)
+        elif mode=="original_preset" and self._filter_center_family!=mode:
+            with QtCore.QSignalBlocker(self.filter_center):
+                self.filter_center.clear()
+                for label,family,center in ORIGINAL_MVK_MENU:
+                    self.filter_center.addItem(label,(family,center))
+                self.filter_center.setCurrentIndex(0)
+            self._filter_center_family=mode
+        self.filter_center.setVisible(
+            mode in FAMILIES or mode=="original_preset")
         with QtCore.QSignalBlocker(self.band), QtCore.QSignalBlocker(self.notch), (
                 QtCore.QSignalBlocker(self.custom_low)), QtCore.QSignalBlocker(self.custom_high):
             self.band.setCurrentIndex(self.band.findData(
                 "custom" if mode in ("highpass","lowpass","bandpass") or
-                            mode in FAMILIES else PRESET_BANDS["Весь диапазон"]))
+                            mode in FAMILIES or mode=="original_preset"
+                else PRESET_BANDS["Весь диапазон"]))
             self.notch.setCurrentIndex(self.notch.findData(
                 {"notch50":50.0,"notch60":60.0}.get(mode)))
             if mode=="highpass":
@@ -957,6 +967,15 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _filter_description(self):
         mode=self.filter_choice.currentData()
+        if mode=="original_preset":
+            selected=self.filter_center.currentData()
+            if not isinstance(selected,tuple) or len(selected)!=2:
+                return "Выберите пункт восстановленного меню MVKView"
+            family,center=selected
+            if family=="none":
+                return "Каталог 32 названий MVKView · Без фильтра"
+            return ("Каталог названий MVKView · "+self.filter_center.currentText()
+                    +" · "+preset_description(family,center))
         if mode in FAMILIES:
             return preset_description(mode,self.filter_center.currentData())
         if mode=="none":
@@ -1052,7 +1071,14 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _read_settings(self):
         band=self.band.currentData()
-        if self.filter_choice.currentData() in FAMILIES:
+        if self.filter_choice.currentData()=="original_preset":
+            selected=self.filter_center.currentData()
+            if selected is None:
+                raise ValueError("Не выбрана полоса из меню MVKView")
+            family,center=selected
+            band=((0.,None) if family=="none"
+                  else preset_band(family,center))
+        elif self.filter_choice.currentData() in FAMILIES:
             band=preset_band(self.filter_choice.currentData(),
                              self.filter_center.currentData())
         elif band=="custom":
@@ -1387,7 +1413,15 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.time_filter_center.setCurrentIndex(
                     selected if selected>=0 else self.time_filter_center.count()//2)
             self._time_center_family=mode
-        self.time_filter_center.setVisible(mode in FAMILIES)
+        elif mode=="original_preset" and self._time_center_family!=mode:
+            with QtCore.QSignalBlocker(self.time_filter_center):
+                self.time_filter_center.clear()
+                for label,family,center in ORIGINAL_MVK_MENU:
+                    self.time_filter_center.addItem(label,(family,center))
+                self.time_filter_center.setCurrentIndex(0)
+            self._time_center_family=mode
+        self.time_filter_center.setVisible(
+            mode in FAMILIES or mode=="original_preset")
         self.time_filter_button.setEnabled(
             mode in ("highpass","lowpass","bandpass"))
         self._render_wave()
@@ -1469,12 +1503,22 @@ class LiveWindow(QtWidgets.QMainWindow):
         n=min(len(data),max(2,int(round(requested*fs))))
         window=data[-n:]
         mode=self.time_filter_choice.currentData()
+        if mode=="original_preset":
+            selected=self.time_filter_center.currentData()
+            if not isinstance(selected,tuple) or len(selected)!=2:
+                self.wave_curve.setData([],[])
+                self.wave_stats.setText("Выберите полосу из меню MVKView")
+                return
+            filter_mode,filter_center=selected
+        else:
+            filter_mode=mode
+            filter_center=(self.time_filter_center.currentData()
+                           if mode in FAMILIES else None)
         try:
             physical=time_filter_waveform(
-                window,fs,mode=mode,
+                window,fs,mode=filter_mode,
                 low=self.time_filter_low,high=self.time_filter_high,
-                center=(self.time_filter_center.currentData()
-                        if mode in FAMILIES else None))
+                center=filter_center)
         except ValueError as exc:
             self.wave_curve.setData([],[])
             self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
@@ -1502,13 +1546,19 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave.setYRange(ymin,ymax,padding=0)
         available_seconds=len(physical)/fs
         self.wave.setXRange(-available_seconds,0,padding=0)
-        info=(preset_description(mode,self.time_filter_center.currentData())
-              if mode in FAMILIES else {
-              "none":"Без фильтра",
-              "highpass":f"ФВЧ от {self.time_filter_low:g} Гц",
-              "lowpass":f"ФНЧ до {self.time_filter_high:g} Гц",
-              "bandpass":f"Полосовой {self.time_filter_low:g}–{self.time_filter_high:g} Гц",
-              "notch50":"Режектор 50 Гц","notch60":"Режектор 60 Гц"}[mode])
+        if mode=="original_preset":
+            info=("Название меню MVKView · "+self.time_filter_center.currentText()+
+                  (" · "+preset_description(filter_mode,filter_center)
+                   if filter_mode in FAMILIES else " · Без фильтра"))
+        elif mode in FAMILIES:
+            info=preset_description(mode,self.time_filter_center.currentData())
+        else:
+            info={"none":"Без фильтра",
+                  "highpass":f"ФВЧ от {self.time_filter_low:g} Гц",
+                  "lowpass":f"ФНЧ до {self.time_filter_high:g} Гц",
+                  "bandpass":f"Полосовой {self.time_filter_low:g}–{self.time_filter_high:g} Гц",
+                  "notch50":"Режектор 50 Гц",
+                  "notch60":"Режектор 60 Гц"}[mode]
         cropped=(f" · доступно {available_seconds:g} с" if
                  available_seconds<requested-.001 else "")
         self.wave_info.setText(

@@ -184,3 +184,22 @@ def test_advanced_adc_selector_clears_only_stale_short_live_views(gui):
     assert w._trend_points==[]
     w.dsp_adc.setCurrentIndex(2)
     assert w.extra_adc.currentData()==3
+
+def test_time_original_mvkview_32_labels_have_independent_selection(gui):
+    w,_=gui
+    _feed(w)
+    w.time_filter_choice.setCurrentIndex(
+        w.time_filter_choice.findData("original_preset"))
+    assert w.time_filter_center.count()==32
+    assert w.time_filter_center.currentData()==("none",None)
+    w._render_wave()
+    assert "Без фильтра" in w.wave_info.text()
+    index=w.time_filter_center.findData(("third_octave",1000.))
+    assert index>=0
+    w.time_filter_center.setCurrentIndex(index)
+    w.timebase.setCurrentIndex(w.timebase.findData(1.))
+    w._render_wave()
+    assert "1/3окт 1000 Гц" in w.wave_info.text()
+    assert "локальный фильтр" in w.wave_info.text()
+    assert w.filter_choice.currentData()=="none"
+    assert not w.time_filter_button.isEnabled()

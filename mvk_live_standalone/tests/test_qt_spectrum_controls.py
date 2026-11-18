@@ -166,3 +166,30 @@ def test_octave_spectrum_operator_choose_nominal_center_without_manual_entry(gui
     assert not w.filter_button.isEnabled()
     w.filter_choice.setCurrentIndex(w.filter_choice.findData("none"))
     assert w.filter_center.isHidden()
+
+def test_original_mvkview_32_label_menu_keeps_local_filter_provenance(gui):
+    w,_=gui
+    from mvk_live_standalone.octave_filters import preset_band, ORIGINAL_MVK_MENU
+    import numpy as np
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("original_preset"))
+    assert w.filter_center.count()==32
+    assert w.filter_center.currentData()==("none",None)
+    assert w._read_settings()[3]==(0.,None)
+    assert [w.filter_center.itemText(i) for i in range(32)]==[
+        label for label,_,_ in ORIGINAL_MVK_MENU]
+    ix=w.filter_center.findData(("third_octave",25000.))
+    assert ix>=0
+    w.filter_center.setCurrentIndex(ix)
+    np.testing.assert_allclose(w._read_settings()[3],
+                               preset_band("third_octave",25000.))
+    assert "локальный фильтр" in w._filter_description()
+    assert "1/3окт 25 кГц" in w._filter_description()
+    w.filter_center.setCurrentIndex(
+        w.filter_center.findData(("octave",16000.)))
+    assert "1окт 16 кГц" in w._filter_description()
+    w.filter_center.setCurrentIndex(
+        w.filter_center.findData(("double_octave",13000.)))
+    assert "2окт 13 кГц" in w._filter_description()
+    assert not w.filter_button.isEnabled()
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("none"))
+    assert w.filter_center.isHidden()
