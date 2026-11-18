@@ -167,3 +167,16 @@ def test_envelope_has_independent_measured_cursor_without_fault_claim(gui):
     w._spectrum = None
     c.refresh_bearing()
     assert not c.bearing_line.isVisible()
+
+
+def test_adc_change_clears_old_spectrum_and_cursors_before_next_window(gui):
+    w, _ = gui
+    _spectrum(w)
+    c = w._professional_cursors
+    assert c.a_spec.isVisible()
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    assert w._spectrum is None
+    assert not c.a_spec.isVisible()
+    assert not c.bearing_line.isVisible()
+    assert "Нет подтверждённого спектра" in c.spec_readout.text()
+    assert w._gui_ring.channel(2) is None
