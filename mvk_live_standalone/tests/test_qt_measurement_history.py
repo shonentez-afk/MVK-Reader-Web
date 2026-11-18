@@ -56,7 +56,7 @@ def seed_adc(w):
     for utc,freq,fs in (
         ("2026-11-18T09:00:00Z",100.,8192),
         ("2026-11-18T11:00:00Z",200.,8192),
-        ("2026-11-18T12:00:00Z",300.,4096),
+        ("2026-11-18T12:00:00Z",300.,2048),
     ):
         t=np.arange(8192)/fs
         x=np.asarray(np.sqrt(2)*np.sin(2*np.pi*freq*t),dtype="<f4")
@@ -72,7 +72,6 @@ def test_tabs_are_linked_without_disturbing_original_workspaces(w):
         "Спектр","Временной сигнал","Расчётные данные",
         "Тренды","Сравнение","Доп. анализ"]
     ui=w.history_ui
-    assert len(ui.trend_group) if False else True
     assert ui.trend_group.count()>=14
     assert ui.compare_mode.count()==9
     assert ui.compare_table.rowCount()==0
@@ -124,7 +123,7 @@ def test_compare_fft_four_modes_and_waveforms_from_three_saved_dates(w):
     assert all(e.adc==1 for e in entries)
     assert all("FFT" in label for _,_,_,label in ui._last_overlay)
     assert "Fs различается" in ui.compare_info.text()
-    assert ui.compare_plot.viewRange()[0][1]==pytest.approx(2048,rel=.001)
+    assert ui.compare_plot.viewRange()[0][1]==pytest.approx(1024,rel=.001)
     for view,unit in (("fft_log","дБ"),("fft_vs","мм/с"),
                       ("fft_vp","мкм")):
         ui.compare_mode.setCurrentIndex(ui.compare_mode.findData(view))
