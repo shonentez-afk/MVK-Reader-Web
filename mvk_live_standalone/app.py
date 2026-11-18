@@ -378,11 +378,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave_toolbar=QtWidgets.QHBoxLayout()
         self.wave_layout.addLayout(self.wave_toolbar)
         self.wave_toolbar.addWidget(QtWidgets.QLabel("Развёртка X"))
+        self.timebase.blockSignals(True)
         self.timebase.clear()
         for seconds in TIME_WINDOWS_S:
             label=f"{seconds*1000:g} мс" if seconds<1 else f"{seconds:g} с"
             self.timebase.addItem(label,seconds)
         self.timebase.setCurrentIndex(self.timebase.findData(1.0))
+        self.timebase.blockSignals(False)
         self.wave_toolbar.addWidget(self.timebase)
         self.wave_toolbar.addWidget(QtWidgets.QLabel("Амплитуда Y"))
         self.time_y_width=QtWidgets.QComboBox()
@@ -948,10 +950,65 @@ class LiveWindow(QtWidgets.QMainWindow):
             [p[0] for p in self._trend_points],
             [p[1] for p in self._trend_points])
 
-    def _render_wave(self):
+    def _time_filter_changed(self,*_):
+        mode=self.time_filter_choice.currentData()
+        self.time_filter_button.setEnabled(
+            mode in ("highpass","lowpass","bandpass"))
+        self._render_wave()
+
+    def _edit_time_filter(self):
+        # This dialog changes ONLY the displayed time signal, never
+        # spectrum processing or the device-calculated AUX4700 registers.
+        mode=self.time_filter_choice.currentData()
+        if mode not in ("highpass","lowpass","bandpass"):
+            return
+        dlg=QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Временной сигнал · локальные параметры фильтра")
+        form=QtWidgets.QFormLayout(dlg)
+        lo=QtWidgets.QDoubleSpinBox(dlg)
+        hi=QtWidgets.QDoubleSpinBox(dlg)
+        for box in (lo,hi):
+            box.setRange(0,32768)
+            box.setDecimals(2)
+            box.setSuffix(" Гц")
+        lo.setValue(self.time_filter_low)
+        hi.setValue(self.time_filter_high)
+        if mode!="lowpass":
+            form.addRow("ФВЧ: нижняя граница",lo)
+        if mode!="highpass":
+            form.addRow("ФНЧ: верхняя граница",hi)
+        channel=self._gui_ring.channel(self.adc.currentData())
+        nyquist=(channel.rate_hz/2 if channel is not None else None)
+        form.addRow(QtWidgets.QLabel(
+            f"Nyquist текущего АЦП: {nyquist:g} Гц" if nyquist else
+            "Реальная частота дискретизации станет известна при измерении"))
+        buttons=QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok|QtWidgets.QDialogButtonBox.Cancel,dlg)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        if dlg.exec()!=QtWidgets.QDialog.DialogCode.Accepted:return
+        lower=lo.value() if mode!="lowpass" else 0.0
+        upper=hi.value() if mode!="highpass" else 0.0
+        if ((mode!="lowpass" and lower<=0) or
+            (mode!="highpass" and upper<=0) or
+            (mode=="bandpass" and lower>=upper) or
+            (nyquist is not None and max(lower,upper)>=nyquist)):
+            QtWidgets.QMessageBox.warning(
+                self,"Фильтр временного сигнала отклонён",
+                "Проверьте частотные границы относительно Nyquist")
+            return
+        if mode!="lowpass":self.time_filter_low=lower
+        if mode!="highpass":self.time_filter_high=upper
+        self._render_wave()
+
+    def _render_wave(self,*_):
+        requested=float(self.timebase.currentData())
         if self.freeze.isChecked() and self._freeze_samples is not None:
             if self.adc.currentData()!=self._freeze_channel:
                 self.wave_curve.setData([],[])
+                self.wave_stats.setText(
+                    "В замороженном сигнале выбран другой канал АЦП")
                 return
             fs=self._freeze_rate
             offset=int(round(self.history.value()*fs))
@@ -961,28 +1018,70 @@ class LiveWindow(QtWidgets.QMainWindow):
             ch=self._gui_ring.channel(self.adc.currentData())
             if ch is None or ch.available==0:
                 self.wave_curve.setData([],[])
+                self.wave_stats.setText(
+                    "Временной сигнал: ожидание подтверждённых АЦП Float32")
+                self.wave.setXRange(-requested,0,padding=0)
                 return
             fs=ch.rate_hz
             data=ch.latest(min(ch.available,262144))
         if fs<=0 or len(data)==0:
             self.wave_curve.setData([],[])
+            self.wave_stats.setText("Нет допустимых отсчётов выбранного АЦП")
             return
-        # Physical timebase is explicit; no manufactured interpolation.
-        n=min(len(data),max(1,int(self.timebase.currentData()*fs)))
+        # Only genuine ring samples: do not extend a 4-s packet to a
+        # requested 30-s scope or assume a missing sample rate.
+        n=min(len(data),max(2,int(round(requested*fs))))
         window=data[-n:]
-        step=max(1,int(math.ceil(len(window)/2500)))
-        if step>1 and len(window)>=step:
-            trimmed=window[-(len(window)//step)*step:].reshape(-1,step)
-            low=trimmed.min(axis=1)
-            high=trimmed.max(axis=1)
-            y=np.stack((low,high),axis=1).reshape(-1)
-            indices=np.repeat(np.arange(len(low))*step,2)
-            indices[1::2]+=step-1
-            x=(indices-len(trimmed.reshape(-1)))/fs
+        mode=self.time_filter_choice.currentData()
+        try:
+            physical=time_filter_waveform(
+                window,fs,mode=mode,
+                low=self.time_filter_low,high=self.time_filter_high)
+        except ValueError as exc:
+            self.wave_curve.setData([],[])
+            self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
+            return
+        # Peak-preserving min/max decimation is strictly for presentation.
+        # All stats below use the FULL filtered source window, not the
+        # decimated trace or any AUX4700 sensor DSP registers.
+        step=max(1,int(math.ceil(len(physical)/2500)))
+        if step>1 and len(physical)>=step:
+            block=physical[-(len(physical)//step)*step:].reshape(-1,step)
+            lo=block.min(axis=1)
+            hi=block.max(axis=1)
+            y=np.stack((lo,hi),axis=1).reshape(-1)
+            index=np.repeat(np.arange(len(block))*step,2)
+            index[1::2]+=step-1
+            x=(index-len(block.reshape(-1)))/fs
         else:
-            y=window
-            x=(np.arange(len(window),dtype=np.float64)-len(window))/fs
+            y=physical
+            x=(np.arange(len(physical),dtype=np.float64)-len(physical))/fs
         self.wave_curve.setData(x,y)
+        self.wave.setLabel("bottom","Время",units="с")
+        self.wave.setLabel("left","ВУ · Виброускорение",units="м/с²")
+        # A waveform has signed peaks; never force a 0..positive spectrum Y.
+        ymin,ymax=signed_time_limits(physical,self.time_y_width.currentData())
+        self.wave.setYRange(ymin,ymax,padding=0)
+        available_seconds=len(physical)/fs
+        self.wave.setXRange(-available_seconds,0,padding=0)
+        info={"none":"Без фильтра",
+              "highpass":f"ФВЧ от {self.time_filter_low:g} Гц",
+              "lowpass":f"ФНЧ до {self.time_filter_high:g} Гц",
+              "bandpass":f"Полосовой {self.time_filter_low:g}–{self.time_filter_high:g} Гц",
+              "notch50":"Режектор 50 Гц","notch60":"Режектор 60 Гц"}[mode]
+        cropped=(f" · доступно {available_seconds:g} с" if
+                 available_seconds<requested-.001 else "")
+        self.wave_info.setText(
+            f"Временной сигнал · АЦП {self.adc.currentData()} · "
+            f"Fs={fs} Гц · {info} · откалиброван Native Go ×FRange один раз"
+            f"{cropped}")
+        if physical.size>=2:
+            rms,peak,span=display_time_stats(physical,fs)
+            self.wave_stats.setText(
+                f"APP_DERIVED · по выбранному временному окну · "
+                f"СКЗ {rms:.5g} м/с² · Пик {peak:.5g} м/с² · "
+                f"Пик-пик {span:.5g} м/с² · N={len(physical)}; "
+                "не путать с исходным расчётным AUX4700 прибора")
 
     def _schedule_fft(self):
         if self._preview is None or (
