@@ -132,3 +132,15 @@ def test_time_local_filter_is_real_and_does_not_change_spectrum(gui):
     assert w._read_settings()[3]==(0.,None)
     assert "ФНЧ до 200" in w.wave_info.text()
     assert w.dsp24_curve.getData()[0] is None or len(w.dsp24_curve.getData()[0])==0
+
+def test_time_octave_selection_is_independent_of_spectrum(gui):
+    w,_=gui
+    _feed(w)
+    w.time_filter_choice.setCurrentIndex(w.time_filter_choice.findData("third_octave"))
+    assert w.time_filter_center.count()==43
+    assert not w.time_filter_button.isEnabled()
+    w.time_filter_center.setCurrentIndex(w.time_filter_center.findData(1000.))
+    w.timebase.setCurrentIndex(w.timebase.findData(1.))
+    w._render_wave()
+    assert "1/3 октавы" in w.wave_info.text()
+    assert w.filter_choice.currentData()=="none"

@@ -32,6 +32,7 @@ from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
 from .original_dsp import read_original_dsp_bands
 from .frange import original_applied_frange
+from .octave_filters import FAMILIES, nominal_centres, preset_band, preset_description
 from .spectrum_controls import (VIEW_MODES, FILTER_CHOICES, X_LIMITS_HZ,
                                 view_settings, x_limit_hz, y_height_options,
                                 visible_y_range)
@@ -246,6 +247,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.filter_choice=QtWidgets.QComboBox()
         for label,key in FILTER_CHOICES:
             self.filter_choice.addItem(label,key)
+        self.filter_center=QtWidgets.QComboBox()
+        self.filter_center.setToolTip(
+            "Готовые центральные частоты 1/1, 1/3 и 2 октавы; "
+            "локальная фильтрация, не оригинальный приборный FIR.")
+        self.filter_center.setVisible(False)
+        self._filter_center_family=None
         self.filter_button=QtWidgets.QPushButton("Настроить фильтр…")
         self.filter_button.clicked.connect(self._edit_filter)
         self.x_limit_choice=QtWidgets.QComboBox()
@@ -260,7 +267,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         operator.addWidget(self.spectrum_view,0,3)
         operator.addWidget(QtWidgets.QLabel("Фильтр"),0,4)
         operator.addWidget(self.filter_choice,0,5)
-        operator.addWidget(self.filter_button,0,6)
+        operator.addWidget(self.filter_center,0,6)
+        operator.addWidget(self.filter_button,0,7)
         operator.addWidget(QtWidgets.QLabel("Предел X"),1,0)
         operator.addWidget(self.x_limit_choice,1,1)
         operator.addWidget(QtWidgets.QLabel("Масштаб Y"),1,2)
@@ -418,6 +426,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         for label,key in TIME_FILTERS:
             self.time_filter_choice.addItem(label,key)
         self.wave_toolbar.addWidget(self.time_filter_choice)
+        self.time_filter_center=QtWidgets.QComboBox()
+        self.time_filter_center.setVisible(False)
+        self.time_filter_center.setToolTip(
+            "Выбор готовой октавной полосы без ручного задания границ.")
+        self._time_center_family=None
+        self.wave_toolbar.addWidget(self.time_filter_center)
         self.time_filter_button=QtWidgets.QPushButton("Настроить…")
         self.time_filter_button.setEnabled(False)
         self.time_filter_button.clicked.connect(self._edit_time_filter)
@@ -434,6 +448,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             "Временной сигнал: ожидание достоверных отсчётов АЦП")
         self.wave_layout.addWidget(self.wave_stats)
         self.time_filter_choice.currentIndexChanged.connect(self._time_filter_changed)
+        self.time_filter_center.currentIndexChanged.connect(self._render_wave)
         self.time_y_width.currentIndexChanged.connect(self._render_wave)
 
         self.spec = pg.PlotWidget(title="Спектр FFT · расчёт MVK Live из АЦП (не DSP)")
@@ -585,6 +600,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             w.valueChanged.connect(self._update_markers)
         self.spectrum_view.currentIndexChanged.connect(self._select_primary_spectrum)
         self.filter_choice.currentIndexChanged.connect(self._select_primary_filter)
+        self.filter_center.currentIndexChanged.connect(self._select_primary_filter)
         self.x_limit_choice.currentIndexChanged.connect(self._redraw_from_current)
         self.y_height_choice.currentIndexChanged.connect(self._redraw_from_current)
         self._select_primary_spectrum()
@@ -642,17 +658,26 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._show_envelope_if_needed()
         self._on_control_change()
 
+
     def _select_primary_filter(self,*_):
         mode=self.filter_choice.currentData()
-        blocks=[QtCore.QSignalBlocker(w) for w in (
-            self.band,self.notch,self.custom_low,self.custom_high)]
-        try:
-            selected=self.band.findData(
-                "custom" if mode in ("highpass","lowpass","bandpass") else
-                PRESET_BANDS["Весь диапазон"])
-            self.band.setCurrentIndex(selected)
-            notch={"notch50":50.0,"notch60":60.0}.get(mode)
-            self.notch.setCurrentIndex(self.notch.findData(notch))
+        if mode in FAMILIES and self._filter_center_family!=mode:
+            with QtCore.QSignalBlocker(self.filter_center):
+                self.filter_center.clear()
+                for hz in nominal_centres(mode):
+                    self.filter_center.addItem(f"{hz:g} Гц",hz)
+                selected=self.filter_center.findData(1000.)
+                self.filter_center.setCurrentIndex(
+                    selected if selected>=0 else self.filter_center.count()//2)
+            self._filter_center_family=mode
+        self.filter_center.setVisible(mode in FAMILIES)
+        with QtCore.QSignalBlocker(self.band), QtCore.QSignalBlocker(self.notch), (
+                QtCore.QSignalBlocker(self.custom_low)), QtCore.QSignalBlocker(self.custom_high):
+            self.band.setCurrentIndex(self.band.findData(
+                "custom" if mode in ("highpass","lowpass","bandpass") or
+                            mode in FAMILIES else PRESET_BANDS["Весь диапазон"]))
+            self.notch.setCurrentIndex(self.notch.findData(
+                {"notch50":50.0,"notch60":60.0}.get(mode)))
             if mode=="highpass":
                 if self.custom_low.value()<=0:self.custom_low.setValue(10)
                 self.custom_high.setValue(0)
@@ -663,13 +688,13 @@ class LiveWindow(QtWidgets.QMainWindow):
                 if self.custom_low.value()<=0:self.custom_low.setValue(10)
                 if self.custom_high.value()<=self.custom_low.value():
                     self.custom_high.setValue(max(1000,self.custom_low.value()+10))
-        finally:
-            del blocks
         self.filter_button.setEnabled(mode in ("highpass","lowpass","bandpass"))
         self._on_control_change()
 
     def _filter_description(self):
         mode=self.filter_choice.currentData()
+        if mode in FAMILIES:
+            return preset_description(mode,self.filter_center.currentData())
         if mode=="none":
             text="Без пользовательского фильтра"
             if self.kind.currentData() in ("velocity","displacement"):
@@ -763,7 +788,10 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _read_settings(self):
         band=self.band.currentData()
-        if band=="custom":
+        if self.filter_choice.currentData() in FAMILIES:
+            band=preset_band(self.filter_choice.currentData(),
+                             self.filter_center.currentData())
+        elif band=="custom":
             high=float(self.custom_high.value())
             band=(float(self.custom_low.value()),high if high>0 else None)
         return (self.adc.currentData(),self.kind.currentData(),self.nfft.currentData(),
@@ -994,8 +1022,19 @@ class LiveWindow(QtWidgets.QMainWindow):
             [p[0] for p in self._trend_points],
             [p[1] for p in self._trend_points])
 
+
     def _time_filter_changed(self,*_):
         mode=self.time_filter_choice.currentData()
+        if mode in FAMILIES and self._time_center_family!=mode:
+            with QtCore.QSignalBlocker(self.time_filter_center):
+                self.time_filter_center.clear()
+                for hz in nominal_centres(mode):
+                    self.time_filter_center.addItem(f"{hz:g} Гц",hz)
+                selected=self.time_filter_center.findData(1000.)
+                self.time_filter_center.setCurrentIndex(
+                    selected if selected>=0 else self.time_filter_center.count()//2)
+            self._time_center_family=mode
+        self.time_filter_center.setVisible(mode in FAMILIES)
         self.time_filter_button.setEnabled(
             mode in ("highpass","lowpass","bandpass"))
         self._render_wave()
@@ -1080,7 +1119,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         try:
             physical=time_filter_waveform(
                 window,fs,mode=mode,
-                low=self.time_filter_low,high=self.time_filter_high)
+                low=self.time_filter_low,high=self.time_filter_high,
+                center=(self.time_filter_center.currentData()
+                        if mode in FAMILIES else None))
         except ValueError as exc:
             self.wave_curve.setData([],[])
             self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
@@ -1108,11 +1149,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave.setYRange(ymin,ymax,padding=0)
         available_seconds=len(physical)/fs
         self.wave.setXRange(-available_seconds,0,padding=0)
-        info={"none":"Без фильтра",
+        info=(preset_description(mode,self.time_filter_center.currentData())
+              if mode in FAMILIES else {
+              "none":"Без фильтра",
               "highpass":f"ФВЧ от {self.time_filter_low:g} Гц",
               "lowpass":f"ФНЧ до {self.time_filter_high:g} Гц",
               "bandpass":f"Полосовой {self.time_filter_low:g}–{self.time_filter_high:g} Гц",
-              "notch50":"Режектор 50 Гц","notch60":"Режектор 60 Гц"}[mode]
+              "notch50":"Режектор 50 Гц","notch60":"Режектор 60 Гц"}[mode])
         cropped=(f" · доступно {available_seconds:g} с" if
                  available_seconds<requested-.001 else "")
         self.wave_info.setText(

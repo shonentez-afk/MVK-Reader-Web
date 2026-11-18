@@ -149,3 +149,20 @@ def test_envelope_filter_only_shown_inside_explicit_advanced_envelope(gui):
     assert w.envelope_band.isHidden()
     w.advanced_toggle.setChecked(False)
     assert w.advanced_panel.isHidden()
+
+def test_octave_spectrum_operator_choose_nominal_center_without_manual_entry(gui):
+    w,_=gui
+    from mvk_live_standalone.octave_filters import preset_band
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("third_octave"))
+    assert w.filter_center.count()==43
+    assert not w.filter_button.isEnabled()
+    w.filter_center.setCurrentIndex(w.filter_center.findData(1000.))
+    import numpy as np
+    np.testing.assert_allclose(w._read_settings()[3],
+                               preset_band("third_octave",1000.))
+    assert "1/3 октавы" in w.operator_info.text()
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("octave"))
+    assert "1/1 октавы" in w._filter_description()
+    assert not w.filter_button.isEnabled()
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("none"))
+    assert w.filter_center.isHidden()
