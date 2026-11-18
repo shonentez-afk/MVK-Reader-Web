@@ -10,6 +10,7 @@ import (
     "encoding/binary"
     "math"
     "os"
+    "path/filepath"
     "testing"
     "time"
 )
@@ -72,7 +73,7 @@ func TestNativeFRangex510FromOriginalConfigIsAppliedExactlyOnce(t *testing.T) {
         t.Fatal("calibration output sample count fabricated")
     }
 
-    m,err:=NewMonitor(t.TempDir(),"LIVE_READ_ONLY","192.168.1.83")
+    m,err:=NewMonitor(filepath.Join(t.TempDir(),"capture"),"LIVE_READ_ONLY","192.168.1.83")
     if err!=nil {t.Fatal(err)}
     defer m.CloseFiles()
     first:=m.snapshotLiveStatus("CONNECTING",time.Now())
