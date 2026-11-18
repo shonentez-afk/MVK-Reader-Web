@@ -1571,6 +1571,15 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._redraw_short_trend()
 
     def _advanced_adc_changed(self,*_):
+        # A previous ADC spectrum must never remain a measured cursor source
+        # while the newly selected ADC has no validated current window.
+        self._spectrum=None
+        self.spec_curve.setData([],[])
+        self._clear_overview_plot("spectrum")
+        cursors=getattr(self,"_professional_cursors",None)
+        if cursors is not None:
+            cursors.refresh_spectrum()
+            cursors.refresh_bearing()
         pinned=getattr(self,"_modern_method_pins",{})
         if "kurtogram" not in pinned:
             self._invalidate_kurtogram(
