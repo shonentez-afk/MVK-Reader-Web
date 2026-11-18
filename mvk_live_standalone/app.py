@@ -1705,6 +1705,9 @@ class LiveWindow(QtWidgets.QMainWindow):
             curve=getattr(self,"overview_spec_curve",None)
             view=getattr(self,"overview_spec",None)
             text="Спектр · ожидание реальных отсчётов АЦП"
+            cursors=getattr(self,"_professional_cursors",None)
+            if cursors is not None:
+                cursors.refresh_spectrum()
         if curve is not None:
             curve.setData([],[])
         if view is not None:
