@@ -2405,8 +2405,17 @@ class LiveWindow(QtWidgets.QMainWindow):
         )
 
     def _run_bearing_page(self):
-        self.envelope_band.setCurrentIndex(
-            self.envelope_band.findData(self.bearing_resonance.currentData()))
+        # PySide6 QVariant matching via findData() is unreliable for
+        # tuple-valued frequency bands (it may return -1, silently selecting
+        # "no band"). Compare actual itemData() values instead.
+        requested=self.bearing_resonance.currentData()
+        matching=next((i for i in range(self.envelope_band.count())
+                       if self.envelope_band.itemData(i)==requested),-1)
+        if matching<0:
+            self.bearing_diagnostics.setText(
+                "Полоса огибающей отсутствует в списке: расчёт отменён")
+            return
+        self.envelope_band.setCurrentIndex(matching)
         self.nfft.setCurrentIndex(
             self.nfft.findData(self.bearing_fft.currentData()))
         self.kind.setCurrentIndex(self.kind.findData("acceleration"))
