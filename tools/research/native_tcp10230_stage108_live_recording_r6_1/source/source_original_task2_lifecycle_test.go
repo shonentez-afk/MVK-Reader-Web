@@ -1,8 +1,10 @@
 package main
 
 import (
+    "context"
     "encoding/binary"
     "errors"
+    "net"
     "path/filepath"
     "testing"
     "time"
@@ -93,5 +95,53 @@ func TestOriginalTask2PassiveDeniedStopsAfterPreservingExactRAW(t *testing.T) {
     if p.Stage!=0 || p.LastLiveStage!=1 ||
        p.LastEndReason!="SOURCE_OPERATION_DENIED" || !p.Disconnected {
        t.Fatalf("original denied/Stage0 unwind incorrect: %+v",p)
+    }
+}
+
+func TestOriginalTask2PassiveLocalhostDeniedStopsAtActualSocket(t *testing.T) {
+    // Synthetic local listener only; no MVK hardware and no device TX.
+    listener,e:=net.Listen("tcp4","127.0.0.1:0")
+    if e!=nil {t.Fatal(e)}
+    defer listener.Close()
+    input:=append(sourceStageTestParam(0x1006,0),makeSample(typeADC,0,65536,10)...)
+    input=append(input,sourceStageTestReply(typeDenied)...)
+    readerResult:=make(chan error,1)
+    go func(){
+        c,e:=listener.Accept()
+        if e!=nil {readerResult<-e;return}
+        defer c.Close()
+        _,e=c.Write(input)
+        if e!=nil {readerResult<-e;return}
+        _=c.SetReadDeadline(time.Now().Add(2*time.Second))
+        buf:=make([]byte,64)
+        n,e:=c.Read(buf)
+        if n>0 {readerResult<-errors.New("passive Task2 transmitted device bytes");return}
+        if e==nil {readerResult<-errors.New("unexpected socket response");return}
+        readerResult<-nil
+    }()
+    m,e:=NewMonitor(filepath.Join(t.TempDir(),"TEST_task2_localhost_denied"),
+        "LIVE_READ_ONLY","127.0.0.1")
+    if e!=nil {t.Fatal(e)}
+    defer m.CloseFiles()
+    m.sourceOriginalTask2Stage=newSourceOriginalTask2Lifecycle()
+    m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
+    reason,err:=liveCaptureAddress(context.Background(),m,
+        listener.Addr().String(),3,4*1024*1024)
+    if reason!="SOURCE_OPERATION_DENIED" || !errors.Is(err,errTask2SourceDenied) {
+        t.Fatalf("original passive Task2 must stop on DENIED: %q %v",reason,err)
+    }
+    select{
+    case e:=<-readerResult:
+        if e!=nil {t.Fatal(e)}
+    case <-time.After(3*time.Second):t.Fatal("fake TCP server did not finish")
+    }
+    st:=m.sourceOriginalTask2Stage.receipt()
+    if st.Connected || st.Stage!=0 || st.LastLiveStage!=1 ||
+       st.LastEndReason!="SOURCE_OPERATION_DENIED" ||
+       m.summary.RawBytes!=uint64(len(input)) || m.summary.InvalidFrames!=0 ||
+       m.summary.Channels[0].Samples!=256 ||
+       m.sourceOriginalStorage.receipt().Channels[0].RxPos!=256 ||
+       !m.summary.ReadOnly || m.summary.SourceSetRateBytes!=0 {
+        t.Fatalf("original passive Task2 read-only/RAW/stage parity failed: %+v",st)
     }
 }
