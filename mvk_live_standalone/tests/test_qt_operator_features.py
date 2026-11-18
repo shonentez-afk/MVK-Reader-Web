@@ -139,7 +139,8 @@ def test_stft_view_from_selected_real_buffer(gui):
     w._poll_extra()
     assert w._extra_future is None
     assert w.extra_button.isEnabled()
-    assert w.views.currentWidget()==w.extra_plot
+    assert w.views.currentWidget()==w.extra_panel
+    assert w.extra_pages.currentWidget()==w.extra_plot
     assert "STFT" in w.extra_plot.getPlotItem().titleLabel.text
 
 
