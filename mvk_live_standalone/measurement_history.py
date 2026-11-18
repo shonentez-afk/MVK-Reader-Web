@@ -223,20 +223,17 @@ class MeasurementHistory:
     def record_vendor_row(self,session:str,row:dict,
                           *, conn=None)->bool:
         packet,utc=self._parse_vendor(session,row)
-        own=conn is None
-        if own:conn=self._db()
-        try:
-            cur=conn.execute("""
-                INSERT OR IGNORE INTO vendor_frames
-                (session,adc,update_tick,measured_utc,original_json)
-                VALUES (?,?,?,?,?)
-            """,(session,packet.adc,packet.update,utc,
-                 json.dumps(row,ensure_ascii=False,separators=(",",":"),
-                            allow_nan=False)))
-            if own:conn.commit()
-            return cur.rowcount==1
-        finally:
-            if own:conn.close()
+        if conn is None:
+            with self._db() as writable:
+                return self.record_vendor_row(session,row,conn=writable)
+        cur=conn.execute("""
+            INSERT OR IGNORE INTO vendor_frames
+            (session,adc,update_tick,measured_utc,original_json)
+            VALUES (?,?,?,?,?)
+        """,(session,packet.adc,packet.update,utc,
+             json.dumps(row,ensure_ascii=False,separators=(",",":"),
+                        allow_nan=False)))
+        return cur.rowcount==1
 
     def record_vendor_status(self,status:dict)->int:
         """Live fallback captures last verified packets; log import is primary."""
