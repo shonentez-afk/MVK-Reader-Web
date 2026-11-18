@@ -212,13 +212,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         ]:
             self.analysis.addItem(name,key)
         self.yscale = QtWidgets.QComboBox()
-        for txt,key in [("Линейная Y","linear"),("Логарифмическая Y (дБ)","db")]:
+        for txt,key in [("Линейная","linear"),("В децибелах (дБ)","db")]:
             self.yscale.addItem(txt,key)
         self.db_ref = QtWidgets.QComboBox()
         self.db_ref.addItem("ISO 1683 · 10⁻⁶ выбранной единицы", "iso")
         self.db_ref.addItem("Относительно 1 выбранной единицы", "unit")
         self.xscale = QtWidgets.QComboBox()
-        for txt,key in [("Линейная X","linear"),("Логарифмическая X","log")]:
+        for txt,key in [("Линейная","linear"),("Логарифмическая","log")]:
             self.xscale.addItem(txt,key)
         self.nfft = QtWidgets.QComboBox()
         for n in FFT_SIZES:
@@ -283,12 +283,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         operator.addWidget(self.filter_choice,0,5)
         operator.addWidget(self.filter_center,0,6)
         operator.addWidget(self.filter_button,0,7)
-        operator.addWidget(QtWidgets.QLabel("Предел X"),1,0)
+        operator.addWidget(QtWidgets.QLabel("Показывать частоты до"),1,0)
         operator.addWidget(self.x_limit_choice,1,1)
-        operator.addWidget(QtWidgets.QLabel("Масштаб Y"),1,2)
+        operator.addWidget(QtWidgets.QLabel("Масштаб спектра"),1,2)
         operator.addWidget(self.y_height_choice,1,3)
         self.operator_info=QtWidgets.QLabel(
-            "По умолчанию без фильтра · X в Гц · Y в единицах выбранного спектра")
+            "Без фильтра · частота в Гц · уровень в единицах выбранного спектра")
         self.operator_info.setWordWrap(True)
         operator.addWidget(self.operator_info,1,4,1,3)
         for idx,(label,widget) in enumerate([
@@ -420,7 +420,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave_layout=QtWidgets.QVBoxLayout(self.wave_page)
         self.wave_toolbar=QtWidgets.QHBoxLayout()
         self.wave_layout.addLayout(self.wave_toolbar)
-        self.wave_toolbar.addWidget(QtWidgets.QLabel("Развёртка X"))
+        self.wave_toolbar.addWidget(QtWidgets.QLabel("Развёртка времени"))
         self.timebase.blockSignals(True)
         self.timebase.clear()
         for seconds in TIME_WINDOWS_S:
@@ -429,7 +429,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.timebase.setCurrentIndex(self.timebase.findData(1.0))
         self.timebase.blockSignals(False)
         self.wave_toolbar.addWidget(self.timebase)
-        self.wave_toolbar.addWidget(QtWidgets.QLabel("Амплитуда Y"))
+        self.wave_toolbar.addWidget(QtWidgets.QLabel("Масштаб виброускорения"))
         self.time_y_width=QtWidgets.QComboBox()
         self.time_y_width.addItem("Авто",None)
         for value in Y_ABSOLUTE_LIMITS_M_S2:
@@ -454,7 +454,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.time_filter_low=10.0
         self.time_filter_high=1000.0
         self.wave_info=QtWidgets.QLabel(
-            "ВУ АЦП после однократного FRange · X: время, мс/с · Y: м/с² · без фильтра")
+            "Виброускорение после однократного FRange · время в мс/с · уровень в м/с² · без фильтра")
         self.wave_info.setWordWrap(True)
         self.wave_layout.addWidget(self.wave_info)
         self.wave_layout.addWidget(self.wave,stretch=1)
@@ -1182,8 +1182,8 @@ class LiveWindow(QtWidgets.QMainWindow):
               if clipped else "")
         self.operator_info.setText(
             self._filter_description()+
-            f" · просмотр X: {xmin_hz:g}–{xmax:g} Гц"+
-            (" · X логарифмическая" if log_x else "")+note)
+            f" · частоты на графике: {xmin_hz:g}–{xmax:g} Гц"+
+            (" · логарифмическая частотная шкала" if log_x else "")+note)
         scale=self.yscale.currentData()
         if view is not None:
             values=vibration_plot_values(
@@ -1405,7 +1405,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                                  connect="finite")
         self.dsp24_plot.setTitle(
             "ОРИГИНАЛЬНЫЙ AUX4700 · "+key+
-            " · x: номер исходной позиции (не неподтверждённая частота)")
+            " · номер исходной позиции (частота не подтверждена)")
         self.dsp24_plot.setLabel(
             "left","Исходное значение прибора · единицы уточняются")
 
@@ -2036,7 +2036,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave_stats.setText(
             "Временной сигнал: ожидание подтверждённого АЦП для нового сеанса")
         self.wave_info.setText(
-            "Ожидание новой калиброванной записи · X время, Y м/с²")
+            "Ожидание новой калиброванной записи · время в секундах, виброускорение в м/с²")
         self.metrics.setText(message)
         self.features_label.setText(
             "APP_DERIVED: ожидание реальных отсчётов АЦП")
@@ -2893,13 +2893,18 @@ class LiveWindow(QtWidgets.QMainWindow):
         dlg=QtWidgets.QDialog(self)
         dlg.setWindowTitle("Ручные пределы графика · по физическим координатам")
         form=QtWidgets.QFormLayout(dlg)
+        unit_description=self.spec.getPlotItem().getAxis("left").label.toPlainText().strip()
+        note=QtWidgets.QLabel(
+            f"Частоты — в Гц; значения — {unit_description or 'в единицах выбранного спектра'}.")
+        note.setWordWrap(True)
+        form.addRow(note)
         axis=[]
         mode=self.yscale.currentData()
         for name,value in [
-            ("X минимум, Гц",1.0 if self.xscale.currentData()=="log" else 0.0),
-            ("X максимум, Гц",1000.0),
-            ("Y минимум, дБ/ед.",-120.0 if mode=="db" else 0.0),
-            ("Y максимум, дБ/ед.",80.0 if mode=="db" else 10.0)]:
+            ("Частота от, Гц",1.0 if self.xscale.currentData()=="log" else 0.0),
+            ("Частота до, Гц",1000.0),
+            ("Уровень от",-120.0 if mode=="db" else 0.0),
+            ("Уровень до",80.0 if mode=="db" else 10.0)]:
             box=QtWidgets.QDoubleSpinBox(dlg)
             box.setDecimals(3)
             box.setRange(-1e12,1e12)
@@ -2916,7 +2921,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         xmin,xmax,ymin,ymax=[w.value() for w in axis]
         if xmin>=xmax or ymin>=ymax or (
                 self.xscale.currentData()=="log" and xmin<=0):
-            self.status.setText("Неверные пределы: Xmin < Xmax, Ymin < Ymax, Xlog > 0")
+            self.status.setText("Неверные пределы: частота от должна быть меньше частоты до; верхний уровень выше нижнего; для логарифмической частоты начало > 0 Гц")
             return
         if self.xscale.currentData()=="log":
             xmin,xmax=math.log10(xmin),math.log10(xmax)
