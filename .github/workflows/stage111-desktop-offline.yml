@@ -55,6 +55,29 @@ jobs:
             --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py \
             --junitxml=linux-core-junit.xml
 
+  source-original-rx-go:
+    name: Linux - original TMVKThread Go RX and export contract
+    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+    steps:
+      - name: Checkout selected research revision (no private sources)
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Go for native source receive tests
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Compile and test original receive, RAW, BIN, TACH and long-window
+        run: go test -count=1 ./...
+      - name: Build native source receiver without attached hardware
+        run: go build -trimpath -o mvk_rx_source_test .
+
   desktop-windows:
     name: Windows - offline core and Qt smoke tests
     if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
