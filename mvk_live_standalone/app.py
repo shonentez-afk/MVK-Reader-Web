@@ -1539,6 +1539,128 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._update_markers()
         self._show_bearing_diagnostics()
 
+    def _archive_tab_changed(self,index):
+        # Do not rebuild checkboxes while the operator is choosing a
+        # multi-date overlay. New original frames appear on next tab visit
+        # or after an explicit "Обновить записи".
+        target=self.views.widget(index)
+        if self._archive_dirty and target in (
+                self.history_ui.trend_page,self.history_ui.compare_page):
+            self.history_ui.refresh()
+            self._archive_dirty=False
+
+    def _queue_aux_log(self,folder,session):
+        # Device decoded AUX4700 row stream is already persisted by Go.
+        # This GUI reads it ONLY in bounded batches; never re-encodes RAW.
+        if not isinstance(session,str) or not session:
+            return
+        item=(Path(folder),session)
+        if item not in self._archive_jobs:
+            self._archive_jobs.append(item)
+
+    def _poll_archive_files(self):
+        if not self._archive_jobs:
+            return
+        folder,session=self._archive_jobs[0]
+        try:
+            count=self._archive.sync_aux_jsonl(
+                folder,session,batch=MAX_IMPORT_ROWS)
+        except (OSError,ValueError,sqlite3.DatabaseError) as exc:
+            self._archive_jobs.pop(0)
+            self.history_ui.compare_info.setText(
+                f"История AUX4700: {exc}. RAW/MВК01 не изменялись. "
+                "Повторный импорт — вручную.")
+            return
+        if count:
+            self._archive_dirty=True
+            if self.views.currentWidget()==self.history_ui.trend_page:
+                self.history_ui._plot_trend()
+                self._archive_dirty=False
+        still_recording=(self._last_status is not None and
+                         self._last_status.get("session_id")==session and
+                         self._last_status.get("phase")=="RECORDING" and
+                         self._capture_root is not None and
+                         Path(self._capture_root)==folder)
+        if count<MAX_IMPORT_ROWS and not still_recording:
+            self._archive_jobs.pop(0)
+            self.history_ui.refresh()
+            self._archive_dirty=False
+
+    def _archive_capture_window(self):
+        """One explicit operator action: freeze/history or current ADC ring."""
+        try:
+            adc=self.adc.currentData()
+            if self.freeze.isChecked() and self._freeze_samples is not None:
+                if self._freeze_channel!=adc:
+                    raise ValueError(
+                        "Выбран другой АЦП; нельзя смешать сохранённые каналы")
+                fs=self._freeze_rate
+                offset=int(round(self.history.value()*fs))
+                count=len(self._freeze_samples)-offset
+                if count<256:
+                    raise ValueError("В историческом окне недостаточно отсчётов")
+                x=self._freeze_samples[:count][-min(count,262144):].copy()
+                end=self._freeze_end-offset
+                session=self._freeze_session
+            else:
+                ch=self._gui_ring.channel(adc)
+                if ch is None or ch.available<256:
+                    raise ValueError("Нет подтверждённого окна АЦП")
+                fs=ch.rate_hz
+                end=ch.end
+                session=self._gui_ring.session_id
+                x=ch.latest(ch.available)
+            idx=self._archive.capture_npz(
+                x,adc=adc,fs=fs,session=session,capture_end=end)
+            self.history_ui.refresh()
+            self._archive_dirty=False
+            self.history_ui.compare_info.setText(
+                f"Сохранена архивная запись #{idx}, АЦП {adc}, "
+                f"Fs={fs} Гц, N={len(x)}. "
+                "Тренды APP_DERIVED и последующий пересчёт FFT "
+                "используют те же проверенные Float32. "
+                "Эта запись НЕ внешний эталон.")
+            self.status.setText(
+                f"Сохранено измерение в локальный архив: {self._archive.root}")
+        except (OSError,ValueError,sqlite3.DatabaseError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self,"Измерение не сохранено в историю",str(exc))
+
+    def _archive_import_npz(self):
+        name,_=QtWidgets.QFileDialog.getOpenFileName(
+            self,"Импорт ранее сохранённого окна МВК01",
+            "","MVK Live (*.npz)")
+        if not name:return
+        try:
+            idx=self._archive.import_npz(name)
+            self.history_ui.refresh()
+            self._archive_dirty=False
+            self.history_ui.compare_info.setText(
+                f"Запись #{idx} добавлена в каталог: {self._archive.root}. "
+                "Файл проверен по SHA содержимого. "
+                "Время — время архивирования, не выдуманное время прибора.")
+        except (OSError,ValueError,sqlite3.DatabaseError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self,"Импорт NPZ отклонён",str(exc))
+
+    def _archive_import_aux(self):
+        folder=QtWidgets.QFileDialog.getExistingDirectory(
+            self,"Каталог предыдущего сеанса Native Go с aux4700.jsonl",
+            str(self._archive.root.parent))
+        if not folder:return
+        path=Path(folder)
+        if not (path/"aux4700.jsonl").is_file():
+            QtWidgets.QMessageBox.warning(
+                self,"Импорт AUX4700",
+                "В каталоге нет исходного журнала aux4700.jsonl")
+            return
+        self._queue_aux_log(path,path.name)
+        self.history_ui.compare_info.setText(
+            f"Импорт исходного AUX4700 из {path} запущен "
+            f"(не более {MAX_IMPORT_ROWS} строк за один проход). "
+            "Прошлые измерения добавляются по исходному времени и АЦП.")
+        self._poll_archive_files()
+
     def _save_snapshot(self):
         try:
             if self.freeze.isChecked() and self._freeze_samples is not None:
