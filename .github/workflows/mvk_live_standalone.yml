@@ -39,7 +39,7 @@ jobs:
       - name: Install GUI dependencies
         run: python -m pip install --disable-pip-version-check numpy scipy pytest PySide6 pyqtgraph
       - name: Qt offscreen and physical spectrum unit smoke
-        run: python -m pytest -q mvk_live_standalone/tests/
+        run: python -X faulthandler -m pytest -vv -s mvk_live_standalone/tests/
 
   live-go-ipc:
     runs-on: ubuntu-latest
