@@ -38,7 +38,14 @@ class KurtogramResult:
             raise ValueError("Kurtogram cell is outside the computed map")
         level=float(self.levels[row])
         bw=float(self.fs)*2.0**(-level-1.0)
-        fc=float(self.fs)*(col/(3.0*2.0**(self.nlevel+1))+
+        # The PySDKit image repeats one packet-node score across several
+        # raster columns. Select the NODE, not a different imaginary
+        # centre for each duplicated pixel. For integer levels there are
+        # 2**k bands; the ternary rows have 3*2**(k-1) bands.
+        n_bands=int(round(2.0**level))
+        group_width=self.scores.shape[1]//n_bands
+        group_col=(col//group_width)*group_width
+        fc=float(self.fs)*(group_col/(3.0*2.0**(self.nlevel+1))+
                            2.0**(-2.0-level))
         # Analytic-filter bank touches 0/Nyquist on outer cells; follow-up
         # Butterworth/Hilbert processing requires strictly interior corners.
