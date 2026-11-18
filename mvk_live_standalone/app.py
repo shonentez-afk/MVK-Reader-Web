@@ -488,7 +488,22 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.waterfall.setLabel("left","Новые измеренные кадры",units=" ")
         self.waterfall_img=pg.ImageItem()
         self.waterfall.addItem(self.waterfall_img)
-        self.extra_pages.addTab(self.waterfall,"Водопад")
+        self.waterfall_page=QtWidgets.QWidget()
+        waterfall_layout=QtWidgets.QVBoxLayout(self.waterfall_page)
+        waterfall_settings=QtWidgets.QHBoxLayout()
+        waterfall_settings.addWidget(QtWidgets.QLabel("Кадров истории"))
+        self.waterfall_max_frames=QtWidgets.QComboBox()
+        for frames in (20,50,120,240):
+            self.waterfall_max_frames.addItem(str(frames),frames)
+        self.waterfall_max_frames.setCurrentIndex(
+            self.waterfall_max_frames.findData(120))
+        waterfall_settings.addWidget(self.waterfall_max_frames)
+        waterfall_settings.addWidget(QtWidgets.QLabel(
+            "Новый кадр только при новом RxPos АЦП, не от перерисовки"))
+        waterfall_settings.addStretch(1)
+        waterfall_layout.addLayout(waterfall_settings)
+        waterfall_layout.addWidget(self.waterfall,stretch=1)
+        self.extra_pages.addTab(self.waterfall_page,"Водопад")
         dsp_panel=QtWidgets.QWidget()
         dsp_layout=QtWidgets.QVBoxLayout(dsp_panel)
         adc_row=QtWidgets.QHBoxLayout()
@@ -581,7 +596,23 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.trend_plot.setLabel("bottom","Время с начала сеанса",units="с")
         self.trend_plot.setLabel("left","Виброускорение СКЗ",units="м/с²")
         self.trend_line=self.trend_plot.plot(pen=pg.mkPen("#21a179",width=1.4))
-        self.extra_pages.addTab(self.trend_plot,"Тренд СКЗ")
+        self.short_trend_page=QtWidgets.QWidget()
+        short_trend_layout=QtWidgets.QVBoxLayout(self.short_trend_page)
+        trend_settings=QtWidgets.QHBoxLayout()
+        trend_settings.addWidget(QtWidgets.QLabel("Последних новых кадров"))
+        self.trend_max_points=QtWidgets.QComboBox()
+        for count in (30,60,120,240):
+            self.trend_max_points.addItem(str(count),count)
+        self.trend_max_points.setCurrentIndex(self.trend_max_points.findData(240))
+        self.trend_max_points.currentIndexChanged.connect(
+            self._redraw_short_trend)
+        trend_settings.addWidget(self.trend_max_points)
+        self.short_trend_info=QtWidgets.QLabel(
+            "Локальная ВУ СКЗ · APP_DERIVED, только подтверждённые АЦП")
+        trend_settings.addWidget(self.short_trend_info,stretch=1)
+        short_trend_layout.addLayout(trend_settings)
+        short_trend_layout.addWidget(self.trend_plot,stretch=1)
+        self.extra_pages.addTab(self.short_trend_page,"Тренд СКЗ")
         # Independent workspaces instead of one plot overwritten by a
         # global STFT/CWT/Cepstrum combobox on every calculation.
         self.extra_method_pages={}
@@ -1197,9 +1228,17 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._trend_points=[]
         self._trend_points.append((ch.end/ch.rate_hz,f.acceleration_rms))
         self._trend_points=self._trend_points[-240:]
+        self._redraw_short_trend()
+
+    def _redraw_short_trend(self,*_):
+        if not hasattr(self,"short_trend_info"):return
+        rows=self._trend_points[-int(self.trend_max_points.currentData()):]
         self.trend_line.setData(
-            [p[0] for p in self._trend_points],
-            [p[1] for p in self._trend_points])
+            [p[0] for p in rows],[p[1] for p in rows])
+        if rows:
+            self.short_trend_info.setText(
+                f"АЦП {self.adc.currentData()} · {len(rows)} новых окон · "
+                f"ВУ СКЗ {rows[-1][1]:.5g} м/с² · APP_DERIVED, не AUX4700")
 
 
     def _time_filter_changed(self,*_):
@@ -1651,7 +1690,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         if self._waterfall_rows and len(self._waterfall_rows[-1])!=len(row):
             self._waterfall_rows=[]
         self._waterfall_rows.append(np.asarray(row,dtype=np.float32))
-        self._waterfall_rows=self._waterfall_rows[-120:]
+        self._waterfall_rows=self._waterfall_rows[
+            -int(self.waterfall_max_frames.currentData()):]
         image=np.stack(self._waterfall_rows,axis=1)
         self.waterfall_img.setImage(image,autoLevels=False,levels=(-120,120))
         self.waterfall_img.setRect(QtCore.QRectF(0.0,0.0,
