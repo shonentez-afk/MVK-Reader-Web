@@ -125,6 +125,7 @@ def apply_theme(win, theme="system"):
         QLabel[metricValue="true"] { font-weight: 600; font-size: 18px; }
         QFrame#kpiCard { background-color: %(panel)s;
              border-radius: 8px; border: 1px solid %(border)s; }
+        QFrame#kpiCard QLabel { background: transparent; border: none; }
     """ % c)
     for plot in (getattr(win, "spec", None),
                  getattr(win, "wave", None),
