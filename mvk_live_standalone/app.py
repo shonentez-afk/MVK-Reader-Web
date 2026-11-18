@@ -861,7 +861,7 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _render_dsp(self):
         status=self._last_status
-        if status is None or status.get("phase")!="RECORDING":
+        if status is None or status.get("phase") not in ("RECORDING","VERIFYING","COMPLETED"):
             self._reset_dsp("DSP: ожидание измерения МВК01; значения не подменяются локальной FFT")
             return
         try:
@@ -895,7 +895,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.dsp24_table.clearContents()
             self.dsp24_curve.setData([],[])
         pending=(" · не готовы: "+", ".join(band.not_ready)) if band.not_ready else ""
+        lifecycle=("ПОСЛЕДНИЙ ПРИБОРНЫЙ СНИМОК · НЕ Live. " if
+                   status.get("phase")!="RECORDING" else "LIVE · ")
         self.dsp_info.setText(
+            lifecycle+
             f"ИСТОЧНИК: MVK_DSP_ORIGINAL_AUX4700 · АЦП {band.adc} · "
             f"пакет {band.update} · статус {band.status_hex}{pending} · "
             f"передано: {band.total_transmitted_cells} значений · "
