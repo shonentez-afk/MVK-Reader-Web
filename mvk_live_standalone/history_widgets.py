@@ -104,7 +104,7 @@ class HistoryWorkspaces(QtCore.QObject):
         bar.addWidget(refresh)
         layout.addLayout(bar)
         self.trend_plot=pg.PlotWidget(
-            axisItems={"bottom":pg.DateAxisItem(orientation="bottom")},
+            axisItems={"bottom":pg.DateAxisItem(orientation="bottom",utcOffset=0)},
             title="Сохранённые измерения · не эталон")
         self.trend_plot.setLabel("bottom","Дата и время измерения")
         self.trend_plot.showGrid(x=True,y=True,alpha=.2)
