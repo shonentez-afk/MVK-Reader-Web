@@ -33,7 +33,7 @@ from .original_live_pagefile import OriginalLiveFilePlan
 from .offline_measurement_flow import OfflineMeasurementFlow
 from .offline_export import require_members
 from .native_r6_tach_evidence import validate_tach_evidence
-from .original_pagefile_recording import OriginalPageFileSelection
+from .original_pagefile_recording import OriginalPageFileSelection,OriginalFileNameOptions
 from .original_measure_controls import table_rows
 from .original_values_3100_timeline import scan_original_values_3100
 from .original_write_data_wire_replay import export_source_wire_write_intervals
@@ -136,6 +136,8 @@ class OriginalSourceWriteWindow:
     start_source_values_ticks:int|None=None
     end_source_values_ticks:int|None=None
     source_setrate_commands_seen:int=0
+    # Immutable original PageFile choices captured at DATA begin.
+    file_options:OriginalFileNameOptions|None=None
 
     def receipt(self):
         return {
@@ -156,6 +158,10 @@ class OriginalSourceWriteWindow:
             "operator_end_utc":self.operator_end_utc,
             "hardware_command_sent":self.source_setrate_commands_seen>0,
             "source_setrate_commands_seen":self.source_setrate_commands_seen,
+            "source_pagefile_options_snapshot_present":self.file_options is not None,
+            "source_pagefile_write_tsxml_requested":(
+                self.file_options.write_tsxml if self.file_options is not None
+                else None),
             "original_source_values_ticks_0x3100":{
                 "start":self.start_source_values_ticks,
                 "end":self.end_source_values_ticks,
@@ -251,11 +257,15 @@ class OriginalLiveWriteLedger:
         self.data_stage=STAGE_IDLE
         self.values_stage=STAGE_IDLE
 
-    def toggle(self,kind:str,plan:OriginalLiveFilePlan,*,now=None):
+    def toggle(self,kind:str,plan:OriginalLiveFilePlan,*,now=None,
+               file_options:OriginalFileNameOptions|None=None):
         if kind not in ("data","values"):
             raise ValueError("Unknown original source write flag")
         if not isinstance(plan,OriginalLiveFilePlan):
             raise ValueError("Source channel/SPEC/VALUES mask is missing")
+        if (file_options is not None and
+                not isinstance(file_options,OriginalFileNameOptions)):
+            raise ValueError("Source PageFile recording options invalid")
         if not self.trustworthy:
             raise ValueError("Source recording requires verified active Go status")
         if plan.session_id is not None and plan.session_id!=self.session_id:
@@ -276,7 +286,8 @@ class OriginalLiveWriteLedger:
             _,samples,aux,frames,_=self._last
             setattr(self,attr,(
                 plan,samples,aux,frames,stamp,
-                self.source_values_ticks,self.source_setrate_commands_seen))
+                self.source_values_ticks,self.source_setrate_commands_seen,
+                file_options))
             if kind=="data":
                 self.data_stage=STAGE_OPEN
             else:
@@ -284,7 +295,7 @@ class OriginalLiveWriteLedger:
                 self.values_stage=STAGE_STREAMING
             return self.receipt()
         (plan_open,start_samples,start_aux,start_frames,start_stamp,
-         start_source_tick,start_tx_commands)=active
+         start_source_tick,start_tx_commands,start_file_options)=active
         _,end_samples,end_aux,end_frames,_=self._last
         if (any(b<a for a,b in zip(start_samples,end_samples))
                 or end_aux<start_aux or end_frames<start_frames):
@@ -296,7 +307,8 @@ class OriginalLiveWriteLedger:
             start_frames,end_frames,start_stamp,stamp,
             start_source_values_ticks=start_source_tick,
             end_source_values_ticks=self.source_values_ticks,
-            source_setrate_commands_seen=self.source_setrate_commands_seen)
+            source_setrate_commands_seen=self.source_setrate_commands_seen,
+            file_options=start_file_options)
         self.windows.append(window)
         setattr(self,attr,None)
         if kind=="data":
@@ -504,9 +516,15 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     # final Win32 local clock, FRange or units with a claim
                     # of physical parity. A multi-Fs file has no single
                     # correct <FrequencyPerChannel> and is reported only.
+                    # Source Go DATA window numbers are independent of
+                    # interleaved Qt VALUES intervals. Match by DATA order.
+                    xml_options={i:w.file_options for i,w in enumerate(
+                        (entry for entry in ledger.windows
+                         if entry.kind=="data"),1)}
                     source_tsxml_receipts=write_verified_source_tsxml_sidecars(
                         target,live_proof=source_live_data_evidence,
-                        source_run_end_utc=raw_summary.get("ended_utc"))
+                        source_run_end_utc=raw_summary.get("ended_utc"),
+                        window_options=xml_options)
                     for part in source_tsxml_receipts:
                         if part.get("sidecar_created"):
                             emitted.append({"kind":"source_original_tsxml_structure",
@@ -792,6 +810,12 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 sum(item.get("sidecar_created",False) for item in
                     source_tsxml_receipts),
             "source_original_tsxml_delphi_full_parity_verified":False,
+            "source_original_tsxml_skipped_by_operator":sum(
+                x.get("reason")=="ORIGINAL_XML_CHECKBOX_OFF"
+                for x in source_tsxml_receipts),
+            "source_original_tsxml_settings_snapshot_verified":all(
+                w.file_options is not None for w in ledger.windows
+                if w.kind=="data"),
             "source_original_filename_algorithm_recovered":True,
             "source_live_values_3100_verified":
                 source_live_values_evidence is not None,
@@ -836,6 +860,12 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     sum(item.get("sidecar_created",False) for item in
                         source_tsxml_receipts),
                 "source_original_tsxml_delphi_full_parity_verified":False,
+                "source_original_tsxml_skipped_by_operator":sum(
+                    x.get("reason")=="ORIGINAL_XML_CHECKBOX_OFF"
+                    for x in source_tsxml_receipts),
+                "source_original_tsxml_settings_snapshot_verified":all(
+                    w.file_options is not None for w in ledger.windows
+                    if w.kind=="data"),
                 "source_original_filename_algorithm_recovered":True,
                 "source_live_values_3100_verified":
                     source_live_values_evidence is not None,

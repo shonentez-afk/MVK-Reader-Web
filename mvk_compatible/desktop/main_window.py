@@ -2796,7 +2796,11 @@ class MainWindow(QMainWindow):
         was_active=bool(writer.receipt()[
             "write_data_requested" if kind=="data"
             else "write_values_requested"])
-        receipt=writer.toggle(kind,plan)
+        # Original cbFileWriteXml / name flags are captured at BEGIN.
+        options=(self.original_shell._file_names_option_state()
+                 if kind=="data" and not was_active else None)
+        receipt=writer.toggle(kind,plan,file_options=options)
+        self.original_shell._render_live_file_plan()
         dlg=self._native_dialog
         if dlg is not None and getattr(dlg,"_mode",None)=="capture":
             try:
@@ -2814,9 +2818,11 @@ class MainWindow(QMainWindow):
                 writer.frame_marks_failed=True
                 writer.invalidate("Точная граница кадра не принята: "+str(exc))
                 writer.windows.clear()
+                self.original_shell._render_live_file_plan()
                 self.original_shell.measure_controls.render()
                 raise ValueError("Локальная запись отклонена: "+str(exc)) from exc
         self.original_shell.measure_controls.render()
+        self.original_shell._render_live_file_plan()
         self.original_shell.file_selection_status.setText(
             self.original_shell._file_selection_status())
         return receipt

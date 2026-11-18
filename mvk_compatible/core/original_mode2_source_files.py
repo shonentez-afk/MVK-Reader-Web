@@ -192,6 +192,7 @@ def build_original_tsxml_compatible(
 def write_verified_source_tsxml_sidecars(
         target:Path|str, *, live_proof:dict,
         source_run_end_utc:str,
+        window_options:dict[int,object]|None=None,
 )->list[dict]:
     """One SIDE-CAR per independently verified on-receive Go file.
 
@@ -205,6 +206,9 @@ def write_verified_source_tsxml_sidecars(
     if not isinstance(live_proof,dict) or not isinstance(
             live_proof.get("verified_channel_files"),list):
         raise ValueError("Source TSXML needs independent live Go gate proof")
+    if window_options is not None and not isinstance(window_options,dict):
+        raise ValueError("Original PageFile TSXML options map invalid")
+    window_options=window_options or {}
     when=datetime.fromisoformat(source_run_end_utc.replace("Z","+00:00"))
     if when.tzinfo is None:
         raise ValueError("Missing timezone for Go capture-end time")
@@ -215,6 +219,21 @@ def write_verified_source_tsxml_sidecars(
         name=proof["name"]
         size=proof["bytes"]
         channel=proof["channel"]
+        number=proof.get("window",1 if not window_options else None)
+        if type(number) is not int or not 1<=number<=8:
+            raise ValueError("Original source TSXML missing Go DATA window")
+        opts=window_options.get(number)
+        if opts is not None and (
+                type(getattr(opts,"write_tsxml",None)) is not bool or
+                type(getattr(opts,"use_custom_name",None)) is not bool):
+            raise ValueError("Original TSXML PageFile options invalid")
+        if opts is not None and not opts.write_tsxml:
+            emitted.append({
+                "name":name,"channel":channel,"window":number,
+                "sidecar_created":False,
+                "reason":"ORIGINAL_XML_CHECKBOX_OFF",
+                "source_pagefile_checkbox_snapshot_verified":True})
+            continue
         rates=proof.get("verified_packet_rates_hz")
         if not isinstance(rates,list) or len(rates)!=1:
             # Original format has a SINGLE frequency per file; a
@@ -230,10 +249,14 @@ def write_verified_source_tsxml_sidecars(
             raise ValueError("Selected native Go file changed before TSXML")
         kind=("ADC" if channel<=8 else "TACH")
         label=f"{kind}{channel if channel<=8 else channel-8}"
+        custom=bool(opts is not None and opts.use_custom_name
+                    and isinstance(getattr(opts,"custom_name",None),str)
+                    and opts.custom_name.strip())
+        device=opts.custom_name.strip() if custom else "MVK"
         xml,details=build_original_tsxml_compatible(
             channel=channel,binary_basename=name,size_bytes=size,
             rate_hz=rates[0],local_time=when,
-            device_label="MVK",channel_label=label)
+            device_label=device,channel_label=label)
         sidecar=name+".tsxml"
         sidecar_path=folder/sidecar
         with sidecar_path.open("xb") as dest:
@@ -241,7 +264,12 @@ def write_verified_source_tsxml_sidecars(
         emitted.append({
             "name":sidecar,"channel":channel,"sidecar_created":True,
             "bytes":len(xml),"timestamp_source":"GO_CAPTURE_END_UTC_NOT_DELPHI_LOCAL",
-            "channel_name_source":"PROVISIONAL_MVK_ADC_TACH_LABEL",
+            "source_pagefile_checkbox_snapshot_verified":opts is not None,
+            "source_pagefile_xml_requested":(
+                opts.write_tsxml if opts is not None else None),
+            "device_name_source":("OPERATOR_CBFILEMVKNAME" if custom
+                                  else "PROVISIONAL_MVK_DEVICE_NAME"),
+            "channel_name_source":"PROVISIONAL_ADC_TACH_LABEL",
             "source_raw_sha256":live_proof["source_raw_sha256"],
             **details,
         })

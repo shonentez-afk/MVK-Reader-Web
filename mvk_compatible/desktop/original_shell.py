@@ -281,8 +281,8 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     adc_lay.addWidget(panel)
     note=QLabel(
         "Параметры исходной панели записи АЦП. Сохраняют выбранные "
-        "данные уже существующего файла. bWriteAdc/bWriteValues исходного "
-        "TMVKThread пока НЕ управляют Native R6.1.",source_adc)
+        "данные этого измерения. WriteData/WriteValues управляют "
+        "локальной записью Go при реальном приёме; RAW сохраняется отдельно.",source_adc)
     note.setWordWrap(True)
     note.setObjectName("sourceFileOfflineCaptureNote")
     adc_lay.addWidget(note)
@@ -1071,6 +1071,10 @@ class OriginalRootShell:
         if plan is None:
             return
         labels=live_pagefile_channel_rows(self._live_file_status)
+        writer=getattr(self.window,"_source_live_writer",None)
+        flags=writer.receipt() if writer is not None else {}
+        data_active=bool(flags.get("write_data_requested"))
+        values_active=bool(flags.get("write_values_requested"))
         for group,widget,count in (
             ("channels",self.file_channels,CHANNEL_COUNT),
             ("spec",self.file_spec,SPEC_COUNT),
@@ -1090,8 +1094,10 @@ class OriginalRootShell:
                         title=f"BAND {i-ADC_VALUE_COUNT+1} · результат ожидается"
                     else:
                         title=f"TACH VALUE {i-ADC_VALUE_COUNT-BAND_VALUE_COUNT+1} · не восстановлено"
+                    editable=(not data_active if group=="channels"
+                              else not values_active)
                     item=self._checked_item(
-                        title,i,getattr(plan,group)[i],True)
+                        title,i,getattr(plan,group)[i],editable)
                     if group=="channels":
                         item.setData(Qt.UserRole,i+1)
                     widget.addItem(item)
@@ -1109,6 +1115,20 @@ class OriginalRootShell:
         self.file_selection_status.setText(self._file_selection_status())
         for button in self.file_action_buttons.values():
             button.setEnabled(False)
+        # Source 008485BC..00848678: lock TSXML, device and folder
+        # settings while original WriteData flag is on.
+        for flag in self.file_record_flags.values():
+            flag.setEnabled(not data_active)
+        for name,field in self.file_record_names.items():
+            allowed=(not data_active and (
+                name=="edFilePrefix" or
+                (name=="edFolderPrefix" and self.file_record_flags[
+                    "cbFileFolderPrefix"].isChecked()) or
+                (name=="edFileMvkName" and self.file_record_flags[
+                    "cbFileMvkName"].isChecked())))
+            field.setEnabled(allowed)
+        self.file_page.setProperty(
+            "sourceOriginalPageFileOptionsLocked",data_active)
         receipt=plan.receipt()
         receipt["connected_status_evidence_accepted"]=self._live_file_status is not None
         receipt["operator_status_reason"]=self._live_file_reason
@@ -1120,6 +1140,13 @@ class OriginalRootShell:
         self._live_file_status=None
         self._live_file_reason=""
         self.file_page.setProperty("sourceLiveFilePlanReceipt",None)
+        self.file_page.setProperty("sourceOriginalPageFileOptionsLocked",False)
+        for flag in self.file_record_flags.values():
+            flag.setEnabled(True)
+        self.file_record_names["edFolderPrefix"].setEnabled(
+            self.file_record_flags["cbFileFolderPrefix"].isChecked())
+        self.file_record_names["edFileMvkName"].setEnabled(
+            self.file_record_flags["cbFileMvkName"].isChecked())
         if self._file_flow is None or self.window.session is None:
             # refresh_file_workbench clears SPEC/VALUES but intentionally
             # does not own cbFileChannels. Clear all three original lists
@@ -1178,10 +1205,10 @@ class OriginalRootShell:
                 f"SPEC {len(receipt['selected_spec_indices'])}, "
                 f"VALUES {len(receipt['selected_value_indices'])}. "
                 +prefix+
-                "Go Native сохраняет полный RAW; при нажатии «Запись» "
-                "фиксируются проверенные отсчёты и AUX-типы одного сеанса. "
-                "После принятия ZIP автоматически создаются локальные "
-                "записи; устройству команды не отправляются.")
+                "Go Native сохраняет полный RAW; WriteData записывает "
+                "допущенные пакеты, WriteValues реагирует на PARAM 0x3100. "
+                "TSXML зависит от флажка при старте записи; прибору "
+                "команды записи не отправляются.")
         if self.file_record_selection is None:
             return "Чек-листы записи: загрузите проверенное измерение"
         chosen=self.file_record_selection.report()
