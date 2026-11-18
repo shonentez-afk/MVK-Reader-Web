@@ -96,3 +96,61 @@ func TestSourceTask2OptInActualDuplexLocalhostStream(t *testing.T) {
  }
  if m.sourceTask2TX.ackAfterTX!=1 {t.Fatal("source ACK must remain unpaired")}
 }
+
+
+func TestSourceTask2TwoApprovedSocketsResetOriginalStageAndRate(t *testing.T) {
+    // Exact source regression: first socket completes a SetRate and closes.
+    // The next socket MUST start Stage0 with a NEW PARAM and queue SetRate
+    // again, rather than inheriting Stage1 from the disconnected device.
+    ln,e:=net.Listen("tcp4","127.0.0.1:0")
+    if e!=nil {t.Fatal(e)}
+    defer ln.Close()
+    ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second)
+    defer cancel()
+    got:=make(chan []byte,2)
+    serverErrors:=make(chan error,1)
+    go func(){
+        for i:=0;i<2;i++{
+            c,err:=ln.Accept()
+            if err!=nil {serverErrors<-err;return}
+            _=c.SetDeadline(time.Now().Add(2*time.Second))
+            _,err=c.Write(task2Status0Param(0).Raw)
+            if err!=nil{_ = c.Close();serverErrors<-err;return}
+            buf:=make([]byte,sourceSetRateWriteLen)
+            _,err=io.ReadFull(c,buf)
+            if err!=nil{_ = c.Close();serverErrors<-err;return}
+            got<-buf
+            _=c.Close()
+        }
+        cancel()
+        serverErrors<-nil
+    }()
+    m,e:=NewMonitor(filepath.Join(t.TempDir(),"source_reconnect"),"LIVE_SOURCE_SET_RATE_APPROVED","127.0.0.1")
+    if e!=nil {t.Fatal(e)}
+    defer m.CloseFiles()
+    m.sourceTask2TX=newSourceLiveTask2TX()
+    m.sourceOriginalTask2Stage=newSourceOriginalTask2Lifecycle()
+    m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
+    m.sourceAfterRAWReconnect=true
+    reason,err:=sourceTask2CaptureAddressRetry(ctx,m,ln.Addr().String(),0,4*1024*1024,nil)
+    if err!=nil {t.Fatalf("original Task2 reconnect %s: %v",reason,err)}
+    if reason!="STOPPED_BY_USER" {t.Fatalf("source stop reason: %s",reason)}
+    select{
+    case err:=<-serverErrors: if err!=nil{t.Fatal(err)}
+    case <-time.After(time.Second):t.Fatal("local source server timed out")
+    }
+    want,_:=sourceSetRateWireBytes(65536)
+    for i:=0;i<2;i++ {
+        select{
+        case sent:=<-got:
+            if !bytes.Equal(sent,want) {t.Fatalf("socket %d: wrong original SetRate",i+1)}
+        default:t.Fatalf("missing original command on source socket %d",i+1)
+        }
+    }
+    if m.sourceTask2TX.sentCommands!=2 || m.sourceTask2TX.sentBytes!=72 ||
+       m.sourceOriginalTask2Stage.attempts!=2 ||
+       m.summary.SourceNonemptyParameters!=2 {
+        t.Fatalf("Task2 source reconnect did not reset/requeue: tx=%+v stage=%+v params=%d",
+            m.sourceTask2TX,m.sourceOriginalTask2Stage,m.summary.SourceNonemptyParameters)
+    }
+}
