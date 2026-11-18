@@ -62,7 +62,7 @@ def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
     ]
     assert [w.extra_pages.tabText(i) for i in range(w.extra_pages.count())]==[
         "Водопад","Тренд СКЗ","STFT","CWT Morlet","Кепстр",
-        "Подшипники / редукторы",
+        "Подшипники","Редукторы",
     ]
     assert w.dsp_pages.widget(0)!=w.dsp_pages.widget(2)
     assert "APP_DERIVED" in w.derived_layout.itemAt(0).widget().text()
@@ -144,3 +144,29 @@ def test_time_octave_selection_is_independent_of_spectrum(gui):
     w._render_wave()
     assert "1/3 октавы" in w.wave_info.text()
     assert w.filter_choice.currentData()=="none"
+
+def test_extra_pages_independent_waterfall_trend_bearing_and_gears(gui):
+    w,_=gui
+    assert w.extra_pages.indexOf(w.waterfall_page)>=0
+    assert w.extra_pages.indexOf(w.short_trend_page)>=0
+    assert w.extra_pages.indexOf(w.diagnostics_page)>=0
+    assert w.extra_pages.indexOf(w.gears_page)>=0
+    assert w.waterfall_max_frames.currentData()==120
+    assert w.trend_max_points.currentData()==240
+    w.waterfall_max_frames.setCurrentIndex(
+        w.waterfall_max_frames.findData(20))
+    assert w.waterfall_max_frames.currentData()==20
+    w.trend_max_points.setCurrentIndex(
+        w.trend_max_points.findData(30))
+    assert w.trend_max_points.currentData()==30
+    w.bearing_rpm.setValue(1500)
+    assert w.rpm.value()==1500
+    assert w.gear_rpm.value()==1500
+    w.gear_count.setValue(20)
+    assert w.gear_teeth.value()==20
+    assert w.gear_table.rowCount()>0
+    assert "GMF" in w.gear_table.item(0,0).text()
+    w.bearing_balls.setValue(8)
+    assert w.balls.value()==8
+    w.gear_count.setValue(0)
+    assert w.gear_table.rowCount()==0
