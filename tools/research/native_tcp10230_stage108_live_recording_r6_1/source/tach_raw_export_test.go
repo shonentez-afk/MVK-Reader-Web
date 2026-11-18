@@ -123,7 +123,7 @@ func TestNonFiniteTachByteStoragePreservesExactOriginalRawBits(t *testing.T) {
     got,e:=os.ReadFile(path)
     if e!=nil {t.Fatal(e)}
     if len(got)!=256 {t.Fatal("wrong source TACH byte count")}
-    wanted:=frames[len(frames)-1][28:]
+    wanted:=frames[len(frames)-1].Raw[28:]
     if !bytes.Equal(got,wanted) {t.Fatal("source byte TACH bits changed")}
     if report.GeneratedFiles[evidence.Channels[1].Filename]=="" {
         t.Fatal("missing SHA of original TACH byte payload")
