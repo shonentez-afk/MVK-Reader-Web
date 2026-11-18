@@ -189,7 +189,7 @@ class HistoryWorkspaces(QtCore.QObject):
             self.trend_plot.setTitle("История пуста: требуется приём AUX4700 или сохранённое окно")
         self.trend_export.setEnabled(bool(points))
 
-    def _trend_clicked(self,_,points,*_):
+    def _trend_clicked(self,item,points,*unused):
         if not points:return
         index=points[0].data()
         if type(index) is not int or not 0<=index<len(self._trend_last):return
