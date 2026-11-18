@@ -2,6 +2,8 @@
 
 **Дата:** 18 ноября 2026. **Рабочая ветка:** `feature/mvk-live-standalone-20261117` репозитория [MVK-Reader-Web](https://github.com/shonentez-afk/MVK-Reader-Web). **Этот документ — handoff к новому чату**, а не отчёт о том, что новые функции написаны.
 
+**Обновление 18.11.2026:** добавлена общая матрица реализации **82 пунктов** с проверкой первоисточников, реальными скриншотами, исходным кодом/лицензиями, статусами и приоритетами: [UNIFIED_IMPLEMENTATION_MATRIX_20261118_RU.md](UNIFIED_IMPLEMENTATION_MATRIX_20261118_RU.md); [Excel-compatible CSV](UNIFIED_IMPLEMENTATION_MATRIX_20261118_RU.csv). Сверены совместно три приватных источника MVKView, включая DFM controls `PageAdc`/`PageSpectrum` и `TDSXFastFourier`/`GetSpectrum`, но приватные данные не опубликованы. Не путать каталог реализации с готовым кодом.
+
 ## Сначала прочитать
 
 1. [Главная спецификация пяти пробелов и четырёх направлений исследования](FIVE_GAPS_AND_DIAGNOSTIC_RESEARCH_PLAN_RU.md) — ключевой документ, проверка code facts, план пакетов D1–D4 и приёмка.
