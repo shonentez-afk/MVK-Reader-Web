@@ -17,6 +17,7 @@ def test_snapshot_roundtrip_and_no_private_network_metadata(tmp_path):
     loaded=load_snapshot(file)
     assert loaded.adc==2 and loaded.rate_hz==8192
     assert loaded.capture_end==4096
+    assert loaded.saved_utc is not None and loaded.saved_utc.endswith("+00:00")
     np.testing.assert_array_equal(loaded.acceleration_m_s2,x)
     assert loaded.source.startswith("OFFLINE_")
     with zipfile.ZipFile(file) as z:
@@ -70,3 +71,26 @@ def test_spectrum_export_contains_units_and_exact_nan_semantics(tmp_path):
         save_spectrum_csv(path,f,y,z,mode="fft",unit="мм/с СКЗ",
                           scale="db",reference="1e-6 mm/s",
                           adc=4,session_id="ONE_RUN")
+
+
+
+def test_snapshot_legacy_without_saved_utc_is_accepted_and_never_invents_device_time(tmp_path):
+    from datetime import datetime,timezone
+    source=tmp_path/"recent.npz"
+    save_snapshot(source,np.ones(512,dtype="<f4"),
+                  adc=1,rate_hz=2048,session_id="TEST_LOCAL",
+                  capture_end=512)
+    with zipfile.ZipFile(source,"r") as z:
+        meta=np.load(z.open("metadata_utf8.npy"),allow_pickle=False)
+        samples=np.load(z.open("acceleration_m_s2.npy"),allow_pickle=False)
+    details=json.loads(bytes(meta).decode("utf8"))
+    assert datetime.fromisoformat(details["saved_utc"]).tzinfo is not None
+    del details["saved_utc"]
+    legacy=tmp_path/"legacy.npz"
+    np.savez_compressed(
+        legacy,acceleration_m_s2=samples,
+        metadata_utf8=np.frombuffer(
+            json.dumps(details).encode("utf-8"),dtype=np.uint8))
+    opened=load_snapshot(legacy)
+    assert opened.saved_utc is None  # no imaginary acquisition timestamp
+    assert opened.source.startswith("OFFLINE_")
