@@ -52,3 +52,21 @@ def test_no_silent_invalid_adc_or_impossible_decomposition():
         result.cell_band(-1,1)
     with pytest.raises(ValueError):
         result.cell_band(0,999)
+
+
+def test_auto_envelope_uses_genuine_pysdkit_not_legacy_approximation():
+    from mvk_live_standalone.pipeline import analyze_live
+    fs=8192
+    n=8192
+    rng=np.random.default_rng(31)
+    x=rng.normal(0.,.02,size=n)
+    x[::143]+=4.0
+    result=analyze_live(
+        x,fs,kind="acceleration",mode="envelope",nfft=n,
+        band_hz=(0.,None),smooth_bins=1,envelope_band="auto",
+        notch_hz=None)
+    assert result.view.mode=="envelope"
+    assert result.auto_envelope is not None
+    assert result.auto_envelope.method=="PYSDKIT_FAST_KURTOGRAM_ANTONI_2007"
+    assert "не доказательство" in result.auto_envelope.confidence
+    assert 0<result.auto_envelope.low_hz<result.auto_envelope.high_hz<fs/2

@@ -121,7 +121,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._kurt_adc: int | None=None
         self._kurt_session: str | None=None
         self._kurt_frozen: bool | None=None
-        self._kurt_request_generation=0
+        self._kurt_rx_key=None
         self._extra_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix="MVK-advanced")
         self._future: Future | None = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-spectrum")
@@ -232,7 +232,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         ]:
             self.envelope_band.addItem(name,band)
         self.envelope_band.setCurrentIndex(1)
-        self.envelope_band.addItem("Авто по импульсности (картограмма)", "auto")
+        self.envelope_band.addItem("Авто · Fast Kurtogram PySDKit", "auto")
         self.band.addItem("Свой диапазон", "custom")
         self.custom_low = QtWidgets.QDoubleSpinBox()
         self.custom_low.setRange(0.0,32768.0)
@@ -1789,7 +1789,8 @@ class LiveWindow(QtWidgets.QMainWindow):
                     choice=result.auto_envelope
                     self.metrics.setText(self.metrics.text()+
                         f" · автополоса {choice.low_hz:.0f}–{choice.high_hz:.0f} Гц"
-                        f" (kurt={choice.envelope_kurtosis:.2f}, {choice.confidence})")
+                        f" (PySDKit Fast Kurtogram, эксцесс SK={choice.envelope_kurtosis:.2f}; "
+                        f"{choice.confidence})")
                 self._show_bearing_diagnostics()
         self._future=None
         self._schedule_fft()
@@ -2504,7 +2505,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._kurt_adc=self.adc.currentData()
             self._kurt_session=self._gui_ring.session_id
             self._kurt_frozen=self.freeze.isChecked()
-            self._kurt_request_generation=self._generation
+            self._kurt_rx_key=stamp
             self._kurt_future=self._extra_executor.submit(
                 compute_fast_kurtogram,samples,fs,nlevel=level)
             self.kurtogram_run.setEnabled(False)
@@ -2524,8 +2525,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         if (self._kurt_adc!=self.adc.currentData() or
                 self._kurt_session!=self._gui_ring.session_id or
-                self._kurt_frozen!=self.freeze.isChecked() or
-                self._kurt_request_generation!=self._generation):
+                self._kurt_frozen!=self.freeze.isChecked()):
             self._invalidate_kurtogram(
                 "АЦП, сеанс или режим просмотра изменились: результат "
                 "прежнего снимка отброшен")
@@ -2550,7 +2550,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.kurtogram_plot.setYRange(0,result.scores.shape[0],padding=0)
         self.kurtogram_plot.setTitle(
             f"PySDKit Fast Kurtogram · АЦП {self._kurt_adc} · "
-            f"Fs={result.fs} Гц · N={result.n_samples} · APP_DERIVED")
+            f"Fs={result.fs} Гц · N={result.n_samples} · APP_DERIVED "
+            f"· снято на RxPos {self._kurt_rx_key[-1] if self._kurt_rx_key else '?'}")
         self.kurtogram_best.setEnabled(True)
         self._pick_kurt_cell(result.best_row,result.best_col)
 

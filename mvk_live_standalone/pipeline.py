@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 import numpy as np
 
 from .advanced import (
     DemodulationBand, ExtendedFeatures, BandRMS,
-    extended_time_features, broadband_rms, select_envelope_band,
+    extended_time_features, broadband_rms, DemodulationBand,
 )
 from .vibration import VibrationView, analyze_vibration
+from .kurtogram import compute_fast_kurtogram
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,16 @@ def analyze_live(
         raise ValueError("Need a real finite calibrated window without padding")
     selected=None
     if mode=="envelope" and envelope_band=="auto":
-        selected=select_envelope_band(x,fs,min_hz=min(300.,fs*.15))
+        # Former approximate dyadic Butterworth search is NOT Fast Kurtogram.
+        # Use the pinned MIT PySDKit binary/ternary filter-bank instead.
+        source=x[-min(len(x),32768):]
+        depth=min(4,math.floor(math.log2(source.size)-7))
+        view=compute_fast_kurtogram(source,fs,nlevel=depth)
+        lo,hi,_,_,_=view.best_band()
+        selected=DemodulationBand(
+            lo,hi,view.best_score,int(view.scores.size),
+            "максимальная импульсность, не доказательство дефекта",
+            method="PYSDKIT_FAST_KURTOGRAM_ANTONI_2007")
         envelope=(selected.low_hz,selected.high_hz)
     elif isinstance(envelope_band,tuple) and len(envelope_band)==2:
         envelope=envelope_band
