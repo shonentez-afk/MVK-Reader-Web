@@ -170,3 +170,17 @@ def test_extra_pages_independent_waterfall_trend_bearing_and_gears(gui):
     assert w.balls.value()==8
     w.gear_count.setValue(0)
     assert w.gear_table.rowCount()==0
+
+def test_advanced_adc_selector_clears_only_stale_short_live_views(gui):
+    w,_=gui
+    assert w.extra_adc.currentData()==1
+    w.extra_adc.setCurrentIndex(4)
+    assert w.adc.currentData()==5
+    assert w.dsp_adc.currentData()==5
+    assert "АЦП 5" in w.short_trend_info.text()
+    assert all("АЦП 5" in text.text()
+               for text in w.extra_method_infos.values())
+    assert w._waterfall_rows==[]
+    assert w._trend_points==[]
+    w.dsp_adc.setCurrentIndex(2)
+    assert w.extra_adc.currentData()==3
