@@ -35,6 +35,7 @@ from .offline_export import require_members
 from .native_r6_tach_evidence import validate_tach_evidence
 from .original_pagefile_recording import OriginalPageFileSelection
 from .original_measure_controls import table_rows
+from .original_values_3100_timeline import scan_original_values_3100
 
 SOURCE="SOURCE_IDR_00809414_008099CF_LIVE_WRITE_STAGES_COMPAT_V1"
 STAGE_OPEN=0
@@ -87,8 +88,13 @@ def _status_proof(payload):
             raise ValueError("Source 10 channel order/counter mismatch")
         count=_int(ch.get("samples"),f"channel {number} samples")
         frames=_int(ch.get("frames"),f"channel {number} frames")
-        if count!=frames*(256 if number<=8 else 64):
-            raise ValueError("Go source frames/samples mismatch")
+        # Original _Unit125:0080819E supports variable-sized ADC/TACH
+        # packets (and zero-size frames); 256/64 are common PCAP lengths,
+        # NOT a requirement. Native Go counts only nonempty sample frames.
+        max_words=(0x20000-28)//4
+        if ((frames==0)!=(count==0) or count<frames or
+                count>frames*max_words):
+            raise ValueError("Go source frames/samples outside variable-size protocol")
         rates=ch.get("sample_rates_hz")
         if (not isinstance(rates,list) or len(rates)>5 or
                 any(type(v) is not int or v not in SOURCE_RATES for v in rates)):
@@ -436,6 +442,35 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             files,audit=require_members(archive)
             provenance=audit["output_file_sha256"]
             tach=validate_tach_evidence(archive,audit)
+            source_values_events=None
+            if (frame_mark_evidence is not None and
+                    any(w.kind=="values" for w in ledger.windows)):
+                # The original writer runs on PARAM descriptor 0x3100,
+                # NOT on the unrelated 4700-byte AUX snapshot. Replay the
+                # one untouched Native RAW, independently verify its SHA,
+                # packet count, AUX and source trigger count; use actual Go
+                # next-frame marks for every selected VALUES interval.
+                summary_path=directory/"summary.json"
+                if (summary_path.is_symlink() or not summary_path.is_file()
+                        or summary_path.stat().st_size>1048576):
+                    raise ValueError("Original VALUES requires local Go summary")
+                raw_summary=json.loads(summary_path.read_text(encoding="utf-8"))
+                if (not isinstance(raw_summary,dict) or
+                        raw_summary.get("raw_sha256")!=audit.get("source_raw_sha256")):
+                    raise ValueError("Original VALUES source RAW/ZIP mismatch")
+                ranges=[(number,w.start_source_values_ticks,
+                         w.end_source_values_ticks)
+                        for number,w in enumerate(ledger.windows,1)
+                        if w.kind=="values"]
+                source_values_events=scan_original_values_3100(
+                    directory/"incoming.raw",
+                    expected_sha256=audit["source_raw_sha256"],
+                    expected_raw_bytes=raw_summary.get("raw_bytes"),
+                    expected_frames=raw_summary.get("frames_decoded"),
+                    expected_aux=raw_summary.get("aux4700_updates"),
+                    expected_ticks=raw_summary.get("values_ticks_address_3100"),
+                    expected_tail_bytes=raw_summary.get("incomplete_final_frame_bytes"),
+                    ranges=ranges)
             for number,window in enumerate(ledger.windows,1):
                 if window.session_id!=ledger.session_id:
                     raise ValueError("Cross-run source write interval")
