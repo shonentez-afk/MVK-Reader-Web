@@ -38,6 +38,7 @@ from .original_measure_controls import table_rows
 from .original_values_3100_timeline import scan_original_values_3100
 from .original_write_data_wire_replay import export_source_wire_write_intervals
 from .original_write_data_live_gate import verify_native_live_write_data
+from .original_mode2_source_files import write_verified_source_tsxml_sidecars
 
 SOURCE="SOURCE_IDR_00809414_008099CF_LIVE_WRITE_STAGES_COMPAT_V1"
 STAGE_OPEN=0
@@ -447,6 +448,7 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             source_values_events=None
             source_wire_evidence=[]
             source_live_data_evidence=None
+            source_tsxml_receipts=[]
             raw_summary=None
             native_raw_path=directory/"incoming.raw"
             if (frame_mark_evidence is not None and native_raw_path.exists()):
@@ -493,6 +495,23 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                         emitted.append({
                             "kind":"source_live_original_rate_freeze_adc1_gated",
                             **proof})
+                    # Original Delphi 00806A8C writes a sidecar TSXML on
+                    # closing each channel file. Use the source tag order,
+                    # types, Windows-1251, byte count and verified Fs; never
+                    # replace original metadata such as custom device name,
+                    # final Win32 local clock, FRange or units with a claim
+                    # of physical parity. A multi-Fs file has no single
+                    # correct <FrequencyPerChannel> and is reported only.
+                    source_tsxml_receipts=write_verified_source_tsxml_sidecars(
+                        target,live_proof=source_live_data_evidence,
+                        source_run_end_utc=raw_summary.get("ended_utc"))
+                    for part in source_tsxml_receipts:
+                        if part.get("sidecar_created"):
+                            emitted.append({"kind":"source_original_tsxml_structure",
+                                            **part})
+                        else:
+                            skipped.append({"kind":"source_original_tsxml_structure",
+                                            **part})
             # A genuine Go writer SHA without its RAW is a hard failure,
             # never a cue to fall back silently to FR's ungated slices.
             if raw_summary is None:
@@ -740,6 +759,11 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_live_original_writer_files":
                 len(source_live_data_evidence["verified_channel_files"]) if
                 source_live_data_evidence is not None else 0,
+            "source_original_tsxml_structural_sidecars":
+                sum(item.get("sidecar_created",False) for item in
+                    source_tsxml_receipts),
+            "source_original_tsxml_delphi_full_parity_verified":False,
+            "source_original_filename_algorithm_recovered":True,
             "original_tach_calibration_verified":False,
         }
         (target/"SOURCE_WRITE_WINDOWS_AUDIT.json").write_text(
@@ -771,6 +795,11 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "source_live_original_packet_gate_records":
                     source_live_data_evidence["verified_source_packet_records"] if
                     source_live_data_evidence is not None else 0,
+                "source_original_tsxml_structural_sidecars":
+                    sum(item.get("sidecar_created",False) for item in
+                        source_tsxml_receipts),
+                "source_original_tsxml_delphi_full_parity_verified":False,
+                "source_original_filename_algorithm_recovered":True,
                 "source_values_csv_exact_delphi_layout_verified":False}
     except Exception:
         if created:
