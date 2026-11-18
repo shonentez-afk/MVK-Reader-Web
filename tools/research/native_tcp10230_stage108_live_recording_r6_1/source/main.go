@@ -87,7 +87,9 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		fmt.Printf("Ethernet-интерфейс: %s | индекс %d | локальный IPv4 %s\n", nic.Name, nic.Index, nic.IP)
 	}
 	dialer, e := newInterfaceDialer(nic)
-	if e == nil && (m.sourceTask2TX != nil || m.sourceTask0ConfigRead) {dialer.Timeout=time.Second} // original Task0/Task2 ConnectTimeout=1000ms
+	if e==nil { dialer.Timeout=sourceOriginalConnectTimeout }
+    // Original _Unit125:00807C24..00807C39 sets 1000ms/5000ms
+    // for TMVKThread regardless of whether outbound SetRate is approved.
 	if e != nil {
 		return "LOCAL_INTERFACE_INVALID", e
 	}
@@ -183,8 +185,10 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			}
 			if ne, ok := e.(net.Error); ok && ne.Timeout() {
 				m.publishLiveStatus("RECORDING", false, "")
-				if (m.sourceTask2TX!=nil || m.sourceAfterRAWReconnect) && time.Since(lastPacket)>=5*time.Second {
-					return "SOURCE_READ_TIMEOUT",fmt.Errorf("original Task2 read timeout 5000ms")
+				if sourceOriginalReadTimedOut(lastPacket,time.Now()) {
+                    // Original ReadTimeout is 5000ms for passive Task2
+                    // too, not just the optional source SetRate sender.
+					return "SOURCE_READ_TIMEOUT",fmt.Errorf("original TMVKThread read timeout 5000ms")
 				}
 				continue
 			}
