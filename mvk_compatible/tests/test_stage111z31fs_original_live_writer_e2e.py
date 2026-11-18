@@ -5,6 +5,7 @@ Synthetic only; no vendor binaries, real MVK01 or device commands.
 from __future__ import annotations
 
 from hashlib import sha256
+from xml.etree import ElementTree as ET
 import json
 import struct
 from pathlib import Path
@@ -105,6 +106,7 @@ def with_live_writer(tmp_path):
     (run/AUDIT).write_bytes(doc)
     summary.update(
         end_reason="STOPPED_BY_USER",
+        ended_utc="2026-11-18T12:17:00Z",
         source_live_write_data_audit_sha256=sha256(doc).hexdigest(),
         source_live_write_data_windows=1,
         source_live_write_data_packet_records=8,
@@ -128,6 +130,9 @@ def test_original_live_gate_export_byte_exact_and_non_delphi_label(tmp_path):
     assert result["source_live_source_gate_verified"] is True
     assert result["source_live_original_writer_files"]==8
     assert result["source_live_original_packet_gate_records"]==8
+    assert result["source_original_tsxml_structural_sidecars"]==8
+    assert result["source_original_filename_algorithm_recovered"] is True
+    assert result["source_original_tsxml_delphi_full_parity_verified"] is False
     output=run/EXPORT_SUBDIR
     for item in proof["verified_channel_files"]:
         original=(run/item["name"]).read_bytes()
@@ -135,6 +140,12 @@ def test_original_live_gate_export_byte_exact_and_non_delphi_label(tmp_path):
         assert original==copied
         assert len(copied)==1024
         assert sha256(copied).hexdigest()==item["sha256"]
+        xml=output/(item["name"]+".tsxml")
+        assert xml.exists() and xml.read_bytes().startswith(b'<?xml')
+        docxml=ET.parse(xml)
+        assert docxml.findtext("DataFileName")==r".\\"+item["name"]
+        assert docxml.findtext("Channels/Channel/DataLength")==str(len(copied))
+        assert docxml.findtext("Channels/Channel/RealDataType")=="Single"
     rec=json.loads((output/"SOURCE_WRITE_WINDOWS_AUDIT.json").read_text())
     assert rec["source_live_source_gate_verified"] is True
     assert rec["original_tmkvthread_byte_exact_recording"] is False
