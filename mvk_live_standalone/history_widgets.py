@@ -232,6 +232,17 @@ class HistoryWorkspaces(QtCore.QObject):
         rows=[r for r in self._available_entries.values()
               if (r.source==(LOCAL if kind=="window" else VENDOR))
               and datetime.fromisoformat(r.time_utc)==dt]
+        if not rows:
+            try:
+                exact=self.history.exact_entry(
+                    self.adc.currentData(),kind,dt.isoformat())
+            except ValueError as exc:
+                self.compare_info.setText(f"Неоднозначный архивный пакет: {exc}")
+                exact=None
+            if exact is not None:
+                self._available_entries={
+                    exact.key:exact,**self._available_entries}
+                rows=[exact]
         if len(rows)==1:
             self._table_selected={rows[0].key}
             self._populate_compare_table()
@@ -294,6 +305,28 @@ class HistoryWorkspaces(QtCore.QObject):
         self.compare_refresh.clicked.connect(self._reload_compare)
         bar.addWidget(self.compare_refresh)
         layout.addLayout(bar)
+        # The latest 500 AUX frames can represent only a short period.
+        # A real UTC date filter lets the operator open older measurements
+        # without loading millions of vendor rows into one QTableWidget.
+        date_row=QtWidgets.QHBoxLayout()
+        self.compare_date_filter=QtWidgets.QCheckBox("Выбрать период UTC")
+        date_row.addWidget(self.compare_date_filter)
+        date_row.addWidget(QtWidgets.QLabel("С"))
+        self.compare_date_from=QtWidgets.QDateEdit(
+            QtCore.QDate.currentDate().addDays(-30))
+        self.compare_date_from.setCalendarPopup(True)
+        self.compare_date_from.setDisplayFormat("dd.MM.yyyy")
+        date_row.addWidget(self.compare_date_from)
+        date_row.addWidget(QtWidgets.QLabel("По"))
+        self.compare_date_to=QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        self.compare_date_to.setCalendarPopup(True)
+        self.compare_date_to.setDisplayFormat("dd.MM.yyyy")
+        date_row.addWidget(self.compare_date_to)
+        date_row.addStretch(1)
+        layout.addLayout(date_row)
+        self.compare_date_filter.toggled.connect(self._reload_compare)
+        self.compare_date_from.dateChanged.connect(self._reload_compare)
+        self.compare_date_to.dateChanged.connect(self._reload_compare)
         splitter=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.compare_table=QtWidgets.QTableWidget(0,4)
         self.compare_table.setHorizontalHeaderLabels(
@@ -346,9 +379,20 @@ class HistoryWorkspaces(QtCore.QObject):
 
     def _reload_compare(self,*_):
         self._table_selected.clear()
-        self._available_entries={
-            e.key:e for e in self.history.entries(
-                self.adc.currentData(),kind=self._source_filter(),limit=500)}
+        after=before=None
+        if self.compare_date_filter.isChecked():
+            after=(self.compare_date_from.date().toString("yyyy-MM-dd")+
+                   "T00:00:00+00:00")
+            before=(self.compare_date_to.date().toString("yyyy-MM-dd")+
+                    "T23:59:59.999999+00:00")
+        try:
+            entries=self.history.entries(
+                self.adc.currentData(),kind=self._source_filter(),limit=500,
+                after_utc=after,before_utc=before)
+        except ValueError as exc:
+            entries=[]
+            self.compare_info.setText(f"Дата истории отклонена: {exc}")
+        self._available_entries={e.key:e for e in entries}
         self._populate_compare_table()
         self._clear_plot()
 
@@ -373,9 +417,11 @@ class HistoryWorkspaces(QtCore.QObject):
                     self.compare_table.setItem(i,j,cell)
         self.compare_recent.setEnabled(len(data)>=2)
         self.compare_info.setText(
-            f"АЦП {self.adc.currentData()} · {len(data)} доступных "
-            f"{'пакетов AUX4700' if self._source_filter()=='vendor' else 'окон АЦП'}"
-            f" · максимум {MAX_OVERLAYS} одновременно")
+            f"АЦП {self.adc.currentData()} · {len(data)} записей"
+            +(" за выбранный период UTC" if self.compare_date_filter.isChecked()
+              else " (последние 500 — для более старых включите период UTC)")
+            +f" · {'пакеты AUX4700' if self._source_filter()=='vendor' else 'окна АЦП'}"
+            +f" · максимум {MAX_OVERLAYS} одновременно")
 
     def _selection_changed(self,item):
         if item.column()!=0:return
