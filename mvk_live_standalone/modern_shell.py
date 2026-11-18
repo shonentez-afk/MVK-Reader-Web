@@ -286,6 +286,38 @@ def _present_window(win, key, title, page, *, remove_from_tabs=None):
     return other
 
 
+def _pin_method_source(win, key, child):
+    """Operator-approved immutable source for standalone expensive methods.
+
+    Only a verified, already-calibrated local snapshot is copied; reopening
+    the window doesn't silently change ADC, Fs, Freeze state or RAW.
+    """
+    if key not in ("stft", "cwt", "cepstrum", "kurtogram"):
+        return False
+    length = (int(win.kurtogram_window.currentData()) if key == "kurtogram"
+              else int(win.extra_method_windows[key].currentData()))
+    try:
+        samples, fs, stamp = win._current_window(length)
+    except (ValueError, TypeError) as exc:
+        child.statusBar().showMessage(
+            f"Источник не выбран: {exc}. Сначала получите реальные отсчёты.")
+        return False
+    samples.setflags(write=False)
+    win._modern_method_pins[key] = {
+        "samples": samples, "fs": int(fs),
+        "stamp": stamp, "adc": int(win.adc.currentData()),
+        "session": win._gui_ring.session_id,
+        "frozen": bool(win.freeze.isChecked()),
+    }
+    child.setWindowTitle(
+        f"{key.upper()} · АЦП {win.adc.currentData()} · "
+        f"Fs {fs} Гц · N {len(samples)} · ЗАФИКСИРОВАНО")
+    child.statusBar().showMessage(
+        "Подтверждённая копия АЦП; смена АЦП в главном окне "
+        "не меняет источник этого расчёта.")
+    return True
+
+
 def open_advanced_window(win, key):
     pages = {
         "waterfall": ("Водопад · LIVE", win.waterfall_page),
@@ -300,7 +332,17 @@ def open_advanced_window(win, key):
     if key not in pages:
         raise ValueError("Неизвестный метод анализа")
     title, page = pages[key]
+    first = key not in win._modern_windows
     w = _present_window(win, key, title, page, remove_from_tabs=win.extra_pages)
+    if first and key in ("stft", "cwt", "cepstrum", "kurtogram"):
+        toolbar = QtWidgets.QToolBar("Источник окна", w)
+        toolbar.setMovable(False)
+        toolbar.addAction(
+            "Взять новое текущее окно АЦП",
+            lambda checked=False, mode=key, child=w:
+                _pin_method_source(win, mode, child))
+        w.addToolBar(toolbar)
+        _pin_method_source(win, key, w)
     return w
 
 
@@ -465,6 +507,7 @@ def _chart_focus(win, kind):
 def install_modern_shell(win, main, panel, review, storage):
     """Recompose existing verified UI in one pass without changing its DSP."""
     win._modern_windows = {}
+    win._modern_method_pins = {}
     win._modern_profile_name = None
     win._modern_profiles = {}
     if os.environ.get("QT_QPA_PLATFORM", "").lower() != "offscreen":
