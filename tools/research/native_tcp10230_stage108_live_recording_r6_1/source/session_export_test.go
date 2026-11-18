@@ -414,7 +414,7 @@ func TestStage108ValidUnknownPacketBetweenOriginalFramesStillExports(t *testing.
     // and resumes receiving. Exporter must make the SAME distinction:
     // unknown valid envelope is not malformed, and must remain in RAW.
     original:=fixtureBytes(makeFixture())
-    first:=makeIdentity()
+    first:=makeFixture()[0].Raw // contains the original synthetic VAST_MVK ID
     if len(original)<len(first) || !bytes.Equal(original[:len(first)],first){
         t.Fatal("fixture identity changed")
     }
