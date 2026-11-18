@@ -1,0 +1,1305 @@
+{
+  "schema_version": 1,
+  "status": "DESIGN_ONLY_NOT_IMPLEMENTED",
+  "updated_utc": "2026-11-18",
+  "branch": "feature/mvk-live-standalone-20261117",
+  "application": "MVK Live Standalone (independent analyzer on verified MVK01 data)",
+  "hard_invariants": [
+    "one Native TCP 10230 receiver and one global selected_live_adc in the main toolbar",
+    "no auto-TCP from menus, dialogs, or analysis windows",
+    "main contains exactly four visible tabs, not History or Extra analysis",
+    "all W01-W43 are separate nonmodal method window types, created on demand, not at startup",
+    "W/D windows pin immutable verified source; changes of main ADC/Freeze cannot replace it",
+    "LIVE tools follow single global ADC and reset rolling history when channel changes",
+    "archive channel/source selection is independent of main LIVE ADC",
+    "no FFT/envelope synthesized from AUX4700 scalars",
+    "verified BIN only after EXPORTED, NPZ V1 stays backward compatible",
+    "missing signal is not zero or a confirmed diagnosis"
+  ],
+  "window_state_model": {
+    "main": "singleton QMainWindow; QMenuBar + compact toolbar + four tabs + right inspector + QStatusBar",
+    "method": "nonmodal top-level per W method and source, multiple independent instances when source differs or explicit clone",
+    "archive": "browser windows singleton, analytics windows keyed by source selection and metric",
+    "diagnostic": "family windows keyed by pinned source, W32 global fault search is analysis.W32 (alias not duplicate window)",
+    "settings": "modal dialogs; read-only or local-only configurations",
+    "source_modes": [
+      "VERIFIED_LIVE_COPY",
+      "FROZEN_COPY",
+      "NPZ_V1_VERIFIED",
+      "BIN_RANGE_EXPORTED",
+      "AUX4700_SCALARS_ONLY"
+    ],
+    "reuse_key": [
+      "window_id",
+      "source_fingerprint"
+    ],
+    "app_close": "Native stop/verify before closing main; child windows cleanly close without stopping Native",
+    "window_restoration": "geometry/settings only by default, saved results optional; never fake resumed Live"
+  },
+  "aliases": {
+    "diagnostic.find_faults": "analysis.W32",
+    "menu.analysis.extra": "analysis.catalog",
+    "menu.view.open_analysis_windows": "view.open_windows"
+  },
+  "windows_for_W": [
+    {
+      "id": "analysis.W01",
+      "method_id": "W01",
+      "title": "FFT · курсоры и энергия полосы",
+      "category": "Спектры",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО, NPZ; ПЛАН более удобного UI, частичный broadband RMS уже есть",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W02",
+      "method_id": "W02",
+      "title": "Hilbert · огибающая и спектр",
+      "category": "Огибающая",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ЕСТЬ локально",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W03",
+      "method_id": "W03",
+      "title": "Fast Kurtogram",
+      "category": "Полосы и демодуляция",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО; ЕСТЬ ядро и экран, для NPZ-архива прямой вход в этот экран ещё подключить",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W04",
+      "method_id": "W04",
+      "title": "Squared Envelope Spectrum (SES)",
+      "category": "Огибающая",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ПЛАН, не приписывать PySDKit готовый экран MVK",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W05",
+      "method_id": "W05",
+      "title": "STFT и связанные срезы",
+      "category": "Время–частота",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; STFT ЕСТЬ, два связанных среза ПЛАН",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W06",
+      "method_id": "W06",
+      "title": "CWT Morlet · скалограмма",
+      "category": "Время–частота",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; CWT ЕСТЬ, улучшить настройки/лейблы",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W07",
+      "method_id": "W07",
+      "title": "Кепстр и кэфренция",
+      "category": "Редукторы / периодичность",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ЕСТЬ",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W08",
+      "method_id": "W08",
+      "title": "Подшипниковые частоты на огибающей",
+      "category": "Подшипники",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ЕСТЬ базовые линии; multi-harmonic evidence ПЛАН, не диагноз",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W09",
+      "method_id": "W09",
+      "title": "GMF и боковые полосы",
+      "category": "Редукторы",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ; ЕСТЬ прогноз, проверку обнаружения улучшить",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W10",
+      "method_id": "W10",
+      "title": "Spectral Centroid",
+      "category": "Спектральные признаки",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ и потом АРХИВ; ПЛАН",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W11",
+      "method_id": "W11",
+      "title": "Spectral Flatness",
+      "category": "Спектральные признаки",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ПЛАН",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W12",
+      "method_id": "W12",
+      "title": "HF Energy Ratio",
+      "category": "Спектральные признаки",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ПЛАН",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W13",
+      "method_id": "W13",
+      "title": "Автокорреляция",
+      "category": "Импульсы и корреляция",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ПЛАН, без готовой подтверждённой диагностики",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W14",
+      "method_id": "W14",
+      "title": "SRS / PVSS",
+      "category": "Ударный анализ",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ, не AUX; ПЛАН как отдельный ударный метод, не основной тренд смазки/подшипника",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W15",
+      "method_id": "W15",
+      "title": "Synchrosqueezing SST",
+      "category": "Время–частота / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ПЛАН/R&D после STFT",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W16",
+      "method_id": "W16",
+      "title": "IMCKD",
+      "category": "Ударный анализ / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; ПЛАН/R&D, ложные признаки при неверном периоде",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W17",
+      "method_id": "W17",
+      "title": "Циклическая спектральная когерентность",
+      "category": "Цикличность / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / длинная NPZ; ПЛАН/R&D; нужен тест вычислительной нагрузки и точности",
+      "launch_phase": "P5",
+      "required_input": "Длинная проверенная NPZ или диапазон verified BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W18",
+      "method_id": "W18",
+      "title": "Оценка оборотов по спектру",
+      "category": "Обороты",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ; базовая оценка ЕСТЬ, не приравнивать к тахометру",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W19",
+      "method_id": "W19",
+      "title": "Адаптивный LMS/NLMS",
+      "category": "Специальные / условно",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "УСЛОВНО: нужна опорная помеха/доказанная синхронизация; ОТЛОЖЕНО",
+      "launch_phase": "P5",
+      "required_input": "Только после появления подтверждённых синхронных входов/оборотов",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W20",
+      "method_id": "W20",
+      "title": "FRF H1/H2 и coherence",
+      "category": "Специальные / условно",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "УСЛОВНО, нет подтверждённого sync-reference; ОТЛОЖЕНО",
+      "launch_phase": "P5",
+      "required_input": "Только после появления подтверждённых синхронных входов/оборотов",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W21",
+      "method_id": "W21",
+      "title": "Wavelet Packet Decomposition",
+      "category": "Вейвлеты",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН; гистограмма полос, не OEM 1/3",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W22",
+      "method_id": "W22",
+      "title": "EMD / VMD",
+      "category": "Декомпозиция / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН/R&D; следить за mode mixing",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W23",
+      "method_id": "W23",
+      "title": "Cepstral Pre-Whitening",
+      "category": "Спектральная предобработка / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН/R&D, затем Hilbert/SES с отдельным методом",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W24",
+      "method_id": "W24",
+      "title": "Teager–Kaiser Energy",
+      "category": "Импульсы",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН собственного DSP, не готовый перенос UI",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W25",
+      "method_id": "W25",
+      "title": "Spectral Entropy",
+      "category": "Спектральные признаки",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН, локальное APP_DERIVED",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W26",
+      "method_id": "W26",
+      "title": "Многогармонический анализ и коллизии",
+      "category": "Гармоники и совпадения",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН, не диагноз по одному пику",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W27",
+      "method_id": "W27",
+      "title": "Gear Sideband Energy Index",
+      "category": "Редукторы",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН, нужен baseline для сравнения",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W28",
+      "method_id": "W28",
+      "title": "AM/FM демодуляция",
+      "category": "Демодуляция / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН/R&D",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W29",
+      "method_id": "W29",
+      "title": "Ширина резонансного пика",
+      "category": "Спектральные пики",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ: ширина возможна; физическое демпфирование УСЛОВНО",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W30",
+      "method_id": "W30",
+      "title": "Повторяющиеся удары",
+      "category": "Импульсы",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН; единичный удар не доказывает дефект",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W31",
+      "method_id": "W31",
+      "title": "Time-Synchronous Averaging",
+      "category": "Синхронизация / условно",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "УСЛОВНО, ОТЛОЖЕНО до проверенной фазы/тахометра",
+      "launch_phase": "P5",
+      "required_input": "Только после появления подтверждённых синхронных входов/оборотов",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W32",
+      "method_id": "W32",
+      "title": "Поиск признаков неисправностей",
+      "category": "Автоматический поиск",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО / NPZ, ПЛАН; отдельная функция, НЕ автоматическая постановка диагноза",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W33",
+      "method_id": "W33",
+      "title": "Энергия гармонических полос",
+      "category": "Подшипники",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ → архивный тренд, ПЛАН",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W34",
+      "method_id": "W34",
+      "title": "Боковые полосы BPFI/BDF",
+      "category": "Подшипники",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, ПЛАН; расширение W08/W26",
+      "launch_phase": "P3",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W35",
+      "method_id": "W35",
+      "title": "Autogram",
+      "category": "Полосы / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D, не реализован",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W36",
+      "method_id": "W36",
+      "title": "EES / IES",
+      "category": "Цикличность / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D, нужен независимый DSP",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W37",
+      "method_id": "W37",
+      "title": "Weighted Combined Envelope Spectrum",
+      "category": "Огибающая / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D, не готовый код",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W38",
+      "method_id": "W38",
+      "title": "IESCFFOgram",
+      "category": "Полосы / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D, может подтвердить неверную гипотезу",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W39",
+      "method_id": "W39",
+      "title": "Spectral Auto-Correlation Analysis",
+      "category": "Спектральные признаки / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D, сравнение с Hilbert/SES",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W40",
+      "method_id": "W40",
+      "title": "Tacholess Envelope Order Spectrum",
+      "category": "Порядки / условно",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "УСЛОВНО/ОТЛОЖЕНО, недостаточно одной ручной 1×",
+      "launch_phase": "P5",
+      "required_input": "Только после появления подтверждённых синхронных входов/оборотов",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W41",
+      "method_id": "W41",
+      "title": "Protrugram",
+      "category": "Полосы / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D/ПЛАН, не реализован",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W42",
+      "method_id": "W42",
+      "title": "Infogram SE/SES",
+      "category": "Полосы / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D/ПЛАН, не реализован",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    },
+    {
+      "id": "analysis.W43",
+      "method_id": "W43",
+      "title": "Spectral Gini",
+      "category": "Полосы / R&D",
+      "type": "independent_nonmodal_method_window",
+      "instance_key": [
+        "method_id",
+        "verified_source_fingerprint"
+      ],
+      "source_binding": "immutable_pinned_on_open",
+      "entry": [
+        "menu.analysis.catalog",
+        "menu.analysis.direct",
+        "context_from_live_or_archive",
+        "cross_window_evidence"
+      ],
+      "status": "WINDOW_NOT_YET_IMPLEMENTED",
+      "original_algorithm_status": "ОКНО/NPZ, R&D/ПЛАН, не реализован",
+      "launch_phase": "P5",
+      "required_input": "Зафиксированный ADC/Fs: Freeze, NPZ V1 или верифицированный диапазон BIN",
+      "detail_spec": "METHOD_WINDOWS_W01_W43_20261118_RU.csv"
+    }
+  ],
+  "non_W_routes": [
+    {
+      "id": "main.overview",
+      "type": "main_tab",
+      "entry": [
+        "Вид → Обзор"
+      ],
+      "policy": "singleton_global_live_adc"
+    },
+    {
+      "id": "main.spectrum",
+      "type": "main_tab",
+      "entry": [
+        "Вид → Спектр"
+      ],
+      "policy": "singleton_global_live_adc"
+    },
+    {
+      "id": "main.wave",
+      "type": "main_tab",
+      "entry": [
+        "Вид → Временной сигнал"
+      ],
+      "policy": "singleton_global_live_adc"
+    },
+    {
+      "id": "main.calculated",
+      "type": "main_tab",
+      "entry": [
+        "Вид → Расчётные данные"
+      ],
+      "policy": "singleton_global_live_adc"
+    },
+    {
+      "id": "analysis.catalog",
+      "type": "nonmodal_catalog",
+      "entry": [
+        "Анализ → Дополнительные методы"
+      ],
+      "policy": "singleton_registry_search_no_method_execution"
+    },
+    {
+      "id": "view.open_windows",
+      "type": "nonmodal_window_manager",
+      "entry": [
+        "Вид → Открытые окна анализа"
+      ],
+      "policy": "singleton_list_activate_minimize_close"
+    },
+    {
+      "id": "live.waterfall",
+      "type": "nonmodal_live_tool",
+      "entry": [
+        "Анализ → Водопад",
+        "Вид → Водопад"
+      ],
+      "policy": "follows_global_live_adc_reset_on_switch"
+    },
+    {
+      "id": "live.short_trend",
+      "type": "nonmodal_live_tool",
+      "entry": [
+        "Анализ → Текущий тренд"
+      ],
+      "policy": "follows_global_live_adc_reset_on_switch"
+    },
+    {
+      "id": "live.harmonic_tracker",
+      "type": "nonmodal_live_tool",
+      "entry": [
+        "Анализ → Гармонические уровни"
+      ],
+      "policy": "follows_global_live_adc_reset_on_switch"
+    },
+    {
+      "id": "archive.sessions",
+      "type": "nonmodal_archive_browser",
+      "entry": [
+        "Архив → Сеансы"
+      ],
+      "policy": "singleton_archive_context_independent_of_live"
+    },
+    {
+      "id": "archive.saved_windows",
+      "type": "nonmodal_archive_browser",
+      "entry": [
+        "Архив → Сохранённые окна"
+      ],
+      "policy": "singleton_archive_context_independent_of_live"
+    },
+    {
+      "id": "archive.trends",
+      "type": "nonmodal_archive_analysis",
+      "entry": [
+        "Архив → Тренды"
+      ],
+      "policy": "per_archive_selection_metric_and_context"
+    },
+    {
+      "id": "archive.comparison",
+      "type": "nonmodal_archive_analysis",
+      "entry": [
+        "Архив → Сравнение"
+      ],
+      "policy": "per_selected_source_set_2_to_8"
+    },
+    {
+      "id": "archive.waterfall",
+      "type": "nonmodal_archive_analysis",
+      "entry": [
+        "Архив → Исторический водопад"
+      ],
+      "policy": "per_compatible_saved_series"
+    },
+    {
+      "id": "archive.analysis_runs",
+      "type": "nonmodal_archive_browser",
+      "entry": [
+        "Архив → Сохранённый анализ"
+      ],
+      "policy": "singleton_browse_analysis_runs"
+    },
+    {
+      "id": "archive.measurement_context",
+      "type": "modal_dialog",
+      "entry": [
+        "Архив → Паспорт и условия измерения"
+      ],
+      "policy": "write_sidecar_metadata_not_modify_npz_v1"
+    },
+    {
+      "id": "archive.integrity",
+      "type": "modal_dialog",
+      "entry": [
+        "Архив → Проверка целостности"
+      ],
+      "policy": "readonly_verification_no_rewrite"
+    },
+    {
+      "id": "diagnostic.bearing",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Подшипники"
+      ],
+      "policy": "immutable_pinned_on_open"
+    },
+    {
+      "id": "diagnostic.gear",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Редукторы"
+      ],
+      "policy": "immutable_pinned_on_open"
+    },
+    {
+      "id": "diagnostic.shaft",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Валы и опоры"
+      ],
+      "policy": "immutable_pinned_on_open"
+    },
+    {
+      "id": "diagnostic.fan",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Вентиляторы"
+      ],
+      "policy": "immutable_pinned_on_open"
+    },
+    {
+      "id": "diagnostic.pump",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Насосы"
+      ],
+      "policy": "immutable_pinned_on_open"
+    },
+    {
+      "id": "diagnostic.motor",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Электродвигатели"
+      ],
+      "policy": "immutable_pinned_on_open_requires_motor_inputs"
+    },
+    {
+      "id": "diagnostic.anomalies",
+      "type": "nonmodal_diagnostic_family",
+      "entry": [
+        "Диагностика → Аномалии"
+      ],
+      "policy": "requires_compatible_archive_series"
+    },
+    {
+      "id": "diagnostic.evidence",
+      "type": "nonmodal_evidence_viewer",
+      "entry": [
+        "Диагностика → Измеренные пики и доказательства"
+      ],
+      "policy": "immutable_pinned_on_open"
+    },
+    {
+      "id": "diagnostic.quality",
+      "type": "nonmodal_quality_viewer",
+      "entry": [
+        "Измерение → Качество исходного сигнала"
+      ],
+      "policy": "source_qc_readonly"
+    },
+    {
+      "id": "settings.connections",
+      "type": "modal_dialog",
+      "entry": [
+        "Настройки → Подключения"
+      ],
+      "policy": "profile_selection_never_connects_automatically"
+    },
+    {
+      "id": "settings.recording",
+      "type": "modal_dialog",
+      "entry": [
+        "Настройки → Запись и хранилище"
+      ],
+      "policy": "directory_policy_before_native_start"
+    },
+    {
+      "id": "settings.analysis",
+      "type": "modal_dialog",
+      "entry": [
+        "Настройки → Параметры анализа"
+      ],
+      "policy": "versioned_presets_local_only"
+    },
+    {
+      "id": "settings.appearance",
+      "type": "modal_dialog",
+      "entry": [
+        "Настройки → Внешний вид"
+      ],
+      "policy": "qsettings_only"
+    },
+    {
+      "id": "settings.native",
+      "type": "modal_dialog",
+      "entry": [
+        "Настройки → Проверка Native"
+      ],
+      "policy": "read_only_path_and_sha"
+    },
+    {
+      "id": "help.guide",
+      "type": "nonmodal_help_window",
+      "entry": [
+        "Справка → Руководство пользователя"
+      ],
+      "policy": "local_docs_no_network"
+    },
+    {
+      "id": "help.about",
+      "type": "modal_dialog",
+      "entry": [
+        "Справка → О программе"
+      ],
+      "policy": "version_and_licenses"
+    }
+  ],
+  "menu_registry_reference": "MAIN_SCREEN_MENU_REGISTRY_20261118_RU.csv",
+  "method_registry_reference": "METHOD_WINDOWS_W01_W43_20261118_RU.csv",
+  "design_reference": "MAIN_WINDOW_AND_MULTIPLE_WINDOWS_ARCHITECTURE_20261118_RU.md"
+}
