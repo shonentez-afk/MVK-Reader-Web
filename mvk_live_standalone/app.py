@@ -29,6 +29,7 @@ from .spectrum import (
 from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
 from .original_dsp import read_original_dsp_bands
+from .frange import original_applied_frange
 from .rotation import estimate_rotation_from_velocity
 from .pipeline import analyze_live, AnalysisResult
 from .advanced import (envelope_fault_lines, stft_vibration,
@@ -410,6 +411,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         main.addWidget(self.metrics)
         self.features_label=QtWidgets.QLabel("Временные признаки: ожидание калиброванного канала")
         main.addWidget(self.features_label)
+        self.frange_info=QtWidgets.QLabel(
+            "FRange: ожидание начальной конфигурации МВК01. "
+            "Графики используют уже откалиброванный Native BIN/IPC.")
+        main.addWidget(self.frange_info)
         self.bearing_diagnostics=QtWidgets.QLabel(
             "Подшипники: введите 1× и геометрию; локальное SNR, без эталонных измерений")
         main.addWidget(self.bearing_diagnostics)
@@ -453,6 +458,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._waterfall_key=None
             self.waterfall_img.clear()
         self._render_dsp()
+        self._update_frange_label()
         self._request_update()
 
     def _request_update(self,*_):
@@ -613,6 +619,30 @@ class LiveWindow(QtWidgets.QMainWindow):
             "Никакой подмены локальными RMS/FFT."
         )
 
+    def _update_frange_label(self):
+        status=self._last_status
+        if status is None or status.get("phase") not in ("RECORDING","VERIFYING","COMPLETED"):
+            self.frange_info.setText(
+                "FRange: ожидание начальной конфигурации МВК01 "
+                "(недоступный коэффициент не принимается за 1,0).")
+            return
+        try:
+            gain=original_applied_frange(status,self.adc.currentData())
+        except (ValueError,TypeError) as exc:
+            self.frange_info.setText(f"FRange ОТКЛОНЁН: {exc}")
+            return
+        if gain is None:
+            self.frange_info.setText(
+                "FRange: начальная конфигурация прибора ещё не получена; "
+                "нет оснований считать сырые отсчёты калиброванными.")
+            return
+        adc=self.adc.currentData()
+        self.frange_info.setText(
+            f"ПРИБОР · FRange АЦП {adc} = {gain:.9g} "
+            f"(конфигурация 0x{0x100+(adc-1)*0x100+0x0E:04X}). "
+            "Native Go уже умножил каждый Float32 АЦП на FRange ровно один раз "
+            "до записи BIN/IPC. MVK Live НЕ умножает второй раз.")
+
     def _update_features(self):
         if self.freeze.isChecked():return
         ch=self._gui_ring.channel(self.adc.currentData())
@@ -760,6 +790,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 return
             self._last_status=status
             self._render_dsp()
+            self._update_frange_label()
             self.status.setText(f"Native R6.1: {status['phase']} · RAW {status['raw_bytes']/1048576:.1f} МиБ · "
                                 f"кадров {status['frames_decoded']} · AUX {status['aux4700_updates']}")
             if status.get("source_tcp_multi_socket"):
@@ -860,6 +891,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.history.setRange(0,0)
         self.history.setValue(0)
         self._gui_ring.clear()
+        self._last_status=None
+        self.frange_info.setText("FRange: текущая калибровка неизвестна; ожидание новой конфигурации")
+        self._render_dsp()
         self._last_submitted_key=None
         self._last_fft_submit=0.0
         self._trend_points=[]
