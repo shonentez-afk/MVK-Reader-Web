@@ -191,3 +191,38 @@ def test_each_history_tab_can_select_adc_without_going_back_to_spectrum(w):
     ui._choose_latest_two()
     assert len(ui._last_overlay)==2
     assert all(e.adc==1 for e,_,_,_ in ui._last_overlay)
+
+
+
+def test_compare_date_filter_selects_old_archive_and_exact_point(w):
+    from PySide6 import QtCore
+    ui=w.history_ui
+    for utc,tick in (
+        ("2024-03-15T12:00:00Z",1),
+        ("2026-11-18T12:00:00Z",2),
+    ):
+        w._archive.record_vendor_row(
+            "TEST_ARCHIVED_DATES",vendor_row(1,tick,utc))
+    ui.compare_mode.setCurrentIndex(ui.compare_mode.findData("vendor43"))
+    ui._reload_compare()
+    assert ui.compare_table.rowCount()==2
+    ui.compare_date_from.setDate(QtCore.QDate(2024,3,1))
+    ui.compare_date_to.setDate(QtCore.QDate(2024,3,31))
+    ui.compare_date_filter.setChecked(True)
+    assert ui.compare_table.rowCount()==1
+    assert "2024" in ui.compare_table.item(0,1).text()
+    ui._choose_latest_two()
+    assert not ui._last_overlay or len(ui._last_overlay)<=1
+    ui.compare_date_filter.setChecked(False)
+    assert ui.compare_table.rowCount()==2
+    # An exact original date may be selected from a trend even if the
+    # compare table currently shows only the last (newer) 500 entries.
+    ui._available_entries={
+        e.key:e for e in w._archive.entries(1,"vendor",limit=1)}
+    ui._populate_compare_table()
+    ui.trend_group.setCurrentIndex(ui.trend_group.findData("third_octave"))
+    ui._selected_trend_point=datetime.fromisoformat(
+        "2024-03-15T12:00:00+00:00")
+    ui._open_trend_in_comparison()
+    assert len(ui._last_overlay)==1
+    assert ui._last_overlay[0][0].time_utc.startswith("2024-03-15")
