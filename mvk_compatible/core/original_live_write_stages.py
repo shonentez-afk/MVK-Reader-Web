@@ -654,6 +654,13 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "hardware_command_sent":bool(ledger.source_setrate_commands_seen),
                 "source_setrate_sent_commands":ledger.source_setrate_commands_seen,
                 "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes"),
+                "source_values_export_anchored_to_verified_3100":
+                    source_values_events is not None,
+                "source_3100_trigger_events_replayed":
+                    sum(map(len,source_values_events.values())) if
+                    source_values_events is not None else 0,
+                "source_thread_auto_closed_writers":(frame_mark_evidence or {}).get(
+                    "source_thread_auto_closed_writers",0),
                 "source_values_csv_exact_delphi_layout_verified":False}
     except Exception:
         if created:
