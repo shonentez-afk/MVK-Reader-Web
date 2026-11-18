@@ -265,6 +265,63 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
                 "start_utc":start.get("requested_utc"),
                 "end_utc":receipt.get("requested_utc"),
             })
+    # Source _Unit125:008089A8 -> 00809414(True) closes writers on
+    # termination even when bWriteAdc/bWriteValues wasn't clicked OFF.
+    # Go supplies a DISTINCT, SHA-bound final-counter receipt, NOT a
+    # fabricated user event or an invented next complete RX frame.
+    automatic=doc.get("auto_closed_on_capture_end",[])
+    if not isinstance(automatic,list) or len(automatic)>2:
+        raise ValueError("Invalid original source automatic writer close list")
+    if automatic and summary.get("end_reason") not in (
+            "STOPPED_BY_USER","DURATION_REACHED","SIZE_LIMIT_REACHED"):
+        raise ValueError("Source writer auto-close without clean Task2 stop")
+    closed_kinds=set()
+    for end in automatic:
+        if not isinstance(end,dict):
+            raise ValueError("Source writer auto-close is not a receipt")
+        event=end.get("event")
+        if event not in ("data_end","values_end"):
+            raise ValueError("Unexpected source writer end kind")
+        kind=event.split("_")[0]
+        if kind in closed_kinds or kind not in by_kind:
+            raise ValueError("Source writer auto-close is duplicated or orphaned")
+        closed_kinds.add(kind)
+        start,start_samples,start_frames,start_aux,start_source_tick=by_kind.pop(kind)
+        if (end.get("applied") is not True or
+                end.get("boundary")!="AT_SOURCE_TASK2_FINALIZE" or
+                end.get("reason")!="SOURCE_TMVKTHREAD_FORCED_WRITER_CLOSE" or
+                type(end.get("device_commands_sent")) is not bool or
+                end["device_commands_sent"] != (sent_bytes>0) or
+                end.get("requested_utc") != summary.get("ended_utc")):
+            raise ValueError("Unverified Task2 forced writer close")
+        for key,amount in (("frames_decoded",end_frames),
+                           ("aux4700_updates",end_aux)):
+            if _strict_int(end.get(key),key)!=amount:
+                raise ValueError("Forced writer close not at final Go frame")
+        if _counts(end.get("channel_samples"))!=end_counts:
+            raise ValueError("Forced writer close channel count mismatch")
+        if end_source_tick is not None:
+            if _strict_int(end.get("source_values_ticks_address_3100"),
+                           "final 0x3100 ticks")!=end_source_tick:
+                raise ValueError("Forced writer close source tick mismatch")
+        elif end.get("source_values_ticks_address_3100") is not None:
+            raise ValueError("Unobserved final source tick claimed by auto-close")
+        for key,length in (("channels",10),("spec",43),("values",73)):
+            if _flags(end.get(key),length,key)!=tuple(start[key]):
+                raise ValueError("Writer checkbox mask changed at automatic close")
+        reconstructed.append({
+            "kind":kind,
+            "start_samples":start_samples,
+            "end_samples":end_counts,
+            "start_frames":start_frames,
+            "end_frames":end_frames,
+            "start_aux":start_aux,
+            "end_aux":end_aux,
+            "start_source_values_ticks":start_source_tick,
+            "end_source_values_ticks":end_source_tick,
+            "start_utc":start.get("requested_utc"),
+            "end_utc":end.get("requested_utc"),
+        })
     if by_kind or len(reconstructed)!=len(ledger.windows):
         raise ValueError("Unmatched source frame marks cannot be exported")
     corrected=[]
@@ -286,6 +343,7 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         "source_raw_sha256":raw_sha,
         "verified_go_mark_audit_sha256":digest,
         "accepted_events":len(entries),
+        "source_thread_auto_closed_writers":len(automatic),
         "device_commands_sent":sent_bytes>0,
         "source_setrate_sent_bytes":sent_bytes,
         "real_source_values_ticks_0x3100":end_source_tick,
