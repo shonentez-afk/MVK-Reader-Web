@@ -479,6 +479,10 @@ def _build_menu(win):
                lambda checked=False, index=i: win.views.setCurrentIndex(index))
     menus["Вид"].addSeparator()
     action("Вид", "Автомасштаб спектра", lambda: win._reset_spectrum_axis())
+    action("Вид", "Измерительные курсоры спектра",
+           lambda: _focus_inspector(win, "spectrum"))
+    action("Вид", "Измерительные курсоры временного сигнала",
+           lambda: _focus_inspector(win, "time"))
     action("Вид", "Открытые окна анализа…", lambda: _open_windows_dialog(win))
     action("Настройки", "Подключения и IP-профили…",
            lambda: _connection_dialog(win))
@@ -856,4 +860,6 @@ def install_modern_shell(win, main, panel, review, storage):
     # an empty source still must never render synthetic samples.
     win._apply_axes()
     win._apply_operator_ranges()
+    from .cursor_overlay import install_measurement_cursors
+    install_measurement_cursors(win)
     win._modern_installed = True
