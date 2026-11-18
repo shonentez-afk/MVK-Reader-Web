@@ -1450,7 +1450,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self,"Допуск к прибору",
             f"Разрешено подключиться по TCP/10230 к {ip} через Ethernet {local}" +
             (f" ({self._ethernet_detected.name}, #{self._ethernet_detected.if_index})?\n"
-             if self._ethernet_detected else " (локальный IPv4 указан вручную)?\n")
+             if self._ethernet_detected else " (локальный IPv4 указан вручную)?\n") +
             "Клиент не отправляет прикладных команд, но сам TCP Connect может "
             "изменить состояние МВК01. Максимальный RAW: 2048 МиБ.",
             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.No)
