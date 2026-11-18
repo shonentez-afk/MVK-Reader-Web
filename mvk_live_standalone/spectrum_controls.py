@@ -24,6 +24,7 @@ Y_WIDTH_CHOICES={
 }
 FILTER_CHOICES=(
     ("Без фильтра","none"),
+    ("Как в MVKView · оригинальное меню 32 полос","original_preset"),
     ("ФВЧ — высоких частот","highpass"),
     ("ФНЧ — низких частот","lowpass"),
     ("Полосовой","bandpass"),

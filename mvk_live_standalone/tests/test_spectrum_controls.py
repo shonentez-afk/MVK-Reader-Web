@@ -26,7 +26,7 @@ def test_filter_selections_are_explicit_default_is_off():
     assert FILTER_CHOICES[0]==("Без фильтра","none")
     assert {key for _,key in FILTER_CHOICES}=={
         "none","highpass","lowpass","bandpass","notch50","notch60",
-        "octave","third_octave","double_octave"}
+        "octave","third_octave","double_octave","original_preset"}
 
 
 def test_x_is_50_through_25600_and_never_exceeds_actual_nyquist():

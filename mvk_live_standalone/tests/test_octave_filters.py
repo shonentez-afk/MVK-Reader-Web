@@ -4,6 +4,7 @@ import pytest
 
 from mvk_live_standalone.octave_filters import (
     FAMILIES, nominal_centres, preset_band, preset_description,
+    ORIGINAL_MVK_MENU,
 )
 from mvk_live_standalone.spectrum_controls import FILTER_CHOICES
 from mvk_live_standalone.time_controls import TIME_FILTERS, time_filter_waveform
@@ -61,3 +62,26 @@ def test_octave_rss_from_original_thirds_provenance_and_missing_values():
     _,sums=octave_rss_from_thirds(_THIRD_HZ,v)
     assert np.isnan(sums[0])
     assert np.isfinite(sums[1])
+
+def test_exact_original_mvkview_32_labels_by_families_and_nyquist():
+    from collections import Counter
+    assert len(ORIGINAL_MVK_MENU)==32
+    assert ORIGINAL_MVK_MENU[0]==("Без фильтра","none",None)
+    c=Counter(family for _,family,_ in ORIGINAL_MVK_MENU[1:])
+    assert c=={"third_octave":19,"octave":6,"double_octave":6}
+    assert ("1/3окт 25 кГц","third_octave",25000.) in ORIGINAL_MVK_MENU
+    assert ("1/3окт 400 Гц","third_octave",400.) in ORIGINAL_MVK_MENU
+    assert ("1окт 16 кГц","octave",16000.) in ORIGINAL_MVK_MENU
+    assert ("2окт 13 кГц","double_octave",13000.) in ORIGINAL_MVK_MENU
+    assert ("2окт 400 Гц","double_octave",400.) in ORIGINAL_MVK_MENU
+    assert len({label for label,_,_ in ORIGINAL_MVK_MENU})==32
+    assert "original_preset" in {key for _,key in FILTER_CHOICES}
+    assert "original_preset" in {key for _,key in TIME_FILTERS}
+    # Labels of genuine original buttons are NOT evidence of their filter
+    # impulse response. These passbands remain locally derived only.
+    a,b=preset_band("third_octave",25000.,fs=65536)
+    assert 20000<a<25000 and 25000<b<32768
+    with pytest.raises(ValueError,match="Nyquist"):
+        preset_band("third_octave",25000.,fs=32768)
+    a,b=preset_band("double_octave",13000.)
+    assert 6300<a<6700 and 25000<b<27000

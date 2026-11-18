@@ -21,6 +21,7 @@ Y_ABSOLUTE_LIMITS_M_S2 = (
 )
 TIME_FILTERS = (
     ("Без фильтра","none"),
+    ("Как в MVKView · оригинальное меню 32 полос","original_preset"),
     ("ФВЧ — высоких частот","highpass"),
     ("ФНЧ — низких частот","lowpass"),
     ("Полосовой","bandpass"),
