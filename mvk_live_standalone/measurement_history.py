@@ -324,7 +324,8 @@ class MeasurementHistory:
         """
         origin=Path(path)
         snap=load_snapshot(origin)
-        timestamp=_utc(saved_utc or datetime.now(timezone.utc).isoformat())
+        timestamp=_utc(saved_utc or snap.saved_utc or
+                       datetime.now(timezone.utc).isoformat())
         metrics=_local_features(snap.acceleration_m_s2,snap.rate_hz)
         with self._db() as con:
             existing=con.execute("""
@@ -381,7 +382,8 @@ class MeasurementHistory:
         # file as it wasn't indexed, instead of growing duplicate archives.
         try:
             snap=load_snapshot(name)
-            timestamp=_utc(saved_utc or datetime.now(timezone.utc).isoformat())
+            timestamp=_utc(saved_utc or snap.saved_utc or
+                       datetime.now(timezone.utc).isoformat())
             metrics=_local_features(snap.acceleration_m_s2,snap.rate_hz)
             with self._db() as con:
                 cur=con.execute("""
@@ -432,7 +434,7 @@ class MeasurementHistory:
                 """,(adc,limit)).fetchall():
                     entries.append(HistoryEntry(
                         f"W:{idx}",LOCAL,adc,utc,session,
-                        f"АЦП окно · Fs={fs} Гц",fs))
+                        f"АЦП окно · сохранено в архив · Fs={fs} Гц",fs))
         return sorted(entries,key=lambda x:x.time_utc,reverse=True)[:limit]
 
     def trend(self,adc:int,metric:str,days:int|None=None,
