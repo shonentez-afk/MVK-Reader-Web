@@ -115,6 +115,10 @@
 | W39 | **Spectral Auto-Correlation Analysis (SACA)** — подчёркивание повторяющегося гребня линий | [MSSP 2013](https://www.sciencedirect.com/science/article/pii/S0888327013003798) | spectral resolution, correlation lag, iteration, calibration/normalization | ОКНО/NPZ, **R&D**, сравнение с Hilbert/SES |
 | W40 | **Tacholess envelope order spectrum** — гармоники BPFO/BPFI в порядках при разгоне | [riya order_tracking.py](https://github.com/riya0920/bearing-condition-monitoring/blob/main/src/order_tracking.py), [Sensors 2013](https://www.mdpi.com/1424-8220/13/8/10856) | только подтверждённая RPM(t) и uncertainty, angular re-sampling, pts/rev, band-pass in Hz BEFORE angular mapping | **УСЛОВНО/ОТЛОЖЕНО**, недостаточно одной ручной 1× |
 
+| W41 | **Protrugram** — карта резонансных полос по куртозису FFT огибающей | [оригинальная статья MSSP](https://www.sciencedirect.com/science/article/pii/S0888327010001895), [новый аудит](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md) | диапазон fc/bandwidth, N/Fs, демодуляция, window, score definition, top bands | ОКНО/NPZ, **R&D/ПЛАН**, не реализован |
+| W42 | **Infogram (SE/SES)** — отдельные карты негэнтропии квадрата огибающей и его спектра | [Applied Sciences 2020](https://www.mdpi.com/2076-3417/10/8/2657), [настройки и ограничения](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md) | bank level, SE/SES/combined, DC, FFT scaling, normalization, top bands | ОКНО/NPZ, **R&D/ПЛАН**, не реализован |
+| W43 | **Spectral Gini selector** — выбор полосы по sparsity индексу Джини | [Applied Sciences 2020](https://www.mdpi.com/2076-3417/10/8/2657), [новый аудит](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md) | filterbank, вход в индекс, Gini definition, N/Fs, normalization, карта | ОКНО/NPZ, **R&D/ПЛАН**, не реализован |
+
 **Правило для тяжёлых методов:** пользователь должен видеть на экране «Источник: АЦП / сеанс / фрагмент / Fs / N», нажимать «Рассчитать», а при смене канала результат предыдущего сеанса должен быть отброшен или помечен как исторический. Вкладки не запускают дополнительный TCP.
 
 ## 4. Полная матрица: только серия сохранённых измерений / история
@@ -386,6 +390,10 @@
 
 **Отдельный аудит исходников и экранов:** [BEARING_ENVELOPE_DIAGNOSTICS_AND_OVERLAYS_AUDIT_RU.md](BEARING_ENVELOPE_DIAGNOSTICS_AND_OVERLAYS_AUDIT_RU.md). В нём разобраны c-spectrum, viblearn, riya0920, CaringNihilistic, tzarcrept, phonometry, PySDKit и MathWorks, с точными названиями BSF и BDF=2BSF, боковыми BPFI±fr/BDF±FTF, коллизиями BPFO×3/BPFI×2, формами настройки, Local SNR, SES, Autogram, EES/IES и многополосными методами. **Пока это план анализа и диагностики, не подтверждённый заводской алгоритм и не новый готовый диагностический модуль.**
 
+### 8.10. Альтернативные селекторы полос и паспорт данных
+
+**Добавлены W41–W43** — Protrugram, Infogram и Spectral Gini, как альтернативные исследовательские способы выбрать полосу перед FFT огибающей; все требуют реальных ADC samples и рассчитываются только по ОКНУ/NPZ, **не в постоянном LIVE и не из AUX4700**. В [дополнительном аудите](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md) есть сравнение карт, подробные формы настроек, Quality Gate, ограничения NPZ V1, наборы CWRU/Paderborn/IMS/FEMTO/XJTU-SY и актуальность ISO 20816-3:2026. Новых исполняемых методов эти записи не добавляют.
+
 ## 9. Какие настройки НЕ доступны пользователю для оригинальных данных МВК01
 
 - Физическая Fs должна определяться по фактическим данным приёмника и структуре канала. Выпадающий список «Fs» может быть демонстрационным в лабораторном тесте, но в Live это **read-only**.
@@ -440,6 +448,7 @@
 - [Гармоники и новые методы диагностики: исходники, настройки, применение к разным графикам](HARMONIC_OVERLAYS_AND_DIAGNOSTIC_METHODS_CATALOG_RU.md).
 - [Глубокий аудит подшипников: гармоники спектра огибающей, боковые, BDF и новые методы](BEARING_ENVELOPE_DIAGNOSTICS_AND_OVERLAYS_AUDIT_RU.md).
 - [Подключение, список IP и отдельные экраны поиска дефектов](CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md).
+- [Селекторы Protrugram/Infogram/Gini, качество данных, тестовые датасеты и ISO 2026](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md).
 - [Текущий README и фактические возможности](README_RU.md).
 
 **Итог:** основной экран должен быть быстрым живым осциллографом/спектроанализатором, экран анализа окна — лабораторией тяжёлых методов по реальным отсчётам, архив — инструментом истории и верификации. Каждый метод имеет отдельный источник, параметры и экран; не смешивать LIVE, ОКНО и АРХИВ.
