@@ -666,7 +666,15 @@ def install_modern_shell(win, main, panel, review, storage):
     # Original time toolbar labels would otherwise remain with empty fields.
     _hide_layout(win.wave_toolbar)
     inspector = QtWidgets.QStackedWidget()
+    # QtStackedWidget normally propagates the widest page's sizeHint to
+    # QScrollArea. Ignore those hints: the dock is deliberately responsive.
+    inspector.setMinimumWidth(0)
+    inspector.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                            QtWidgets.QSizePolicy.Policy.Preferred)
     spectrum_panel = QtWidgets.QWidget()
+    spectrum_panel.setMinimumWidth(0)
+    spectrum_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                                 QtWidgets.QSizePolicy.Policy.Preferred)
     ss = QtWidgets.QVBoxLayout(spectrum_panel)
     ss.setContentsMargins(12, 12, 12, 12)
     ss.setSpacing(10)
@@ -733,6 +741,9 @@ def install_modern_shell(win, main, panel, review, storage):
     inspector.addWidget(spectrum_panel)
 
     time_panel = QtWidgets.QWidget()
+    time_panel.setMinimumWidth(0)
+    time_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                             QtWidgets.QSizePolicy.Policy.Preferred)
     ts = QtWidgets.QVBoxLayout(time_panel)
     ts.setContentsMargins(12, 12, 12, 12)
     ts.setSpacing(10)
@@ -790,7 +801,12 @@ def install_modern_shell(win, main, panel, review, storage):
     scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
     scroll.setWidgetResizable(True)
     scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+    scroll.setSizeAdjustPolicy(
+        QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored)
     scroll.setWidget(inspector)
+    # Avoid recursive widening when combo-box popup contents are wider than
+    # the viewport. The field widgets are Ignores and resize to dock width.
+    scroll.viewport().setMinimumWidth(0)
     dock.setWidget(scroll)
     dock.setMinimumWidth(246)
     win.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
