@@ -72,6 +72,8 @@ def apply_theme(win, theme="system"):
         dark = theme == "dark"
     c = DARK if dark else LIGHT
     win._modern_theme = theme
+    if os.environ.get("QT_QPA_PLATFORM", "").lower() != "offscreen":
+        QtCore.QSettings("MVK", "MVK Live").setValue("ui/theme_v1", theme)
     win.setStyleSheet("""
         QWidget { background-color: %(canvas)s; color: %(text)s;
                   font-family: 'Segoe UI'; font-size: 13px; }
@@ -251,7 +253,7 @@ def _profile_changed(win):
     label = win._modern_profile_combo.currentData()
     if not label:
         return
-    if win._native.state() != QtCore.QProcess.NotRunning:
+    if win._native.state() != QtCore.QProcess.ProcessState.NotRunning:
         return
     p = win._modern_profiles.get(label)
     if not p:
@@ -427,7 +429,7 @@ def _focus_inspector(win, kind):
 
 
 def _refresh_status(win):
-    phase = "ЗАПИСЬ" if win._native.state() != QtCore.QProcess.NotRunning else "НЕТ ПРИЁМА"
+    phase = "ЗАПИСЬ" if win._native.state() != QtCore.QProcess.ProcessState.NotRunning else "НЕТ ПРИЁМА"
     ch = win._gui_ring.channel(win.adc.currentData())
     fs = f"Fs {ch.rate_hz} Гц" if ch is not None else "Fs —"
     state = win.status.text().replace("\n", " ")
@@ -436,9 +438,9 @@ def _refresh_status(win):
     win.statusBar().showMessage(
         f"{phase} · АЦП {win.adc.currentData()} · {fs} · {state}")
     win._modern_actions["measure"].setEnabled(
-        win._native.state() == QtCore.QProcess.NotRunning)
+        win._native.state() == QtCore.QProcess.ProcessState.NotRunning)
     win._modern_actions["stop"].setEnabled(
-        win._native.state() != QtCore.QProcess.NotRunning)
+        win._native.state() != QtCore.QProcess.ProcessState.NotRunning)
     if hasattr(win, "overview_metrics"):
         res = getattr(win, "_last_result", None)
         if res is not None and getattr(win, "_spectrum", None) is not None:
@@ -561,6 +563,12 @@ def install_modern_shell(win, main, panel, review, storage):
     win.spectrum_controls_widget.hide()
     win.advanced_toggle.hide()
     win.advanced_panel.hide()
+    # Hidden legacy combo boxes must not appear as a second channel selector.
+    # Their signals still maintain compatibility with existing calculations.
+    win.extra_adc.hide()
+    win.dsp_adc.hide()
+    # Original time toolbar labels would otherwise remain with empty fields.
+    _hide_layout(win.wave_toolbar)
     inspector = QtWidgets.QStackedWidget()
     spectrum_panel = QtWidgets.QWidget()
     ss = QtWidgets.QVBoxLayout(spectrum_panel)
@@ -639,6 +647,20 @@ def install_modern_shell(win, main, panel, review, storage):
         lambda _: _focus_inspector(
             win, "time" if win.views.currentWidget() is win.wave_page
             else "spectrum"))
+    # pyqtgraph's manually changed signal is distinct from programmatic
+    # LIVE repaints; remember zoom coordinates after a user drag/wheel.
+    def remember_zoom(plot):
+        def save(*_):
+            def commit():
+                r = plot.viewRange()
+                if len(r) == 2 and all(len(ax) == 2 for ax in r):
+                    win._manual_spec_axes = (
+                        float(r[0][0]), float(r[0][1]),
+                        float(r[1][0]), float(r[1][1]))
+            QtCore.QTimer.singleShot(0, commit)
+        plot.getViewBox().sigRangeChangedManually.connect(save)
+    remember_zoom(win.spec)
+    remember_zoom(win.overview_spec)
     win.setWindowTitle("MVK Live · Анализатор вибрации")
     _build_menu(win)
     _refresh_status(win)
