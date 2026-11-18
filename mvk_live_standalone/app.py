@@ -1256,6 +1256,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self._spectrum.mode != self.analysis.currentData()):
             self._spectrum = None
             self.spec_curve.setData([],[])
+            self._clear_overview_plot("spectrum")
             self.metrics.setText("Пересчёт выбранного физического спектра")
         self._render_wave()
         if self._spectrum is None:self._apply_operator_ranges()
@@ -1680,11 +1681,27 @@ class LiveWindow(QtWidgets.QMainWindow):
         if mode!="highpass":self.time_filter_high=upper
         self._render_wave()
 
+    def _clear_overview_plot(self, domain):
+        """Blank obsolete cloned LIVE data instead of displaying wrong ADC."""
+        if domain=="time":
+            curve=getattr(self,"overview_wave_curve",None)
+            view=getattr(self,"overview_wave",None)
+            text="Временной сигнал · нет подтверждённых отсчётов"
+        else:
+            curve=getattr(self,"overview_spec_curve",None)
+            view=getattr(self,"overview_spec",None)
+            text="Спектр · ожидание реальных отсчётов АЦП"
+        if curve is not None:
+            curve.setData([],[])
+        if view is not None:
+            view.setTitle(text)
+
     def _render_wave(self,*_):
         requested=float(self.timebase.currentData())
         if self.freeze.isChecked() and self._freeze_samples is not None:
             if self.adc.currentData()!=self._freeze_channel:
                 self.wave_curve.setData([],[])
+                self._clear_overview_plot("time")
                 self.wave_stats.setText(
                     "В замороженном сигнале выбран другой канал АЦП")
                 return
@@ -1696,6 +1713,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             ch=self._gui_ring.channel(self.adc.currentData())
             if ch is None or ch.available==0:
                 self.wave_curve.setData([],[])
+                self._clear_overview_plot("time")
                 self.wave_stats.setText(
                     "Временной сигнал: ожидание подтверждённых АЦП Float32")
                 self.wave.setXRange(-requested,0,padding=0)
@@ -1704,6 +1722,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             data=ch.latest(min(ch.available,262144))
         if fs<=0 or len(data)==0:
             self.wave_curve.setData([],[])
+            self._clear_overview_plot("time")
             self.wave_stats.setText("Нет допустимых отсчётов выбранного АЦП")
             return
         # Only genuine ring samples: do not extend a 4-s packet to a
@@ -1715,6 +1734,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             selected=self.time_filter_center.currentData()
             if not isinstance(selected,tuple) or len(selected)!=2:
                 self.wave_curve.setData([],[])
+                self._clear_overview_plot("time")
                 self.wave_stats.setText("Выберите полосу из меню MVKView")
                 return
             filter_mode,filter_center=selected
@@ -1729,6 +1749,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 center=filter_center)
         except ValueError as exc:
             self.wave_curve.setData([],[])
+            self._clear_overview_plot("time")
             self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
             return
         # Peak-preserving min/max decimation is strictly for presentation.
@@ -1759,6 +1780,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave.setXRange(-available_seconds,0,padding=0)
         overview_plot=getattr(self,"overview_wave",None)
         if overview_plot is not None:
+            overview_plot.setTitle(
+                f"Временной сигнал · АЦП {self.adc.currentData()} · Fs {fs} Гц")
             overview_plot.setYRange(ymin,ymax,padding=0)
             overview_plot.setXRange(-available_seconds,0,padding=0)
         if mode=="original_preset":
@@ -1797,6 +1820,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         if ch is None or ch.available<s[2]:
             self._spectrum=None
             self.spec_curve.setData([],[])
+            self._clear_overview_plot("spectrum")
             self.metrics.setText(f"Ожидание {s[2]} подтверждённых отсчётов АЦП {s[0]}")
             return
         if self.freeze.isChecked() and self._freeze_samples is not None:
@@ -1812,6 +1836,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         except ValueError as exc:
             self._spectrum=None
             self.spec_curve.setData([],[])
+            self._clear_overview_plot("spectrum")
             self.metrics.setText(str(exc))
             return
         job_key=(stamp,s)
@@ -2006,6 +2031,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._generation+=1
         self.spec_curve.setData([],[])
         self.wave_curve.setData([],[])
+        self._clear_overview_plot("spectrum")
+        self._clear_overview_plot("time")
         self.wave_stats.setText(
             "Временной сигнал: ожидание подтверждённого АЦП для нового сеанса")
         self.wave_info.setText(
@@ -2022,7 +2049,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.extra_image.clear()
 
     def _render_spectrum(self):
-        if self._spectrum is None:return
+        if self._spectrum is None:
+            self._clear_overview_plot("spectrum")
+            return
         self._apply_axes()
         s=self._spectrum
         x=s.hz
@@ -2042,6 +2071,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         overview=getattr(self,"overview_spec_curve",None)
         if overview is not None:
             overview.setData(x[ix],y[ix],connect="finite")
+            plot=getattr(self,"overview_spec",None)
+            if plot is not None:
+                plot.setTitle(
+                    f"{s.mode.upper()} · АЦП {self.adc.currentData()} · "
+                    f"Fs {s.rate_hz} Гц · Δf {s.resolution_hz:.3g} Гц")
         self._apply_operator_ranges()
         self._cursor_text()
         label=({"fft":"FFT","welch":"Welch PSD",
