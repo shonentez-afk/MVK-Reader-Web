@@ -46,6 +46,7 @@ def _spectrum(win, mode="fft"):
     from mvk_live_standalone.vibration import analyze_vibration
     x, fs = _feed(win)
     win.nfft.setCurrentIndex(win.nfft.findData(8192))
+    win.yscale.setCurrentIndex(win.yscale.findData("linear"))
     win._spectrum = analyze_vibration(
         x, fs, kind="acceleration", mode=mode, nfft=8192)
     win._render_spectrum()
