@@ -12,6 +12,7 @@ a hardware reference. No networking, instrument configuration or TACH.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -185,11 +186,16 @@ class MeasurementHistory:
                 );
             """)
 
+    @contextmanager
     def _db(self):
         conn=sqlite3.connect(self.db,timeout=4)
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=4000")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     @staticmethod
     def _valid_session(session:str):
