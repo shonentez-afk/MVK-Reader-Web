@@ -1570,8 +1570,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._redraw_short_trend()
 
     def _advanced_adc_changed(self,*_):
-        self._invalidate_kurtogram(
-            f"АЦП {self.adc.currentData()}: кюртограмму нужно пересчитать")
+        pinned=getattr(self,"_modern_method_pins",{})
+        if "kurtogram" not in pinned:
+            self._invalidate_kurtogram(
+                f"АЦП {self.adc.currentData()}: кюртограмму нужно пересчитать")
         # A former channel's short-term Live results must never appear as
         # current ADC after changing channel from any of the workspaces.
         self._waterfall_rows.clear()
@@ -1583,6 +1585,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.short_trend_info.setText(
             f"АЦП {self.adc.currentData()} · ожидание новых подтверждённых окон")
         for mode,plot in self.extra_method_plots.items():
+            if mode in pinned:
+                continue  # detached snapshot has its own independent source
             self.extra_method_images[mode].clear()
             self.extra_method_lines[mode].setData([],[])
             plot.setTitle(
@@ -1973,7 +1977,8 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._ipc_client.read_channel,self._ipc_channel,count)
 
     def _clear(self,message):
-        self._invalidate_kurtogram("Нет проверенных отсчётов нового сеанса")
+        if "kurtogram" not in getattr(self,"_modern_method_pins",{}):
+            self._invalidate_kurtogram("Нет проверенных отсчётов нового сеанса")
         self._preview=None
         self._ipc_client=None
         if self.freeze.isChecked():
@@ -2132,8 +2137,9 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._render_wave()
 
     def _toggle_freeze(self,checked):
-        self._invalidate_kurtogram(
-            "Режим Freeze/Live изменён: требуется новая кюртограмма")
+        if "kurtogram" not in getattr(self,"_modern_method_pins",{}):
+            self._invalidate_kurtogram(
+                "Режим Freeze/Live изменён: требуется новая кюртограмма")
         if checked:
             channel=self._gui_ring.channel(self.adc.currentData())
             if channel is None or channel.available<256:
@@ -2574,16 +2580,26 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         try:
             length=int(self.kurtogram_window.currentData())
-            samples,fs,stamp=self._current_window(length)
+            pinned=getattr(self,"_modern_method_pins",{}).get("kurtogram")
+            if pinned is not None:
+                if len(pinned["samples"])<length:
+                    raise ValueError("Окно больше зафиксированной выборки; выберите новый источник")
+                samples=pinned["samples"][-length:].copy()
+                fs,stamp=pinned["fs"],pinned["stamp"]
+            elif "kurtogram" in getattr(self,"_modern_windows",{}):
+                raise ValueError("Источник отсутствует. Выберите новый источник в окне")
+            else:
+                samples,fs,stamp=self._current_window(length)
             level=int(self.kurtogram_levels.currentData())
             # Once the window was copied, heavy FIR processing runs OFF the
             # Qt thread; the hardware, Go RX and AUX4700 never change.
             self._invalidate_kurtogram(
                 f"Fast Kurtogram: вычисление {length} реальных отсчётов "
                 f"АЦП {self.adc.currentData()} · Fs={fs} · уровень {level}")
-            self._kurt_adc=self.adc.currentData()
-            self._kurt_session=self._gui_ring.session_id
-            self._kurt_frozen=self.freeze.isChecked()
+            self._kurt_adc=(pinned["adc"] if pinned else self.adc.currentData())
+            self._kurt_session=(pinned["session"] if pinned else self._gui_ring.session_id)
+            self._kurt_frozen=(pinned["frozen"] if pinned else self.freeze.isChecked())
+            self._kurt_is_pinned=pinned is not None
             self._kurt_rx_key=stamp
             self._kurt_future=self._extra_executor.submit(
                 compute_fast_kurtogram,samples,fs,nlevel=level)
@@ -2602,9 +2618,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         except (ValueError,RuntimeError,FloatingPointError) as exc:
             self._invalidate_kurtogram(f"Fast Kurtogram отклонён: {exc}")
             return
-        if (self._kurt_adc!=self.adc.currentData() or
-                self._kurt_session!=self._gui_ring.session_id or
-                self._kurt_frozen!=self.freeze.isChecked()):
+        if (not getattr(self,"_kurt_is_pinned",False) and
+                (self._kurt_adc!=self.adc.currentData() or
+                 self._kurt_session!=self._gui_ring.session_id or
+                 self._kurt_frozen!=self.freeze.isChecked())):
             self._invalidate_kurtogram(
                 "АЦП, сеанс или режим просмотра изменились: результат "
                 "прежнего снимка отброшен")
@@ -2716,17 +2733,26 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         mode=self.extra_mode.currentData()
         try:
-            ch=self._gui_ring.channel(self.adc.currentData())
-            if self.freeze.isChecked() and self._freeze_samples is not None:
-                fs=self._freeze_rate
-                limit=len(self._freeze_samples)-int(self.history.value()*fs)
-                if limit<1024:raise ValueError("Недостаточно сохранённых отсчётов")
-                data=self._freeze_samples[max(0,limit-32768):limit].copy()
+            pinned=getattr(self,"_modern_method_pins",{}).get(mode)
+            if pinned is not None:
+                fs=pinned["fs"]
+                data=pinned["samples"].copy()
+                requested_adc=pinned["adc"]
+            elif mode in getattr(self,"_modern_windows",{}):
+                raise ValueError("Нет зафиксированного источника. Нажмите «Взять новое текущее окно АЦП»")
             else:
-                if ch is None or ch.available<1024:
-                    raise ValueError("Недостаточно подтверждённых отсчётов")
-                fs=ch.rate_hz
-                data=ch.latest(min(ch.available,32768))
+                ch=self._gui_ring.channel(self.adc.currentData())
+                if self.freeze.isChecked() and self._freeze_samples is not None:
+                    fs=self._freeze_rate
+                    limit=len(self._freeze_samples)-int(self.history.value()*fs)
+                    if limit<1024:raise ValueError("Недостаточно сохранённых отсчётов")
+                    data=self._freeze_samples[max(0,limit-32768):limit].copy()
+                else:
+                    if ch is None or ch.available<1024:
+                        raise ValueError("Недостаточно подтверждённых отсчётов")
+                    fs=ch.rate_hz
+                    data=ch.latest(min(ch.available,32768))
+                requested_adc=self.adc.currentData()
             data=data[-min(len(data),
                            self.extra_method_windows[mode].currentData()):]
             if mode=="stft":
@@ -2740,7 +2766,8 @@ class LiveWindow(QtWidgets.QMainWindow):
                 work=real_cepstrum
                 kwargs={}
             self._extra_kind=mode
-            self._extra_request_adc=self.adc.currentData()
+            self._extra_request_adc=requested_adc
+            self._extra_request_pinned=pinned is not None
             self._extra_future=self._extra_executor.submit(work,data,fs,**kwargs)
             for button in self.extra_method_buttons.values():
                 button.setEnabled(False)
@@ -2779,7 +2806,8 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.status.setText(f"Специальный анализ: {exc}")
             return
         mode=self._extra_kind
-        if self._extra_request_adc!=self.adc.currentData():
+        if (not getattr(self,"_extra_request_pinned",False)
+                and self._extra_request_adc!=self.adc.currentData()):
             self.extra_method_infos[mode].setText(
                 "За время расчёта АЦП изменён: старый результат "
                 "отброшен, чтобы не смешивать каналы.")
