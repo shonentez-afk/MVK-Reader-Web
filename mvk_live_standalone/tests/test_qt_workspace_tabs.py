@@ -34,9 +34,10 @@ def _feed(w,fs=8192):
     t=np.arange(n,dtype=np.float64)/fs
     x=(np.sqrt(2)*(np.sin(2*np.pi*100*t)+np.sin(2*np.pi*1000*t))).astype("<f4")
     channel=IPCChannel(1,fs,x,n%(1<<32),n,hashlib.sha256(x.tobytes()).hexdigest())
-    w._gui_ring.ingest_preview(IPCPreview(
-        "TEST_TWO_TONES",DOMAIN,True,datetime.now(timezone.utc),{1:channel}))
-    w._preview=True
+    preview=IPCPreview(
+        "TEST_TWO_TONES",DOMAIN,True,datetime.now(timezone.utc),{1:channel})
+    w._gui_ring.ingest_preview(preview)
+    w._preview=preview
     return x
 
 
