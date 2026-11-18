@@ -132,7 +132,10 @@ func TestStage108RejectsRawChecksumMismatchWithoutPublishing(t *testing.T) {
 }
 
 func TestStage108RefusesCaptureOnlyAndKeepsRaw(t *testing.T) {
-	b := append(fixtureBytes(makeFixture()), []byte{0xEA, 0xFE, 0xED, 0xCC, 8, 0, 0, 0}...)
+	// Unknown but WELL-FRAMED packets must be ignored by original Delphi.
+	// A non-DWORD-aligned size remains an invalid envelope and must refuse
+	// an apparently successful archive, while preserving exact RAW bytes.
+	b := append(fixtureBytes(makeFixture()), []byte{0xEA, 0xFE, 0xED, 0xCC, 10, 0, 0, 0}...)
 	dir, s := makeNativeMonitorForFixture(t, b, "REPLAY_EOF")
 	if !s.CaptureOnly || s.InvalidFrames == 0 {
 		t.Fatalf("expected capture-only, got %+v", s)
