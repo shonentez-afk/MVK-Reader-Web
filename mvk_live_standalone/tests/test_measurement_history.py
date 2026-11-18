@@ -136,6 +136,15 @@ def test_npz_history_is_sha_validated_and_time_rms_local_not_vendor(tmp_path):
     assert unit=="м/с²"
     pts,label,unit,_=history.trend(2,"velocity_rms_10_1000")
     assert len(pts)==1 and unit=="мм/с"
+    for kind,unit,amplitude in (
+        ("acceleration","м/с²",1.),
+        ("velocity","мм/с",1000/(2*np.pi*128)),
+        ("displacement","мкм",1e6/(2*np.pi*128)**2),
+    ):
+        pts,label,actual_unit,_=history.trend(2,f"fft_{kind}_peak")
+        assert actual_unit==unit and pts[0][1]==pytest.approx(amplitude,rel=.01)
+        freq,_,actual_unit,_=history.trend(2,f"fft_{kind}_peak_hz")
+        assert actual_unit=="Гц" and freq[0][1]==pytest.approx(128,abs=.1)
     assert history.trend(2,"third_octave:4")[0]==[]
     assert history.capture_npz(x,adc=2,fs=fs,session="TEST_LOCAL",
                                 capture_end=8192)==idx
