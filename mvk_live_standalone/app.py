@@ -35,6 +35,7 @@ from .advanced import (envelope_fault_lines, stft_vibration,
                        cwt_morlet_vibration, real_cepstrum,
                        gear_mesh_markers, indicative_iso10816_zone)
 from .recordings import save_snapshot, load_snapshot, save_spectrum_csv
+from .ethernet import discover_single_wired_ethernet, WiredEthernet
 from .vibration import (
     VibrationView, analyze_vibration, vibration_plot_values,
     vibration_y_label, time_features, bearing_frequency_markers,
@@ -51,6 +52,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._capture_root = capture_root
         self._active_ip = None
         self._local_ip = None
+        self._ethernet_detected: WiredEthernet | None = None
+        self._ethernet_manual_override = False
+        self._ethernet_detection_started = False
+        self._ethernet_future: Future | None = None
+        self._ethernet_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MVK-Ethernet-Discovery")
         self._last_stamp = None
         self._preview = None
         self._gui_ring = VerifiedLiveRing()
@@ -99,7 +105,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.device_ip = QtWidgets.QLineEdit()
         self.device_ip.setPlaceholderText("IP прибора МВК01")
         self.local_ip = QtWidgets.QLineEdit()
-        self.local_ip.setPlaceholderText("IPv4 проводного Ethernet")
+        self.local_ip.setPlaceholderText("IPv4 Ethernet · определяется автоматически")
+        self.local_ip.textEdited.connect(self._on_manual_ethernet_address)
         self.exe_path = QtWidgets.QLineEdit()
         self.exe_path.setPlaceholderText("Путь к проверенному MVK_Native_R6_1...exe")
         self.exe_sha = QtWidgets.QLineEdit()
@@ -120,6 +127,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         panel.addWidget(self.exe_path, 1, 1, 1, 2)
         panel.addWidget(QtWidgets.QLabel("SHA256"), 1, 3)
         panel.addWidget(self.exe_sha, 1, 4)
+        self.ethernet_info = QtWidgets.QLabel(
+            "Ethernet: при открытии определится одна физическая проводная карта Windows")
+        self.ethernet_info.setWordWrap(True)
+        self.ethernet_refresh = QtWidgets.QPushButton("Обновить Ethernet")
+        self.ethernet_refresh.clicked.connect(self._begin_ethernet_discovery)
+        panel.addWidget(self.ethernet_info, 2, 0, 1, 4)
+        panel.addWidget(self.ethernet_refresh, 2, 4)
 
         self.connect_button = QtWidgets.QPushButton("Подключить и измерять")
         self.connect_button.clicked.connect(self.start_native)
@@ -416,6 +430,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._ipc_timer.setInterval(75)  # bounded fresh ring snapshots at up to 13 Hz
         self._ipc_timer.timeout.connect(self._poll_ipc)
         self._ipc_timer.start()
+        self._ethernet_timer = QtCore.QTimer(self)
+        self._ethernet_timer.setInterval(120)
+        self._ethernet_timer.timeout.connect(self._collect_ethernet_discovery)
 
     def _read_settings(self):
         band=self.band.currentData()
@@ -1357,13 +1374,20 @@ class LiveWindow(QtWidgets.QMainWindow):
             ip=self._canonical_ipv4(self.device_ip.text())
             local=self._canonical_ipv4(self.local_ip.text())
             if ip==local:raise ValueError("IP прибора и компьютера должны различаться")
+            if (self._ethernet_detected is not None and
+                    local != self._ethernet_detected.ipv4):
+                raise ValueError(
+                    "Введённый локальный IPv4 не совпадает с единственным "
+                    "обнаруженным Ethernet. Нажмите «Обновить Ethernet».")
             exe=self._verify_native(self.exe_path.text(),self.exe_sha.text())
         except (ValueError,OSError,UnicodeError) as exc:
             QtWidgets.QMessageBox.warning(self,"Подключение запрещено",str(exc))
             return
         reply=QtWidgets.QMessageBox.question(
             self,"Допуск к прибору",
-            f"Разрешено подключиться по TCP/10230 к {ip} через Ethernet {local}?\n"
+            f"Разрешено подключиться по TCP/10230 к {ip} через Ethernet {local}" +
+            (f" ({self._ethernet_detected.name}, #{self._ethernet_detected.if_index})?\n"
+             if self._ethernet_detected else " (локальный IPv4 указан вручную)?\n")
             "Клиент не отправляет прикладных команд, но сам TCP Connect может "
             "изменить состояние МВК01. Максимальный RAW: 2048 МиБ.",
             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.No)
@@ -1382,6 +1406,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._native.start(str(exe),args)
         self.stop_button.setEnabled(True)
         self.connect_button.setEnabled(False)
+        self.ethernet_refresh.setEnabled(False)
 
     def stop_native(self):
         if self._native.state()==QtCore.QProcess.ProcessState.NotRunning:return
@@ -1397,6 +1422,7 @@ class LiveWindow(QtWidgets.QMainWindow):
     def _native_finished(self,exit_code,exit_status):
         self.connect_button.setEnabled(True)
         self.stop_button.setEnabled(False)
+        self.ethernet_refresh.setEnabled(True)
         self.status.setText(f"Native завершён (код {exit_code}); папка: {self._capture_root}")
 
     def closeEvent(self,event):
@@ -1407,11 +1433,13 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         self._timer.stop()
         self._ipc_timer.stop()
+        self._ethernet_timer.stop()
         # Do not leave NumPy/SciPy workers alive while the PySide6 interpreter
         # is tearing down: this can cause native Qt reference-count crashes.
         self._executor.shutdown(wait=True,cancel_futures=True)
         self._ipc_executor.shutdown(wait=True,cancel_futures=True)
         self._extra_executor.shutdown(wait=True,cancel_futures=True)
+        self._ethernet_executor.shutdown(wait=True,cancel_futures=True)
         super().closeEvent(event)
 
 
