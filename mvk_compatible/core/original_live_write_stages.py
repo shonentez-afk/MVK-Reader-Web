@@ -39,6 +39,7 @@ from .original_values_3100_timeline import scan_original_values_3100
 from .original_write_data_wire_replay import export_source_wire_write_intervals
 from .original_write_data_live_gate import verify_native_live_write_data
 from .original_mode2_source_files import write_verified_source_tsxml_sidecars
+from .original_live_values_proof import verify_original_live_values
 
 SOURCE="SOURCE_IDR_00809414_008099CF_LIVE_WRITE_STAGES_COMPAT_V1"
 STAGE_OPEN=0
@@ -446,6 +447,7 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             provenance=audit["output_file_sha256"]
             tach=validate_tach_evidence(archive,audit)
             source_values_events=None
+            source_live_values_evidence=None
             source_wire_evidence=[]
             source_live_data_evidence=None
             source_tsxml_receipts=[]
@@ -542,6 +544,33 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     expected_ticks=raw_summary.get("values_ticks_address_3100"),
                     expected_tail_bytes=raw_summary.get("incomplete_final_frame_bytes"),
                     ranges=ranges)
+                source_live_values_evidence=verify_original_live_values(
+                    directory,summary=raw_summary,
+                    source_sha=audit["source_raw_sha256"],
+                    qt_values_windows=[
+                        (number,w) for number,w in enumerate(ledger.windows,1)
+                        if w.kind=="values"],
+                    replayed_events=source_values_events)
+                if source_live_values_evidence is not None:
+                    for proof in source_live_values_evidence["verified_files"]:
+                        original=directory/proof["name"]
+                        copied=target/proof["name"]
+                        if (original.is_symlink() or not original.is_file()
+                                or copied.exists() or copied.is_symlink()):
+                            raise ValueError("Unsafe source live Values file copy")
+                        with original.open("rb") as src, copied.open("xb") as dst:
+                            copied_hash=sha256()
+                            copied_bytes=0
+                            while True:
+                                block=src.read(1024*1024)
+                                if not block:break
+                                dst.write(block)
+                                copied_hash.update(block)
+                                copied_bytes+=len(block)
+                            if (copied_bytes!=proof["bytes"] or
+                                    copied_hash.hexdigest()!=proof["sha256"]):
+                                raise ValueError("Source live VALUES changed during copy")
+                        emitted.append({"kind":"source_live_values_3100_proof",**proof})
             if (raw_summary is not None and frame_mark_evidence is not None
                     and any(w.kind=="data" for w in ledger.windows)):
                 # Never silently re-scale raw ADC/TACH bytes: exact source
@@ -764,6 +793,14 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     source_tsxml_receipts),
             "source_original_tsxml_delphi_full_parity_verified":False,
             "source_original_filename_algorithm_recovered":True,
+            "source_live_values_3100_verified":
+                source_live_values_evidence is not None,
+            "source_live_values_3100_windows":
+                source_live_values_evidence["verified_windows"] if
+                source_live_values_evidence is not None else 0,
+            "source_live_values_3100_events":
+                source_live_values_evidence["verified_events"] if
+                source_live_values_evidence is not None else 0,
             "original_tach_calibration_verified":False,
         }
         (target/"SOURCE_WRITE_WINDOWS_AUDIT.json").write_text(
@@ -800,6 +837,14 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                         source_tsxml_receipts),
                 "source_original_tsxml_delphi_full_parity_verified":False,
                 "source_original_filename_algorithm_recovered":True,
+                "source_live_values_3100_verified":
+                    source_live_values_evidence is not None,
+                "source_live_values_3100_windows":
+                    source_live_values_evidence["verified_windows"] if
+                    source_live_values_evidence is not None else 0,
+                "source_live_values_3100_events":
+                    source_live_values_evidence["verified_events"] if
+                    source_live_values_evidence is not None else 0,
                 "source_values_csv_exact_delphi_layout_verified":False}
     except Exception:
         if created:
