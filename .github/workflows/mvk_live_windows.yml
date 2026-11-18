@@ -41,12 +41,31 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check numpy scipy PySide6==6.11.2 pyqtgraph==0.14.0 pytest pyinstaller
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Test each Qt module in a fresh native process, avoiding
-          # cross-module PySide6/shiboken destructor state; failures remain fatal.
+          # Python/Qt on Windows can AV in pyqtgraph when a single
+          # process repeatedly destroys QMainWindow+PlotWidget fixtures.
+          # Run EVERY collected GUI test in its own interpreter.
+          # Assertion failures and real access violations remain fatal.
           Get-ChildItem mvk_live_standalone/tests/test_*.py | ForEach-Object {
-            Write-Host "Qt regression: $($_.FullName)"
-            python -X faulthandler -m pytest -q $_.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Qt suite failure: $($_.Name)" }
+            $testFile=$_.FullName
+            Write-Host "Qt regression: $testFile"
+            if ($_.Name.StartsWith("test_qt_")) {
+              $cases=@(python -m pytest --collect-only -q $testFile |
+                Where-Object { $_ -match '::test_' })
+              if ($LASTEXITCODE -ne 0 -or $cases.Count -lt 1) {
+                throw "No GUI cases collected: $testFile"
+              }
+              foreach ($caseId in $cases) {
+                python -X faulthandler -m pytest -q "$caseId"
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Qt case failure: $caseId"
+                }
+              }
+            } else {
+              python -X faulthandler -m pytest -q $testFile
+              if ($LASTEXITCODE -ne 0) {
+                throw "Qt suite failure: $testFile"
+              }
+            }
           }
       - name: Build independent Qt GUI containing its matched Go receiver
         shell: pwsh
