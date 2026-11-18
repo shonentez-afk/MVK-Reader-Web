@@ -727,6 +727,29 @@ class NativeCaptureDialog(QDialog):
                     self._mode == "capture" and
                     self._process.state() == QProcess.Running)
 
+    def source_freeze_control_active(self)->bool:
+        """Original TMVKThread.FreezeUpdate is LOCAL, never a TCP command."""
+        return bool(self._mode=="capture" and self._capture_root is not None
+                    and self._process.state()==QProcess.Running)
+
+    def send_source_freeze(self,frozen:bool)->bool:
+        """Toggle actual Go TMVKThread-compatible ring storage gate.
+
+        The already-running process consumes the line on its sole RX
+        goroutine. No instrument command and no extra socket, even when
+        hardware SetRate is disabled.
+        """
+        if type(frozen) is not bool or not self.source_freeze_control_active():
+            raise ValueError("Нет активного подтверждённого источника FreezeUpdate")
+        command=("FREEZE "+("1" if frozen else "0")+chr(10)).encode("ascii")
+        sent=self._process.write(command)
+        if sent!=len(command):
+            raise RuntimeError("Go не принял локальную команду FreezeUpdate")
+        self.log.appendPlainText(
+            "Локальное FreezeUpdate="+str(int(frozen))+
+            " передано приёмнику; исходный RAW продолжает записываться.")
+        return True
+
     def send_source_rate(self,rate:int)->bool:
         """Source original mRate1Click → SetRate through EXISTING Go socket.
 

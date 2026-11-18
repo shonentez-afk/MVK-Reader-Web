@@ -442,6 +442,17 @@ func mainInner() int {
 	}
 	var reason string
 	var runError error
+    if *replay=="" && !*sourceTask0 {
+        // Original _Unit128 Mode2 Create -> mRate1Click(Items[0]).
+        // In passive mode we reproduce the IN-MEMORY selection 65536,
+        // but NEVER transmit the real SetRate without separate consent.
+        m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
+        if m.sourceOperatorRateChan==nil {
+            local:=make(chan string,16)
+            m.sourceOperatorRateChan=local
+            go sourceOperatorRateLines(os.Stdin,local)
+        }
+    }
 	if *replay != "" {
 		fmt.Printf("ОФЛАЙН: анализ файла %s (сеть не используется)\n", *replay)
 		reason, runError = replayRaw(m, *replay, uint64(*limitMB)*1024*1024)

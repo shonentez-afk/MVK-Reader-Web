@@ -26,7 +26,8 @@ def _bounded_int(obj:dict,key:str,max_value:int=U64_MAX)->int:
 
 
 def validate_original_storage_receipt(
-        receipt:dict|None,channels:list[dict])->dict|None:
+        receipt:dict|None,channels:list[dict],
+        receive_gate:dict|None=None)->dict|None:
     """Check Go ring accounting; never claim Delphi binary/runtime parity.
 
     The optional receipt preserves existing approved historical status files.
@@ -64,9 +65,24 @@ def validate_original_storage_receipt(
         source_samples=channels[i].get("samples")
         expected_upper=source_samples if i<8 else (
             source_samples*4 if type(source_samples) is int else -1)
+        gate_row=(receive_gate["channels"][i]
+                  if receive_gate is not None else None)
+        skipped=(gate_row["rate_skipped_elements"]+
+                 gate_row["freeze_skipped_elements"]
+                 if gate_row is not None else 0)
+        admitted=(gate_row["accepted_elements"]
+                  if gate_row is not None else expected_upper)
+        # Source FreezeUpdate and MvkSampleRate mismatch DO NOT advance
+        # TMvkChannelStorage.FRxPos, while the TCP/raw counter continues.
+        # A resume may introduce a source ring gap even if native TCP
+        # SampleHeader.Index itself remained completely contiguous.
+        gate_gaps=(gate_row["rate_skipped_frames"]+
+                   gate_row["freeze_skipped_frames"]
+                   if gate_row is not None else 0)
         if (type(source_samples) is not int or source_samples<0
-                or rx>expected_upper or
-                gap>channels[i].get("sequence_discontinuities",-1)+1 or
+                or rx>expected_upper or rx>admitted or
+                rx+skipped>expected_upper or
+                gap>channels[i].get("sequence_discontinuities",-1)+1+gate_gaps or
                 dropped>channels[i].get("nonfinite_samples",-1)):
             raise ValueError("Original storage: source RX counters disagree")
         domain=row.get("input_domain")
@@ -84,8 +100,12 @@ def validate_original_storage_receipt(
         native_idx=channels[i].get("next_sample_index")
         if idx is not None and (type(idx) is not int or not 0<=idx<=U32_MAX):
             raise ValueError("Original storage: invalid uint32 device index")
-        if idx is not None and native_idx is not None and idx!=native_idx:
+        if (idx is not None and native_idx is not None and idx!=native_idx
+                and (gate_row is None or skipped==0)):
             raise ValueError("Original storage: device index contradicts Go")
+        # Different indices are allowed ONLY when the same validated
+        # Go gate proves that real TCP samples were deliberately excluded
+        # by original rate matching or FreezeUpdate.
         if rx>0 and idx is None:
             raise ValueError("Original storage: missing device index")
         verified.append({

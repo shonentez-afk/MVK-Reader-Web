@@ -108,6 +108,7 @@ type Monitor struct {
 	closed      bool
 	liveBin     *LiveBinSpool
 	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
+    sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
@@ -356,13 +357,21 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		if sample.NonFinite > 0 && c.NonFiniteSamples <= uint64(sample.NonFinite) {
 			m.warn(fmt.Sprintf("channel %d contains non-finite ADC/TACH values", sample.Channel+1))
 		}
+        // Source _Unit125:0080822F..0080824B: ALL TCP bytes were
+        // received to RAW first. Source channel storage is written only
+        // when the packet rate matches SetRate's in-memory selection and
+        // FreezeUpdate is false. No device TX is inferred or performed.
+        sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
+            m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
 		// Original channel 8/9 store the 256 raw payload BYTES, not
         // 64 Float32 samples; FRxPos is byte count for TACH in Delphi.
-        if typ==typeTach && m.sourceOriginalStorage!=nil {
+        if typ==typeTach && sourceStoreAllowed &&
+            m.sourceOriginalStorage!=nil {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
         }
         storedByCalibratedSpool:=false
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
+            m.liveBin.sourceOriginalStoreBlocked=!sourceStoreAllowed
 			// Original mRate1Click permits rate changes. Keep every subsequent
 			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
 			// corrupt TCP. Existing single-rate BIN cannot certify this session.
@@ -380,7 +389,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // A read-only capture without exported BIN must STILL have the
         // source's in-memory 2^21 ring. Its domain is explicitly raw;
         // this is not the gain-corrected GetSignal of original Delphi.
-        if typ==typeADC && !storedByCalibratedSpool &&
+        if typ==typeADC && sourceStoreAllowed && !storedByCalibratedSpool &&
             m.sourceOriginalStorage!=nil {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageUnscaledADC);e!=nil{return e}
         }

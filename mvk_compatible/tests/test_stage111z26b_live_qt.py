@@ -549,3 +549,48 @@ def test_original_qt_long_window_request_only_for_selected_page_and_tag(
         dialog.close()
         window.close()
         qt_app.processEvents()
+
+
+def test_original_qt_freeze_sends_local_go_gate_without_device_tx(
+        tmp_path,qt_app):
+    """Original bFreezeUpdate toggles source storage, not instrument writes."""
+    from PySide6.QtCore import QProcess
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.desktop.native_capture_dialog import NativeCaptureDialog
+
+    class LocalProcess:
+        writes=[]
+        def state(self):return QProcess.Running
+        def write(self,data):
+            self.writes.append(bytes(data))
+            return len(data)
+
+    win=MainWindow()
+    dlg=NativeCaptureDialog(win)
+    original_process=dlg._process
+    mock=LocalProcess()
+    try:
+        win._begin_live_capture()
+        win._native_dialog=dlg
+        dlg._mode="capture"
+        dlg._capture_root=tmp_path
+        dlg._process=mock
+        assert dlg.source_freeze_control_active()
+        assert not dlg.source_rate_tx_active()
+        controls=win.original_shell.measure_controls
+        controls.freeze.click()
+        assert win._source_live_view_frozen
+        assert mock.writes[-1].splitlines()==[b"FREEZE 1"] and mock.writes[-1].endswith(bytes((10,)))
+        assert not dlg.source_rate_tx_active()
+        controls.freeze.click()
+        assert not win._source_live_view_frozen
+        assert mock.writes[-1].splitlines()==[b"FREEZE 0"] and mock.writes[-1].endswith(bytes((10,)))
+        assert len(mock.writes)==2
+    finally:
+        dlg._mode=None
+        dlg._process=original_process
+        win._native_dialog=None
+        if win._live_active:win._end_live_capture(False)
+        dlg.close()
+        win.close()
+        qt_app.processEvents()

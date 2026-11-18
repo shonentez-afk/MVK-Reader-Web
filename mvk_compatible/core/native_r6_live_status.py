@@ -18,6 +18,7 @@ from .original_mode2_retry_timing import SOURCE_BACKOFF_WAITS_MS
 from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
 from .original_system_register_fields import verify_source_error_overlap
 from .original_source_ring_receipt import validate_original_storage_receipt
+from .original_receive_gate_receipt import validate_original_receive_gate_receipt
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
 _SOURCE_TCP_RETRY_CAUSES = frozenset((
@@ -209,9 +210,14 @@ def validate_live_status(payload: dict, *, expected_run: str,
     # The independent full-size original ring has 8 Float32 + 2 BYTE
     # channels. This is only Go RX-accounting evidence; the small preview
     # still transfers at most 262144 points and never certifies Delphi DSP.
+    source_receive_gate=validate_original_receive_gate_receipt(
+        payload.get("source_original_receive_gate"),safe)
     source_ring=validate_original_storage_receipt(
-        payload.get("source_original_storage"),safe)
+        payload.get("source_original_storage"),safe,source_receive_gate)
     result = dict(payload)
+    result["source_original_receive_gate_verified"]=source_receive_gate is not None
+    if source_receive_gate is not None:
+        result["source_original_receive_gate"]=source_receive_gate
     result["channels"] = safe
     result["source_original_storage_verified"] = source_ring is not None
     if source_ring is not None:

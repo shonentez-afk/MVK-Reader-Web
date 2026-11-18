@@ -108,6 +108,11 @@ func (s *sourceLiveTask2TX) takeOperatorLine(m *Monitor,line string) error {
  n,e:=strconv.ParseUint(tokens[1],10,32)
  if e!=nil {return errors.New("invalid original source Hz")}
  if e=s.queueRate(uint32(n));e!=nil{return e}
+ // Delphi TMVKThread.SetRate sets MvkSampleRate BEFORE writing the
+ // 36-byte queued command, independently of its eventual ACK.
+ if m.sourceOriginalRXGate!=nil {
+    if e=m.sourceOriginalRXGate.selectRate(uint32(n));e!=nil{return e}
+ }
  return s.sendNext(m)
 }
 // QProcess stdin is a LOCAL per-process control plane, never a new TCP
@@ -119,15 +124,27 @@ func sourceOperatorRateLines(in io.Reader,ch chan<- string) {
  close(ch)
 }
 func (m *Monitor) drainSourceOperatorRates(ch <-chan string) error {
- if m.sourceTask2TX==nil || ch==nil{return nil}
+ if ch==nil{return nil}
  for i:=0;i<16;i++ {
   select{
   case line,ok:=<-ch:
    if !ok{return nil}
+   // FREEZE is a LOCAL in-memory command; it does not touch the
+   // instrument TCP socket or require permission for device SetRate.
+   // The original _Unit128:0084DEA4 toggles +400CD.
+   if line=="FREEZE 1" || line=="FREEZE 0" {
+     if m.sourceOriginalRXGate!=nil {
+       m.sourceOriginalRXGate.setFreeze(line=="FREEZE 1")
+     }
+     continue
+   }
+   if m.sourceTask2TX==nil {
+      m.warn("Native command refused without source SetRate approval")
+      continue
+   }
    if e:=m.sourceTask2TX.takeOperatorLine(m,line);e!=nil {
     m.warn("Original Task2 operator rate rejected: "+e.Error())
     if errors.Is(e,errTask2SourceWrite){return e}
-    // Bad rate/command names do not terminate otherwise-valid capture.
    }
   default:return nil
   }

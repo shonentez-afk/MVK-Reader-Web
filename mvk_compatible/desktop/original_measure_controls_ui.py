@@ -2,8 +2,9 @@
 
 Geometry, five original objectNames and handlers follow private
 Projects/mvkform.dfm and _Unit128.pas. Current Native R6.1 is NOT a
-writable TMVKThread replacement: Freeze is for preview RENDER only,
-sample rate is observed (SetRate not sent), table is a verified local
+writable TMVKThread replacement: source FreezeUpdate now gates the actual
+Go 2M ring via local QProcess stdin; RAW acquisition continues without
+hardware commands. SetRate stays opt-in, table is a verified local
 CSV and channel/VALUES original device toggles are OFF during LIVE.
 Offline source-only actions are labelled explicitly, not represented
 as original native recorder behavior.
@@ -67,9 +68,10 @@ class OriginalMeasureControls:
         self.freeze.setCheckable(True)
         self.freeze.setToolTip(
             "Оригинал _Unit128:0084DEA4 переключает "
-            "TMVKThread.FreezeUpdate (в оригинале влияет и на обработку "
-            "входящих блоков). В совместимом Native R6.1 это ТОЛЬКО "
-            "пауза отображения: RAW запись продолжается.")
+            "Оригинал TMVKThread.FreezeUpdate прекращает запись в "
+            "канальные кольца, но продолжает читать TCP. В Native "
+            "локальная команда FREEZE передаётся существующему Go "
+            "приёмнику без команды прибору. RAW продолжает записываться.")
         self.freeze.clicked.connect(self._toggle_freeze)
         self.rate=self.buttons["bSampleRate"]
         self.rate_menu=QMenu(self.rate)
@@ -161,10 +163,25 @@ class OriginalMeasureControls:
             self.render()
             return
         self.window._source_live_view_frozen=self.state.frozen
-        # Source _Unit128:0084DEA4 toggles TMVKThread.FreezeUpdate;
-        # with read-only Go this MUST remain a local ProcessBufferChunk
-        # model. Its state follows the real user click, while full RAW
-        # ingestion is never paused by the provisional Qt button.
+        # Original _Unit128:0084DEA4 toggles TMVKThread.FreezeUpdate.
+        # Go receives an in-memory gate change over EXISTING QProcess
+        # stdin (not instrument TCP) and confirms it in the next status.
+        # Without an active Native process, this remains render-only.
+        dlg=getattr(self.window,"_native_dialog",None)
+        active=bool(dlg is not None and
+            getattr(dlg,"source_freeze_control_active",lambda:False)())
+        if active:
+            try:
+                dlg.send_source_freeze(self.state.frozen)
+            except (ValueError,RuntimeError,OSError) as exc:
+                # Never claim that the operator's source storage freeze
+                # occurred when local Go failed to accept the command.
+                self.state=self.state.toggle_freeze()
+                self.window._source_live_view_frozen=self.state.frozen
+                self.window.statusBar().showMessage(
+                    "FreezeUpdate не принят приёмником: "+str(exc))
+                self.render()
+                return
         trace=getattr(self.window,"_source_mode2_runtime",None)
         if trace is not None and trace.capture_started and not trace.finished:
             trace.set_source_preview_freeze(self.state.frozen)

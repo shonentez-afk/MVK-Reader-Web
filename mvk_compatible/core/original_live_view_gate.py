@@ -94,6 +94,25 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                     ch.first_index,ch.next_index,len(ch.samples))):
             return deny("Нарушены исходные границы или частота АЦП",
                         "CHANNEL_MISMATCH")
+        # Unlike the forensic Native preview, the original Delphi
+        # TMvkChannelStorage does NOT record packets discarded by
+        # MvkSampleRate mismatch or FreezeUpdate. A valid preview ZIP
+        # can still contain those excluded samples: wait until its ENTIRE
+        # selected window follows the last excluded native sample.
+        source_gate=(status.get("source_original_receive_gate")
+                     if status.get("source_original_receive_gate_verified") is True
+                     else None)
+        if source_gate is not None:
+            admitted=source_gate["channels"][number-1]
+            last_excluded=admitted["last_skipped_native_samples"]
+            if (last_excluded and
+                    (ch.captured_samples is None or
+                     ch.captured_samples<len(ch.samples) or
+                     ch.captured_samples-len(ch.samples)<last_excluded)):
+                return deny(
+                    "Окно содержит отсчёты, исключённые исходным "
+                    "MvkSampleRate/FreezeUpdate",
+                    "SOURCE_STORAGE_EXCLUDED")
         # Original source SampleHeader.Index is absolute; the JSON
         # "samples" above counts ONLY bytes captured during this session.
         # The previous <= samples test rejected valid late-attach windows.
