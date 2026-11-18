@@ -68,6 +68,11 @@ type LiveStatus struct {
     LastAUXUTC             *string             `json:"last_aux_received_utc"`
     Channels               []LiveChannelStatus `json:"channels"`
     DSPOriginal             []CalculatedChannel `json:"dsp_original_aux4700_channels,omitempty"`
+    // Only after the actual initial full device configuration was accepted:
+    // per-channel Float32 FRange, from 0x100+ch*0x100+0x0E. These are the
+    // exact factors ALREADY applied by LiveBinSpool to IPC/BIN samples.
+    // Missing initial calibration => omit field; never invent 1.0.
+    OriginalADCFRanges      []float32 `json:"adc_frange_from_config,omitempty"`
     EndReason              string              `json:"end_reason,omitempty"`
     ExportStatus           string              `json:"export_status,omitempty"`
     ProgressError          string              `json:"progress_error,omitempty"`
@@ -121,8 +126,16 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
     for i:=0;i<8;i++ {
         if m.liveDSPSeen[i] {originalDSP=append(originalDSP,m.liveDSPOriginal[i])}
     }
+    // The first real calibration is decoded and validated by makeGain when
+    // starting the BIN spool. Never report an unobserved or raw-only gain.
+    var adcFRanges []float32
+    if m.liveBin!=nil && m.liveBin.begun {
+        adcFRanges=make([]float32,8)
+        copy(adcFRanges,m.liveBin.gain[:])
+    }
     return LiveStatus{
         DSPOriginal:originalDSP,
+        OriginalADCFRanges:adcFRanges,
         Schema: liveStatusSchema, Phase: phase, SessionID: filepath.Base(m.dir),
         UpdatedUTC: now.UTC().Format(time.RFC3339Nano),
         ElapsedSeconds: elapsed, TargetSeconds: m.liveTargetSeconds,
