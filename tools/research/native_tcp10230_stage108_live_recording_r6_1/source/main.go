@@ -450,6 +450,7 @@ func mainInner() int {
         // receiving. It never relies on post-capture status snapshots
         // to guess MvkSampleRate / FreezeUpdate / first ADC1.
         m.sourceLiveDataWriter=newSourceLiveDataWriter(dir)
+        m.sourceLiveValuesWriter=newSourceLiveValuesWriter(dir)
 	}
 	if *liveStatus {
 		m.liveProgressEnabled = true
