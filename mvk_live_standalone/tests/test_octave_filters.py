@@ -48,3 +48,16 @@ def test_invalid_band_or_nyquist_is_rejected_not_silently_clamped():
         time_filter_waveform(np.ones(8192),8192,mode="octave",center=4000.)
     with pytest.raises(ValueError,match="трёх периодов"):
         time_filter_waveform(np.ones(64),8192,mode="third_octave",center=1.)
+
+def test_octave_rss_from_original_thirds_provenance_and_missing_values():
+    import numpy as np
+    from mvk_live_standalone.octave_filters import octave_rss_from_thirds
+    from mvk_live_standalone.original_dsp import _THIRD_HZ
+    v=np.ones(43)
+    centers,sums=octave_rss_from_thirds(_THIRD_HZ,v)
+    assert len(centers)==14
+    assert np.allclose(sums,np.sqrt(3))
+    v[2]=np.nan
+    _,sums=octave_rss_from_thirds(_THIRD_HZ,v)
+    assert np.isnan(sums[0])
+    assert np.isfinite(sums[1])

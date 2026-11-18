@@ -62,3 +62,22 @@ def preset_description(family:str, nominal:float)->str:
     low,high=preset_band(family,nominal)
     return (f"{FAMILY_LABELS[family]} · {nominal:g} Гц "
             f"({low:.3g}–{high:.3g} Гц; локальный фильтр, не приборный FIR)")
+
+def octave_rss_from_thirds(third_hz, third_rms):
+    """APP_DERIVED RSS of three original 1/3-octave RMS cells; not device 1/1."""
+    import numpy as np
+    frequency=np.asarray(third_hz,dtype=np.float64)
+    raw=np.asarray(third_rms,dtype=np.float64)
+    if frequency.shape!=(43,) or raw.shape!=(43,):
+        raise ValueError("Для сводных 1/1 нужны 43 исходные 1/3 полосы")
+    centres=np.asarray(NOMINAL_CENTRES["octave"],dtype=np.float64)
+    values=np.full(centres.shape,np.nan,dtype=np.float64)
+    for i,nominal in enumerate(centres):
+        matches=np.flatnonzero(np.isclose(frequency,nominal,atol=.001,rtol=0))
+        if len(matches)!=1:continue
+        index=int(matches[0])
+        if index==0 or index+1>=len(raw):continue
+        triple=raw[index-1:index+2]
+        if np.all(np.isfinite(triple)) and np.all(triple>=0):
+            values[i]=float(np.sqrt(np.sum(triple**2)))
+    return centres,values

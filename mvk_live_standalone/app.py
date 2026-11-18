@@ -32,7 +32,8 @@ from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
 from .original_dsp import read_original_dsp_bands
 from .frange import original_applied_frange
-from .octave_filters import FAMILIES, nominal_centres, preset_band, preset_description
+from .octave_filters import (FAMILIES, nominal_centres, preset_band,
+                             preset_description, octave_rss_from_thirds)
 from .spectrum_controls import (VIEW_MODES, FILTER_CHOICES, X_LIMITS_HZ,
                                 view_settings, x_limit_hz, y_height_options,
                                 visible_y_range)
@@ -490,17 +491,51 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.extra_pages.addTab(self.waterfall,"Водопад")
         dsp_panel=QtWidgets.QWidget()
         dsp_layout=QtWidgets.QVBoxLayout(dsp_panel)
+        adc_row=QtWidgets.QHBoxLayout()
+        adc_row.addWidget(QtWidgets.QLabel("Расчётные данные АЦП"))
+        self.dsp_adc=QtWidgets.QComboBox()
+        for channel in range(1,9):
+            self.dsp_adc.addItem(f"АЦП {channel}",channel)
+        self.dsp_adc.setCurrentIndex(self.adc.currentIndex())
+        adc_row.addWidget(self.dsp_adc)
+        self.dsp_source_hint=QtWidgets.QLabel(
+            "ORIGINAL AUX4700 отдельно от APP_DERIVED")
+        adc_row.addWidget(self.dsp_source_hint,stretch=1)
+        dsp_layout.addLayout(adc_row)
         self.dsp_pages=QtWidgets.QTabWidget(dsp_panel)
         dsp_rms_page=QtWidgets.QWidget()
         dsp_rms_layout=QtWidgets.QVBoxLayout(dsp_rms_page)
+        bands_row=QtWidgets.QHBoxLayout()
+        bands_row.addWidget(QtWidgets.QLabel("Частотные полосы"))
+        self.dsp_band_mode=QtWidgets.QComboBox()
+        self.dsp_band_mode.addItem("1/3 октавы · оригинальные 43 СКЗ","third")
+        self.dsp_band_mode.addItem("1/1 октавы · сводка из 1/3 СКЗ","octave")
+        bands_row.addWidget(self.dsp_band_mode)
+        bands_row.addStretch(1)
+        dsp_rms_layout.addLayout(bands_row)
         self.dsp_plot=pg.PlotWidget(title="АUX4700 · переданные прибором 43 третьоктавных СКЗ ВУ")
         self.dsp_plot.setLabel("bottom","Центр полосы",units="Гц")
         self.dsp_plot.setLabel("left","Виброускорение СКЗ",units="м/с²")
         self.dsp_plot.showGrid(x=True,y=True,alpha=.2)
         self.dsp_curve=self.dsp_plot.plot(pen=pg.mkPen("#6b8cbd",width=1.5),
                                           symbol="o",symbolSize=4)
-        dsp_rms_layout.addWidget(self.dsp_plot)
-        self.dsp_pages.addTab(dsp_rms_page,"43 частоты · СКЗ ВУ")
+        dsp_rms_layout.addWidget(self.dsp_plot,stretch=2)
+        self.dsp_bands_table=QtWidgets.QTableWidget(0,2)
+        self.dsp_bands_table.setHorizontalHeaderLabels(
+            ["Центр полосы, Гц","ВУ СКЗ, м/с²"])
+        self.dsp_bands_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.dsp_bands_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        dsp_rms_layout.addWidget(self.dsp_bands_table,stretch=1)
+        self.dsp_band_note=QtWidgets.QLabel(
+            "1/3: оригинальные 43 СКЗ AUX4700. "
+            "1/1: APP_DERIVED RSS трёх исходных 1/3 полос; "
+            "не самостоятельный оригинальный аппаратный фильтр.")
+        self.dsp_band_note.setWordWrap(True)
+        dsp_rms_layout.addWidget(self.dsp_band_note)
+        self.dsp_band_mode.currentIndexChanged.connect(self._plot_dsp_bands)
+        self.dsp_pages.addTab(dsp_rms_page,"Октавные полосы 1/3 · 1/1")
         dsp_extra_page=QtWidgets.QWidget()
         dsp_extra_layout=QtWidgets.QVBoxLayout(dsp_extra_page)
         dsp_controls=QtWidgets.QHBoxLayout()
@@ -579,7 +614,15 @@ class LiveWindow(QtWidgets.QMainWindow):
             "Графики используют уже откалиброванный Native BIN/IPC.")
         self.derived_layout.addWidget(self.frange_info)
         self.derived_layout.addStretch(1)
-        self.dsp_pages.addTab(self.derived_page,"Расчёты MVK Live")
+        self.local_values_table=QtWidgets.QTableWidget(10,3)
+        self.local_values_table.setHorizontalHeaderLabels(
+            ["Локальный показатель","Значение","Единица"])
+        self.local_values_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.local_values_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.derived_layout.insertWidget(3,self.local_values_table,stretch=1)
+        self.dsp_pages.addTab(self.derived_page,"Показатели MVK Live")
         self.bearing_diagnostics=QtWidgets.QLabel(
             "Подшипники: введите 1× и геометрию; локальное SNR, без эталонных измерений")
         self.diagnostics_page=QtWidgets.QWidget()
@@ -595,6 +638,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             w.currentIndexChanged.connect(self._on_control_change) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._on_control_change)
         for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
+        self.dsp_adc.currentIndexChanged.connect(
+            lambda index:self.adc.setCurrentIndex(index))
+        self.adc.currentIndexChanged.connect(
+            lambda index:self.dsp_adc.setCurrentIndex(index))
         self.rpm.valueChanged.connect(self._rpm_changed)
         for w in (self.rpm,self.balls,self.ball_diameter,self.pitch_diameter,self.contact_angle):
             w.valueChanged.connect(self._update_markers)
@@ -918,11 +965,66 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp24_plot.setLabel(
             "left","Исходное значение прибора · единицы уточняются")
 
+    def _plot_dsp_bands(self,*_):
+        packet=self._dsp_last
+        if packet is None:
+            self.dsp_curve.setData([],[])
+            self.dsp_bands_table.setRowCount(0)
+            return
+        if self.dsp_band_mode.currentData()=="octave":
+            freqs,values=octave_rss_from_thirds(
+                packet.frequency_hz,packet.acceleration_rms)
+            provenance="APP_DERIVED · сводные 1/1 из оригинальных 1/3 СКЗ"
+        else:
+            freqs,values=packet.frequency_hz,packet.acceleration_rms
+            provenance="ORIGINAL AUX4700 · 43 третьоктавных СКЗ"
+        mask=np.isfinite(values)
+        self.dsp_curve.setData(freqs[mask],values[mask])
+        self.dsp_plot.setTitle(provenance)
+        self.dsp_bands_table.setRowCount(len(freqs))
+        for row,(hz,val) in enumerate(zip(freqs,values)):
+            for col,s in enumerate((f"{hz:g}",
+                           "—" if not np.isfinite(val) else f"{val:.8g}")):
+                item=QtWidgets.QTableWidgetItem(s)
+                if s=="—":item.setToolTip(
+                    "Недоступно: исходный NaN не подменяется нулём")
+                self.dsp_bands_table.setItem(row,col,item)
+        self.dsp_band_note.setText(
+            provenance+" · м/с² · неполные исходные полосы сохраняют "
+            "недоступность локальных сводных значений.")
+
+    def _fill_local_values(self,features,velocity=None):
+        fields=(
+            ("ВУ СКЗ",features.rms_m_s2,"м/с²"),
+            ("ВУ пик",features.peak_m_s2,"м/с²"),
+            ("ВУ пик-пик",features.peak_to_peak_m_s2,"м/с²"),
+            ("Крест-фактор",features.crest_factor,"безразм."),
+            ("Куртозис Pearson",features.kurtosis_pearson,"безразм."),
+            ("Асимметрия",features.skewness,"безразм."),
+            ("Импульсный фактор",features.impulse_factor,"безразм."),
+            ("Фактор формы",features.shape_factor,"безразм."),
+            ("Фактор зазора",features.clearance_factor,"безразм."),
+            ("ВС СКЗ 10–1000 Гц",(
+                velocity.rms if velocity is not None and velocity.valid and
+                velocity.high_hz>=1000. else None),"мм/с"),
+        )
+        for row,(label,value,unit) in enumerate(fields):
+            for col,s in enumerate((label,
+                         "—" if value is None or not math.isfinite(value)
+                             else f"{value:.8g}",unit)):
+                item=QtWidgets.QTableWidgetItem(s)
+                item.setToolTip(
+                    "APP_DERIVED из проверенного калиброванного окна; "
+                    "не приборный AUX4700")
+                self.local_values_table.setItem(row,col,item)
+
     def _reset_dsp(self,message):
         self._dsp_last=None
         self.dsp_curve.setData([],[])
+        self.dsp_bands_table.setRowCount(0)
         self.dsp24_curve.setData([],[])
         self.dsp24_table.clearContents()
+        self.dsp_source_hint.setText(message)
         self.dsp_info.setText(message)
 
     def _render_dsp(self):
@@ -938,9 +1040,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         if band is None:
             self._reset_dsp("AUX4700: оригинальные расчётные данные выбранного АЦП ещё не получены")
             return
-        good=np.isfinite(band.acceleration_rms)
-        self.dsp_curve.setData(band.frequency_hz[good],band.acceleration_rms[good])
         self._dsp_last=band
+        self._plot_dsp_bands()
+        self.dsp_source_hint.setText(
+            f"ORIGINAL AUX4700 · пакет {band.update} · "+
+            ("LIVE" if status.get("phase")=="RECORDING" else "НЕ Live"))
         if band.has_extended:
             # Register slots 1..24 are NOT the same as 43 third-octave
             # frequencies. Original register map is kept precisely.
@@ -1237,6 +1341,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                     v=result.broadband_velocity
                     detail+=f" · ВС {v.low_hz:g}–{v.high_hz:g} Гц: {v.rms:.3g} {v.unit} СКЗ"
                 self.features_label.setText("APP_DERIVED · "+detail)
+                self._fill_local_values(result.features,result.broadband_velocity)
                 if result.auto_envelope is not None:
                     choice=result.auto_envelope
                     self.metrics.setText(self.metrics.text()+

@@ -56,9 +56,9 @@ def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
     assert w.spec.parent() is not w.centralWidget()
     assert w.views.currentWidget()==w.spectrum_page
     assert [w.dsp_pages.tabText(i) for i in range(w.dsp_pages.count())]==[
-        "43 частоты · СКЗ ВУ",
+        "Октавные полосы 1/3 · 1/1",
         "24 позиции · СКЗ / Пик / Размах",
-        "Расчёты MVK Live",
+        "Показатели MVK Live",
     ]
     assert [w.extra_pages.tabText(i) for i in range(w.extra_pages.count())]==[
         "Водопад","Тренд СКЗ","STFT / CWT / Кепстр",
