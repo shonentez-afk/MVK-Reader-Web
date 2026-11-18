@@ -49,7 +49,21 @@ jobs:
           set -euo pipefail
           for test_file in mvk_live_standalone/tests/test_*.py; do
             echo "::group::Qt regression: $test_file"
-            python -X faulthandler -m pytest -q "$test_file"
+            if [[ "$test_file" == "mvk_live_standalone/tests/test_qt_measurement_history.py" ]]; then
+              # PySide6/shiboken 6.12 can abort at interpreter finalization
+              # after repeated Qt windows + pyqtgraph overlays in ONE module
+              # process (none_dealloc), despite passing all assertions.
+              # Execute EVERY collected test in its own process; keep genuine
+              # assertion and crash failures fatal; never skip a case.
+              mapfile -t cases < <(python -m pytest --collect-only -q "$test_file" |
+                  grep "^$test_file::")
+              test "${#cases[@]}" -ge 1
+              for case_id in "${cases[@]}"; do
+                python -X faulthandler -m pytest -q "$case_id"
+              done
+            else
+              python -X faulthandler -m pytest -q "$test_file"
+            fi
             echo "::endgroup::"
           done
 
