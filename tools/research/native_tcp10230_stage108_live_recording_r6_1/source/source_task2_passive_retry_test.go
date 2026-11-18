@@ -105,3 +105,76 @@ func TestTask2PassiveReconnectTwoLoopbackSocketsNeverTransmitsSetRate(t *testing
  default:
  }
 }
+
+
+func TestTask2DeniedUsesOriginalRetryOnlyWithReconnectApproval(t *testing.T) {
+    // _Unit125 008080C5 -> 0080896D -> 008089A3:
+    // DENIED ends the current Task2 socket, but not the original worker.
+    // In this implementation a *new* socket still needs reconnect approval.
+    listener,e:=net.Listen("tcp4","127.0.0.1:0")
+    if e!=nil{t.Fatal(e)}
+    defer listener.Close()
+    ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second)
+    defer cancel()
+    denial:=sourceReply(typeDenied)
+    next:=task2Status0Param(0).Raw
+    serverErrors:=make(chan error,1)
+    var count atomic.Int32
+    go func(){
+        first,err:=listener.Accept()
+        if err!=nil{serverErrors<-err;return}
+        count.Add(1)
+        if _,err=first.Write(denial);err!=nil{
+            _=first.Close();serverErrors<-err;return
+        }
+        _=first.Close()
+        second,err:=listener.Accept()
+        if err!=nil{serverErrors<-err;return}
+        count.Add(1)
+        if _,err=second.Write(next);err!=nil{
+            _=second.Close();serverErrors<-err;return
+        }
+        // Let the RX worker process the fresh Stage0->1 PARAM on
+        // its second socket, then simulate a local operator stop.
+        time.Sleep(180*time.Millisecond)
+        cancel()
+        _=second.Close()
+        serverErrors<-nil
+    }()
+    m,e:=NewMonitor(filepath.Join(t.TempDir(),"denied_retry"),
+        "LIVE_TASK2_PASSIVE_RECONNECT_APPROVED","127.0.0.1")
+    if e!=nil{t.Fatal(e)}
+    m.sourceTCP=&sourceTCPLedger{}
+    m.sourceOriginalTask2Stage=newSourceOriginalTask2Lifecycle()
+    m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
+    m.sourceAfterRAWReconnect=true
+    reason,e:=sourceTask2CaptureAddressRetry(
+        ctx,m,listener.Addr().String(),0,4*1024*1024,nil)
+    if reason!="STOPPED_BY_USER" || e!=nil {
+        t.Fatalf("Task2 denied/reconnect %q: %v",reason,e)
+    }
+    select{
+    case err:=<-serverErrors:if err!=nil{t.Fatal(err)}
+    case <-time.After(3*time.Second):t.Fatal("fake source hung")
+    }
+    report,_,e:=m.Finalize("STOPPED_BY_USER")
+    if e!=nil{t.Fatal(e)}
+    if count.Load()!=2 || report.SourceTCPConnectionCount!=2 ||
+       report.SourceTCPReconnectAfterRAW!=1 ||
+       report.SourceInitialRetryAttempts!=1 ||
+       report.SourceSetRateCount!=0 || !report.ReadOnly ||
+       report.Denials!=1 || report.SourceNonemptyParameters!=1 ||
+       report.RawBytes!=uint64(len(denial)+len(next)) ||
+       !report.SourceTCPSegmentCopiesVerified ||
+       m.sourceOriginalTask2Stage.attempts!=2 {
+        t.Fatalf("original Task2 denial/reconnect receipt mismatched: %+v",report)
+    }
+    raw,e:=os.ReadFile(filepath.Join(m.dir,"incoming.raw"))
+    if e!=nil || !bytes.Equal(raw,append(append([]byte{},denial...),next...)) {
+        t.Fatal("source Denied/Next-PARAM RAW changed",e)
+    }
+    if len(m.sourceTCP.Segments)!=2 ||
+       m.sourceTCP.Segments[0].EndReason!="SOURCE_OPERATION_DENIED" {
+        t.Fatalf("source denial end reason not preserved: %+v",m.sourceTCP.Segments)
+    }
+}
