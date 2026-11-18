@@ -67,6 +67,9 @@ type Summary struct {
     SourceLiveWriteDataAuditSHA256 string `json:"source_live_write_data_audit_sha256,omitempty"`
     SourceLiveWriteDataWindows uint64 `json:"source_live_write_data_windows,omitempty"`
     SourceLiveWriteDataPacketRecords uint64 `json:"source_live_write_data_packet_records,omitempty"`
+    SourceLiveValuesAuditSHA256 string `json:"source_live_values_audit_sha256,omitempty"`
+    SourceLiveValuesWindows uint64 `json:"source_live_values_windows,omitempty"`
+    SourceLiveValuesEventRecords uint64 `json:"source_live_values_event_records,omitempty"`
 	Chunks                 uint64            `json:"tcp_read_chunks"`
 	TotalFrames            uint64            `json:"frames_decoded"`
 	FrameCounts            map[string]uint64 `json:"frame_counts"`
@@ -117,6 +120,7 @@ type Monitor struct {
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
     sourceLiveDataWriter *sourceLiveDataWriter // original rate/freeze/ADC1-gated live file writing
+    sourceLiveValuesWriter *sourceLiveValuesWriter // original PARAM 0x3100-triggered WriteValues
 	sourceTask2TX *sourceLiveTask2TX // opt-in original SetRate on SAME socket, never service tasks
 	sourceTask0ConfigRead bool // separate original bConfigDownload Task=0, passive
 	sourceTCP *sourceTCPLedger
@@ -256,6 +260,11 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
         if m.sourceLiveDataWriter!=nil {
             if e:=m.sourceLiveDataWriter.applyFrameMarks(m);e!=nil {
                 return fmt.Errorf("original source WriteData mark: %w",e)
+            }
+        }
+        if m.sourceLiveValuesWriter!=nil {
+            if e:=m.sourceLiveValuesWriter.applyFrameMarks(m);e!=nil {
+                return fmt.Errorf("original source WriteValues mark: %w",e)
             }
         }
 	}
@@ -450,6 +459,11 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				break
 			}
 		}
+        // The original writes one VALUES row on this PARAM 0x3100
+        // before the next socket read, NOT on a later AUX snapshot.
+        if m.sourceLiveValuesWriter!=nil {
+            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at);e!=nil {return e}
+        }
 		if len(f.Raw) == 4700 {
 			m.summary.Aux4700++
 			for channel := 0; channel < 8; channel++ {
@@ -525,6 +539,7 @@ func (m *Monitor) CloseFiles() error {
 		}
 	}
     if m.sourceLiveDataWriter!=nil {m.sourceLiveDataWriter.cleanup()}
+    if m.sourceLiveValuesWriter!=nil {m.sourceLiveValuesWriter.cleanup()}
 	return first
 }
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
@@ -540,6 +555,13 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
                 // Preserve incoming.raw even if LOCAL original writer fails;
                 // a bad audit must never masquerade as an accepted session.
                 m.warn("source WriteData file/audit failure: "+e.Error())
+                m.captureOnly=true
+                m.summary.CaptureOnly=true
+            }
+        }
+        if m.sourceLiveValuesWriter!=nil {
+            if e:=m.sourceLiveValuesWriter.finalize(m);e!=nil {
+                m.warn("source WriteValues event/audit failure: "+e.Error())
                 m.captureOnly=true
                 m.summary.CaptureOnly=true
             }
