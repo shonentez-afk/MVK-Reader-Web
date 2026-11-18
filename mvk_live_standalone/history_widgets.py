@@ -77,7 +77,12 @@ class HistoryWorkspaces(QtCore.QObject):
         self._trend_last=[]
         self._selected_trend_point=None
         self._available_entries={}
+        self._filtered_entries=[]
+        # User-picked historical records survive UTC filter changes and
+        # switching compatible visualizations, even beyond the 500-row list.
+        self._pinned_entries={}
         self._table_selected=set()
+        self._compare_scope=None
         self._last_overlay=[]
         self._build_trends()
         self._build_comparison()
@@ -245,6 +250,7 @@ class HistoryWorkspaces(QtCore.QObject):
                 rows=[exact]
         if len(rows)==1:
             self._table_selected={rows[0].key}
+            self._pinned_entries={rows[0].key:rows[0]}
             self._populate_compare_table()
             self._draw_comparison()
         elif rows:
@@ -378,7 +384,13 @@ class HistoryWorkspaces(QtCore.QObject):
         return "vendor" if self.compare_mode.currentData().startswith("vendor") else "window"
 
     def _reload_compare(self,*_):
-        self._table_selected.clear()
+        scope=(self.adc.currentData(),self._source_filter())
+        if scope!=self._compare_scope:
+            # A different ADC or device/local provenance cannot share an axis
+            # or inherit silently selected records from the previous source.
+            self._table_selected.clear()
+            self._pinned_entries.clear()
+            self._compare_scope=scope
         after=before=None
         if self.compare_date_filter.isChecked():
             after=(self.compare_date_from.date().toString("yyyy-MM-dd")+
@@ -393,10 +405,19 @@ class HistoryWorkspaces(QtCore.QObject):
         except ValueError as exc:
             entries=[]
             error=f"Дата истории отклонена: {exc}"
-        self._available_entries={e.key:e for e in entries}
+        self._filtered_entries=entries
+        # The bounded archive page and up to eight pinned measurements are
+        # independent. A 2024 selection remains available when browsing 2026.
+        self._available_entries=dict(self._pinned_entries)
+        self._available_entries.update((e.key,e) for e in entries)
         self._populate_compare_table()
-        self._clear_plot()
-        if error:self.compare_info.setText(error)
+        if error:
+            self._clear_plot()
+            self.compare_info.setText(error)
+        elif self._table_selected:
+            self._draw_comparison()
+        else:
+            self._clear_plot()
 
     def _populate_compare_table(self):
         data=list(self._available_entries.values())
@@ -417,13 +438,16 @@ class HistoryWorkspaces(QtCore.QObject):
                     cell.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled|
                                   QtCore.Qt.ItemFlag.ItemIsSelectable)
                     self.compare_table.setItem(i,j,cell)
-        self.compare_recent.setEnabled(len(data)>=2)
+        self.compare_recent.setEnabled(len(self._filtered_entries)>=2)
+        page_keys={e.key for e in self._filtered_entries}
+        outside=sum(key not in page_keys for key in self._table_selected)
         self.compare_info.setText(
-            f"АЦП {self.adc.currentData()} · {len(data)} записей"
+            f"АЦП {self.adc.currentData()} · {len(self._filtered_entries)} записей"
             +(" за выбранный период UTC" if self.compare_date_filter.isChecked()
               else " (последние 500 — для более старых включите период UTC)")
             +f" · {'пакеты AUX4700' if self._source_filter()=='vendor' else 'окна АЦП'}"
-            +f" · максимум {MAX_OVERLAYS} одновременно")
+            +f" · максимум {MAX_OVERLAYS} одновременно"
+            +(f" · {outside} закреплено вне текущего периода" if outside else ""))
 
     def _selection_changed(self,item):
         if item.column()!=0:return
@@ -439,15 +463,23 @@ class HistoryWorkspaces(QtCore.QObject):
             self._table_selected.discard(key)
             self.compare_info.setText(
                 f"Максимум {MAX_OVERLAYS} наложенных линий; уберите лишние даты")
+        elif item.checkState()==QtCore.Qt.CheckState.Checked:
+            self._pinned_entries[key]=self._available_entries[key]
+        else:
+            self._pinned_entries.pop(key,None)
 
     def _choose_latest_two(self):
-        self._table_selected=set(
-            list(self._available_entries.keys())[:2])
+        # "Latest two" means latest in the visible UTC filtered page, not
+        # earlier pinned rows that may be displayed above that page.
+        recent=self._filtered_entries[:2]
+        self._table_selected={e.key for e in recent}
+        self._pinned_entries={e.key:e for e in recent}
         self._populate_compare_table()
         self._draw_comparison()
 
     def _clear_selection(self):
         self._table_selected.clear()
+        self._pinned_entries.clear()
         self._populate_compare_table()
         self._clear_plot()
 
@@ -572,6 +604,8 @@ class HistoryWorkspaces(QtCore.QObject):
             self.compare_plot.setXRange(0,10000,padding=0)
         self.compare_plot.enableAutoRange(axis="y")
         mismatch=(len(set(sample_rates))>1)
+        page_keys={e.key for e in self._filtered_entries}
+        outside=sum(e.key not in page_keys for e in selected)
         self.compare_info.setText(
             f"Наложено {len(self._last_overlay)} архивных измерений "
             f"одного АЦП · {unit} · раздельные временные метки. "
@@ -580,6 +614,8 @@ class HistoryWorkspaces(QtCore.QObject):
             "источники AUX4700 показаны напрямую. "
             +("Fs различается: X ограничена общим реальным Nyquist, "
               "исходные частотные сетки НЕ интерполированы. " if mismatch else "")
+            +(f"{outside} закреплённых записей вне текущего периода. "
+              if outside else "")
             +(("Пропущено: "+"; ".join(skipped)[:400]) if skipped else "")
         )
 

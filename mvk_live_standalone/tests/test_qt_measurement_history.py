@@ -226,3 +226,52 @@ def test_compare_date_filter_selects_old_archive_and_exact_point(w):
     ui._open_trend_in_comparison()
     assert len(ui._last_overlay)==1
     assert ui._last_overlay[0][0].time_utc.startswith("2024-03-15")
+
+def test_compare_pins_distant_utc_dates_beyond_page_limit_and_keeps_same_source_modes(w):
+    from datetime import timedelta
+    from PySide6 import QtCore
+    ui=w.history_ui
+    w.adc.setCurrentIndex(7)  # ADC8 only, isolated from other test measurements
+    w._archive.record_vendor_row(
+        "TEST_MULTI_YEAR_COMPARE",vendor_row(8,1,"2024-03-15T12:00:00Z"))
+    for tick in range(2,505):
+        utc=(datetime(2026,11,18,12,tzinfo=timezone.utc)
+             +timedelta(seconds=tick)).isoformat()
+        w._archive.record_vendor_row(
+            "TEST_MULTI_YEAR_COMPARE",vendor_row(8,tick,utc))
+    ui.compare_mode.setCurrentIndex(ui.compare_mode.findData("vendor43"))
+    ui.compare_date_from.setDate(QtCore.QDate(2024,3,1))
+    ui.compare_date_to.setDate(QtCore.QDate(2024,3,31))
+    ui.compare_date_filter.setChecked(True)
+    assert len(ui._filtered_entries)==1
+    old=ui._filtered_entries[0]
+    ui.compare_table.item(0,0).setCheckState(QtCore.Qt.CheckState.Checked)
+    assert ui._table_selected=={old.key}
+
+    # Browsing another year must NOT lose the 2024 checkbox, even though the
+    # database returns only 500 newer frames and the old frame is not in page.
+    ui.compare_date_from.setDate(QtCore.QDate(2026,11,1))
+    ui.compare_date_to.setDate(QtCore.QDate(2026,11,30))
+    assert len(ui._filtered_entries)==500
+    assert ui.compare_table.rowCount()==501
+    assert old.key in ui._available_entries and old.key in ui._table_selected
+    latest=ui._filtered_entries[0]
+    row=next(i for i in range(ui.compare_table.rowCount())
+             if ui.compare_table.item(i,0).data(
+                 QtCore.Qt.ItemDataRole.UserRole)==latest.key)
+    ui.compare_table.item(row,0).setCheckState(QtCore.Qt.CheckState.Checked)
+    ui._draw_comparison()
+    assert {e.key for e,_,_,_ in ui._last_overlay}=={old.key,latest.key}
+    assert "закреплённых" in ui.compare_info.text()
+
+    # Original 43 and 24-position vendor views are compatible sources.
+    ui.compare_mode.setCurrentIndex(ui.compare_mode.findData("vendor24_peak"))
+    assert {e.key for e,_,_,_ in ui._last_overlay}=={old.key,latest.key}
+    assert all(len(x)==24 for _,x,_,_ in ui._last_overlay)
+    ui.compare_date_filter.setChecked(False)
+    assert {e.key for e,_,_,_ in ui._last_overlay}=={old.key,latest.key}
+
+    # A different ADC or local-vs-device provenance must invalidate selection.
+    w.adc.setCurrentIndex(6)
+    assert not ui._table_selected and not ui._pinned_entries
+    assert not ui._last_overlay
