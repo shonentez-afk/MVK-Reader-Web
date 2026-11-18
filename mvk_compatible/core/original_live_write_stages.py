@@ -37,6 +37,7 @@ from .original_pagefile_recording import OriginalPageFileSelection
 from .original_measure_controls import table_rows
 from .original_values_3100_timeline import scan_original_values_3100
 from .original_write_data_wire_replay import export_source_wire_write_intervals
+from .original_write_data_live_gate import verify_native_live_write_data
 
 SOURCE="SOURCE_IDR_00809414_008099CF_LIVE_WRITE_STAGES_COMPAT_V1"
 STAGE_OPEN=0
@@ -445,6 +446,7 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             tach=validate_tach_evidence(archive,audit)
             source_values_events=None
             source_wire_evidence=[]
+            source_live_data_evidence=None
             raw_summary=None
             native_raw_path=directory/"incoming.raw"
             if (frame_mark_evidence is not None and native_raw_path.exists()):
@@ -456,6 +458,49 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 if (not isinstance(raw_summary,dict) or
                         raw_summary.get("raw_sha256")!=audit.get("source_raw_sha256")):
                     raise ValueError("Original wire writer RAW/ZIP mismatch")
+                # Stage111Z31FS: independent, per-packet verification of
+                # the actual live source WriteData rate/freeze/first-ADC1
+                # gate. This proof is DISTINCT from FR's reconstructed
+                # ungated RAW sample slices and calibrated Native BIN.
+                source_live_data_evidence=verify_native_live_write_data(
+                    directory,summary=raw_summary,
+                    source_raw_sha256=audit["source_raw_sha256"])
+                if source_live_data_evidence is not None:
+                    data_windows=sum(w.kind=="data" for w in ledger.windows)
+                    if (source_live_data_evidence["verified_source_windows"]!=
+                            data_windows):
+                        raise ValueError(
+                            "Original live Go WriteData window count not agreed with Qt")
+                    for proof in source_live_data_evidence["verified_channel_files"]:
+                        original=directory/proof["name"]
+                        copied=target/proof["name"]
+                        if (original.is_symlink() or not original.is_file()
+                                or copied.exists() or copied.is_symlink()):
+                            raise ValueError("Unsafe source live writer copy")
+                        with original.open("rb") as src, copied.open("xb") as dst:
+                            copied_hash=sha256()
+                            count=0
+                            while True:
+                                block=src.read(1024*1024)
+                                if not block:break
+                                dst.write(block)
+                                copied_hash.update(block)
+                                count+=len(block)
+                            if (count!=proof["bytes"] or
+                                    copied_hash.hexdigest()!=proof["sha256"]):
+                                raise ValueError(
+                                    "Source live WriteData changed during local copy")
+                        emitted.append({
+                            "kind":"source_live_original_rate_freeze_adc1_gated",
+                            **proof})
+            # A genuine Go writer SHA without its RAW is a hard failure,
+            # never a cue to fall back silently to FR's ungated slices.
+            if raw_summary is None:
+                summary_p=directory/"summary.json"
+                if summary_p.is_file() and not summary_p.is_symlink() and (
+                        "source_live_write_data_audit_sha256" in
+                        summary_p.read_text(encoding="utf-8")):
+                    raise ValueError("Source live WriteData audit cannot be verified without RAW")
             if (frame_mark_evidence is not None and
                     any(w.kind=="values" for w in ledger.windows)):
                 # The original writer runs on PARAM descriptor 0x3100,
@@ -689,6 +734,12 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_write_data_wire_payload_byte_exact":
                 bool(source_wire_evidence),
             "source_write_data_delphi_rate_freeze_parity_verified":False,
+            "source_live_source_gate_verified":
+                source_live_data_evidence is not None,
+            "source_live_original_writer_evidence":source_live_data_evidence,
+            "source_live_original_writer_files":
+                len(source_live_data_evidence["verified_channel_files"]) if
+                source_live_data_evidence is not None else 0,
             "original_tach_calibration_verified":False,
         }
         (target/"SOURCE_WRITE_WINDOWS_AUDIT.json").write_text(
@@ -712,6 +763,14 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "source_write_data_wire_payload_byte_exact":
                     bool(source_wire_evidence),
                 "source_write_data_delphi_rate_freeze_parity_verified":False,
+                "source_live_source_gate_verified":
+                    source_live_data_evidence is not None,
+                "source_live_original_writer_files":
+                    len(source_live_data_evidence["verified_channel_files"]) if
+                    source_live_data_evidence is not None else 0,
+                "source_live_original_packet_gate_records":
+                    source_live_data_evidence["verified_source_packet_records"] if
+                    source_live_data_evidence is not None else 0,
                 "source_values_csv_exact_delphi_layout_verified":False}
     except Exception:
         if created:
