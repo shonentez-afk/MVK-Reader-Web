@@ -149,6 +149,10 @@
 
 **Примечание к первоисточникам:** для методов W35–W43 (кроме PySDKit) главным подтверждением пока выступают статьи/математические описания, а не репозиторий готового GUI. Для repo без LICENSE статус «можно взять исходник» не ставить.
 
+## 6.1. Контроль доступности исходников 18.11.2026
+
+Проверены по GitHub **36 уникальных ссылок на исходные файлы**, найденных в каталоге 82 методов: пути/ветки доступны. Одна ошибка исправлена: репозиторий [CaringNihilistic/bearing-fault-monitor](https://github.com/CaringNihilistic/bearing-fault-monitor) использует ветку **master**, а не main; рабочий [frequency_domain.py](https://github.com/CaringNihilistic/bearing-fault-monitor/blob/master/src/bearing_pdm/features/frequency_domain.py) содержит `fault_frequency_band_features()` и `frequency_domain_features()`. Соответствующие ссылки исправлены в основном каталоге, аудите подшипников, этой матрице и CSV. **Доступность пути не означает проверенную правильность алгоритма, совместимость API или право копирования**: эти вопросы остаются на уровне каждой строки `Код просмотрен`/лицензии.
+
 ## 7. Три приватных источника оригинального MVKView: что проверено
 
 На текущей машине проверены **все три источника вместе**: `/mnt/data/mvkview.idp` (содержит в таблицах IDR имена `TMvkChannelStorage`, `GetSpectrum`, `pbSpectrum`), `/mnt/data/Projects.7z` (восстановленные `_Unit115.pas`, `_Unit128.pas`, `mvkform.dfm`), `/mnt/data/mvk_idr(1).sqlite` (25 404 функций, 92 767 вызовов, формы/компоненты/события). Исходники **не публикуются** в GitHub.
