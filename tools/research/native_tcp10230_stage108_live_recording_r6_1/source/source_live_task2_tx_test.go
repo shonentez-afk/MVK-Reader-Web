@@ -27,6 +27,8 @@ func TestApprovedSourceTask2WritesRealPCAPExact36AfterParam(t *testing.T) {
  got:=make(chan []byte,1);fail:=make(chan error,1)
  go func(){buf:=make([]byte,36);_,e:=io.ReadFull(s,buf);if e!=nil{fail<-e}else{got<-buf}}()
  if e:=tx.afterReceivedFrame(m,task2Status0Param(0));e!=nil{t.Fatal(e)}
+ // Original Execute sends on its NEXT read iteration, not the PARAM callback.
+ if e:=tx.sendNext(m);e!=nil{t.Fatal(e)}
  select{
  case raw:=<-got:
   want,_:=sourceSetRateWireBytes(65536)
@@ -153,4 +155,86 @@ func TestSourceTask2TwoApprovedSocketsResetOriginalStageAndRate(t *testing.T) {
         t.Fatalf("Task2 source reconnect did not reset/requeue: tx=%+v stage=%+v params=%d",
             m.sourceTask2TX,m.sourceOriginalTask2Stage,m.summary.SourceNonemptyParameters)
     }
+}
+
+
+func TestOriginalTask2FIFOOneCommandPerReadAndNoCallbackBurst(t *testing.T) {
+    // _Unit125:00807E8F..00807F6A dispatches ONE TList command
+    // before a ReadUInt32. Two user events only enqueue; neither sends.
+    client,device:=net.Pipe()
+    defer client.Close()
+    defer device.Close()
+    m:=&Monitor{sourceTask2TX:newSourceLiveTask2TX()}
+    m.summary.ReadOnly=true
+    tx:=m.sourceTask2TX
+    tx.conn=client
+    m.summary.SourceNonemptyParameters=1
+    m.image.Valid[0x1006],m.image.Valid[0x1007]=true,true
+    if err:=tx.afterReceivedFrame(m,task2Status0Param(0));err!=nil {
+        t.Fatal(err)
+    }
+    for _,rate:=range []string{"RATE 32768","RATE 8192"} {
+        if err:=tx.takeOperatorLine(m,rate);err!=nil {t.Fatal(err)}
+    }
+    if tx.sentCommands!=0 || tx.sentBytes!=0 || len(tx.pending)!=3 {
+        t.Fatalf("operator callback transmitted a burst, pending=%v TX=%d",
+            tx.pending,tx.sentCommands)
+    }
+    sent:=make(chan []byte,3)
+    errorsRead:=make(chan error,1)
+    go func(){
+        _=device.SetReadDeadline(time.Now().Add(3*time.Second))
+        for i:=0;i<3;i++{
+            buf:=make([]byte,sourceSetRateWriteLen)
+            if _,err:=io.ReadFull(device,buf);err!=nil {
+                errorsRead<-err;return
+            }
+            sent<-buf
+        }
+    }()
+    for i,rate:=range []uint32{65536,32768,8192}{
+        if err:=tx.sendNext(m);err!=nil {t.Fatal(err)}
+        if tx.sentCommands!=uint64(i+1) || len(tx.pending)!=2-i {
+            t.Fatalf("one-per-read FIFO violated at step %d: %+v",i,tx)
+        }
+        select{
+        case wire:=<-sent:
+            expected,_:=sourceSetRateWireBytes(rate)
+            if !bytes.Equal(wire,expected){
+                t.Fatalf("source FIFO wire order mismatch at %d",i)
+            }
+        case err:=<-errorsRead:t.Fatal(err)
+        case <-time.After(3*time.Second):t.Fatal("FIFO TX stalled")
+        }
+        if err:=tx.afterReceivedFrame(m,Frame{Type:typeAck,Raw:sourceReply(typeAck)});err!=nil {
+            t.Fatal(err)
+        }
+        if tx.sentCommands!=uint64(i+1) {
+            t.Fatal("RX callback sent another pending command before next read")
+        }
+    }
+    if tx.sentInSocket!=3 || tx.ackAfterTX!=3 || m.summary.ReadOnly {
+        t.Fatalf("same socket temporal ACK and physical TX provenance lost: %+v",tx)
+    }
+}
+func TestOriginalTask2NoAttributionOfACKOrDENIEDFromPreviousSocket(t *testing.T){
+    // Source Task2 original creates a new TIdTCPClient after disconnect:
+    // a reply on it cannot be causally after a write on the OLD socket.
+    m:=&Monitor{sourceTask2TX:newSourceLiveTask2TX()}
+    tx:=m.sourceTask2TX
+    tx.sentCommands=1
+    tx.sentBytes=36
+    tx.sentInSocket=1
+    tx.resetForNewSourceSocket(m)
+    if tx.sentInSocket!=0 {t.Fatal("prior socket TX leaked")}
+    if err:=tx.afterReceivedFrame(m,Frame{Type:typeAck});err!=nil{t.Fatal(err)}
+    if tx.ackAfterTX!=0 {t.Fatal("unsolicited new-socket ACK attributed to prior TX")}
+    if err:=tx.afterReceivedFrame(m,Frame{Type:typeDenied});!errors.Is(err,errTask2SourceDenied){
+        t.Fatal("source DENIED must stop current socket")
+    }
+    if tx.deniedAfterTX!=0 {t.Fatal("new-socket DENIED attributed to prior TX")}
+    tx.resetForNewSourceSocket(m)
+    tx.sentInSocket=1 // only a new-socket complete TX may earn temporal evidence
+    if err:=tx.afterReceivedFrame(m,Frame{Type:typeAck});err!=nil{t.Fatal(err)}
+    if tx.ackAfterTX!=1 {t.Fatal("same-socket ACK not counted")}
 }
