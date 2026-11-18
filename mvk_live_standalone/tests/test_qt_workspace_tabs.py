@@ -194,7 +194,8 @@ def test_time_original_mvkview_32_labels_have_independent_selection(gui):
     assert w.time_filter_center.currentData()==("none",None)
     w._render_wave()
     assert "Без фильтра" in w.wave_info.text()
-    index=w.time_filter_center.findData(("third_octave",1000.))
+    index=next((i for i in range(w.time_filter_center.count())
+             if w.time_filter_center.itemData(i)==("third_octave",1000.)),-1)
     assert index>=0
     w.time_filter_center.setCurrentIndex(index)
     w.timebase.setCurrentIndex(w.timebase.findData(1.))
