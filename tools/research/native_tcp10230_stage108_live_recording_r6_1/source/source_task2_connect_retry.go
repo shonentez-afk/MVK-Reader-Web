@@ -67,8 +67,14 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
   if m.summary.SourceTCPConnectionCount>socketsBefore {ticks=25}
   if ctx.Err()!=nil{return "STOPPED_BY_USER",nil}
   if m.captureOnly || (m.sourceTask2TX!=nil && m.sourceTask2TX.writeFault!=""){return reason,err}
+  // Original _Unit125:008080C5 DENIED raises errOperationDenied,
+  // the generic exception handler 0080896D unwinds the socket, then
+  // Task2 008089A3..00808B15 enters its ordinary reconnect loop.
+  // Our physical reconnect-after-RAW still requires an explicit grant:
+  // without it the denial remains terminal and its RAW is retained.
   if reason!="CONNECT_FAILED" && reason!="REMOTE_DISCONNECTED" &&
-    reason!="SOURCE_READ_TIMEOUT" && reason!="SOCKET_READ_FAILED"{
+    reason!="SOURCE_READ_TIMEOUT" && reason!="SOCKET_READ_FAILED" &&
+    reason!="SOURCE_OPERATION_DENIED" {
    return reason,err
   }
   if m.summary.RawBytes>0 && !m.sourceAfterRAWReconnect{
