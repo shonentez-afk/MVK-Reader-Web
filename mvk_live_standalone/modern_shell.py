@@ -600,7 +600,7 @@ def install_modern_shell(win, main, panel, review, storage):
     layout.setContentsMargins(6, 4, 6, 4)
     layout.setSpacing(6)
     # Four compact metric cards, instead of one tiny run-on text label.
-    win.overview_metrics = QtWidgets.QLabel("—")
+    win.overview_metrics = QtWidgets.QLabel("—", overview)
     win.overview_metrics.hide()  # compatibility alias only
     win._modern_metric_values = {}
     metric_strip = QtWidgets.QHBoxLayout()
@@ -697,8 +697,8 @@ def install_modern_shell(win, main, panel, review, storage):
     advanced_toggle = QtWidgets.QToolButton()
     advanced_toggle.setText("Точные параметры спектра")
     advanced_toggle.setCheckable(True)
-    advanced_toggle.setArrowType(QtCore.Qt.RightArrow)
-    advanced_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+    advanced_toggle.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+    advanced_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
     ss.addWidget(advanced_toggle)
     advanced_frame = QtWidgets.QWidget()
     advanced_column = QtWidgets.QVBoxLayout(advanced_frame)
@@ -723,7 +723,7 @@ def install_modern_shell(win, main, panel, review, storage):
     def toggle_advanced(checked):
         advanced_frame.setVisible(checked)
         advanced_toggle.setArrowType(
-            QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow)
+            QtCore.Qt.ArrowType.DownArrow if checked else QtCore.Qt.ArrowType.RightArrow)
     advanced_toggle.toggled.connect(toggle_advanced)
     win.operator_info.setWordWrap(True)
     win.operator_info.setProperty("fieldLabel", True)
@@ -758,8 +758,8 @@ def install_modern_shell(win, main, panel, review, storage):
     time_detail = QtWidgets.QToolButton()
     time_detail.setText("Просмотр / расширенные")
     time_detail.setCheckable(True)
-    time_detail.setArrowType(QtCore.Qt.RightArrow)
-    time_detail.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+    time_detail.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+    time_detail.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
     ts.addWidget(time_detail)
     time_advanced = QtWidgets.QWidget()
     time_advanced_layout = QtWidgets.QVBoxLayout(time_advanced)
@@ -773,7 +773,7 @@ def install_modern_shell(win, main, panel, review, storage):
     time_detail.toggled.connect(lambda enabled: (
         time_advanced.setVisible(enabled),
         time_detail.setArrowType(
-            QtCore.Qt.DownArrow if enabled else QtCore.Qt.RightArrow)))
+            QtCore.Qt.ArrowType.DownArrow if enabled else QtCore.Qt.ArrowType.RightArrow)))
     info = QtWidgets.QLabel(
         "Знаковая амплитуда м/с². Фильтр времени не изменяет FFT.")
     info.setWordWrap(True)
