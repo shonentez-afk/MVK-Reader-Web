@@ -170,7 +170,7 @@ def verify_original_live_values(
                 raise ValueError("Original WriteValues invalid timestamp") from exc
             if parsed.tzinfo is None:
                 raise ValueError("Original WriteValues timestamp lacks UTC")
-            if (event.get("frame_index")!=b["frame_index"] or
+            if (event.get("frame_index")!=b["frame_index"]+1 or
                     event.get("source_values_tick_index")!=b["source_tick_index"] or
                     event.get("param_address")!="0x3100" or
                     event.get("register_words")!=b["register_words"] or
