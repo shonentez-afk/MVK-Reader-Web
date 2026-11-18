@@ -69,8 +69,7 @@ def seed_adc(w):
 def test_tabs_are_linked_without_disturbing_original_workspaces(w):
     from PySide6 import QtCore
     assert [w.views.tabText(i) for i in range(w.views.count())]==[
-        "Спектр","Временной сигнал","Расчётные данные",
-        "Тренды","Сравнение","Доп. анализ"]
+        "Обзор", "Спектр", "Временной сигнал", "Расчётные данные"]
     ui=w.history_ui
     assert ui.trend_group.count()>=14
     assert ui.compare_mode.count()==9
@@ -105,7 +104,7 @@ def test_trend_click_links_nearest_original_packet_to_comparison(w):
     ui._selected_trend_point=ui._trend_last[0][0]
     ui.trend_go.setEnabled(True)
     ui._open_trend_in_comparison()
-    assert w.views.currentWidget()==ui.compare_page
+    assert w._modern_windows["archive-comparison"].centralWidget()==ui.compare_page
     assert ui.compare_mode.currentData()=="vendor43"
     assert len(ui._table_selected)==1
     assert len(ui._last_overlay)==1
@@ -177,13 +176,16 @@ def test_history_selected_adc_is_a_hard_filter_not_combined_in_one_axis(w):
 def test_each_history_tab_can_select_adc_without_going_back_to_spectrum(w):
     seed_vendor(w)
     ui=w.history_ui
-    w.views.setCurrentWidget(ui.trend_page)
+    from mvk_live_standalone.modern_shell import open_archive_window
+    open_archive_window(w,"trends")
+    assert w._modern_windows["archive-trends"].centralWidget()==ui.trend_page
     assert ui.trend_adc.currentData()==1
     ui.trend_adc.setCurrentIndex(1)  # ADC2 selected on Trends page
     assert w.adc.currentData()==2
     assert ui.compare_adc.currentData()==2
     assert len(ui._trend_last)==3
-    w.views.setCurrentWidget(ui.compare_page)
+    open_archive_window(w,"comparison")
+    assert w._modern_windows["archive-comparison"].centralWidget()==ui.compare_page
     ui.compare_adc.setCurrentIndex(0)
     assert w.adc.currentData()==1
     assert ui.trend_adc.currentData()==1
