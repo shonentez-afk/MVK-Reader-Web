@@ -39,7 +39,7 @@ jobs:
       - name: Install deterministic Python/Qt build dependencies
         shell: pwsh
         run: |
-          python -m pip install --disable-pip-version-check numpy scipy PySide6 pyqtgraph pytest pyinstaller
+          python -m pip install --disable-pip-version-check numpy scipy PySide6==6.11.2 pyqtgraph==0.14.0 pytest pyinstaller
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Test each Qt module in a fresh native process, avoiding
           # cross-module PySide6/shiboken destructor state; failures remain fatal.

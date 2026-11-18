@@ -35,9 +35,18 @@ GUI читает только выбранный ADC из уже существ�
 сеансов без IPC предусмотрен проверенный ZIP-превью.
 
 Запуск Python из корня репозитория:
-- py -3 -m pip install numpy scipy PySide6 pyqtgraph pytest
+- py -3 -m pip install numpy scipy PySide6==6.11.2 pyqtgraph==0.14.0 pytest
 - py -3 -m mvk_live_standalone.app
 - py -3 -m mvk_live_standalone.app --capture-root C:\path\to\capture_root
+
+## Совместимая сборка Qt
+
+Для Python 3.11 зафиксирована **PySide6 6.11.2**: версия 6.12.0
+содержит подтверждённый Qt-for-Python дефект ссылок
+PYSIDE-3474 / PYSIDE-3509 (`deallocating None`), вызывающий аварийное
+завершение Qt-приложения. Компоненты Windows EXE и Ubuntu CI используют
+одну проверяемую версию. Нельзя считать успешным тест, у которого
+пройдены проверки, но аварийно завершился процесс.
 
 ## FRange — обязательное масштабирование исходных АЦП ровно один раз
 

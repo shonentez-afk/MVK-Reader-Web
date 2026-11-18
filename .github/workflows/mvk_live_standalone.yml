@@ -37,7 +37,7 @@ jobs:
       - name: Install system Qt runtime libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxcb-cursor0
       - name: Install GUI dependencies
-        run: python -m pip install --disable-pip-version-check numpy scipy pytest PySide6 pyqtgraph
+        run: python -m pip install --disable-pip-version-check numpy scipy pytest PySide6==6.11.2 pyqtgraph==0.14.0
       - name: Qt offscreen and physical spectrum unit smoke
         # Qt/PySide6 objects belong to their native process. Reusing the
         # same Python interpreter for dozens of distinct QMainWindows can
