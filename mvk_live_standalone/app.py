@@ -51,6 +51,8 @@ from .history_widgets import HistoryWorkspaces
 from .time_controls import (TIME_WINDOWS_S, Y_ABSOLUTE_LIMITS_M_S2,
                             TIME_FILTERS, time_filter_waveform,
                             signed_time_limits, display_time_stats)
+from .graph_policies import spectrum_x_limits
+from .modern_shell import install_modern_shell
 from .vibration import (
     VibrationView, analyze_vibration, vibration_plot_values,
     vibration_y_label, time_features, bearing_frequency_markers,
@@ -132,6 +134,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._last_ipc_ok = None
         self._job_settings = None
         self._generation = 0
+        # A MANUAL spectrum axis must survive every new verified FFT frame.
+        self._manual_spec_axes = None
         self._native = QtCore.QProcess(self)
         self._native.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self._native.finished.connect(self._native_finished)
@@ -969,6 +973,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._select_primary_filter()
         self._time_filter_changed()
         self.views.setCurrentWidget(self.spectrum_page)
+        install_modern_shell(self, main, panel, review, storage)
         self._timer=QtCore.QTimer(self)
         self._timer.setInterval(900)  # current Native sidecar is published >=750 ms
         self._timer.timeout.connect(self._poll)
@@ -1143,19 +1148,37 @@ class LiveWindow(QtWidgets.QMainWindow):
         ch=self._gui_ring.channel(self.adc.currentData())
         rate=view.rate_hz if view is not None else (ch.rate_hz if ch else None)
         xmax,clipped=x_limit_hz(selected,rate)
-        self.spec.setXRange(0,xmax,padding=0)
+        log_x=self.xscale.currentData()=="log"
+        if log_x:
+            # Physical FFT Hz values must stay untransformed in the data.
+            # The pyqtgraph ViewBox of a log-X PlotItem uses log10(Hz).
+            rate_for_axis=rate if rate is not None else 2
+            length=view.nfft if view is not None else self.nfft.currentData()
+            try:
+                coordinates=spectrum_x_limits(int(rate_for_axis),int(length),
+                                              float(xmax),True)
+                xmin_view,xmax_view=coordinates.left,coordinates.right
+                xmin_hz=coordinates.physical_min_hz
+            except ValueError:
+                xmin_hz=1.0
+                xmin_view=0.0
+                xmax_view=math.log10(max(10.0,float(xmax)))
+        else:
+            xmin_hz=0.0
+            xmin_view,xmax_view=0.0,xmax
         self.waterfall.setXRange(0,xmax,padding=0)
         note=(f" · Fs={rate} Гц, доступно до {xmax:g} Гц (Nyquist)"
               if clipped else "")
         self.operator_info.setText(
             self._filter_description()+
-            f" · просмотр X: 0–{selected:g} Гц"+note)
+            f" · просмотр X: {xmin_hz:g}–{xmax:g} Гц"+
+            (" · X логарифмическая" if log_x else "")+note)
         scale=self.yscale.currentData()
         if view is not None:
             values=vibration_plot_values(
                 view,scale,reference=self.db_ref.currentData())
             mask=(np.isfinite(values)&np.isfinite(view.hz)&
-                  (view.hz>=0)&(view.hz<=xmax))
+                  (view.hz>=xmin_hz)&(view.hz<=xmax))
             visible=values[mask].tolist()
         else:
             visible=[]
@@ -1164,7 +1187,21 @@ class LiveWindow(QtWidgets.QMainWindow):
                   (self.kind.currentData(),scale)==view_settings(
                       self.spectrum_view.currentData()) else None)
         ymin,ymax=visible_y_range(visible,scale,y_height)
-        self.spec.setYRange(ymin,ymax,padding=0)
+        if self._manual_spec_axes is not None:
+            left,right,bottom,top=self._manual_spec_axes
+            if (not all(math.isfinite(v) for v in (left,right,bottom,top))
+                    or left>=right or bottom>=top):
+                self._manual_spec_axes=None
+            else:
+                xmin_view,xmax_view,ymin,ymax=left,right,bottom,top
+        for plot in (self.spec, getattr(self,"overview_spec",None)):
+            if plot is not None:
+                plot.setXRange(xmin_view,xmax_view,padding=0)
+                plot.setYRange(ymin,ymax,padding=0)
+
+    def _reset_spectrum_axis(self):
+        self._manual_spec_axes=None
+        self._apply_operator_ranges()
 
     def _read_settings(self):
         band=self.band.currentData()
@@ -1186,6 +1223,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.analysis.currentData(),self.envelope_band.currentData(),self.notch.currentData())
 
     def _on_control_change(self,*_):
+        self._manual_spec_axes = None
         self._show_envelope_if_needed()
         self._last_fft_submit=0.0
         self._last_submitted_key=None
@@ -1241,8 +1279,15 @@ class LiveWindow(QtWidgets.QMainWindow):
         # Numerical amplitudes are ALREADY logarithmic dB. A second log-Y
         # transformation would distort negative and zero dB values.
         self.spec.getPlotItem().setLogMode(x=(xs=="log"),y=False)
+        overview=getattr(self,"overview_spec",None)
+        if overview is not None:
+            overview.getPlotItem().setLogMode(x=(xs=="log"),y=False)
+            overview.setLabel("left",vertical)
 
     def _redraw_from_current(self,*_):
+        # An explicit change to the physical view/scale resets manual axes;
+        # incoming frames and ordinary _render_spectrum calls do NOT.
+        self._manual_spec_axes = None
         self._apply_axes()
         if self._spectrum is None:self._apply_operator_ranges()
         else:self._render_spectrum()
@@ -1686,6 +1731,9 @@ class LiveWindow(QtWidgets.QMainWindow):
             y=physical
             x=(np.arange(len(physical),dtype=np.float64)-len(physical))/fs
         self.wave_curve.setData(x,y)
+        overview=getattr(self,"overview_wave_curve",None)
+        if overview is not None:
+            overview.setData(x,y)
         self.wave.setLabel("bottom","Время",units="с")
         self.wave.setLabel("left","ВУ · Виброускорение",units="м/с²")
         # A waveform has signed peaks; never force a 0..positive spectrum Y.
@@ -1693,6 +1741,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave.setYRange(ymin,ymax,padding=0)
         available_seconds=len(physical)/fs
         self.wave.setXRange(-available_seconds,0,padding=0)
+        overview_plot=getattr(self,"overview_wave",None)
+        if overview_plot is not None:
+            overview_plot.setYRange(ymin,ymax,padding=0)
+            overview_plot.setXRange(-available_seconds,0,padding=0)
         if mode=="original_preset":
             info=("Название меню MVKView · "+self.time_filter_center.currentText()+
                   (" · "+preset_description(filter_mode,filter_center)
@@ -1970,6 +2022,9 @@ class LiveWindow(QtWidgets.QMainWindow):
                     chosen.extend([segment[0],segment[np.argmax(s.rms[segment])]])
             ix=np.array(sorted(set(chosen)),dtype=int)
         self.spec_curve.setData(x[ix],y[ix],connect="finite")
+        overview=getattr(self,"overview_spec_curve",None)
+        if overview is not None:
+            overview.setData(x[ix],y[ix],connect="finite")
         self._apply_operator_ranges()
         self._cursor_text()
         label=({"fft":"FFT","welch":"Welch PSD",
@@ -2785,9 +2840,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         if self.xscale.currentData()=="log":
             xmin,xmax=math.log10(xmin),math.log10(xmax)
+        self._manual_spec_axes=(xmin,xmax,ymin,ymax)
         self.spec.setXRange(xmin,xmax,padding=0)
         self.spec.setYRange(ymin,ymax,padding=0)
-        self.status.setText("Ручной масштаб осей установлен (только представление)")
+        self.status.setText("Ручной масштаб сохранён до явного автомасштаба")
 
     def showEvent(self,event):
         super().showEvent(event)
@@ -2937,6 +2993,10 @@ class LiveWindow(QtWidgets.QMainWindow):
                 "Сначала нажмите «Остановить», дождитесь завершения Native и повторите закрытие.")
             event.ignore()
             return
+        if hasattr(self,"_modern_status_timer"):
+            self._modern_status_timer.stop()
+        for extra in getattr(self,"_modern_windows",{}).values():
+            extra.close()
         self._timer.stop()
         self._ipc_timer.stop()
         self._ethernet_timer.stop()
