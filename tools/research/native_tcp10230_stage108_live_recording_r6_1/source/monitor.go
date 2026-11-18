@@ -326,17 +326,19 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		m.note(fmt.Sprintf("identity message length=%d", len(f.Raw)))
 	case typeAck:
 		m.summary.ACK++
-		if m.sourceTask2TX!=nil && m.sourceTask2TX.sentCommands>0 {
-			m.note("operation ACK after source SetRate TX: no transaction ID, cannot prove matching command")
+		// Task2 has no transaction ID. A reply on TCP socket B cannot
+		// corroborate a completed SetRate that was sent only on socket A.
+		if m.sourceTask2TX!=nil && m.sourceTask2TX.sentInSocket>0 {
+			m.note("operation ACK after SetRate on current source TCP socket; unpaired, no transaction ID")
 		} else {
-			m.warn("unexpected operation ACK received; this program has issued NO command")
+			m.warn("unsolicited operation ACK: no SetRate sent on current source TCP socket")
 		}
 	case typeDenied:
 		m.summary.Denials++
-		if m.sourceTask2TX!=nil && m.sourceTask2TX.sentCommands>0 {
-			m.warn("operation DENIED observed after source SetRate; no transaction ID, aborting current attempt")
+		if m.sourceTask2TX!=nil && m.sourceTask2TX.sentInSocket>0 {
+			m.warn("operation DENIED after SetRate on current source TCP socket; unpaired, aborting attempt")
 		} else {
-			m.warn("device reported operation denied; this program has issued NO command")
+			m.warn("device DENIED on current source TCP socket without a source SetRate send")
 		}
 	case typeADC, typeTach:
         // _Unit125:008081E0 skips zero-length source packets without
