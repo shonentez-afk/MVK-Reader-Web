@@ -171,3 +171,23 @@ def test_history_selected_adc_is_a_hard_filter_not_combined_in_one_axis(w):
     assert len(ui._last_overlay)==0
     ui._choose_latest_two()
     assert all(e.adc==1 for e,_,_,_ in ui._last_overlay)
+
+
+
+def test_each_history_tab_can_select_adc_without_going_back_to_spectrum(w):
+    seed_vendor(w)
+    ui=w.history_ui
+    w.views.setCurrentWidget(ui.trend_page)
+    assert ui.trend_adc.currentData()==1
+    ui.trend_adc.setCurrentIndex(1)  # ADC2 selected on Trends page
+    assert w.adc.currentData()==2
+    assert ui.compare_adc.currentData()==2
+    assert len(ui._trend_last)==3
+    w.views.setCurrentWidget(ui.compare_page)
+    ui.compare_adc.setCurrentIndex(0)
+    assert w.adc.currentData()==1
+    assert ui.trend_adc.currentData()==1
+    ui.compare_mode.setCurrentIndex(ui.compare_mode.findData("vendor43"))
+    ui._choose_latest_two()
+    assert len(ui._last_overlay)==2
+    assert all(e.adc==1 for e,_,_,_ in ui._last_overlay)
