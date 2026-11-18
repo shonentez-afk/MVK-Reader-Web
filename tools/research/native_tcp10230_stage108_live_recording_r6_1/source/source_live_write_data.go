@@ -21,7 +21,6 @@ import (
     "hash"
     "os"
     "path/filepath"
-    "time"
 )
 
 const sourceLiveWriterSchema="MVK_SOURCE_TMVKTHREAD_LIVE_WRITEDATA_V1"
@@ -299,4 +298,3 @@ func(w *sourceLiveDataWriter) cleanup(){
     }
     if w.packetFile!=nil {_ = w.packetFile.Close();w.packetFile=nil}
 }
-var _ = time.Time{} // no wall-clock reconstruction of Delphi click time
