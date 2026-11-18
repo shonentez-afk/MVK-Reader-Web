@@ -46,8 +46,11 @@ def test_live_adc7_adc8_alert_are_not_declared_healthy():
                                instrument_ipv4="10.13.42.84",
                                local_ipv4="10.13.42.22", now=now())
     assert obj["quality_alert"]
-    assert obj["channels"][0]["quality"] == "DSP: OK (0x0)"
-    assert obj["channels"][6]["quality"] == "DSP: ПРЕДУПРЕЖДЕНИЕ"
+    assert obj["channels"][0]["quality"] == "DSP: статус 0x00000000"
+    assert obj["channels"][6]["quality"] == "DSP: статус 0x00000400"
+    # Alert must be independent of localized display text and supported
+    # by the nonzero original source ResultStatus DWORD.
+    assert obj["channels"][6]["dsp_sensor_status_hex"] == "0x00000400"
     assert obj["channels"][7]["dsp_sensor_status_hex"] == "0x00000400"
     assert obj["channels"][8]["quality"] == "ПОТОК ПОЛУЧЕН"
     assert obj["aux4700_updates"] == 4

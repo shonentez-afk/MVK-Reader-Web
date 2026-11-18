@@ -143,7 +143,10 @@ def test_original_task0_idp_ip_netmask_and_port_text_preserves_raw():
     assert original_task0_field_text("ConfigGateway",raw)=="4.3.2.1"
     assert original_task0_field_text("ConfigWifiIP",raw)=="4.3.2.1"
     assert original_task0_field_text("ConfigModbusPort",raw)=="67305985"
-    assert original_task0_field_text("ConfigOption",raw)=="0x01020304"
+    # Numeric source GetDword decodes 01 02 03 04 as 0x04030201.
+    # Missing original selector ID uses the exact (0xXXXXXXXX) fallback.
+    assert original_task0_field_text("ConfigOption",raw)==(
+        "0x04030201 · (0x04030201)")
     assert original_task0_field_text(
         "ConfigWifiPassword",raw)=="•••••••• (скрыто)"
     assert original_task0_field_text("ConfigIP",{

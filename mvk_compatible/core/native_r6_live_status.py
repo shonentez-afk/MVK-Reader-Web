@@ -252,7 +252,14 @@ def validate_live_status(payload: dict, *, expected_run: str,
         (silent is not None and silent > 4.0) or
         (all(source_fields) and payload[SOURCE_RX_FIELDS[2]]>0) or
         source_system_error or rate_transition or tcp_multi or
-        any(ch["quality"] in ("ОШИБКА ПОТОКА", "DSP: ПРЕДУПРЕЖДЕНИЕ") for ch in safe))
+        # Alarm state is driven by verified RAW DSP status WORDS, NEVER
+        # a human-facing display string which changes with localization.
+        # Any observed nonzero source ResultStatus is a warning until
+        # its vendor status meaning has been independently accepted.
+        any(ch["quality"] == "ОШИБКА ПОТОКА" or (
+            ch["type"] == "ADC" and
+            ch.get("dsp_sensor_status_hex") not in (None,"0x00000000"))
+            for ch in safe))
     return result
 
 
