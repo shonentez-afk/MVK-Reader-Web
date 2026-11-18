@@ -103,6 +103,8 @@
 
 Настоящие изображения и эталонные формы: [Diagnostics 101 с цветными маркерами](https://www.mdpi.com/2076-3417/10/20/7302), [MathWorks алгоритм и графики](https://www.mathworks.com/help/predmaint/ug/Rolling-Element-Bearing-Fault-Diagnosis.html), [MathWorks настройки Harmonics/Sidebands/Width/Domain](https://www.mathworks.com/help/predmaint/ref/bearingfaultbands.html), [viblearn plot_fault_markers](https://github.com/Liang-Guo-SD/viblearn/blob/main/src/viblearn/plotting/markers.py).
 
+**Дополнительное исследование:** [Protrugram, Infogram, спектральный индекс Gini, качество измерения и эталонные датасеты](BAND_SELECTION_DATA_QUALITY_VALIDATION_STANDARDS_2026_RU.md). Эти методы лишь выбирают резонансную полосу, не заменяют поиск измеренных гармоник BPFO/BPFI/BDF/FTF и пока не реализованы в MVK Live.
+
 ## 6. Приёмка и приоритет
 
 **P0:** отдельные реальные линии и точки на bearing_plot, BSF vs 2BSF/BDF, BPFI±f_rot, BDF±FTF, таблица f_nom/f_measured/SNR/collision, доказательство из нескольких гармоник вместо single noteworthy. Удерживать исходные ADC/NPZ/Fs/filter и не вводить скрытых данных.
