@@ -3492,14 +3492,19 @@ class MainWindow(QMainWindow):
             f"RAW: {wire_files} файлов точных байтов ADC/TACH без калибровки; "
             if wire_files and report.get("source_write_data_wire_payload_byte_exact")
             else "")
+        live_files=report.get("source_live_original_writer_files",0)
+        source_gate_note=(
+            f"Go WriteData: {live_files} файлов с реальным допуском "
+            "MvkSampleRate/FreezeUpdate/первым АЦП1; "
+            if report.get("source_live_source_gate_verified") else "")
         self.statusBar().showMessage(
             "Запись MVKView: проверенные локальные интервалы сохранены "
             f"({report['files_written']} файлов, {report['windows']} окон). "
             +("Go подтвердил границы кадров; " if
              report.get("verified_frame_boundaries") else
              "Границы по периодическому статусу; ")
-            +values_note+wire_note+close_note+
-            "оригинальные условия Freeze/SetRate и Delphi BIN/CSV ещё не сверены.")
+            +values_note+wire_note+source_gate_note+close_note+
+            "тайминг Win32 и побайтные Delphi BIN/CSV/TSXML ещё не сверены.")
 
     def _source_write_export_failed(self,message):
         self._source_writer_last_export={
