@@ -58,6 +58,29 @@ def test_main_has_one_global_adc_four_tabs_and_eight_working_menus(widget):
     assert w._capture_root is None
 
 
+def test_operator_labels_describe_real_quantities_not_x_y(widget):
+    """Ordinary measurement controls must name physical quantities, not axes."""
+    import re
+    from PySide6 import QtWidgets
+    w, _ = widget
+    inspector_labels = [item.text() for item in
+                        w._modern_inspector.findChildren(QtWidgets.QLabel)]
+    for required in (
+        "Шкала значений", "Частотная шкала", "Показывать частоты до",
+        "Масштаб спектра", "Развёртка времени",
+        "Масштаб виброускорения", "Фильтр временного сигнала",
+    ):
+        assert required in inspector_labels
+    assert not any(re.search(r"(?<![A-Za-zА-Яа-я])[XY](?![A-Za-zА-Яа-я])", label)
+                   for label in inspector_labels)
+    assert [w.xscale.itemText(i) for i in range(w.xscale.count())] == [
+        "Линейная", "Логарифмическая"]
+    assert [w.yscale.itemText(i) for i in range(w.yscale.count())] == [
+        "Линейная", "В децибелах (дБ)"]
+    assert "время в мс/с" in w.wave_info.text()
+    assert "X" not in w.operator_info.text()
+
+
 def test_spectrum_and_overview_render_the_same_real_source(widget):
     w,_ = widget
     from mvk_live_standalone.vibration import analyze_vibration
