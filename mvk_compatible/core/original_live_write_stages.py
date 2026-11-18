@@ -503,36 +503,114 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                             archive,name,target/label,first,last,
                                             expected,count)})
                 elif window.kind=="values":
-                    start,end=window.start_aux,window.end_aux
-                    if start==end:
-                        skipped.append({"window":number,"kind":"values",
-                                        "reason":"No verified AUX tick in the requested interval"})
-                        continue
-                    if (end>flow.session.updates or end-start>MAX_TICKS_PER_WINDOW
-                            or any(window.values[67:])):
-                        raise ValueError("VALUES output lacks authenticated source ticks")
-                    selected=OriginalPageFileSelection(
-                        window.channels,window.spec,window.values)
-                    selected.validate(flow)
-                    name=f"VALUES{number:02d}_NATIVE_VERIFIED_SELECTED.csv"
-                    rows=0
-                    with (target/name).open("x",newline="",encoding="utf-8-sig") as f:
-                        writer=csv.writer(f,delimiter=";")
-                        writer.writerow(
-                            ("AUX_TICK_INDEX","ADC","CATEGORY","SOURCE_INDEX",
-                             "FIELD","VALUE","UNIT"))
-                        for tick in range(start,end):
-                            chosen_flow=flow.select(tick_index=tick)
-                            for row in table_rows(chosen_flow,selected):
-                                writer.writerow((tick,*row))
-                                rows+=1
-                                if rows>MAX_SELECTED_ROWS:
-                                    raise ValueError("Too many verified original result rows")
-                    out=target/name
-                    emitted.append({"window":number,"kind":"values",
-                                    "name":name,"rows":rows,
-                                    "bytes":out.stat().st_size,
-                                    "sha256":sha256(out.read_bytes()).hexdigest()})
+                    if source_values_events is not None:
+                        events=source_values_events[number]
+                        if not events:
+                            skipped.append({"window":number,"kind":"values",
+                                            "reason":"No original PARAM 0x3100 trigger in verified frame interval"})
+                            continue
+                        if any(window.values[67:]):
+                            raise ValueError("Source TACH textual VALUES are not yet byte-verified")
+                        selected=OriginalPageFileSelection(
+                            window.channels,window.spec,window.values)
+                        selected.validate(flow)
+                        # This is a REAL original trigger ledger, retaining the
+                        # 0x3100 PARAM bytes without claiming these are the
+                        # original TMvkCellList.GetValueText formatted cells.
+                        evidence_name=f"VALUES{number:02d}_SOURCE_3100_EVENTS.csv"
+                        with (target/evidence_name).open(
+                                "x",newline="",encoding="utf-8-sig") as efile:
+                            writer=csv.writer(efile,delimiter=";")
+                            writer.writerow((
+                                "SOURCE_3100_TICK_INDEX","RECEIVED_FRAME_INDEX",
+                                "REGISTER_ADDRESS","WORD_COUNT","PARAM_PAYLOAD_LE_HEX",
+                                "PARAM_PAYLOAD_SHA256","LATEST_PRECEDING_AUX_INDEX"))
+                            for event in events:
+                                writer.writerow((
+                                    event["source_tick_index"],event["frame_index"],
+                                    event["source_register_address"],event["register_words"],
+                                    event["register_bytes_hex"],
+                                    event["register_payload_sha256"],
+                                    event["latest_earlier_aux_index"] if
+                                    event["latest_earlier_aux_index"] is not None else ""))
+                        evidence=target/evidence_name
+                        emitted.append({
+                            "window":number,"kind":"source_3100_evidence",
+                            "name":evidence_name,"rows":len(events),
+                            "bytes":evidence.stat().st_size,
+                            "sha256":sha256(evidence.read_bytes()).hexdigest()})
+                        # Selected numerical values remain explicitly
+                        # reconstructed, using only the latest PREVIOUS
+                        # authenticated AUX snapshot at each actual 0x3100
+                        # event. They are NOT the original Delphi CSV bytes.
+                        name=f"VALUES{number:02d}_NATIVE_VERIFIED_SELECTED.csv"
+                        rows=0
+                        with (target/name).open(
+                                "x",newline="",encoding="utf-8-sig") as output:
+                            writer=csv.writer(output,delimiter=";")
+                            writer.writerow((
+                                "SOURCE_3100_TICK_INDEX","RECEIVED_FRAME_INDEX",
+                                "PRECEDING_AUX_INDEX","ADC","CATEGORY",
+                                "SOURCE_INDEX","FIELD","VALUE","UNIT"))
+                            for event in events:
+                                aux_index=event["latest_earlier_aux_index"]
+                                if aux_index is None:
+                                    skipped.append({
+                                        "window":number,"kind":"values_snapshot",
+                                        "source_tick_index":event["source_tick_index"],
+                                        "reason":"0x3100 arrived before any verified AUX result"})
+                                    continue
+                                if not 0<=aux_index<flow.session.updates:
+                                    raise ValueError("0x3100 references an unverified AUX index")
+                                current=flow.select(tick_index=aux_index)
+                                for row in table_rows(current,selected):
+                                    writer.writerow((
+                                        event["source_tick_index"],event["frame_index"],
+                                        aux_index,*row))
+                                    rows+=1
+                                    if rows>MAX_SELECTED_ROWS:
+                                        raise ValueError("Too many source 0x3100 selected rows")
+                        out=target/name
+                        emitted.append({
+                            "window":number,"kind":"values_3100_anchored",
+                            "name":name,"rows":rows,"source_events":len(events),
+                            "bytes":out.stat().st_size,
+                            "sha256":sha256(out.read_bytes()).hexdigest(),
+                            "original_tmkvcelllist_text_parity":False})
+                    else:
+                        # Older offline/status-poll selection files are a
+                        # backward-compatible AUX approximation, not proof
+                        # of the original 0x3100-triggered VALUES writer.
+                        start,end=window.start_aux,window.end_aux
+                        if start==end:
+                            skipped.append({"window":number,"kind":"values",
+                                            "reason":"No verified AUX tick in the requested interval"})
+                            continue
+                        if (end>flow.session.updates or end-start>MAX_TICKS_PER_WINDOW
+                                or any(window.values[67:])):
+                            raise ValueError("VALUES output lacks authenticated source ticks")
+                        selected=OriginalPageFileSelection(
+                            window.channels,window.spec,window.values)
+                        selected.validate(flow)
+                        name=f"VALUES{number:02d}_NATIVE_VERIFIED_SELECTED.csv"
+                        rows=0
+                        with (target/name).open("x",newline="",encoding="utf-8-sig") as f:
+                            writer=csv.writer(f,delimiter=";")
+                            writer.writerow(
+                                ("AUX_TICK_INDEX","ADC","CATEGORY","SOURCE_INDEX",
+                                 "FIELD","VALUE","UNIT"))
+                            for tick in range(start,end):
+                                chosen_flow=flow.select(tick_index=tick)
+                                for row in table_rows(chosen_flow,selected):
+                                    writer.writerow((tick,*row))
+                                    rows+=1
+                                    if rows>MAX_SELECTED_ROWS:
+                                        raise ValueError("Too many verified original result rows")
+                        out=target/name
+                        emitted.append({"window":number,"kind":"values",
+                                        "name":name,"rows":rows,
+                                        "bytes":out.stat().st_size,
+                                        "sha256":sha256(out.read_bytes()).hexdigest()})
                 else:
                     raise ValueError("Invalid source recording type")
         receipt={
@@ -556,6 +634,13 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_setrate_sent_bytes":(frame_mark_evidence or {}).get("source_setrate_sent_bytes"),
             "actual_source_values_tick_trigger_word":"0x3100",
             "source_values_tick_is_distinct_from_aux4700":True,
+            "source_values_export_anchored_to_verified_3100":
+                source_values_events is not None,
+            "source_3100_trigger_events_replayed":
+                sum(map(len,source_values_events.values())) if
+                source_values_events is not None else 0,
+            "legacy_aux_result_export_is_not_original_values_trigger":
+                source_values_events is None,
             "source_values_csv_exact_delphi_layout_verified":False,
             "original_tach_calibration_verified":False,
         }
