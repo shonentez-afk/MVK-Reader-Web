@@ -30,6 +30,9 @@ from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
 from .original_dsp import read_original_dsp_bands
 from .frange import original_applied_frange
+from .spectrum_controls import (VIEW_MODES, FILTER_CHOICES, X_LIMITS_HZ,
+                                view_settings, x_limit_hz, y_height_options,
+                                visible_y_range)
 from .rotation import estimate_rotation_from_velocity
 from .pipeline import analyze_live, AnalysisResult
 from .advanced import (envelope_fault_lines, stft_vibration,
@@ -144,8 +147,19 @@ class LiveWindow(QtWidgets.QMainWindow):
         panel.addWidget(self.connect_button, 0, 4)
         panel.addWidget(self.stop_button, 0, 5, 2, 1)
 
+        operator = QtWidgets.QGridLayout()
+        main.addLayout(operator)
+        self.advanced_toggle=QtWidgets.QPushButton("Дополнительные расчёты и настройки ▸")
+        self.advanced_toggle.setCheckable(True)
+        main.addWidget(self.advanced_toggle)
+        self.advanced_panel=QtWidgets.QWidget()
+        self.advanced_layout=QtWidgets.QVBoxLayout(self.advanced_panel)
+        self.advanced_layout.setContentsMargins(0,0,0,0)
+        main.addWidget(self.advanced_panel)
+        self.advanced_panel.setVisible(False)
+        self.advanced_toggle.toggled.connect(self._toggle_advanced)
         opts = QtWidgets.QGridLayout()
-        main.addLayout(opts)
+        self.advanced_layout.addLayout(opts)
         self.adc = QtWidgets.QComboBox()
         for i in range(8):
             self.adc.addItem(f"АЦП {i+1}", i+1)
@@ -202,18 +216,54 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.smooth.setRange(1,101)
         self.smooth.setSingleStep(2)
         self.smooth.setValue(1)
+        # Four views replace separate type/Y/X choices on the main screen.
+        # This is only a presentation/processing change; sample rate is
+        # whatever MVK01 sent, and Native already applied device FRange once.
+        self.spectrum_view=QtWidgets.QComboBox()
+        for label,key,_,_ in VIEW_MODES:
+            self.spectrum_view.addItem(label,key)
+        self.filter_choice=QtWidgets.QComboBox()
+        for label,key in FILTER_CHOICES:
+            self.filter_choice.addItem(label,key)
+        self.filter_button=QtWidgets.QPushButton("Настроить фильтр…")
+        self.filter_button.clicked.connect(self._edit_filter)
+        self.x_limit_choice=QtWidgets.QComboBox()
+        for fmax in X_LIMITS_HZ:
+            self.x_limit_choice.addItem(f"{fmax:g} Гц",fmax)
+        self.x_limit_choice.setCurrentIndex(self.x_limit_choice.findData(1000))
+        self.y_height_choice=QtWidgets.QComboBox()
+        self._rebuild_y_height()
+        operator.addWidget(QtWidgets.QLabel("АЦП"),0,0)
+        operator.addWidget(self.adc,0,1)
+        operator.addWidget(QtWidgets.QLabel("Вид спектра"),0,2)
+        operator.addWidget(self.spectrum_view,0,3)
+        operator.addWidget(QtWidgets.QLabel("Фильтр"),0,4)
+        operator.addWidget(self.filter_choice,0,5)
+        operator.addWidget(self.filter_button,0,6)
+        operator.addWidget(QtWidgets.QLabel("Предел X"),1,0)
+        operator.addWidget(self.x_limit_choice,1,1)
+        operator.addWidget(QtWidgets.QLabel("Масштаб Y"),1,2)
+        operator.addWidget(self.y_height_choice,1,3)
+        self.operator_info=QtWidgets.QLabel(
+            "По умолчанию без фильтра · X в Гц · Y в единицах выбранного спектра")
+        self.operator_info.setWordWrap(True)
+        operator.addWidget(self.operator_info,1,4,1,3)
         for idx,(label,widget) in enumerate([
-            ("Канал",self.adc),("Тип",self.kind),("Режим",self.analysis),("Шкала Y",self.yscale),
-            ("Опора дБ",self.db_ref),
-            ("Шкала X",self.xscale),("FFT",self.nfft),("Полоса",self.band),
-            ("Сглаживание (бин)",self.smooth),
-            ("Нижняя граница",self.custom_low),("Верхняя граница",self.custom_high),
+            ("Доп. метод анализа",self.analysis),
+            ("FFT, число отсчётов",self.nfft),
+            ("Опора для дБ",self.db_ref),
+            ("Сглаживание, бин",self.smooth),
         ]):
-            row,col=divmod(idx,4)
+            row,col=divmod(idx,2)
             opts.addWidget(QtWidgets.QLabel(label),row,col*2)
             opts.addWidget(widget,row,col*2+1)
+        self.envelope_label=QtWidgets.QLabel("Полоса ОГИБАЮЩЕЙ (только спец. анализ)")
+        opts.addWidget(self.envelope_label,2,0)
+        opts.addWidget(self.envelope_band,2,1)
+        self.envelope_label.hide()
+        self.envelope_band.hide()
         opts2=QtWidgets.QGridLayout()
-        main.addLayout(opts2)
+        self.advanced_layout.addLayout(opts2)
         self.notch=QtWidgets.QComboBox()
         self.notch.addItem("Откл.",None)
         self.notch.addItem("50 Гц",50.0)
@@ -222,6 +272,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.rpm.setRange(0,200000)
         self.rpm.setDecimals(1)
         self.rpm.setSuffix(" об/мин")
+        operator.addWidget(QtWidgets.QLabel("Обороты, вручную"),2,0)
+        operator.addWidget(self.rpm,2,1)
         self.balls=QtWidgets.QSpinBox()
         self.balls.setRange(0,80)
         self.ball_diameter=QtWidgets.QDoubleSpinBox()
@@ -232,9 +284,6 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.contact_angle.setRange(0,90)
         self.contact_angle.setSuffix("°")
         for idx,(label,widget) in enumerate([
-            ("Полоса огибающей",self.envelope_band),
-            ("Notch (по умолчанию выкл.)",self.notch),
-            ("Обороты, ручной ввод",self.rpm),
             ("Тел качения",self.balls),
             ("Диаметр тела, мм",self.ball_diameter),
             ("Делит. диаметр, мм",self.pitch_diameter),
@@ -244,7 +293,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             opts2.addWidget(QtWidgets.QLabel(label),row,col*2)
             opts2.addWidget(widget,row,col*2+1)
         gears=QtWidgets.QHBoxLayout()
-        main.addLayout(gears)
+        self.advanced_layout.addLayout(gears)
         gears.addWidget(QtWidgets.QLabel("Редуктор: зубьев шестерни"))
         self.gear_teeth=QtWidgets.QSpinBox()
         self.gear_teeth.setRange(0,400)
@@ -287,7 +336,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         review.addWidget(self.rpm_accept)
         self.axis_button=QtWidgets.QPushButton("Пределы осей")
         self.axis_button.clicked.connect(self._edit_axes)
-        review.addWidget(self.axis_button)
+        self.advanced_layout.addWidget(self.axis_button)
         review.addStretch(1)
         storage=QtWidgets.QHBoxLayout()
         main.addLayout(storage)
@@ -427,6 +476,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.rpm.valueChanged.connect(self._rpm_changed)
         for w in (self.rpm,self.balls,self.ball_diameter,self.pitch_diameter,self.contact_angle):
             w.valueChanged.connect(self._update_markers)
+        self.spectrum_view.currentIndexChanged.connect(self._select_primary_spectrum)
+        self.filter_choice.currentIndexChanged.connect(self._select_primary_filter)
+        self.x_limit_choice.currentIndexChanged.connect(self._redraw_from_current)
+        self.y_height_choice.currentIndexChanged.connect(self._redraw_from_current)
+        self._select_primary_spectrum()
+        self._select_primary_filter()
         self._timer=QtCore.QTimer(self)
         self._timer.setInterval(900)  # current Native sidecar is published >=750 ms
         self._timer.timeout.connect(self._poll)
