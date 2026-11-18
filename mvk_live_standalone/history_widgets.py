@@ -41,6 +41,12 @@ TREND_GROUPS=(
     ("MVK Live · Фактор формы","shape"),
     ("MVK Live · Фактор зазора","clearance"),
     ("MVK Live · ВС СКЗ 10–1000 Гц","velocity_rms_10_1000"),
+    ("MVK Live · FFT ВУ пик","fft_acceleration_peak"),
+    ("MVK Live · FFT ВУ частота максимума","fft_acceleration_peak_hz"),
+    ("MVK Live · FFT ВС пик","fft_velocity_peak"),
+    ("MVK Live · FFT ВС частота максимума","fft_velocity_peak_hz"),
+    ("MVK Live · FFT ВП пик","fft_displacement_peak"),
+    ("MVK Live · FFT ВП частота максимума","fft_displacement_peak_hz"),
 )
 
 COMPARE_MODES=(
@@ -212,9 +218,9 @@ class HistoryWorkspaces(QtCore.QObject):
         dt=self._selected_trend_point
         if dt is None:return
         family=self.trend_group.currentData()
-        kind=("window" if family in (
-            "time_rms","time_peak","time_pp","crest","kurtosis","skew",
-            "impulse","shape","clearance","velocity_rms_10_1000") else "vendor")
+        vendor_families=("third_octave","band_rms",
+                         "band_peak_equiv","band_span_equiv")
+        kind="vendor" if family in vendor_families else "window"
         mode={"third_octave":"vendor43",
               "band_rms":"vendor24_rms",
               "band_peak_equiv":"vendor24_peak",
@@ -255,10 +261,9 @@ class HistoryWorkspaces(QtCore.QObject):
             with path.open("x",newline="",encoding="utf-8-sig") as f:
                 wr=csv.writer(f,delimiter=";")
                 wr.writerow(["source","ADC","metric","unit","time_utc","value"])
-                src=(LOCAL if self._chosen_metric() in (
-                    "time_rms","time_peak","time_pp","crest","kurtosis",
-                    "skew","impulse","shape","clearance",
-                    "velocity_rms_10_1000") else VENDOR)
+                src=(VENDOR if self.trend_group.currentData() in (
+                    "third_octave","band_rms","band_peak_equiv","band_span_equiv")
+                     else LOCAL)
                 for dt,val in self._trend_last:
                     wr.writerow([src,self.adc.currentData(),label,unit,
                                  dt.isoformat(),format(val,".11g")])
