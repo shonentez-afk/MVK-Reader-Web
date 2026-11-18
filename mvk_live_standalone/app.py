@@ -734,10 +734,106 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.diagnostics_page=QtWidgets.QWidget()
         self.diagnostics_layout=QtWidgets.QVBoxLayout(self.diagnostics_page)
         self.diagnostics_layout.addWidget(QtWidgets.QLabel(
-            "Диагностика без тахометра и без сравнения с эталонными измерениями"))
+            "Подшипники · BPFO / BPFI / BSF / FTF, локальный SNR "
+            "огибающей · без тахометра, внешнего эталона и диагноза"))
+        bearing_form=QtWidgets.QFormLayout()
+        self.bearing_rpm=QtWidgets.QDoubleSpinBox()
+        self.bearing_rpm.setRange(0,200000)
+        self.bearing_rpm.setSuffix(" об/мин")
+        self.bearing_balls=QtWidgets.QSpinBox()
+        self.bearing_balls.setRange(0,80)
+        self.bearing_ball_diameter=QtWidgets.QDoubleSpinBox()
+        self.bearing_ball_diameter.setRange(0,300)
+        self.bearing_pitch_diameter=QtWidgets.QDoubleSpinBox()
+        self.bearing_pitch_diameter.setRange(0,3000)
+        self.bearing_contact_angle=QtWidgets.QDoubleSpinBox()
+        self.bearing_contact_angle.setRange(0,90)
+        self.bearing_contact_angle.setSuffix("°")
+        for label,local,original in (
+            ("Частота вращения (ручная/подтверждённая 1×)",
+             self.bearing_rpm,self.rpm),
+            ("Тел качения",self.bearing_balls,self.balls),
+            ("Диаметр тела качения, мм",
+             self.bearing_ball_diameter,self.ball_diameter),
+            ("Делительный диаметр, мм",
+             self.bearing_pitch_diameter,self.pitch_diameter),
+            ("Угол контакта",self.bearing_contact_angle,self.contact_angle)):
+            local.setValue(original.value())
+            local.valueChanged.connect(original.setValue)
+            original.valueChanged.connect(local.setValue)
+            bearing_form.addRow(label,local)
+        self.diagnostics_layout.addLayout(bearing_form)
+        bearing_options=QtWidgets.QHBoxLayout()
+        bearing_options.addWidget(QtWidgets.QLabel("Полоса огибающей"))
+        self.bearing_resonance=QtWidgets.QComboBox()
+        for idx in range(self.envelope_band.count()):
+            self.bearing_resonance.addItem(
+                self.envelope_band.itemText(idx),
+                self.envelope_band.itemData(idx))
+        self.bearing_resonance.setCurrentIndex(
+            self.envelope_band.currentIndex())
+        bearing_options.addWidget(self.bearing_resonance)
+        bearing_options.addWidget(QtWidgets.QLabel("FFT N"))
+        self.bearing_fft=QtWidgets.QComboBox()
+        for idx in range(self.nfft.count()):
+            self.bearing_fft.addItem(
+                self.nfft.itemText(idx),self.nfft.itemData(idx))
+        self.bearing_fft.setCurrentIndex(self.nfft.currentIndex())
+        bearing_options.addWidget(self.bearing_fft)
+        bearing_run=QtWidgets.QPushButton("Рассчитать огибающую")
+        bearing_run.clicked.connect(self._run_bearing_page)
+        bearing_options.addWidget(bearing_run)
+        bearing_options.addStretch(1)
+        self.diagnostics_layout.addLayout(bearing_options)
+        self.bearing_plot=pg.PlotWidget(
+            title="Локальная FFT огибающей ВУ · ожидание данных")
+        self.bearing_plot.setLabel("bottom","Частота",units="Гц")
+        self.bearing_plot.setLabel("left","ВУ · СКЗ линии",units="м/с²")
+        self.bearing_curve=self.bearing_plot.plot(
+            pen=pg.mkPen("#18a3a3",width=1.2))
+        self.diagnostics_layout.addWidget(self.bearing_plot,stretch=1)
+        self.bearing_diagnostics.setWordWrap(True)
         self.diagnostics_layout.addWidget(self.bearing_diagnostics)
-        self.diagnostics_layout.addStretch(1)
-        self.extra_pages.addTab(self.diagnostics_page,"Подшипники / редукторы")
+        self.extra_pages.addTab(self.diagnostics_page,"Подшипники")
+        self.gears_page=QtWidgets.QWidget()
+        gears_layout=QtWidgets.QVBoxLayout(self.gears_page)
+        gears_layout.addWidget(QtWidgets.QLabel(
+            "Редукторы · ожидаемые GMF и боковые полосы по 1× "
+            "и числу зубьев; это НЕ фактически измеренные пики"))
+        gear_form=QtWidgets.QFormLayout()
+        self.gear_rpm=QtWidgets.QDoubleSpinBox()
+        self.gear_rpm.setRange(0,200000)
+        self.gear_rpm.setSuffix(" об/мин")
+        self.gear_rpm.setValue(self.rpm.value())
+        self.gear_rpm.valueChanged.connect(self.rpm.setValue)
+        self.rpm.valueChanged.connect(self.gear_rpm.setValue)
+        gear_form.addRow("Частота вращения (ручная/подтверждённая 1×)",
+                         self.gear_rpm)
+        self.gear_count=QtWidgets.QSpinBox()
+        self.gear_count.setRange(0,400)
+        self.gear_count.setValue(self.gear_teeth.value())
+        self.gear_count.setSpecialValueText("Число зубьев не задано")
+        self.gear_count.valueChanged.connect(self.gear_teeth.setValue)
+        self.gear_teeth.valueChanged.connect(self.gear_count.setValue)
+        gear_form.addRow("Число зубьев шестерни",self.gear_count)
+        gears_layout.addLayout(gear_form)
+        gear_run=QtWidgets.QPushButton("Показать GMF / гармоники")
+        gear_run.clicked.connect(self._refresh_gear_table)
+        gears_layout.addWidget(gear_run)
+        self.gear_table=QtWidgets.QTableWidget(0,2)
+        self.gear_table.setHorizontalHeaderLabels(
+            ["Расчётная составляющая","Частота, Гц"])
+        self.gear_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.gear_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        gears_layout.addWidget(self.gear_table,stretch=1)
+        self.gear_note=QtWidgets.QLabel(
+            "Укажите реальные/подтверждённые обороты и число зубьев. "
+            "Прогноз частот не является обнаруженным дефектом.")
+        self.gear_note.setWordWrap(True)
+        gears_layout.addWidget(self.gear_note)
+        self.extra_pages.addTab(self.gears_page,"Редукторы")
         self._apply_axes()
 
         for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band,self.notch,self.custom_low,self.custom_high):
@@ -749,6 +845,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.adc.currentIndexChanged.connect(
             lambda index:self.dsp_adc.setCurrentIndex(index))
         self.rpm.valueChanged.connect(self._rpm_changed)
+        self.rpm.valueChanged.connect(self._refresh_gear_table)
+        self.gear_teeth.valueChanged.connect(self._refresh_gear_table)
         for w in (self.rpm,self.balls,self.ball_diameter,self.pitch_diameter,self.contact_angle):
             w.valueChanged.connect(self._update_markers)
         self.spectrum_view.currentIndexChanged.connect(self._select_primary_spectrum)
@@ -2071,12 +2169,58 @@ class LiveWindow(QtWidgets.QMainWindow):
             "официальной оценкой ISO 20816 или диагнозом."
         )
 
+    def _run_bearing_page(self):
+        self.envelope_band.setCurrentIndex(
+            self.envelope_band.findData(self.bearing_resonance.currentData()))
+        self.nfft.setCurrentIndex(
+            self.nfft.findData(self.bearing_fft.currentData()))
+        self.kind.setCurrentIndex(self.kind.findData("acceleration"))
+        self.analysis.setCurrentIndex(self.analysis.findData("envelope"))
+        self._on_control_change()
+        self.bearing_diagnostics.setText(
+            "Спектр огибающей заказан по проверенным АЦП: "
+            "без новых команд прибору и второго применения FRange.")
+
+    def _refresh_gear_table(self,*_):
+        if self.rpm.value()<=0 or self.gear_teeth.value()<=0:
+            self.gear_table.setRowCount(0)
+            self.gear_note.setText(
+                "Укажите вручную или подтвердите обороты и число зубьев; "
+                "тахометр не используется.")
+            return
+        try:
+            result=gear_mesh_markers(self.rpm.value(),self.gear_teeth.value())
+        except ValueError as exc:
+            self.gear_table.setRowCount(0)
+            self.gear_note.setText(f"Некорректные параметры: {exc}")
+            return
+        rows=[("GMF",result.mesh_hz)]
+        rows.extend((f"{i}×GMF",freq) for i,freq in
+                    enumerate(result.harmonics_hz[1:],start=2))
+        rows.extend((f"GMF боковая полоса {i+1}",freq)
+                    for i,freq in enumerate(result.sidebands_hz))
+        self.gear_table.setRowCount(len(rows))
+        for r,(label,freq) in enumerate(rows):
+            for c,value in enumerate((label,f"{freq:.6g}")):
+                item=QtWidgets.QTableWidgetItem(value)
+                item.setToolTip(
+                    "APP_DERIVED: ожидаемая частота, не реально измеренный пик")
+                self.gear_table.setItem(r,c,item)
+        self.gear_note.setText(
+            "APP_DERIVED · теоретические GMF, гармоники и боковые полосы "
+            "по введённым 1×/числу зубьев; не эталон и не диагноз.")
+
     def _show_bearing_diagnostics(self):
         view=self._spectrum
         if view is None or view.mode!="envelope":
+            self.bearing_curve.setData([],[])
             self.bearing_diagnostics.setText(
-                "Для локального анализа BPFO/BPFI/BSF/FTF выберите спектр огибающей")
+                "Нажмите «Рассчитать огибающую» с выбранной полосой и FFT N.")
             return
+        self.bearing_curve.setData(view.hz,view.rms)
+        self.bearing_plot.setTitle(
+            f"APP_DERIVED · FFT огибающей · Fs={view.rate_hz} Гц")
+        self.bearing_plot.enableAutoRange()
         if self.rpm.value()<=0 or self.balls.value()<3:
             self.bearing_diagnostics.setText(
                 "Подшипники: укажите 1× и геометрию. Обороты только вручную/по ВС, без TACH")
