@@ -85,3 +85,42 @@ def test_source_mode2_stop_display_is_not_connected_or_green(tmp_path):
     with pytest.raises(ValueError):
         source_connection_display(
             selected=True,capture_started=False,stop_requested=True)
+
+
+def test_short_verified_source_ring_is_not_classified_as_tcp_preview(tmp_path):
+    # A source-ring 32768 sample window is shorter than the ordinary
+    # 262144 preview, but must use the *original* accepted FRxPos after
+    # FreezeUpdate, not the forensic total TCP sample count.
+    status,preview=_pair(tmp_path)
+    ch_count=65536
+    rows=[]
+    for number,channel in enumerate(status["channels"],1):
+        rows.append({
+            "channel":number,
+            "input_domain":"CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32",
+            "rx_pos_64":ch_count,
+            "first_readable_pos_64":0,
+            "next_device_sample_index":4096+ch_count,
+        })
+    validated={
+        **status,
+        "source_original_storage_verified":True,
+        "source_original_storage":{"channels":rows},
+    }
+    # Status data is produced by the validated Go ring receipt in a
+    # real session; these synthetic fields only exercise view routing.
+    win=replace(preview,source_ring_provenance_verified=True)
+    assert gate_live_preview(validated,win).allowed
+    # Explicit source provenance may NEVER fall back to a legacy TCP
+    # preview when the current validated Go ring disappears.
+    denied=gate_live_preview(
+        {**validated,"source_original_storage_verified":False,
+         "source_original_storage":None},win)
+    assert denied.phase=="SOURCE_RING_UNVERIFIED"
+    # A 262145-element fake Native preview without a SHA-ring receipt
+    # must not be classified as a source GetSignal merely by N.
+    import numpy as np
+    large_ch=replace(preview.channels[1],
+                     samples=np.zeros(262145,dtype="<f4"))
+    fake=replace(preview,channels={1:large_ch})
+    assert not gate_live_preview(validated,fake).allowed

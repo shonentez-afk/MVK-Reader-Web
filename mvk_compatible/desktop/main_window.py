@@ -140,7 +140,8 @@ class MainWindow(QMainWindow):
         self._measurement_exit_requested=False
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
-        self._live_long_window=None  # SHA verified on-demand source 2^21 ring selection
+        self._live_long_window=None  # SHA verified source-ring bAdcHScale
+        self._live_fft_window=None  # SHA verified source-ring bSpecLines
         self._live_long_rendered_key=None  # never replay the same 5MiB window per Qt tick
         self._source_getsignal_last_processed={}  # source PageAdc stable Mode2 64-bit cursor
         self._source_getsignal_last_preview_end={}  # verified device cursor per rendered window
@@ -966,6 +967,7 @@ class MainWindow(QMainWindow):
         self._source_getsignal_last_processed.clear()
         self._source_getsignal_last_preview_end.clear()
         self._live_long_window=None
+        self._live_fft_window=None
         self._live_long_rendered_key=None
         self._wave_hscale_tag=tag
         # bAdcHScale is a SINGLE source action. The QDoubleSpinBox
@@ -2870,6 +2872,7 @@ class MainWindow(QMainWindow):
         self._native_live_status=None
         self._live_preview=None
         self._live_long_window=None
+        self._live_fft_window=None
         self._live_long_rendered_key=None
         self._source_getsignal_last_processed.clear()
         self._source_getsignal_last_preview_end.clear()
@@ -3062,28 +3065,42 @@ class MainWindow(QMainWindow):
         self.original_shell.refresh_status()
 
     def _receive_source_long_window(self, window):
-        """Display the SHA-bound selected 2M ring window only in this Mode2."""
+        """Route one SHA-bound Go 2M ring window to GetSignal OR GetSpectrum."""
         if (not self._live_active or self._measurement_exit_requested or
                 self._source_live_view_frozen or
                 self._source_mode2_runtime.status_cells.system_error_latched):
             return
         try:
             from ..core.original_live_view_gate import gate_live_preview
-            if (window.request.adc!=self._ch() or
-                    window.request.h_tag!=self._wave_hscale_tag):
+            req=window.request
+            if req.adc!=self._ch():
+                return
+            if req.h_tag==-1:
+                if req.samples!=int(self.spec_n.currentData()):
+                    return
+            elif req.h_tag!=self._wave_hscale_tag:
                 return
             decision=gate_live_preview(
                 self._native_live_status,window.preview,
                 stop_requested=self._measurement_exit_requested)
             if not decision.allowed:
                 raise ValueError(decision.reason)
-            self._live_long_window=window
-            self._render_live_wave()
+            if req.h_tag==-1:
+                self._live_fft_window=window
+                self._render_live_spectrum()
+            else:
+                self._live_long_window=window
+                self._render_live_wave()
         except (ValueError,KeyError,AttributeError,TypeError) as exc:
-            self._live_long_window=None
-            self._live_long_rendered_key=None
-            self.wave_hint.setText(
-                'Исходный длинный GetSignal отклонён: '+str(exc))
+            if window.request.h_tag==-1:
+                self._live_fft_window=None
+                self.spec_hint.setText(
+                    'Исходное GetSpectrum из кольца отклонено: '+str(exc))
+            else:
+                self._live_long_window=None
+                self._live_long_rendered_key=None
+                self.wave_hint.setText(
+                    'Исходное GetSignal из кольца отклонено: '+str(exc))
 
     def _receive_live_preview(self, preview):
         if not self._live_active:
@@ -3126,10 +3143,12 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self.original_shell.measure_controls.invalidate_preview()
-        had_long=self._live_long_window is not None
+        had_source=(self._live_long_window is not None or
+                    self._live_fft_window is not None)
         self._live_long_window=None
+        self._live_fft_window=None
         self._live_long_rendered_key=None
-        if self._live_preview is None and not had_long:
+        if self._live_preview is None and not had_source:
             return
         self._live_preview=None
         self._source_getsignal_last_processed.clear()
@@ -3161,34 +3180,41 @@ class MainWindow(QMainWindow):
             if (len(channels)<=ch-1 or
                     type(channels[ch-1].get('samples')) is not int):
                 raise ValueError("Нет проверенного счётчика текущего АЦП")
-            # Original tag controls the real Fs*N size. A verified
-            # Go 2M ring is separate from the 262144-point GUI preview;
-            # never silently shorten the 20s/10s source GetSignal.
-            known=self._live_preview.channels.get(ch) if self._live_preview is not None else None
+            # _Unit115.pas:007D2228 reads the admitted source ring, NOT
+            # every TCP preview sample. Rate/Freeze skipped frames still
+            # exist in forensic RAW and ordinary Native preview.
+            status=self._native_live_status or {}
+            ring_selected=(status.get("source_original_storage_verified")
+                           is True and tag is not None)
+            known=(self._live_preview.channels.get(ch)
+                   if self._live_preview is not None else None)
             long=self._live_long_window
-            rate=(known.rate_hz if known is not None else
+            rows=(status.get("source_original_storage") or {}).get("channels") or []
+            ring_rate=(rows[ch-1].get("last_sample_rate_hz")
+                       if ring_selected and len(rows)>=ch else None)
+            rate=(ring_rate if ring_selected else
+                  known.rate_hz if known is not None else
                   long.preview.channels[ch].rate_hz
                   if long is not None and ch in long.preview.channels else None)
-            if rate is None:
+            if type(rate) is not int or rate<=0:
                 raise ValueError("Нет подтверждённой частоты выбранного АЦП")
             requested=(rate*ADC_HORIZONTAL_MS[tag]//1000
                        if tag is not None else 0)
-            long_selected=requested>262144
             rendered_sig=None
-            if long_selected:
+            if ring_selected or requested>262144:
                 if (long is None or long.request.adc!=ch or
                         long.request.h_tag!=tag or
                         long.request.samples!=requested or
-                        long.request.session_id!=
-                        (self._native_live_status or {}).get("session_id")):
+                        long.request.session_id!=status.get("session_id")):
                     raise ValueError(
-                        f"Ожидание исходного длинного GetSignal: "
-                        f"{requested} действительных отсчётов из кольца 2M")
+                        f"Ожидание {requested} реальных GetSignal отсчётов "
+                        "из кольца Go 2M; Preview не подменяет оригинал")
                 preview=long.preview
                 rx_pos=long.received_samples
                 rendered_sig=(long.request.request_id,self.wave_mode.currentIndex())
                 if self._live_long_rendered_key==rendered_sig:
                     return
+                ring_selected=True
             else:
                 if self._live_preview is None or known is None:
                     raise ValueError("Нет короткого проверенного окна Go")
@@ -3236,8 +3262,8 @@ class MainWindow(QMainWindow):
             self.wave_plot.setLabel('bottom','Индекс отсчёта/Fs, с · НЕ часы ПК')
             self.wave_plot.setLabel(
                 'left',
-                'Native · исходное 2M кольцо, м/с²' if long_selected
-                else 'Native R6.1 · калибр. preview, м/с²')
+                'Go · проверенное кольцо 2M, м/с²' if ring_selected
+                else 'Native R6.1 · preview, НЕ кольцо MVKView, м/с²')
             self.wave_plot.plot(d['time_s'],d['amplitude'],
                                 pen=pg.mkPen('#176c92'))
             self.wave_plot.enableAutoRange()
@@ -3250,8 +3276,8 @@ class MainWindow(QMainWindow):
                 f'bAdcHScale={d["original_bAdcHScale_milliseconds"]} мс · '
                 if "original_bAdcHScale_milliseconds" in d else "")
             self.wave_hint.setText(
-                ('LIVE SOURCE 2M КОЛЬЦО · ' if long_selected
-                 else 'LIVE PREVIEW · ') + source_scale +
+                ('LIVE SOURCE 2M КОЛЬЦО · ' if ring_selected
+                 else 'LIVE PREVIEW (не исходное кольцо) · ') + source_scale +
                 f'{d["window_samples"]} реальных Float32 отсчётов · '
                 f'AC={"без DC" if self.wave_mode.currentIndex()==0 else "с DC"} · '
                 'GetSignal IDR-кандидат; исходный RAW не изменён')
@@ -3265,29 +3291,45 @@ class MainWindow(QMainWindow):
             self.wave_hint.setText('Live signal недоступен: '+str(exc))
 
     def _render_live_spectrum(self):
-        if not self._live_active or self._live_preview is None:
+        if not self._live_active or (
+                self._live_preview is None and self._live_fft_window is None):
             return
         try:
             ch=self._ch()
             selected_n=int(self.spec_n.currentData())
-            channel=self._live_preview.channels.get(ch)
-            if channel is not None:
-                self._sync_spec_lines_presentation(channel.rate_hz)
-            # N=131072/262144 uses the EXACT original requested window.
-            # Repaint the current selected big N at most once per 2.5s
-            # unless source ADC/mode/N changes. Always recompute on a
-            # changed selection and on first appearance after history.
+            status=self._native_live_status or {}
+            ring_selected=status.get("source_original_storage_verified") is True
+            if ring_selected:
+                source_window=self._live_fft_window
+                if (source_window is None or
+                        source_window.request.h_tag!=-1 or
+                        source_window.request.adc!=ch or
+                        source_window.request.samples!=selected_n or
+                        source_window.request.session_id!=status.get("session_id")):
+                    raise ValueError(
+                        f"Ожидание {selected_n} исходных отсчётов FFT "
+                        "из кольца Go 2M; TCP Preview может включать Freeze")
+                source_preview=source_window.preview
+                request_id=source_window.request.request_id
+            else:
+                source_preview=self._live_preview
+                request_id=None
+            channel=source_preview.channels.get(ch) if source_preview else None
+            if channel is None:
+                raise ValueError("Нет проверенного окна выбранного АЦП")
+            self._sync_spec_lines_presentation(channel.rate_hz)
             clock=time.monotonic()
-            key=(self._live_preview.session_id,ch,selected_n,
-                 self.spec_mode.currentIndex())
+            key=(source_preview.session_id,ch,selected_n,
+                 self.spec_mode.currentIndex(),request_id)
             if selected_n < 131072:
                 self._source_large_fft_key=None
             elif (key==self._source_large_fft_key
                     and clock-self._source_large_fft_at < 2.5):
                 return
             d=provisional_spectrum(
-                self._live_preview,ch,mode=self.spec_mode.currentIndex(),
+                source_preview,ch,mode=self.spec_mode.currentIndex(),
                 n_fft=selected_n)
+            d["source_ring_verified_input"]=ring_selected
             if selected_n>=131072:
                 self._source_large_fft_key=key
                 self._source_large_fft_at=clock
@@ -3310,10 +3352,14 @@ class MainWindow(QMainWindow):
             self.spec_canvas_geometry_button.setEnabled(False)
             self.spec_mean.setText(
                 f'LIVE ADC{ch} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
-                'Спектр рассчитан локально · НЕ оригинальный DSP/Delphi parity')
+                + ('Источник: кольцо Go 2M; ' if ring_selected
+                   else 'Источник: Preview (не оригинальное кольцо); ')
+                + 'FFT локальный, не Delphi/x87 1:1')
             self.spec_mean_primary.setText('LIVE PREVIEW · численный паритет не подтверждён')
             self.spec_hint.setText(
-                f'{d["source"]} · FRange повторно НЕ применялся · '
+                ('SHA исходного окна Go 2M · '
+                 if ring_selected else 'Непроверенный исходный Preview · ')
+                + f'{d["source"]} · FRange повторно НЕ применялся · '
                 'результат не предназначен для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
@@ -3385,6 +3431,7 @@ class MainWindow(QMainWindow):
         self.original_shell.measure_controls.end_live()
         self._live_preview=None
         self._live_long_window=None
+        self._live_fft_window=None
         self._live_long_rendered_key=None
         self._pagestatus_snapshot=None
         self._refresh_source_pagestatus()

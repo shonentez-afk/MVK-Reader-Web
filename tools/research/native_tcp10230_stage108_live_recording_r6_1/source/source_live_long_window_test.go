@@ -7,6 +7,7 @@ import (
     "encoding/hex"
     "encoding/json"
     "errors"
+    "io"
     "math"
     "os"
     "path/filepath"
@@ -147,7 +148,8 @@ func TestSourceLongWindowRejectsOverwriteAndForgedSourceIndex(t *testing.T) {
 func TestSourceLongWindowRequiresOriginalRateTagAndSameSession(t *testing.T) {
     for _,tc:=range []struct{
         hz uint32;tag int;valid bool
-    }{{65536,0,true},{65536,1,true},{8192,0,false},{65536,14,false},{123,0,false}} {
+    }{{65536,0,true},{65536,1,true},{8192,0,true},
+      {512,0,true},{512,13,false},{65536,14,false},{123,0,false}} {
         _,e:=sourceLongWindowLength(tc.hz,tc.tag)
         if (e==nil)!=tc.valid {t.Fatalf("rate/tag %d/%d: %v",tc.hz,tc.tag,e)}
     }
@@ -202,5 +204,87 @@ func TestSourceLongWindowAfterFreezeRequiresFullPostThawOriginalRingHistory(t *t
         data,0600);e!=nil {t.Fatal(e)}
     if e:=m.handleSourceLongWindowRequest(time.Now());e==nil {
         t.Fatal("source Go published a new GetSignal while FreezeUpdate active")
+    }
+}
+
+func TestSourceFFTWindowExactNFromActual2MRingNoNewTCP(t *testing.T) {
+    // Source _Unit115:007D13D4 GetSpectrum accepts N up to 0x40000.
+    // Use a full actual receive-ring copy, not the ordinary preview.
+    m:=sourceLongTestMonitor(t,512) // 131072 accepted ADC samples
+    n,e:=sourceFFTWindowLength(65536)
+    if e!=nil || n!=65536{t.Fatalf("invalid original FFT N: %d %v",n,e)}
+    for _,bad:=range []uint32{0,512,2048,12345,262145,524288}{
+        if _,e:=sourceFFTWindowLength(bad);e==nil{
+            t.Fatalf("invented bSpecLines FFT N=%d accepted",bad)
+        }
+    }
+    c:=m.sourceOriginalStorage.channels[0]
+    req:=sourceLongWindowRequest{
+        Schema:sourceLongWindowRequestSchema,SessionID:filepath.Base(m.dir),
+        RequestID:"b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0",
+        ADC:1,HTag:-1,Samples:n,CaptureEnd:c.rxPos,
+        SampleRateHz:c.sampleRate,DeviceEnd:c.nextDeviceIndex,
+    }
+    raw,_:=json.Marshal(req)
+    if e:=os.WriteFile(filepath.Join(m.dir,sourceLongWindowRequestName),raw,0600);e!=nil{
+        t.Fatal(e)
+    }
+    if e:=m.handleSourceLongWindowRequest(time.Now());e!=nil{t.Fatal(e)}
+    z,e:=zip.OpenReader(filepath.Join(m.dir,sourceLongWindowResultName))
+    if e!=nil{t.Fatal(e)}
+    defer z.Close()
+    var receipt sourceLongWindowResult
+    var payload []byte
+    for _,f:=range z.File{
+        src,e:=f.Open();if e!=nil{t.Fatal(e)}
+        v,e:=io.ReadAll(src);src.Close();if e!=nil{t.Fatal(e)}
+        if f.Name=="MANIFEST.json"{
+            if e:=json.Unmarshal(v,&receipt);e!=nil{t.Fatal(e)}
+        }else if f.Name=="ADC1.f32"{payload=v}
+    }
+    if receipt.HTag!=-1 || receipt.Samples!=n ||
+        receipt.CaptureEnd!=c.rxPos || len(payload)!=int(n)*4 ||
+        receipt.NextIndex!=c.nextDeviceIndex || !receipt.CalibrationAlreadyApplied{
+        t.Fatalf("FFT request not exact source ring: %+v size=%d",receipt,len(payload))
+    }
+    expected,e:=m.sourceOriginalStorage.window(0,c.rxPos-uint64(n),uint64(n))
+    if e!=nil{t.Fatal(e)}
+    if !bytes.Equal(expected,payload){t.Fatal("FFT window differs from REAL original ring")}
+    sum:=sha256.Sum256(payload)
+    if receipt.SHA256!=hex.EncodeToString(sum[:]){t.Fatal("source FFT SHA mismatch")}
+    if !m.summary.ReadOnly || m.summary.SourceSetRateBytes!=0{
+        t.Fatal("source FFT local IPC must never command instrument")
+    }
+}
+
+func TestSourceShortGetSignalAfterFreezeUsesAcceptedRingNotTCPPreview(t *testing.T) {
+    // Stage0..1 original ring after thaw: native TCP saw an extra frozen
+    // ADC packet; a short GetSignal must not include it in the output.
+    m:=sourceLongTestMonitor(t,256) // 65536 accepted elements
+    gate:=newSourceOriginalReceiveGate()
+    gate.allowed[0]=65536
+    gate.skippedFrozen[0]=256
+    gate.skippedFrozenFrames[0]=1
+    m.sourceOriginalRXGate=gate
+    m.summary.Channels[0].Samples=65536+256
+    req:=sourceLongTestRequest(t,m,
+        "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",5) // 500ms=32768
+    if req.Samples!=32768{t.Fatal("short H scale cannot change N")}
+    if e:=m.handleSourceLongWindowRequest(time.Now());e!=nil{
+        t.Fatal("Go source ring rejected valid post-Freeze short window:",e)
+    }
+    z,e:=zip.OpenReader(filepath.Join(m.dir,sourceLongWindowResultName))
+    if e!=nil{t.Fatal(e)}
+    defer z.Close()
+    for _,f:=range z.File{
+        if f.Name=="ADC1.f32"{
+            src,e:=f.Open();if e!=nil{t.Fatal(e)}
+            data,e:=io.ReadAll(src);src.Close();if e!=nil{t.Fatal(e)}
+            if len(data)!=32768*4{t.Fatal("lost source short window samples")}
+            expected,e:=m.sourceOriginalStorage.window(0,65536-32768,32768)
+            if e!=nil || !bytes.Equal(expected,data){
+                t.Fatal("short GetSignal used all-TCP preview instead of accepted ring")
+            }
+        }
     }
 }

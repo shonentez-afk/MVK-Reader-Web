@@ -106,3 +106,49 @@ def test_qt_invalid_transport_and_stop_prevent_queued_preview(
         win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_qt_verified_original_ring_never_substitutes_raw_tcp_preview(
+        qt_app,tmp_path):
+    """Short GetSignal/FFT may be smaller than Native preview, but if
+    the Go source ring is independently validated Qt must await its
+    exact SHA window instead of showing packets excluded by Freeze.
+    """
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win._begin_live_capture()
+        status,preview=_pair(tmp_path)
+        win._receive_native_live_status(status)
+        win._receive_live_preview(preview)
+        assert win.wave_plot.listDataItems()
+        assert win.spec_plot.listDataItems()
+        # This exact validated source-ring bit is normally supplied by
+        # native_r6_live_status; the synthetic test requires no TCP/IPC.
+        win._native_live_status={
+            **status,
+            "source_original_storage_verified":True,
+            "source_original_storage":{"channels":[
+                {"last_sample_rate_hz":65536} for _ in range(10)
+            ]},
+        }
+        win._live_long_window=None
+        win._live_fft_window=None
+        win._render_live_wave()
+        win._render_live_spectrum()
+        assert not win.wave_plot.listDataItems()
+        assert not win.spec_plot.listDataItems()
+        assert "Ожидание" in win.wave_hint.text()
+        assert "Ожидание" in win.spec_hint.text() or (
+            "Ожидание" in win.spec_mean.text())
+        # Neither inactive source window may be reauthorized by an old
+        # all-TCP preview, no matter how healthy the socket looks.
+        win._receive_live_preview(preview)
+        assert not win.wave_plot.listDataItems()
+        assert not win.spec_plot.listDataItems()
+    finally:
+        win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()

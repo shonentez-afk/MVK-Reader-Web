@@ -11,9 +11,12 @@ import pytest
 
 from mvk_compatible.core.original_source_long_window import (
     REQUEST_NAME,RESULT_NAME,RESULT_SCHEMA,
-    submit_source_long_window,load_source_long_window,
+    submit_source_long_window,submit_source_fft_window,
+    load_source_long_window,
 )
-from mvk_compatible.core.native_r6_live_preview import provisional_waveform
+from mvk_compatible.core.native_r6_live_preview import (
+    provisional_waveform,provisional_spectrum,
+)
 from mvk_compatible.core.original_source_ring_receipt import BUFFER_ELEMENTS
 
 
@@ -197,3 +200,83 @@ def test_long_source_getsignal_recovers_after_original_freeze_thaw(tmp_path):
     status["source_original_receive_gate"]["freeze_update"]=True
     with pytest.raises(ValueError,match="FreezeUpdate"):
         submit_source_long_window(root,status,1,0)
+
+
+def test_source_short_getsignal_selected_from_real_go_ring_not_preview(tmp_path):
+    root,status=long_source_status(tmp_path)
+    n=65536*20
+    # The incoming TCP stream includes an extra 256 frozen samples.
+    # Native preview could include them; original ring FRxPos never did.
+    status["channels"][0]["samples"]=n+256
+    status["source_original_receive_gate_verified"]=True
+    status["source_original_receive_gate"]={
+        "selected_rate_hz":65536,"freeze_update":False,
+        "channels":[{
+            "channel":i+1,
+            "accepted_elements":n if i==0 else 0,
+            "freeze_skipped_elements":256 if i==0 else 0,
+            "rate_skipped_elements":0,
+            "freeze_skipped_frames":1 if i==0 else 0,
+            "rate_skipped_frames":0,
+        } for i in range(10)],
+    }
+    req=submit_source_long_window(
+        root,status,1,5,request_id="12341234123412341234123412341234")
+    assert req is not None and req.samples==32768
+    assert req.capture_end==n
+    data=response_fixture(root,status,req)
+    ready=load_source_long_window(root,status,req)
+    assert ready is not None and ready.preview.channels[1].sha256==hashlib.sha256(data).hexdigest()
+    waveform=provisional_waveform(
+        ready.preview,1,source_h_tag=5,capture_rxpos=req.capture_end)
+    assert waveform["window_samples"]==32768
+    assert waveform["source_getsignal_exact_selected_count"]
+    assert waveform["source_getsignal_readiness"]["source_rxpos_64"]==n
+    # The same data window has not been tampered with by applying FRange
+    # twice or padding a TCP preview with virtual samples.
+    assert ready.preview.channels[1].samples[0]==0.
+    assert ready.preview.channels[1].samples[-1]==32767.
+
+
+def test_source_getspectrum_uses_exact_source_ring_n_and_sha(tmp_path):
+    root,status=long_source_status(tmp_path)
+    req=submit_source_fft_window(
+        root,status,1,65536,request_id="abcdabcdabcdabcdabcdabcdabcdabcd")
+    assert req is not None and req.h_tag==-1
+    assert req.samples==65536
+    assert json.loads((root/REQUEST_NAME).read_text())["source_h_tag"]==-1
+    assert load_source_long_window(root,status,req) is None
+    actual=response_fixture(root,status,req)
+    ready=load_source_long_window(root,status,req)
+    assert ready is not None and ready.preview.channels[1].sha256==hashlib.sha256(actual).hexdigest()
+    spectrum=provisional_spectrum(ready.preview,1,mode=1,n_fft=req.samples)
+    assert spectrum["n_fft"]==65536
+    assert spectrum["source_fft_n_matches_requested_bSpecLines"]
+    assert spectrum["original_delphi_numerical_parity"] is False
+    assert spectrum["f_range_used"]==1.
+    assert spectrum["input_domain"]=="calibrated_bin"
+    assert spectrum["original_storage_read_divided_by_range"] is False
+    assert spectrum["source_fft_full_power_bins"]==32768
+    # Mis-tagged ZIP, wrong channel, and a made-up N must fail closed.
+    response_fixture(root,status,req,override=lambda m:m.update(source_h_tag=5))
+    with pytest.raises(ValueError,match="malformed source window"):
+        load_source_long_window(root,status,req)
+    for invalid in (True,512,2048,1000,262145,524288):
+        with pytest.raises(ValueError,match="original HTag or FFT N"):
+            submit_source_fft_window(root,status,1,invalid)
+    status["source_original_storage_verified"]=False
+    with pytest.raises(ValueError,match="trustworthy"):
+        submit_source_fft_window(root,status,1,65536)
+
+
+def test_source_short_window_never_uses_unavailable_ring_history(tmp_path):
+    root,status=long_source_status(tmp_path)
+    row=status["source_original_storage"]["channels"][0]
+    row["available_elements"]=8192
+    assert submit_source_long_window(root,status,1,5) is None
+    assert submit_source_fft_window(root,status,1,65536) is None
+    # If Go has not validated its actual original 2M ring, the normal
+    # Native preview is NOT acceptable as a substitute for it.
+    status["source_original_storage_verified"]=False
+    with pytest.raises(ValueError,match="trustworthy"):
+        submit_source_long_window(root,status,1,5)

@@ -105,11 +105,18 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
         full_ring=(status.get("source_original_storage")
                    if status.get("source_original_storage_verified") is True
                    else None)
-        # A long Source GetSignal is taken from original FRxPos, not
-        # Native forensic TCP.Samples: these diverge after FreezeUpdate
-        # or a mismatched rate. Preserve the exact 64-bit receive proof.
-        from_source_ring=bool(full_ring is not None and
-                              len(ch.samples)>262144)
+        # Original GetSignal AND GetSpectrum read the accepted FRxPos
+        # ring, never the Native all-TCP counter after FreezeUpdate.
+        # Source provenance is an explicit SHA-verified local IPC fact;
+        # sample count NEVER identifies it. Short windows can be just
+        # 32768 elements even though source ring has 2**21 capacity.
+        from_source_ring=(preview.source_ring_provenance_verified is True)
+        if from_source_ring and full_ring is None:
+            return deny("Отсутствует проверенное исходное 2M кольцо",
+                        "SOURCE_RING_UNVERIFIED")
+        if not from_source_ring and len(ch.samples)>262144:
+            return deny("Длинное окно не из проверенного кольца Go",
+                        "SOURCE_RING_UNVERIFIED")
         if from_source_ring:
             row=full_ring["channels"][number-1]
             if (source_gate is not None and source_gate["freeze_update"] or

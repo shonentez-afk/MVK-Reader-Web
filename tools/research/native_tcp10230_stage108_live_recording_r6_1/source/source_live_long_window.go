@@ -1,7 +1,8 @@
 package main
 
-// Stage111Z31FJ: one read-only, bounded, on-demand local selection of the
-// original 2^21 Float32 source ring. This is an IPC file handled by the SAME
+// One read-only, bounded, on-demand local selection of the
+// original 2^21 Float32 source ring for BOTH GetSignal HTag and
+// GetSpectrum's exact bSpecLines. Both share a single local IPC file. This is an IPC file handled by the SAME
 // Go TCP reader goroutine, NOT a second socket or a device command.
 //
 // _Unit115/GetSignal 007D0C30 + CheckDataAvailability 007D1998:
@@ -71,10 +72,27 @@ func sourceLongWindowLength(rate uint32,tag int) (uint32,error) {
         return 0,errors.New("invalid source bAdcHScale/rate")
     }
     n:=uint64(rate)*uint64(sourceLongWindowHScaleMS[tag])/1000
-    if n<=livePreviewSamples || n>sourceOriginalStorageSamples {
-        return 0,errors.New("not a source long-window selection")
+    // Short H scales MUST come from the original rate/Freeze-gated ring
+    // too: ordinary Native preview can include frozen/wrong-Fs samples.
+    // Fractional one-millisecond windows at Fs=512 yield zero samples
+    // and cannot be represented as real GetSignal data.
+    if n==0 || n>sourceOriginalStorageSamples {
+        return 0,errors.New("original source H-scale exceeds 2M ring or has no samples")
     }
     return uint32(n),nil
+}
+
+// Original _Unit128.pas bSpecLines passes one of the source menu lengths
+// to TMvkChannelStorage.GetSpectrum at 00848200; source _Unit115:007D1404
+// hard-limits its FFT input to 0x40000 samples. HTag=-1 is a local-only
+// IPC discriminator; Delphi never receives this value or any command.
+func sourceFFTWindowLength(n uint32)(uint32,error){
+    switch n {
+    case 1024,4096,8192,16384,32768,65536,131072,262144:
+        return n,nil
+    default:
+        return 0,errors.New("unsupported original bSpecLines FFT length")
+    }
 }
 
 func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
@@ -110,13 +128,21 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
        req.ADC<1 || req.ADC>8 {
         return errors.New("untrusted source long-window request identity")
     }
-    // A duplicate request never causes the entire 2M window to be
+    // A duplicate request never causes a 2M/FFT window to be
     // re-read/re-written on each 750ms status publication.
     if m.sourceLongWindowLastID==req.RequestID {return nil}
     m.sourceLongWindowLastID=req.RequestID
-    n,e:=sourceLongWindowLength(req.SampleRateHz,req.HTag)
-    if e!=nil || req.Samples!=n {
-        return errors.New("source HTag count mismatches actual Fs")
+    // HTag>=0 => exact original ADC horizontal time window.
+    // HTag=-1 => exact original FFT length, independent of H scale.
+    // Never shorten an FFT to the GUI preview's 262144 limit.
+    var n uint32
+    if req.HTag==-1 {
+        n,e=sourceFFTWindowLength(req.Samples)
+    } else {
+        n,e=sourceLongWindowLength(req.SampleRateHz,req.HTag)
+    }
+    if e!=nil || req.Samples!=n || !acceptedRates[req.SampleRateHz] {
+        return errors.New("source HTag/FFT length mismatches actual Fs")
     }
     idx:=req.ADC-1
     channel:=&m.sourceOriginalStorage.channels[idx]

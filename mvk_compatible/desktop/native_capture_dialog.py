@@ -23,7 +23,8 @@ from ..core.native_r6_bridge import (CaptureSpec, native_executable,
 from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview, MAX_SAMPLES
 from ..core.original_source_long_window import (
-    submit_source_long_window,load_source_long_window,
+    submit_source_long_window,submit_source_fft_window,
+    load_source_long_window,
 )
 from ..core.source_frame_mark_protocol import submit_native_frame_mark
 from ..core.original_mode2_source_rate_input import source_setrate_stdin_line
@@ -377,10 +378,12 @@ class NativeCaptureDialog(QDialog):
             self.previewReady.emit(preview)
 
     def _poll_source_long_window(self,snapshot):
-        """Ask the sole Go receiver for a long real ADC window, only in PageAdc.
+        """One bounded local source-ring request for visible ADC or Spectrum.
 
-        Source bAdcHScale Tag is authoritative; Go rejects invented counts,
-        stale FRxPos and overwritten ranges. Nothing is sent to the device.
+        bAdcHScale controls GetSignal N; bSpecLines controls GetSpectrum N.
+        Both use the same Go TCP owner and SHA-bound ring, not the ordinary
+        Native preview (which includes packets skipped during FreezeUpdate).
+        Nothing is transmitted to the physical instrument.
         """
         parent=self.parent()
         if (self._mode!="capture" or self._capture_root is None or
@@ -393,13 +396,22 @@ class NativeCaptureDialog(QDialog):
         if tabs is None:
             return
         idx=tabs.currentIndex()
-        if idx<0 or tabs.tabData(idx)!="PageAdc":
+        page=tabs.tabData(idx) if idx>=0 else None
+        if page not in ("PageAdc","PageSpectrum"):
             return
         adc=parent._ch()
-        tag=getattr(parent,"_wave_hscale_tag",None)
-        if type(tag) is not int:
-            return
-        key=(snapshot.get("session_id"),adc,tag)
+        if page=="PageAdc":
+            tag=getattr(parent,"_wave_hscale_tag",None)
+            fft_n=None
+            if type(tag) is not int:
+                return
+        else:
+            tag=-1  # strictly LOCAL IPC, not an original Delphi HTag
+            try:
+                fft_n=int(parent.spec_n.currentData())
+            except (ValueError,TypeError,AttributeError):
+                return
+        key=(snapshot.get("session_id"),adc,tag,fft_n)
         if self._source_long_selector!=key:
             self._source_long_selector=key
             self._source_long_request=None
@@ -426,10 +438,12 @@ class NativeCaptureDialog(QDialog):
                     len(rows)>=adc and
                     rows[adc-1]["rx_pos_64"]<=self._source_long_last_capture_end):
                 return
-            request=submit_source_long_window(
-                self._capture_root,snapshot,adc,tag)
+            request=(submit_source_fft_window(
+                self._capture_root,snapshot,adc,fft_n)
+                if tag==-1 else submit_source_long_window(
+                    self._capture_root,snapshot,adc,tag))
             if request is None:
-                return  # 262144 preview suffices, or real N not yet resident
+                return  # Selected real source ring history not yet resident
             self._source_long_request=request
             self._source_long_last_sent_at=clock
             self._source_long_last_error=None

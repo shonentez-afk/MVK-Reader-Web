@@ -65,6 +65,9 @@ class LivePreview:
     channels: dict[int, PreviewADC]
     input_domain: str = DOMAIN
     provisional: bool = True
+    # Only the SHA/RAW/cursor-checked local Go ring IPC sets this flag.
+    # Never infer source storage from the length of a Native preview.
+    source_ring_provenance_verified: bool = False
 
     def samples_for_offline_candidate(self, channel: int):
         ch = self.channels.get(channel)

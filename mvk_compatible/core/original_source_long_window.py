@@ -1,6 +1,7 @@
-"""On-demand original 2**21 ring GetSignal selection; local read-only IPC.
+"""On-demand original 2**21 ring GetSignal AND GetSpectrum; local IPC.
 
-Qt requests one source bAdcHScale window, never 8*2M periodic samples.
+Qt requests one real selected bAdcHScale or bSpecLines window,
+never 8*2M periodic samples.
 The ONLY Go TCP owner verifies actual rxPos/validPos/device index and
 responds with a SHA-bound atomically replaced one-channel ZIP.
 This is NOT original Win32 x87/TQGrapher/Delphi numerical parity.
@@ -69,8 +70,11 @@ def _root(root: str | Path, status: dict) -> Path:
     return path
 
 
+SOURCE_FFT_LENGTHS=frozenset((1024,4096,8192,16384,32768,65536,131072,262144))
+
 def _trusted_source(status:dict,adc:int,h_tag:int,
-                    *,require_history:bool=True):
+                    *,require_history:bool=True,
+                    fft_n:int|None=None):
     if (not isinstance(status,dict) or
             status.get("phase")!="RECORDING" or
             status.get("capture_only") is not False or
@@ -85,8 +89,15 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         raise ValueError("Source GetSignal: no trustworthy active original ring")
     if type(adc) is not int or not 1<=adc<=8:
         raise ValueError("Source GetSignal: ADC 1..8 required")
-    if type(h_tag) is not int or not 0<=h_tag<len(ADC_HORIZONTAL_MS):
-        raise ValueError("Source GetSignal: original H scale Tag 0..13 required")
+    # The original GetSpectrum uses bSpecLines, NOT bAdcHScale.
+    # -1 is strictly a local IPC selector for N, never a Delphi tag.
+    if type(h_tag) is not int or not (
+            0<=h_tag<len(ADC_HORIZONTAL_MS) or
+            h_tag==-1 and type(fft_n) is int and
+            fft_n in SOURCE_FFT_LENGTHS):
+        raise ValueError("Source GetSignal/GetSpectrum: original HTag or FFT N required")
+    if h_tag!=-1 and fft_n is not None:
+        raise ValueError("Source GetSignal: FFT length with time-scale request")
     row=status["source_original_storage"]["channels"][adc-1]
     live=status["channels"][adc-1]
     rate=row["last_sample_rate_hz"]
@@ -114,20 +125,23 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
             row["sequence_gaps"]>allowed_source_gaps or
             row["next_device_sample_index"]!=live["next_sample_index"]):
         raise ValueError("Source GetSignal: uncalibrated/discontinuous ADC")
-    count=rate*ADC_HORIZONTAL_MS[h_tag]//1000
-    if count<=MAX_SAMPLES:
-        return None
-    if count>BUFFER_ELEMENTS:
-        raise ValueError("Source GetSignal: more than original 2M capacity")
+    count=(fft_n if h_tag==-1 else
+           rate*ADC_HORIZONTAL_MS[h_tag]//1000)
+    # Every short HTag/FFT N must be sourced from the SAME rate/freeze
+    # gated Go ring. Native preview is forensic received-data history,
+    # which may include wrong-rate or frozen packets skipped by Delphi.
+    if count<=0 or count>BUFFER_ELEMENTS:
+        raise ValueError("Source GetSignal/GetSpectrum: invalid source 2M length")
     if require_history and row["available_elements"]<count:
         return None
     return row,live,rate,count
 
 
 def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
-                              *,request_id:str|None=None)->SourceWindowRequest|None:
-    """Create ONE small bounded request, without networking or device TX."""
-    settings=_trusted_source(status,adc,h_tag)
+                              *,request_id:str|None=None,
+                              fft_n:int|None=None)->SourceWindowRequest|None:
+    """Create ONE bounded GetSignal/FFT ring request, no socket or TX."""
+    settings=_trusted_source(status,adc,h_tag,fft_n=fft_n)
     if settings is None:
         return None
     row,live,rate,count=settings
@@ -171,15 +185,25 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
     return req
 
 
+def submit_source_fft_window(root: str|Path,status:dict,adc:int,n_fft:int,
+                             *,request_id:str|None=None
+                             )->SourceWindowRequest|None:
+    """Original bSpecLines exact N from real 2M ring; local-only IPC."""
+    return submit_source_long_window(
+        root,status,adc,-1,fft_n=n_fft,request_id=request_id)
+
+
 def load_source_long_window(root:str|Path,status:dict,
                             request:SourceWindowRequest,
                             *,now:datetime|None=None)->SourceLongWindow|None:
     """Fail closed on wrong run, stale epoch, SHA, N, rate and domain."""
     if not isinstance(request,SourceWindowRequest):
         raise ValueError("Source GetSignal: missing approved selection")
-    settings=_trusted_source(status,request.adc,request.h_tag)
+    settings=_trusted_source(
+        status,request.adc,request.h_tag,
+        fft_n=request.samples if request.h_tag==-1 else None)
     if settings is None:
-        raise ValueError("Source GetSignal: current source H scale is not long")
+        raise ValueError("Source GetSignal/GetSpectrum: real source history not resident")
     row,live,rate,count=settings
     if rate!=request.sample_rate_hz or count!=request.samples:
         raise ValueError("Source GetSignal: selected source rate changed")
@@ -262,6 +286,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     request.adc,rate,meta["first_sample_index"],
                     meta["next_sample_index"],values,digest,
                     request.capture_end)},
+                source_ring_provenance_verified=True,
             )
             return SourceLongWindow(request,preview)
     except (zipfile.BadZipFile,UnicodeDecodeError,json.JSONDecodeError) as exc:
