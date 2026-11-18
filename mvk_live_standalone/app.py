@@ -1347,6 +1347,69 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.spec.setYRange(ymin,ymax,padding=0)
         self.status.setText("Ручной масштаб осей установлен (только представление)")
 
+    def showEvent(self,event):
+        super().showEvent(event)
+        # Normal visible Windows launch: auto-fill without a manual NIC list.
+        # Headless CI runs deterministic injected tests instead of probing
+        # the runner's network adapters or contacting any remote endpoint.
+        if (not self._ethernet_detection_started and sys.platform=="win32"
+                and str(__import__("os").environ.get("QT_QPA_PLATFORM","")).lower()!="offscreen"):
+            self._ethernet_detection_started=True
+            QtCore.QTimer.singleShot(0,self._begin_ethernet_discovery)
+
+    def _on_manual_ethernet_address(self,*_):
+        # Only textEdited is connected, not textChanged; setText by our
+        # verified OS discovery must not mark itself as a manual override.
+        self._ethernet_manual_override=True
+        self.ethernet_info.setText(
+            "Локальный IPv4 введён вручную. Native Go всё равно проверит "
+            "принадлежность IPv4 активному интерфейсу перед TCP Connect.")
+
+    def _begin_ethernet_discovery(self,*_):
+        if self._native.state()!=QtCore.QProcess.ProcessState.NotRunning:
+            return
+        if self._ethernet_future is not None and not self._ethernet_future.done():
+            return
+        self._ethernet_manual_override=False
+        self._ethernet_detected=None
+        self.ethernet_info.setText(
+            "Определение одной проводной Ethernet-карты Windows и её IPv4… "
+            "К МВК01 не подключаемся.")
+        self.ethernet_refresh.setEnabled(False)
+        self._ethernet_future=self._ethernet_executor.submit(
+            discover_single_wired_ethernet)
+        self._ethernet_timer.start()
+
+    def _collect_ethernet_discovery(self):
+        future=self._ethernet_future
+        if future is None or not future.done():
+            return
+        self._ethernet_timer.stop()
+        self._ethernet_future=None
+        self.ethernet_refresh.setEnabled(
+            self._native.state()==QtCore.QProcess.ProcessState.NotRunning)
+        try:
+            nic=future.result()
+        except (ValueError,OSError,RuntimeError) as exc:
+            self._ethernet_detected=None
+            self.ethernet_info.setText(
+                f"Ethernet IPv4 не выбран автоматически: {exc} "
+                "Можно ввести адрес проводной карты вручную.")
+            return
+        if not isinstance(nic,WiredEthernet):
+            self.ethernet_info.setText("Windows вернула неверное описание Ethernet")
+            return
+        self._ethernet_detected=nic
+        if not self._ethernet_manual_override:
+            self.local_ip.setText(nic.ipv4)
+            self.ethernet_info.setText(
+                "Обнаружен проводной Ethernet: "+nic.description+
+                ". Локальный IPv4 подставлен автоматически.")
+        else:
+            self.ethernet_info.setText(
+                "Обнаружен Ethernet: "+nic.description+
+                ". Ручной адрес не изменён.")
+
     @staticmethod
     def _canonical_ipv4(value:str)->str:
         ip=ipaddress.IPv4Address(value)
