@@ -480,7 +480,19 @@ class LiveWindow(QtWidgets.QMainWindow):
             "настройки и сохраняет собственный график. "
             "Все результаты APP_DERIVED, исходный AUX4700 не изменяется.")
         self.extra_header.setWordWrap(True)
-        self.extra_layout.addWidget(self.extra_header)
+        extra_top=QtWidgets.QHBoxLayout()
+        extra_top.addWidget(QtWidgets.QLabel("АЦП"))
+        self.extra_adc=QtWidgets.QComboBox()
+        for channel in range(1,9):
+            self.extra_adc.addItem(f"АЦП {channel}",channel)
+        self.extra_adc.setCurrentIndex(self.adc.currentIndex())
+        self.extra_adc.currentIndexChanged.connect(
+            self.adc.setCurrentIndex)
+        self.adc.currentIndexChanged.connect(
+            self.extra_adc.setCurrentIndex)
+        extra_top.addWidget(self.extra_adc)
+        extra_top.addWidget(self.extra_header,stretch=1)
+        self.extra_layout.addLayout(extra_top)
         self.extra_pages=QtWidgets.QTabWidget()
         self.extra_layout.addWidget(self.extra_pages,stretch=1)
         self.waterfall=pg.PlotWidget(title="Водопад · последовательные APP_DERIVED спектры")
@@ -840,6 +852,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             w.currentIndexChanged.connect(self._on_control_change) if isinstance(w,QtWidgets.QComboBox) else w.valueChanged.connect(self._on_control_change)
         for w in (self.yscale,self.xscale,self.db_ref):
             w.currentIndexChanged.connect(self._redraw_from_current)
+        self.adc.currentIndexChanged.connect(self._advanced_adc_changed)
         self.dsp_adc.currentIndexChanged.connect(
             lambda index:self.adc.setCurrentIndex(index))
         self.adc.currentIndexChanged.connect(
@@ -1327,6 +1340,30 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._trend_points.append((ch.end/ch.rate_hz,f.acceleration_rms))
         self._trend_points=self._trend_points[-240:]
         self._redraw_short_trend()
+
+    def _advanced_adc_changed(self,*_):
+        # A former channel's short-term Live results must never appear as
+        # current ADC after changing channel from any of the workspaces.
+        self._waterfall_rows.clear()
+        self._waterfall_key=None
+        self.waterfall_img.clear()
+        self._trend_points.clear()
+        self._trend_key=None
+        self.trend_line.setData([],[])
+        self.short_trend_info.setText(
+            f"АЦП {self.adc.currentData()} · ожидание новых подтверждённых окон")
+        for mode,plot in self.extra_method_plots.items():
+            self.extra_method_images[mode].clear()
+            self.extra_method_lines[mode].setData([],[])
+            plot.setTitle(
+                f"АЦП {self.adc.currentData()} · {mode.upper()} · "
+                "нет расчёта для выбранного канала")
+            self.extra_method_infos[mode].setText(
+                f"АЦП {self.adc.currentData()} · выберите параметры и "
+                "пересчитайте из этого канала")
+        self.bearing_curve.setData([],[])
+        self.bearing_diagnostics.setText(
+            f"АЦП {self.adc.currentData()} · нажмите «Рассчитать огибающую»")
 
     def _redraw_short_trend(self,*_):
         if not hasattr(self,"short_trend_info"):return
@@ -2280,6 +2317,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 work=real_cepstrum
                 kwargs={}
             self._extra_kind=mode
+            self._extra_request_adc=self.adc.currentData()
             self._extra_future=self._extra_executor.submit(work,data,fs,**kwargs)
             for button in self.extra_method_buttons.values():
                 button.setEnabled(False)
@@ -2317,6 +2355,11 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.status.setText(f"Специальный анализ: {exc}")
             return
         mode=self._extra_kind
+        if self._extra_request_adc!=self.adc.currentData():
+            self.extra_method_infos[mode].setText(
+                "За время расчёта АЦП изменён: старый результат "
+                "отброшен, чтобы не смешивать каналы.")
+            return
         plot=self.extra_method_plots[mode]
         image=self.extra_method_images[mode]
         line=self.extra_method_lines[mode]
