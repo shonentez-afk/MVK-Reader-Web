@@ -64,8 +64,11 @@ func TestMode2WholeMeasurementStartToFinishOnOneTCPWithBothWriters(t *testing.T)
         for _,p:=range [][]byte{payloadADC,payloadTach,param3100}{
             if _,err=socket.Write(p);err!=nil{errorsServer<-err;return}
         }
-        // Keep the source socket alive until local user STOP completes.
-        // Do not introduce a fake socket close as a clean end reason.
+        // After a complete packet burst a local operator STOP, not
+        // the original 5s network ReadTimeout or remote EOF, ends Task2.
+        // Keep this fake source socket alive until receiver notices STOP.
+        time.Sleep(450*time.Millisecond)
+        cancel()
         <-ctx.Done()
         time.Sleep(1200*time.Millisecond)
         errorsServer<-nil
