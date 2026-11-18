@@ -181,3 +181,27 @@ def test_metric_family_keeps_units_separate():
         metric_details("third_octave:43")
     with pytest.raises(ValueError):
         metric_details("band_rms:24")
+
+
+
+def test_history_date_filter_finds_old_measurements_without_loading_all(tmp_path):
+    archive=MeasurementHistory(tmp_path/"archive")
+    archive.record_vendor_row(
+        "TEST_DATES",vendor_row(2,1,"2024-03-15T08:30:00Z"))
+    archive.record_vendor_row(
+        "TEST_DATES",vendor_row(2,2,"2026-11-18T08:30:00Z"))
+    latest=archive.entries(2,kind="vendor",limit=1)
+    assert len(latest)==1 and "2026" in latest[0].time_utc
+    older=archive.entries(
+        2,kind="vendor",limit=500,
+        after_utc="2024-03-01T00:00:00+00:00",
+        before_utc="2024-03-31T23:59:59.999999+00:00")
+    assert len(older)==1 and "2024" in older[0].time_utc
+    same=archive.exact_entry(2,"vendor","2024-03-15T08:30:00Z")
+    assert same is not None and same.key==older[0].key
+    assert archive.exact_entry(1,"vendor","2024-03-15T08:30:00Z") is None
+    with pytest.raises(ValueError,match="позже"):
+        archive.entries(
+            2,kind="vendor",
+            after_utc="2026-11-18T00:00:00Z",
+            before_utc="2024-03-01T00:00:00Z")
