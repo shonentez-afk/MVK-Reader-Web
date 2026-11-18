@@ -44,17 +44,17 @@ def _feed(w,fs=8192):
 def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
     w,_=gui
     assert [w.views.tabText(i) for i in range(w.views.count())]==[
-        "Спектр","Временной сигнал","Расчётные данные",
-        "Тренды","Сравнение","Доп. анализ"]
-    assert w.views.widget(0)==w.spectrum_page
-    assert w.views.widget(1)==w.wave_page
-    assert w.views.widget(2)==w.calculated_page
-    assert w.views.widget(3)==w.history_ui.trend_page
-    assert w.views.widget(4)==w.history_ui.compare_page
-    assert w.views.widget(5)==w.extra_panel
+        "Обзор", "Спектр", "Временной сигнал", "Расчётные данные"]
+    assert w.views.widget(0)==w.overview_page
+    assert w.views.widget(1)==w.spectrum_page
+    assert w.views.widget(2)==w.wave_page
+    assert w.views.widget(3)==w.calculated_page
+    assert w.views.indexOf(w.extra_panel)==-1
+    assert w.views.indexOf(w.history_ui.trend_page)==-1
+    assert w.views.indexOf(w.history_ui.compare_page)==-1
     assert w.wave.parent() is not w.centralWidget()
     assert w.spec.parent() is not w.centralWidget()
-    assert w.views.currentWidget()==w.spectrum_page
+    assert w.views.currentWidget()==w.overview_page
     assert [w.dsp_pages.tabText(i) for i in range(w.dsp_pages.count())]==[
         "Октавные полосы 1/3 · 1/1",
         "24 позиции · СКЗ / Пик / Размах",
@@ -230,8 +230,9 @@ def test_full_pysdkit_kurtogram_tab_and_band_handoff(gui):
     w._select_kurt_best()
     lo,hi,_,_,_=view.best_band()
     w._apply_kurt_band()
-    assert w.views.currentWidget()==w.extra_panel
-    assert w.extra_pages.currentWidget()==w.diagnostics_page
+    assert "bearing" in w._modern_windows
+    assert w._modern_windows["bearing"].centralWidget()==w.diagnostics_page
+    assert w.views.currentWidget() != w.extra_panel
     assert w.analysis.currentData()=="envelope"
     assert w.envelope_band.currentData()==pytest.approx((lo,hi))
     assert w.bearing_resonance.currentData()==pytest.approx((lo,hi))
