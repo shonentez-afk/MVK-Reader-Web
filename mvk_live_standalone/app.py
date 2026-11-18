@@ -52,7 +52,7 @@ from .time_controls import (TIME_WINDOWS_S, Y_ABSOLUTE_LIMITS_M_S2,
                             TIME_FILTERS, time_filter_waveform,
                             signed_time_limits, display_time_stats)
 from .graph_policies import spectrum_x_limits
-from .modern_shell import install_modern_shell
+from .modern_shell import install_modern_shell, open_archive_window, open_advanced_window
 from .vibration import (
     VibrationView, analyze_vibration, vibration_plot_values,
     vibration_y_label, time_features, bearing_frequency_markers,
@@ -1338,7 +1338,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.dsp_info.setText(
                 f"Для показателя {group} архивный тренд пока не поддерживается")
             return
-        self.views.setCurrentWidget(self.history_ui.trend_page)
+        if getattr(self,"_modern_installed",False):
+            open_archive_window(self,"trends")
+        else:
+            self.views.setCurrentWidget(self.history_ui.trend_page)
         self.history_ui.trend_group.setCurrentIndex(index)
         if position is not None:
             ix=self.history_ui.trend_position.findData(position)
@@ -2683,8 +2686,11 @@ class LiveWindow(QtWidgets.QMainWindow):
             combo.addItem(label,(low,high))
             combo.setCurrentIndex(combo.count()-1)
         self._run_bearing_page()
-        self.views.setCurrentWidget(self.extra_panel)
-        self.extra_pages.setCurrentWidget(self.diagnostics_page)
+        if getattr(self,"_modern_installed",False):
+            open_advanced_window(self,"bearing")
+        else:
+            self.views.setCurrentWidget(self.extra_panel)
+            self.extra_pages.setCurrentWidget(self.diagnostics_page)
         self.kurtogram_info.setText(
             f"Полоса {low:.1f}–{high:.1f} Гц передана в локальную "
             "Hilbert-огибающую; частотная карта рассчитана PySDKit. "
@@ -2772,8 +2778,11 @@ class LiveWindow(QtWidgets.QMainWindow):
         plot=self.extra_method_plots[mode]
         image=self.extra_method_images[mode]
         line=self.extra_method_lines[mode]
-        self.views.setCurrentWidget(self.extra_panel)
-        self.extra_pages.setCurrentWidget(self.extra_method_pages[mode])
+        if getattr(self,"_modern_installed",False):
+            open_advanced_window(self,mode)
+        else:
+            self.views.setCurrentWidget(self.extra_panel)
+            self.extra_pages.setCurrentWidget(self.extra_method_pages[mode])
         if mode=="cepstrum":
             image.clear()
             line.setData(view.quefrency_s,view.magnitude)
@@ -2804,8 +2813,8 @@ class LiveWindow(QtWidgets.QMainWindow):
             plot.setLabel("left","Частота",units="Гц")
             plot.enableAutoRange()
         self.extra_method_infos[mode].setText(
-            f"{view.description} · APP_DERIVED · график сохранён на вкладке "
-            "при переключении других методов; без внешнего эталона.")
+            f"{view.description} · APP_DERIVED · результат отдельного метода "
+            "из проверенного окна; без внешнего эталона.")
         self.status.setText(
             f"Дополнительный анализ {mode.upper()} · APP_DERIVED, без внешнего эталона")
 
