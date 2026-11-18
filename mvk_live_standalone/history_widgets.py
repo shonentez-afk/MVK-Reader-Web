@@ -385,16 +385,18 @@ class HistoryWorkspaces(QtCore.QObject):
                    "T00:00:00+00:00")
             before=(self.compare_date_to.date().toString("yyyy-MM-dd")+
                     "T23:59:59.999999+00:00")
+        error=None
         try:
             entries=self.history.entries(
                 self.adc.currentData(),kind=self._source_filter(),limit=500,
                 after_utc=after,before_utc=before)
         except ValueError as exc:
             entries=[]
-            self.compare_info.setText(f"Дата истории отклонена: {exc}")
+            error=f"Дата истории отклонена: {exc}"
         self._available_entries={e.key:e for e in entries}
         self._populate_compare_table()
         self._clear_plot()
+        if error:self.compare_info.setText(error)
 
     def _populate_compare_table(self):
         data=list(self._available_entries.values())
