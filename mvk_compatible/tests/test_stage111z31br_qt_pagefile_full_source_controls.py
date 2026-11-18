@@ -95,8 +95,13 @@ def test_dpi150_original_pagefile_two_modes_selected_source_and_writer_options(
         ui.file_record_flags["cbFileMvkName"].setChecked(True)
         assert ui.file_page.findChild(
             QLineEdit,"edFileMvkName").isEnabled()
-        assert "НЕ управляют Native R6.1" in ui.file_page.findChild(
+        capture_note = ui.file_page.findChild(
             QLabel,"sourceFileOfflineCaptureNote").text()
+        # Live source writers are now real local Go writers, not just
+        # a post-capture checkbox selection. Never assert stale UI text.
+        assert "WriteData/WriteValues управляют" in capture_note
+        assert "локальной записью Go" in capture_note
+        assert "RAW сохраняется отдельно" in capture_note
         # User picks source selection. This must NOT switch ADC signal
         # merely because a check state changed.
         tabs.setCurrentIndex(0)
