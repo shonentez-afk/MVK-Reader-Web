@@ -164,6 +164,6 @@ def test_legacy_status_quality_never_claims_zero_means_sensor_ok():
              "dsp_sensor_status_hex":"0x00000000"}
     assert _channel_quality(channel)=="DSP: статус 0x00000000"
     channel["dsp_sensor_status_hex"]="0x00000831"
-    assert _channel_quality(channel)=="DSP: статус 0x00000831"
+    assert _channel_quality(channel)=="DSP: ПРЕДУПРЕЖДЕНИЕ (0x00000831)"
     channel["dsp_sensor_status_hex"]=None
     assert _channel_quality(channel)=="DSP НЕ ПОЛУЧЕН"

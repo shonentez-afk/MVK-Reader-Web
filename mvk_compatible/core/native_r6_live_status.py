@@ -73,7 +73,12 @@ def _channel_quality(ch: dict) -> str:
     # The original ResultStatus at relative 0x120 contains several
     # independent bit fields. Zero is an OBSERVED bit pattern, never
     # proof that the instrument/sensor is operational or calibrated.
-    return "DSP: статус 0x00000000" if code == "0x00000000" else "DSP: статус "+code
+    # Keep the original instrument word visible in every case.
+    # "ПРЕДУПРЕЖДЕНИЕ" is only a conservative UI alert for an observed
+    # nonzero word, not a claim of calibrated vendor fault semantics.
+    # The quality_alert flag below uses RAW fields, NEVER this text.
+    return ("DSP: статус 0x00000000" if code == "0x00000000"
+            else "DSP: ПРЕДУПРЕЖДЕНИЕ ("+code+")")
 
 
 def validate_live_status(payload: dict, *, expected_run: str,
