@@ -381,7 +381,12 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				m.warn("Original SetRate changed ADC Fs during capture: RAW retained, single-rate BIN export unavailable")
 				if m.liveBin.preview!=nil {m.liveBin.preview=nil}
 			}
-			if !m.sourceRateTransitionDetected {
+			if !m.sourceRateTransitionDetected && m.liveBin.begun {
+                // Original TMVKThread accepts pre-PARAM source ADC into
+                // its channel storage with default FRange=1.0. The
+                // OPTIONAL forensic calibrated BIN needs a complete
+                // verified PARAM gain image and may not certify early
+                // samples. Do not misclassify valid TCP as malformed.
 				if e := m.liveBin.adcFrame(f, *sample);e!=nil{return e}
                 storedByCalibratedSpool=true
 			}
