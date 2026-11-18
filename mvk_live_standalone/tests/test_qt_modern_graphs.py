@@ -190,3 +190,44 @@ def test_standalone_stft_is_pinned_and_survives_main_adc_switch(widget):
     assert w._modern_windows["stft"] is child
     assert "APP_DERIVED" in w.extra_method_infos["stft"].text()
     assert "старый результат отброшен" not in w.extra_method_infos["stft"].text()
+
+
+def test_inspector_is_compact_vertical_without_horizontally_clipped_fields(widget):
+    w,app=widget
+    from PySide6 import QtCore,QtWidgets
+    w.resize(1600,900)
+    w.show()
+    app.processEvents()
+    scroll=w._modern_inspector_dock.widget()
+    assert isinstance(scroll,QtWidgets.QScrollArea)
+    assert scroll.horizontalScrollBarPolicy()==QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    # The right inspector uses stacked labels/controls instead of the old
+    # two-column QFormLayout that needed a horizontal scrollbar at 1600 px.
+    assert len(w._modern_inspector.findChildren(QtWidgets.QFormLayout))==0
+    assert len(w._modern_metric_values)==4
+    assert all(v.text()=="—" for v in w._modern_metric_values.values())
+    spectrum_pane=w._modern_inspector.widget(0)
+    toggles=spectrum_pane.findChildren(QtWidgets.QToolButton)
+    assert toggles and not toggles[0].isChecked()
+    assert w._modern_inspector_dock.width()>=246
+    assert scroll.widget().width()<=scroll.viewport().width()+2
+    assert w.views.count()==4
+
+
+def test_overview_curve_is_cleared_after_switch_to_unavailable_adc(widget):
+    w,_=widget
+    from mvk_live_standalone.vibration import analyze_vibration
+    data=_feed(w)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    w._spectrum=analyze_vibration(data,8192,nfft=8192)
+    w._render_spectrum()
+    w._render_wave()
+    assert len(w.overview_spec_curve.getData()[0])>0
+    assert len(w.overview_wave_curve.getData()[0])>0
+    w.adc.setCurrentIndex(1)
+    w._render_wave()
+    sx,_=w.overview_spec_curve.getData()
+    tx,_=w.overview_wave_curve.getData()
+    assert sx is None or len(sx)==0
+    assert tx is None or len(tx)==0
+    assert "нет подтверждённых" in w.overview_wave.getPlotItem().titleLabel.text.lower()
