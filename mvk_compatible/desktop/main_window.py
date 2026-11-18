@@ -3422,8 +3422,9 @@ class MainWindow(QMainWindow):
                 ('SHA исходного окна Go 2M · '
                  if ring_selected else 'Непроверенный исходный Preview · ')
                 + f'{d["source"]} · Native Go BIN уже калиброван; '
-                'в локальной FFT FRange=1, оригинальный коэффициент '
-                'не установлен · результат не для оригинального Copy/Save')
+                'в локальной FFT FRange=1; FRange повторно НЕ применялся; '
+                'оригинальный коэффициент не установлен · '
+                'результат не для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
             self._source_large_fft_key=None
