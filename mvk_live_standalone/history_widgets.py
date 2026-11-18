@@ -76,6 +76,10 @@ class HistoryWorkspaces(QtCore.QObject):
         self._build_trends()
         self._build_comparison()
         self.adc.currentIndexChanged.connect(self.refresh)
+        self.trend_adc.currentIndexChanged.connect(
+            lambda index:self.adc.setCurrentIndex(index))
+        self.compare_adc.currentIndexChanged.connect(
+            lambda index:self.adc.setCurrentIndex(index))
         self.refresh()
 
     def _build_trends(self):
@@ -83,7 +87,10 @@ class HistoryWorkspaces(QtCore.QObject):
         layout=QtWidgets.QVBoxLayout(self.trend_page)
         bar=QtWidgets.QHBoxLayout()
         bar.addWidget(QtWidgets.QLabel("Тренд АЦП"))
-        self.trend_adc=QtWidgets.QLabel(f"АЦП {self.adc.currentData()}")
+        self.trend_adc=QtWidgets.QComboBox()
+        for adc in range(1,9):
+            self.trend_adc.addItem(f"АЦП {adc}",adc)
+        self.trend_adc.setCurrentIndex(self.adc.currentIndex())
         bar.addWidget(self.trend_adc)
         bar.addWidget(QtWidgets.QLabel("Показатель"))
         self.trend_group=QtWidgets.QComboBox()
@@ -159,7 +166,8 @@ class HistoryWorkspaces(QtCore.QObject):
         if not hasattr(self,"trend_curve"):return
         metric=self._chosen_metric()
         if metric is None:return
-        self.trend_adc.setText(f"АЦП {self.adc.currentData()}")
+        # Updated by the common ADC synchronizer; never mutate the source
+        # combo's selection during a trend redraw.
         try:
             points,label,unit,truncated=self.history.trend(
                 self.adc.currentData(),metric,self.trend_period.currentData())
@@ -263,6 +271,12 @@ class HistoryWorkspaces(QtCore.QObject):
         layout=QtWidgets.QVBoxLayout(self.compare_page)
         bar=QtWidgets.QHBoxLayout()
         bar.addWidget(QtWidgets.QLabel("Наложение сохранённых измерений"))
+        bar.addWidget(QtWidgets.QLabel("АЦП"))
+        self.compare_adc=QtWidgets.QComboBox()
+        for adc in range(1,9):
+            self.compare_adc.addItem(f"АЦП {adc}",adc)
+        self.compare_adc.setCurrentIndex(self.adc.currentIndex())
+        bar.addWidget(self.compare_adc)
         self.compare_mode=QtWidgets.QComboBox()
         for label,key in COMPARE_MODES:self.compare_mode.addItem(label,key)
         bar.addWidget(self.compare_mode,stretch=2)
@@ -517,6 +531,12 @@ class HistoryWorkspaces(QtCore.QObject):
         )
 
     def refresh(self,*_):
+        # Both history pages have a REAL ADC selector: the operator never
+        # needs to switch back to Spectrum to choose another physical ADC.
+        with QtCore.QSignalBlocker(self.trend_adc):
+            self.trend_adc.setCurrentIndex(self.adc.currentIndex())
+        with QtCore.QSignalBlocker(self.compare_adc):
+            self.compare_adc.setCurrentIndex(self.adc.currentIndex())
         self._plot_trend()
         if hasattr(self,"compare_table"):
             self._reload_compare()
