@@ -127,17 +127,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         panel.addWidget(self.device_ip, 0, 1)
         panel.addWidget(QtWidgets.QLabel("Локальный IPv4"), 0, 2)
         panel.addWidget(self.local_ip, 0, 3)
-        panel.addWidget(QtWidgets.QLabel("Native .exe"), 1, 0)
-        panel.addWidget(self.exe_path, 1, 1, 1, 2)
-        panel.addWidget(QtWidgets.QLabel("SHA256"), 1, 3)
-        panel.addWidget(self.exe_sha, 1, 4)
         self.ethernet_info = QtWidgets.QLabel(
             "Ethernet: при открытии определится одна физическая проводная карта Windows")
         self.ethernet_info.setWordWrap(True)
         self.ethernet_refresh = QtWidgets.QPushButton("Обновить Ethernet")
         self.ethernet_refresh.clicked.connect(self._begin_ethernet_discovery)
-        panel.addWidget(self.ethernet_info, 2, 0, 1, 4)
-        panel.addWidget(self.ethernet_refresh, 2, 4)
+        panel.addWidget(self.ethernet_info, 1, 0, 1, 4)
+        panel.addWidget(self.ethernet_refresh, 1, 4)
 
         self.connect_button = QtWidgets.QPushButton("Подключить и измерять")
         self.connect_button.clicked.connect(self.start_native)
@@ -262,6 +258,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         opts.addWidget(self.envelope_band,2,1)
         self.envelope_label.hide()
         self.envelope_band.hide()
+        opts.addWidget(QtWidgets.QLabel("Проверенный Native .exe"),3,0)
+        opts.addWidget(self.exe_path,3,1,1,3)
+        opts.addWidget(QtWidgets.QLabel("Контроль SHA256"),4,0)
+        opts.addWidget(self.exe_sha,4,1,1,3)
         opts2=QtWidgets.QGridLayout()
         self.advanced_layout.addLayout(opts2)
         self.notch=QtWidgets.QComboBox()
@@ -363,7 +363,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         storage.addWidget(self.extra_button)
         storage.addStretch(1)
         self.rotation_info=QtWidgets.QLabel("1×: вручную или предложение по ВС. Тахометр не используется.")
-        main.addWidget(self.rotation_info)
+        self.advanced_layout.addWidget(self.rotation_info)
         self.status = QtWidgets.QLabel("Нет подтверждённого Live-потока")
         main.addWidget(self.status)
         self.quality = QtWidgets.QLabel("Показания AUX4700 не подменяются локальной FFT.")
@@ -459,14 +459,14 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.metrics = QtWidgets.QLabel("Нет достоверных данных")
         main.addWidget(self.metrics)
         self.features_label=QtWidgets.QLabel("Временные признаки: ожидание калиброванного канала")
-        main.addWidget(self.features_label)
+        self.advanced_layout.addWidget(self.features_label)
         self.frange_info=QtWidgets.QLabel(
             "FRange: ожидание начальной конфигурации МВК01. "
             "Графики используют уже откалиброванный Native BIN/IPC.")
         main.addWidget(self.frange_info)
         self.bearing_diagnostics=QtWidgets.QLabel(
             "Подшипники: введите 1× и геометрию; локальное SNR, без эталонных измерений")
-        main.addWidget(self.bearing_diagnostics)
+        self.advanced_layout.addWidget(self.bearing_diagnostics)
         self._apply_axes()
 
         for w in (self.adc,self.kind,self.nfft,self.band,self.smooth,self.analysis,self.envelope_band,self.notch,self.custom_low,self.custom_high):
