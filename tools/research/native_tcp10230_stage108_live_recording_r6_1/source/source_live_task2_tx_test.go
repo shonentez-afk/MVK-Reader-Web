@@ -7,6 +7,7 @@ import (
  "io"
  "net"
  "path/filepath"
+ "strings"
  "testing"
  "time"
 )
@@ -237,4 +238,36 @@ func TestOriginalTask2NoAttributionOfACKOrDENIEDFromPreviousSocket(t *testing.T)
     tx.sentInSocket=1 // only a new-socket complete TX may earn temporal evidence
     if err:=tx.afterReceivedFrame(m,Frame{Type:typeAck});err!=nil{t.Fatal(err)}
     if tx.ackAfterTX!=1 {t.Fatal("same-socket ACK not counted")}
+}
+
+func TestOriginalTask2OperatorACKLogsDoNotReuseOldSocket(t *testing.T) {
+    m,e:=NewMonitor(filepath.Join(t.TempDir(),"ack_socket_scope"),
+        "LIVE_SOURCE_SET_RATE_APPROVED","127.0.0.1")
+    if e!=nil{t.Fatal(e)}
+    defer m.CloseFiles()
+    tx:=newSourceLiveTask2TX()
+    m.sourceTask2TX=tx
+    // Previous socket sent one SetRate; the current one sent NONE.
+    tx.sentCommands=1
+    tx.sentBytes=36
+    tx.sentInSocket=1
+    tx.resetForNewSourceSocket(m)
+    ack:=sourceReply(typeAck)
+    denied:=sourceReply(typeDenied)
+    if e:=m.ProcessChunk(ack,time.Now());e!=nil{t.Fatal(e)}
+    if e:=m.ProcessChunk(denied,time.Now());!errors.Is(e,errTask2SourceDenied){
+        t.Fatal("current socket DENIED must abort the attempt")
+    }
+    messages:=strings.Join(m.summary.Warnings,"; ")
+    if !strings.Contains(messages,
+        "no SetRate sent on current source TCP socket") ||
+       !strings.Contains(messages,
+        "DENIED on current source TCP socket without a source SetRate send") ||
+       tx.ackAfterTX!=0 || tx.deniedAfterTX!=0 ||
+       m.summary.ACK!=1 || m.summary.Denials!=1 ||
+       m.summary.InvalidFrames!=0 || m.captureOnly ||
+       m.summary.RawBytes!=uint64(len(ack)+len(denied)) {
+        t.Fatalf("RX operator logs invented earlier-socket TX causality: %s (ACK=%d denied=%d)",
+            messages,tx.ackAfterTX,tx.deniedAfterTX)
+    }
 }
