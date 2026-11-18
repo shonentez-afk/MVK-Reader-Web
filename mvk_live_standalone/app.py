@@ -560,7 +560,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         if mode=="none":
             text="Без пользовательского фильтра"
             if self.kind.currentData() in ("velocity","displacement"):
-                text+=" (ВС/ВП: защитный HP 2 Гц при интеграции)"
+                text+=" (FFT: DC исключён; ВС/ВП вычисляются по f>0)"
             return text
         if mode=="highpass":
             return f"ФВЧ от {self.custom_low.value():g} Гц"
