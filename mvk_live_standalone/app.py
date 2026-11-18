@@ -965,6 +965,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         for w in (self.rpm,self.balls,self.ball_diameter,self.pitch_diameter,self.contact_angle):
             w.valueChanged.connect(self._update_markers)
         self.spectrum_view.currentIndexChanged.connect(self._select_primary_spectrum)
+        self.kind.currentIndexChanged.connect(self._rebuild_y_height)
+        self.yscale.currentIndexChanged.connect(self._rebuild_y_height)
+        self.analysis.currentIndexChanged.connect(self._rebuild_y_height)
         self.filter_choice.currentIndexChanged.connect(self._select_primary_filter)
         self.filter_center.currentIndexChanged.connect(self._select_primary_filter)
         self.x_limit_choice.currentIndexChanged.connect(self._redraw_from_current)
@@ -1003,22 +1006,30 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.envelope_label.setVisible(show)
         self.envelope_band.setVisible(show)
 
-    def _rebuild_y_height(self):
+    def _rebuild_y_height(self,*_):
+        # The original four presets are QUICK VIEWS, not a permanent
+        # constraint. User overrides to kind/Y never receive stale units.
+        scale=self.yscale.currentData()
+        kind=self.kind.currentData()
+        preset=("log_vu" if scale=="db" else
+                {"acceleration":"linear_vu",
+                 "velocity":"linear_vs",
+                 "displacement":"linear_vp"}.get(kind,"linear_vu"))
         with QtCore.QSignalBlocker(self.y_height_choice):
             self.y_height_choice.clear()
-            for label,value in y_height_options(self.spectrum_view.currentData()):
+            for label,value in y_height_options(preset):
                 self.y_height_choice.addItem(label,value)
+            # FFT presets are amplitudes; PSD/ASD have other dimensions.
+            self.y_height_choice.setEnabled(self.analysis.currentData()=="fft")
 
     def _select_primary_spectrum(self,*_):
-        # An operator view changes kind, dB/linear and regular FFT TOGETHER.
+        # MVKView-like quick presets only choose physical kind and
+        # ordinate; an operator's X-scale and FFT/PSD mode stay independent.
         kind,scale=view_settings(self.spectrum_view.currentData())
-        blocks=[QtCore.QSignalBlocker(w) for w in (
-            self.kind,self.yscale,self.xscale,self.analysis)]
+        blocks=[QtCore.QSignalBlocker(w) for w in (self.kind,self.yscale)]
         try:
             self.kind.setCurrentIndex(self.kind.findData(kind))
             self.yscale.setCurrentIndex(self.yscale.findData(scale))
-            self.xscale.setCurrentIndex(self.xscale.findData("linear"))
-            self.analysis.setCurrentIndex(self.analysis.findData("fft"))
         finally:
             del blocks
         self._rebuild_y_height()
@@ -1183,9 +1194,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         else:
             visible=[]
         y_height=(self.y_height_choice.currentData()
-                  if self.analysis.currentData()=="fft" and
-                  (self.kind.currentData(),scale)==view_settings(
-                      self.spectrum_view.currentData()) else None)
+                  if self.analysis.currentData()=="fft" else None)
         ymin,ymax=visible_y_range(visible,scale,y_height)
         if self._manual_spec_axes is not None:
             left,right,bottom,top=self._manual_spec_axes
