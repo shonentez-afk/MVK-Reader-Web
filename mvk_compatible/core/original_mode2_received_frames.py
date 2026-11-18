@@ -187,7 +187,9 @@ class OriginalSourceReadFramer:
                 typ,n,"ADC" if typ==TYPE_ADCDATA else "TACH",
                 valid,self.stage,channel=channel,sample_rate=rate)
         if typ==TYPE_REGISTERS:
-            if body_words<6:
+            # _Unit125.pas 0080844B..0080844F permits exactly five
+            # words (28-byte frame) with descriptor count zero.
+            if body_words<5:
                 raise OriginalSourceRxError("Source 0080839E PARAM header")
             count=self._word(frame,24)
             if count>(body_words-5):

@@ -14,6 +14,8 @@ NOT an assertion that Delphi GetValueText produced identical numbers.
 from __future__ import annotations
 
 from hashlib import sha256
+from contextlib import nullcontext
+from .original_param_gate_proof import OriginalParamGateReader
 from pathlib import Path
 import re
 import struct
@@ -34,7 +36,9 @@ def _counter(v: object, label: str, limit: int = (1 << 64) - 1) -> int:
 
 def _parameter_blocks(frame: bytes):
     """Bounded exact PARAM record layout also checked by Native Go."""
-    if len(frame) < 32:
+    # Delphi _Unit125:0080844F consumes an empty 28-byte PARAM as a
+    # valid no-op, never as a fabricated 0x3100 event.
+    if len(frame) < 28:
         raise ValueError("Original VALUES 0x3100: truncated PARAM")
     count = struct.unpack_from("<I", frame, 24)[0]
     if count > 4096:
@@ -60,6 +64,12 @@ def scan_original_values_3100(
     raw_path: Path | str, *, expected_sha256: str, expected_raw_bytes: int,
     expected_frames: int, expected_aux: int, expected_ticks: int,
     expected_tail_bytes: int, ranges: list[tuple[int, int, int]],
+    param_gate_path: Path | str | None = None,
+    expected_param_gate_sha256: str | None = None,
+    expected_param_gate_records: int = 0,
+    expected_frozen_param_frames: int = 0,
+    expected_frozen_aux: int = 0,
+    expected_frozen_values: int = 0,
 ) -> dict[int, list[dict]]:
     """Replay complete frames and collect only the chosen 0x3100 events.
 
@@ -77,6 +87,14 @@ def scan_original_values_3100(
     frames = _counter(expected_frames, "frame count", total // 8)
     final_aux = _counter(expected_aux, "AUX count", frames)
     final_ticks = _counter(expected_ticks, "source 0x3100 tick count", frames)
+    final_frozen_param = _counter(expected_frozen_param_frames, "frozen PARAM", frames)
+    final_frozen_aux = _counter(expected_frozen_aux, "frozen AUX", frames)
+    final_frozen_values = _counter(expected_frozen_values, "frozen VALUES", frames)
+    if (param_gate_path is None and
+            (expected_param_gate_sha256 is not None or
+             expected_param_gate_records or final_frozen_param or
+             final_frozen_aux or final_frozen_values)):
+        raise ValueError("Original VALUES 0x3100: Freeze requires verified PARAM gate")
     tail = _counter(expected_tail_bytes, "final incomplete tail", MAX_FRAME - 1)
     if path.stat().st_size != total:
         raise ValueError("Original VALUES 0x3100: RAW length changed")
@@ -97,7 +115,18 @@ def scan_original_values_3100(
     aux = 0
     ticks = 0
     read_total = 0
-    with path.open("rb") as src:
+    frozen_param = 0
+    frozen_aux = 0
+    frozen_values = 0
+    gate_context = (
+        OriginalParamGateReader(
+            param_gate_path,
+            expected_sha256=expected_param_gate_sha256,
+            expected_records=expected_param_gate_records,
+            expected_frames=frames,
+        ) if param_gate_path is not None else nullcontext(None)
+    )
+    with path.open("rb") as src, gate_context as gate:
         for frame_index in range(frames):
             header = src.read(8)
             if len(header) != 8:
@@ -114,8 +143,6 @@ def scan_original_values_3100(
             if frame_type != PARAM:
                 continue
             blocks = list(_parameter_blocks(frame))
-            if length == 4700:
-                aux += 1
             triggers = [(words, data) for addr, words, data in blocks
                         if addr == 0x3100]
             if len(triggers) > 1:
@@ -123,6 +150,20 @@ def scan_original_values_3100(
                 # Do not silently diverge from its own independently
                 # authenticated frame-mark / summary counters.
                 raise ValueError("Original VALUES 0x3100: repeated trigger in one PARAM")
+            frozen = gate.consume(
+                frame_index=frame_index + 1, frame=frame,
+                descriptors=len(blocks), values3100=bool(triggers),
+            ) if gate is not None else False
+            if frozen:
+                # Original _Unit125:0080850C reads and discards each
+                # PARAM block while frozen; RAW remains unchanged, but
+                # neither AUX nor 0x3100 advances any VALUES counter.
+                frozen_param += bool(blocks)
+                frozen_aux += (length == 4700)
+                frozen_values += bool(triggers)
+                continue
+            if length == 4700:
+                aux += 1
             if triggers:
                 words, raw = triggers[0]
                 for number, begin, end in intervals:
@@ -143,8 +184,13 @@ def scan_original_values_3100(
             raise ValueError("Original VALUES 0x3100: terminal RAW tail mismatched")
         digest.update(final)
         read_total += len(final)
+        if gate is not None:
+            gate.finish()
     if (read_total != total or digest.hexdigest() != expected_sha256
-            or ticks != final_ticks or aux != final_aux):
+            or ticks != final_ticks or aux != final_aux or
+            frozen_param != final_frozen_param or
+            frozen_aux != final_frozen_aux or
+            frozen_values != final_frozen_values):
         raise ValueError("Original VALUES 0x3100: SHA/frame/AUX/trigger proof mismatch")
     for number, start, end in intervals:
         if len(chosen[number]) != end - start:

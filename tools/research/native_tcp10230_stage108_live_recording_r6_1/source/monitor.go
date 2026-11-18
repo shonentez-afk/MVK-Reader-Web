@@ -77,6 +77,13 @@ type Summary struct {
 	FullSnapshots          uint64            `json:"full_register_snapshots"`
 	RegisterUpdates        uint64            `json:"register_update_frames"`
 	SourceNonemptyParameters uint64          `json:"source_rx_nonempty_parameter_frames"`
+    SourceEmptyParamFrames uint64 `json:"source_rx_empty_parameter_frames,omitempty"`
+    SourceFrozenParamFrames uint64 `json:"source_original_param_frames_skipped_frozen,omitempty"`
+    SourceFrozenParamBlocks uint64 `json:"source_original_param_blocks_skipped_frozen,omitempty"`
+    SourceFrozenAux4700 uint64 `json:"source_original_aux4700_skipped_frozen,omitempty"`
+    SourceFrozenValuesTicks uint64 `json:"source_original_values_3100_skipped_frozen,omitempty"`
+    SourceOriginalParamGateSHA256 string `json:"source_original_param_gate_sha256,omitempty"`
+    SourceOriginalParamGateRecords uint64 `json:"source_original_param_gate_records,omitempty"`
 	RegisterBlocks         uint64            `json:"register_blocks"`
 	Aux4700                uint64            `json:"aux4700_updates"`
 	ValuesTicks            uint64            `json:"values_ticks_address_3100"`
@@ -116,6 +123,7 @@ type Monitor struct {
 	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
     sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
     sourceOriginalTask2Stage *sourceOriginalTask2Lifecycle // independent Task2 Stage0/1/3 and DENIED original receive status
+    sourceParamGate *sourceOriginalParamGateJournal // original PARAM freeze decisions per actual source TCP frame
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
@@ -435,15 +443,46 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageUnscaledADC);e!=nil{return e}
         }
 	case typeParam:
+        sourceFrozen:=m.sourceOriginalRXGate!=nil && m.sourceOriginalRXGate.frozen
+        // A SHA-anchored local ledger records the REAL operator Freeze
+        // state per PARAM frame. RAW replay alone cannot recover it.
+        if m.sourceParamGate!=nil {
+            if e:=m.sourceParamGate.onParam(m,f,blocks,sourceFrozen);e!=nil{return e}
+        }
+        // Source _Unit125:0080844B..0080844F consumes a zero-record
+        // PARAM and returns to Read. Stage0 stays Stage0. The raw bytes
+        // and frame are still counted, not misclassified as a fault.
+        if len(blocks)==0 {
+            m.summary.SourceEmptyParamFrames++
+            m.note("source zero-record PARAM: accepted, no register or Stage change")
+            break
+        }
+        // The original stage transition at 00808617 is based on a
+        // NONEMPTY PARAM, even when its registers were skipped due to
+        // FreezeUpdate. Keep this received-frame count independent of
+        // which register changes actually reached the original storage.
+        m.summary.SourceNonemptyParameters++
+        // _Unit125.pas:0080850C..008085E1: while FreezeUpdate=1, the
+        // original STILL reads each PARAM register word from TCP, but
+        // skips register-image update, FRange, GetValueText, AUX and the
+        // WriteValues trigger at 0x3100. Do not substitute stale DSP
+        // readings or write an event just because RAW contains 0x3100.
+        // The immutable forensic incoming.raw retains those exact bytes.
+        if sourceFrozen {
+            m.summary.SourceFrozenParamFrames++
+            m.summary.SourceFrozenParamBlocks+=uint64(len(blocks))
+            if len(f.Raw)==4700 {m.summary.SourceFrozenAux4700++}
+            for _,b:=range blocks {
+                if b.Addr==0x3100 {m.summary.SourceFrozenValuesTicks++;break}
+            }
+            m.note("original FreezeUpdate: received PARAM preserved in RAW; local register/DSP/VALUES update skipped")
+            break
+        }
 		for _, b := range blocks {
 			m.image.Put(b)
 			m.summary.RegisterBlocks++
 		}
 		m.summary.RegisterUpdates++
-		// Original _Unit125:00808617 changes Stage=0->1 on a
-		// well-formed register frame with at least one descriptor.
-		// This is READ evidence, never an actual Delphi TMVKThread.
-		if len(blocks) > 0 { m.summary.SourceNonemptyParameters++ }
 		if m.liveBin != nil {
 			if e := m.liveBin.paramFrame(f, blocks, &m.image); e != nil {
 				return e
@@ -540,6 +579,7 @@ func (m *Monitor) CloseFiles() error {
 	}
     if m.sourceLiveDataWriter!=nil {m.sourceLiveDataWriter.cleanup()}
     if m.sourceLiveValuesWriter!=nil {m.sourceLiveValuesWriter.cleanup()}
+    if m.sourceParamGate!=nil {m.sourceParamGate.cleanup()}
 	return first
 }
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
@@ -562,6 +602,13 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
         if m.sourceLiveValuesWriter!=nil {
             if e:=m.sourceLiveValuesWriter.finalize(m);e!=nil {
                 m.warn("source WriteValues event/audit failure: "+e.Error())
+                m.captureOnly=true
+                m.summary.CaptureOnly=true
+            }
+        }
+        if m.sourceParamGate!=nil {
+            if e:=m.sourceParamGate.finalize(m);e!=nil {
+                m.warn("source PARAM Freeze ledger unavailable: "+e.Error())
                 m.captureOnly=true
                 m.summary.CaptureOnly=true
             }
@@ -594,7 +641,11 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
 			m.warn(fmt.Sprintf("last application frame incomplete: %d bytes; common if timed capture stops midframe", m.summary.TailBytes))
 		}
 		if m.summary.Aux4700 == 0 {
-			m.warn("no AUX4700 frames observed during this capture")
+            if m.summary.SourceFrozenAux4700>0 {
+                m.warn(fmt.Sprintf("%d original AUX4700 PARAM frames were received only under FreezeUpdate: RAW preserved, DSP not updated",m.summary.SourceFrozenAux4700))
+            } else {
+                m.warn("no AUX4700 frames observed during this capture")
+            }
 		}
 		if e := m.CloseFiles(); e != nil {
 			return m.Snapshot(), "", e

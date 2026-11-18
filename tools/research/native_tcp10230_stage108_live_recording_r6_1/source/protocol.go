@@ -53,7 +53,11 @@ func (f *Framer) Feed(chunk []byte) ([]Frame, error) {
                 return result,fmt.Errorf("%w: source sample header size=%d",errMalformed,n)
             }
 		case typeParam:
-			if n < 32 {
+            // Source _Unit125.pas 0080841B..0080844F reads five
+            // DWORDs after the envelope. When record count is ZERO,
+            // it jumps to 00808718 without a block; a 28-byte PARAM
+            // is a legitimate no-op, NOT a framing error.
+			if n < 28 {
 				return result, fmt.Errorf("%w: PARAM size=%d", errMalformed, n)
 			}
 		case typeAck, typeDenied:
@@ -87,7 +91,7 @@ type RegBlock struct {
 }
 
 func decodeBlocks(raw []byte) ([]RegBlock, error) {
-	if len(raw) < 32 || binary.LittleEndian.Uint32(raw[:4]) != typeParam {
+	if len(raw) < 28 || binary.LittleEndian.Uint32(raw[:4]) != typeParam {
 		return nil, fmt.Errorf("%w: not parameter message", errMalformed)
 	}
 	count := binary.LittleEndian.Uint32(raw[24:28])

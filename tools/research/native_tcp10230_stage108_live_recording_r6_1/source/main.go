@@ -475,6 +475,16 @@ func mainInner() int {
         // but NEVER transmit the real SetRate without separate consent.
         m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
         m.sourceOriginalTask2Stage=newSourceOriginalTask2Lifecycle()
+        // Audit source FreezeUpdate at EVERY validated PARAM boundary.
+        // This journal is necessary to revalidate VALUES from unchanged
+        // RAW after Stop, including skipped 0x3100 while frozen.
+        gate,e:=newSourceOriginalParamGateJournal(dir)
+        if e!=nil {
+            fmt.Println("Cannot create source PARAM receive ledger:",e)
+            _=m.CloseFiles()
+            return 2
+        }
+        m.sourceParamGate=gate
         if m.sourceOperatorRateChan==nil {
             local:=make(chan string,16)
             m.sourceOperatorRateChan=local

@@ -67,11 +67,11 @@ class OriginalMeasureControls:
         self.freeze=self.buttons["bFreezeUpdate"]
         self.freeze.setCheckable(True)
         self.freeze.setToolTip(
-            "Оригинал _Unit128:0084DEA4 переключает "
-            "Оригинал TMVKThread.FreezeUpdate прекращает запись в "
-            "канальные кольца, но продолжает читать TCP. В Native "
-            "локальная команда FREEZE передаётся существующему Go "
-            "приёмнику без команды прибору. RAW продолжает записываться.")
+            "Оригинал _Unit128:0084DEA4 переключает FreezeUpdate. "
+            "TCP и сохранение RAW продолжаются; TMVKThread не обновляет "
+            "кольца ADC/TACH, регистры PARAM, AUX и WriteValues 0x3100 "
+            "до снятия паузы (_Unit125:0080850C). Локальная FREEZE "
+            "передаётся тому же Go-приёмнику без команды прибору.")
         self.freeze.clicked.connect(self._toggle_freeze)
         self.rate=self.buttons["bSampleRate"]
         self.rate_menu=QMenu(self.rate)
