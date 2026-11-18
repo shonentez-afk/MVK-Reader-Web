@@ -114,9 +114,16 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
         m.sourceOriginalTask2Stage.onConnected(m.summary.SourceNonemptyParameters)
         defer func(){m.sourceOriginalTask2Stage.onDisconnected(reason)}()
     }
-	// Rebind AFTER Stage0 reset: the renewed original SetRate must use
-	// this new TCP socket, never the disconnected previous conn.
-	if m.sourceTask2TX!=nil {m.sourceTask2TX.conn=c;defer func(){m.sourceTask2TX.conn=nil}()}
+	// The original _Unit125:00807BE3 starts each socket in Stage0,
+	// while _Unit125:008089D8..008089EE can queue the selected rate
+	// again after a failed attempt. Do not inherit the previous socket's
+	// Stage1/StatusCells0/last PARAM counter or skip its renewed SetRate.
+	// This is the SAME approved TCP socket, not a second TX connection.
+	if m.sourceTask2TX!=nil {
+		m.sourceTask2TX.resetForNewSourceSocket(m)
+		m.sourceTask2TX.conn=c
+		defer func(){m.sourceTask2TX.conn=nil}()
+	}
 	m.summary.SocketLocalAddr = c.LocalAddr().String()
 	m.summary.SocketRemoteAddr = c.RemoteAddr().String()
 	m.publishLiveStatus("RECORDING", true, "")
