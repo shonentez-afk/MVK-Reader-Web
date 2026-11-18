@@ -100,7 +100,8 @@ def discover_single_wired_ethernet() -> WiredEthernet:
         result=subprocess.run(
             ["powershell.exe","-NoProfile","-NonInteractive",
              "-Command",_WINDOWS_DISCOVERY],
-            capture_output=True,timeout=10,check=False)
+            capture_output=True,timeout=10,check=False,
+            creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
     except (OSError,subprocess.TimeoutExpired) as exc:
         raise ValueError("Не удалось прочитать сетевые карты Windows") from exc
     if result.returncode!=0:
