@@ -25,6 +25,7 @@ from uuid import uuid4
 import numpy as np
 
 from .advanced import extended_time_features, broadband_rms
+from .vibration import analyze_vibration
 from .original_dsp import OriginalDSPBands, read_original_dsp_bands, _THIRD_HZ
 from .recordings import load_snapshot, save_snapshot, OfflineSnapshot
 
@@ -46,6 +47,12 @@ _LOCAL_METRICS={
     "shape":("Фактор формы","безразм."),
     "clearance":("Фактор зазора","безразм."),
     "velocity_rms_10_1000":("ВС СКЗ 10–1000 Гц · из АЦП","мм/с"),
+    "fft_acceleration_peak":("FFT ВУ · максимум линии","м/с²"),
+    "fft_acceleration_peak_hz":("FFT ВУ · частота максимума","Гц"),
+    "fft_velocity_peak":("FFT ВС · максимум линии","мм/с"),
+    "fft_velocity_peak_hz":("FFT ВС · частота максимума","Гц"),
+    "fft_displacement_peak":("FFT ВП · максимум линии","мкм"),
+    "fft_displacement_peak_hz":("FFT ВП · частота максимума","Гц"),
 }
 
 
@@ -126,6 +133,18 @@ def _local_features(x:np.ndarray,fs:int)->dict[str,float]:
         "shape":f.shape_factor,
         "clearance":f.clearance_factor,
     }
+    # Three comparable spectral maxima derived from the SAME actual
+    # 8192 ADC samples, with calibrated acceleration only once. Never
+    # invent FFT if a stored window is shorter than 8192 samples.
+    if x.size>=8192:
+        for kind in ("acceleration","velocity","displacement"):
+            spectrum=analyze_vibration(
+                x,fs,kind=kind,mode="fft",nfft=8192,
+                band_hz=(0.,None),smooth_bins=1)
+            frequency,amplitude=spectrum.peak
+            if math.isfinite(frequency) and math.isfinite(amplitude):
+                metrics[f"fft_{kind}_peak"]=float(amplitude)
+                metrics[f"fft_{kind}_peak_hz"]=float(frequency)
     # Only a truly sampled 10..1000 Hz band can be stated in these units.
     if fs>2250 and x.size>=8192:
         try:
