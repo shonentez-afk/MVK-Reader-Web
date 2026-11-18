@@ -684,10 +684,10 @@ def install_modern_shell(win, main, panel, review, storage):
     for label, widget in (
         ("Величина", win.kind),
         ("Анализ", win.analysis),
-        ("Шкала амплитуды Y", win.yscale),
-        ("Шкала частоты X", win.xscale),
-        ("Предел частоты", win.x_limit_choice),
-        ("Амплитуда / автомасштаб", win.y_height_choice),
+        ("Шкала значений", win.yscale),
+        ("Частотная шкала", win.xscale),
+        ("Показывать частоты до", win.x_limit_choice),
+        ("Масштаб спектра", win.y_height_choice),
         ("Фильтр спектра", win.filter_choice),
     ):
         _field(basic, label, widget)
@@ -751,9 +751,9 @@ def install_modern_shell(win, main, panel, review, storage):
     tform = QtWidgets.QVBoxLayout()
     tform.setSpacing(9)
     for label, widget in (
-        ("Развёртка X", win.timebase),
-        ("Мгновенная амплитуда ±Y", win.time_y_width),
-        ("Фильтр времени", win.time_filter_choice),
+        ("Развёртка времени", win.timebase),
+        ("Масштаб виброускорения", win.time_y_width),
+        ("Фильтр временного сигнала", win.time_filter_choice),
     ):
         _field(tform, label, widget)
     time_centre = _field(tform, "Центральная полоса", win.time_filter_center)
@@ -787,7 +787,8 @@ def install_modern_shell(win, main, panel, review, storage):
         time_detail.setArrowType(
             QtCore.Qt.ArrowType.DownArrow if enabled else QtCore.Qt.ArrowType.RightArrow)))
     info = QtWidgets.QLabel(
-        "Знаковая амплитуда м/с². Фильтр времени не изменяет FFT.")
+        "Мгновенное виброускорение, м/с² (с положительными и отрицательными пиками). "
+        "Фильтр временного сигнала не изменяет спектр.")
     info.setWordWrap(True)
     info.setProperty("fieldLabel", True)
     ts.addWidget(info)
