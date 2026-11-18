@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 import hashlib
 import ipaddress
+import os
+import sqlite3
 import math
 import tempfile
 import time
@@ -40,6 +42,8 @@ from .advanced import (envelope_fault_lines, stft_vibration,
                        gear_mesh_markers, indicative_iso10816_zone)
 from .recordings import save_snapshot, load_snapshot, save_spectrum_csv
 from .ethernet import discover_single_wired_ethernet, WiredEthernet
+from .measurement_history import MeasurementHistory, MAX_IMPORT_ROWS
+from .history_widgets import HistoryWorkspaces
 from .time_controls import (TIME_WINDOWS_S, Y_ABSOLUTE_LIMITS_M_S2,
                             TIME_FILTERS, time_filter_waveform,
                             signed_time_limits, display_time_stats)
@@ -52,11 +56,30 @@ MAX_CAPTURE_MB = 2048
 
 
 class LiveWindow(QtWidgets.QMainWindow):
-    def __init__(self, capture_root: Path | None = None) -> None:
+    def __init__(self, capture_root: Path | None = None,
+                 archive_root: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("MVK Live · Независимый анализатор спектра")
         self.resize(1380, 870)
         self._capture_root = capture_root
+        self._archive_temp = None
+        if archive_root is None:
+            configured=os.environ.get("MVK_LIVE_ARCHIVE_DIR","")
+            if configured:
+                archive_root=Path(configured)
+            elif os.environ.get("QT_QPA_PLATFORM","").lower()=="offscreen":
+                # Each headless window is isolated; tests never import the
+                # operator's local history or quietly populate their archive.
+                self._archive_temp=tempfile.TemporaryDirectory(
+                    prefix="mvk-live-history-test-")
+                archive_root=Path(self._archive_temp.name)
+            else:
+                documents=QtCore.QStandardPaths.writableLocation(
+                    QtCore.QStandardPaths.StandardLocation.DocumentsLocation)
+                archive_root=Path(documents or str(Path.home()/"Documents"))/"MVK_Live_Archive"
+        self._archive=MeasurementHistory(archive_root)
+        self._archive_jobs=[]
+        self._archive_dirty=False
         self._active_ip = None
         self._local_ip = None
         self._ethernet_detected: WiredEthernet | None = None
@@ -516,6 +539,17 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.extra_line=self.extra_plot.plot(pen=pg.mkPen("#c05c91",width=1.1))
         self.extra_pages.addTab(self.extra_plot,"STFT / CWT / Кепстр")
         self.views.addTab(self.extra_panel,"Доп. анализ")
+        self.history_ui=HistoryWorkspaces(self._archive,self.adc,self)
+        self.views.insertTab(3,self.history_ui.trend_page,"Тренды")
+        self.views.insertTab(4,self.history_ui.compare_page,"Сравнение")
+        self.history_ui.on_open_comparison=lambda: self.views.setCurrentWidget(
+            self.history_ui.compare_page)
+        self.history_ui.capture_requested.connect(self._archive_capture_window)
+        self.history_ui.import_npz_requested.connect(self._archive_import_npz)
+        self.history_ui.import_aux_requested.connect(self._archive_import_aux)
+        self.views.currentChanged.connect(self._archive_tab_changed)
+        self.history_ui.compare_info.setToolTip(
+            "Локальный архив: "+str(self._archive.root))
         main.addWidget(self.views,stretch=3)
         self.metrics = QtWidgets.QLabel("Нет достоверных данных")
         self.derived_page=QtWidgets.QWidget()
@@ -568,6 +602,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._ethernet_timer = QtCore.QTimer(self)
         self._ethernet_timer.setInterval(120)
         self._ethernet_timer.timeout.connect(self._collect_ethernet_discovery)
+        self._archive_timer=QtCore.QTimer(self)
+        self._archive_timer.setInterval(1100)
+        self._archive_timer.timeout.connect(self._poll_archive_files)
+        self._archive_timer.start()
 
     def _toggle_advanced(self,checked):
         self.advanced_panel.setVisible(bool(checked))
@@ -1183,6 +1221,17 @@ class LiveWindow(QtWidgets.QMainWindow):
             if status.get("source_tcp_multi_socket"):
                 self._clear("Отклонено: обнаружен посторонний TCP источник")
                 return
+            # Full Native AUX4700.jsonl is the source of historical frames;
+            # the validated status stores the latest 8 channels meanwhile.
+            # Archive failure must NEVER stop the sole TCP receiver.
+            try:
+                n=self._archive.record_vendor_status(status)
+                if n:self._archive_dirty=True
+                if self._capture_root is not None:
+                    self._queue_aux_log(self._capture_root,status["session_id"])
+            except (OSError,ValueError,sqlite3.DatabaseError) as hist_err:
+                self.history_ui.trend_info.setText(
+                    f"Локальный архив: {hist_err}; приём МВК01 не остановлен")
             if status["phase"]!="RECORDING":
                 # The last already validated local history remains available
                 # for operator review; it must NOT be relabeled as live.
@@ -1513,7 +1562,13 @@ class LiveWindow(QtWidgets.QMainWindow):
             if not name:return
             out=save_snapshot(name,x,adc=adc,rate_hz=rate,
                               session_id=session,capture_end=end)
-            self.status.setText(f"Сохранён локальный фрагмент: {out}")
+            # The file chosen by the operator remains intact; a checked
+            # immutable copy also enters history/trends automatically.
+            self._archive.import_npz(out)
+            self._archive_dirty=True
+            self.history_ui.refresh()
+            self.status.setText(
+                f"Сохранён локальный фрагмент и добавлен в архив: {out}")
         except (OSError,ValueError,FileExistsError) as exc:
             QtWidgets.QMessageBox.warning(self,"Сохранение не выполнено",str(exc))
 
@@ -1527,6 +1582,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         if not file:return
         try:
             record=load_snapshot(file)
+            self._archive.import_npz(file)
+            self._archive_dirty=True
+            self.history_ui.refresh()
             # A local hash detects accidental archive corruption, not original
             # MVK origin. The independent OFFLINE session avoids implying
             # the receiver is still measuring or connected to the instrument.
@@ -1934,21 +1992,27 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._timer.stop()
         self._ipc_timer.stop()
         self._ethernet_timer.stop()
+        self._archive_timer.stop()
         # Do not leave NumPy/SciPy workers alive while the PySide6 interpreter
         # is tearing down: this can cause native Qt reference-count crashes.
         self._executor.shutdown(wait=True,cancel_futures=True)
         self._ipc_executor.shutdown(wait=True,cancel_futures=True)
         self._extra_executor.shutdown(wait=True,cancel_futures=True)
         self._ethernet_executor.shutdown(wait=True,cancel_futures=True)
+        if self._archive_temp is not None:
+            self._archive_temp.cleanup()
+            self._archive_temp=None
         super().closeEvent(event)
 
 
 def main(argv=None):
     ap=argparse.ArgumentParser(description="MVK Live standalone, Native R6.1 sidecar viewer")
     ap.add_argument("--capture-root",type=Path,help="watch an already approved Native R6.1 session")
+    ap.add_argument("--archive-root",type=Path,help="persistent local measurement archive (SQLite+NPZ)")
     options=ap.parse_args(argv)
     app=QtWidgets.QApplication([])
-    window=LiveWindow(capture_root=options.capture_root)
+    window=LiveWindow(capture_root=options.capture_root,
+                      archive_root=options.archive_root)
     window.show()
     return app.exec()
 
