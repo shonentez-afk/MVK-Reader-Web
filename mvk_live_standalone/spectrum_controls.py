@@ -6,6 +6,7 @@ All options are display or local-signal-processing only: no MVK01 commands.
 """
 from __future__ import annotations
 import math
+from .octave_filters import FAMILIES, FAMILY_LABELS, nominal_centres, preset_band, preset_description
 
 # Logarithmic = acceleration FFT in dB (explicit reference), not log X.
 VIEW_MODES = (
@@ -28,6 +29,9 @@ FILTER_CHOICES=(
     ("Полосовой","bandpass"),
     ("Режектор 50 Гц","notch50"),
     ("Режектор 60 Гц","notch60"),
+    ("1/1 октавы · выбрать полосу","octave"),
+    ("1/3 октавы · выбрать полосу","third_octave"),
+    ("2 октавы · выбрать полосу","double_octave"),
 )
 
 def view_settings(view: str) -> tuple[str,str]:

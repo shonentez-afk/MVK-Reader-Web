@@ -11,6 +11,8 @@ import math
 import numpy as np
 from scipy import signal
 
+from .octave_filters import FAMILIES, nominal_centres, preset_band
+
 TIME_WINDOWS_S = (
     .01, .02, .05, .1, .2, .5, 1., 2., 5., 10., 20., 30.,
 )
@@ -24,12 +26,15 @@ TIME_FILTERS = (
     ("Полосовой","bandpass"),
     ("Режектор 50 Гц","notch50"),
     ("Режектор 60 Гц","notch60"),
+    ("1/1 октавы · выбрать полосу","octave"),
+    ("1/3 октавы · выбрать полосу","third_octave"),
+    ("2 октавы · выбрать полосу","double_octave"),
 )
 
 
 def time_filter_waveform(samples: np.ndarray, fs: int, *,
                          mode: str="none", low: float=10.,
-                         high: float=1000.) -> np.ndarray:
+                         high: float=1000., center: float|None=None) -> np.ndarray:
     """Physically filtered time waveform, original calibrated domain.
 
     SOS zero-phase IIR or narrow explicit notch. Never apply the original
@@ -42,6 +47,13 @@ def time_filter_waveform(samples: np.ndarray, fs: int, *,
         raise ValueError("Временной сигнал: неизвестная Fs")
     if mode=="none":
         return x.copy()
+    if mode in FAMILIES:
+        if center is None:
+            raise ValueError("Октавный фильтр: выберите центральную частоту")
+        low,high=preset_band(mode,center,fs)
+        if x.size/fs < 3.0/low:
+            raise ValueError("Для выбранной октавной полосы нужно не меньше трёх периодов нижней частоты")
+        mode="bandpass"
     if x.size<32:
         raise ValueError("Для фильтра временного сигнала не хватает отсчётов")
     if mode in ("notch50","notch60"):
