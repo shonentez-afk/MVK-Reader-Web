@@ -13,6 +13,7 @@ import re
 
 from .original_mode2_rx_evidence import FIELDS as SOURCE_RX_FIELDS
 from .original_mode2_status_cells import parse_source_cells
+from .original_task2_stage_receipt import validate_original_task2_stage
 from .original_mode2_transmit_evidence import validate_original_task2_tx
 from .original_mode2_retry_timing import SOURCE_BACKOFF_WAITS_MS
 from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
@@ -119,6 +120,7 @@ def validate_live_status(payload: dict, *, expected_run: str,
     # Each DWORD requires *two* observed uint16 register words; a missing
     # cell is null/UNKNOWN, never the source Delphi FF init sentinel.
     status_cells=parse_source_cells(payload)
+    task2_stage=validate_original_task2_stage(payload,status_cells)
     verify_source_error_overlap(payload)
     validated_source_tx=validate_original_task2_tx(payload)
     tcp_keys=("source_tcp_connection_count","source_tcp_multi_socket",
@@ -215,6 +217,9 @@ def validate_live_status(payload: dict, *, expected_run: str,
     source_ring=validate_original_storage_receipt(
         payload.get("source_original_storage"),safe,source_receive_gate)
     result = dict(payload)
+    result["source_original_task2_stage_verified"]=task2_stage is not None
+    if task2_stage is not None:
+        result["source_original_task2_stage"]=task2_stage
     result["source_original_receive_gate_verified"]=source_receive_gate is not None
     if source_receive_gate is not None:
         result["source_original_receive_gate"]=source_receive_gate

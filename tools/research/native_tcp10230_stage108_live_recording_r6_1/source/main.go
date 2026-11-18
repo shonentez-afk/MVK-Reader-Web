@@ -108,6 +108,12 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		if e:=m.sourceTCP.begin(m);e!=nil{return "SOURCE_TCP_SEGMENT_FAILED",e}
 		defer func(){m.sourceTCP.finish(m,reason)}()
 	}
+    // New TCP socket means a fresh original Task2 Stage0. Never
+    // revive Stage1/error from a previous stream segment or earlier RUN.
+    if m.sourceOriginalTask2Stage!=nil {
+        m.sourceOriginalTask2Stage.onConnected(m.summary.SourceNonemptyParameters)
+        defer func(){m.sourceOriginalTask2Stage.onDisconnected(reason)}()
+    }
 	// Rebind AFTER Stage0 reset: the renewed original SetRate must use
 	// this new TCP socket, never the disconnected previous conn.
 	if m.sourceTask2TX!=nil {m.sourceTask2TX.conn=c;defer func(){m.sourceTask2TX.conn=nil}()}
@@ -447,6 +453,7 @@ func mainInner() int {
         // In passive mode we reproduce the IN-MEMORY selection 65536,
         // but NEVER transmit the real SetRate without separate consent.
         m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
+        m.sourceOriginalTask2Stage=newSourceOriginalTask2Lifecycle()
         if m.sourceOperatorRateChan==nil {
             local:=make(chan string,16)
             m.sourceOperatorRateChan=local

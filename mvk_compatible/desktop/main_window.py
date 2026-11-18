@@ -2639,6 +2639,8 @@ class MainWindow(QMainWindow):
             "sourceOriginalTenChannelStorageProof",None)
         self.original_shell.status_page.setProperty(
             "sourceOriginalReceiveGateProof",None)
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTask2StageProof",None)
         # Park the last VERIFIED offline source before Mode2 clears the
         # visible session. Never treat it as evidence of this new device.
         self._live_prior_session=self.session
@@ -2967,6 +2969,11 @@ class MainWindow(QMainWindow):
                      else None)
         self.original_shell.status_page.setProperty(
             "sourceOriginalReceiveGateProof",source_gate)
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTask2StageProof",
+            snapshot.get("source_original_task2_stage")
+            if snapshot.get("source_original_task2_stage_verified") is True
+            else None)
         self.original_shell.measure_controls.freeze.setProperty(
             "sourceGoFreezeAcknowledged",
             bool(source_gate is not None and source_gate["freeze_update"]==
@@ -3024,6 +3031,8 @@ class MainWindow(QMainWindow):
             "sourceOriginalTenChannelStorageProof",None)
         self.original_shell.status_page.setProperty(
             "sourceOriginalReceiveGateProof",None)
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTask2StageProof",None)
         self._source_live_writer.invalidate(str(reason))
         if (str(reason)=="Нет текущего подтверждённого состояния"
                 and self._source_mode2_runtime.session_id is None):
@@ -3337,6 +3346,8 @@ class MainWindow(QMainWindow):
             "sourceOriginalTenChannelStorageProof",None)
         self.original_shell.status_page.setProperty(
             "sourceOriginalReceiveGateProof",None)
+        self.original_shell.status_page.setProperty(
+            "sourceOriginalTask2StageProof",None)
         # Core owns the exit policy; Qt merely applies it. A physical
         # connection is NEVER inferred from visible tabs or a parked ZIP.
         completion=capture_completion_policy(

@@ -109,6 +109,7 @@ type Monitor struct {
 	liveBin     *LiveBinSpool
 	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
     sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
+    sourceOriginalTask2Stage *sourceOriginalTask2Lifecycle // independent Task2 Stage0/1/3 and DENIED original receive status
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
@@ -254,11 +255,19 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
 			m.summary.CaptureOnly = true
 			break
 		}
+        var stageErr error
+        if m.sourceOriginalTask2Stage!=nil {
+            stageErr=m.sourceOriginalTask2Stage.afterReceivedFrame(m,f)
+        }
+        // A DENIED response must still be counted by the optional
+        // outgoing-command evidence BEFORE aborting Task2. Never
+        // interpret a temporal ACK as proof of a matching SetRate.
 		if m.sourceTask2TX != nil {
 			if e := m.sourceTask2TX.afterReceivedFrame(m,f); e != nil {
-				return e // network TX/DENIED propagates, NEVER a fake RAW framing fault
+				return e // transport / DENIED, not a malformed RAW frame
 			}
-		}
+        }
+        if stageErr!=nil {return stageErr}
 	}
 	if parseErr != nil && !m.captureOnly {
 		m.summary.InvalidFrames++
