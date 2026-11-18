@@ -88,7 +88,7 @@ def _marked_original_values_run(tmp_path):
         receipts.append({
             "sequence":n,
             "event":request["event"],
-            "requested_utc":request["requested_utc"],
+            "requested_utc":request["operator_requested_utc"],
             "applied_utc":"2026-11-18T03:00:00Z",
             "applied":True,
             "frames_decoded":frames,
