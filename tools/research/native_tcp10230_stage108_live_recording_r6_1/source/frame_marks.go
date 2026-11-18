@@ -72,6 +72,10 @@ type frameMarkAudit struct {
     SourceFrameBoundary bool `json:"source_frame_boundary"`
     OriginalDelphiFileParityVerified bool `json:"original_delphi_file_parity_verified"`
     Requests []frameMarkReceipt `json:"requests"`
+    // Actual source TMVKThread 008089A8 -> 00809414(true) closes both
+    // writers at thread end. These are NOT operator commands or a
+    // fabricated NEXT-RX frame: they reference the final verified counters.
+    AutoClosed []frameMarkReceipt `json:"auto_closed_on_capture_end,omitempty"`
 }
 
 type frameMarkController struct {
@@ -224,6 +228,59 @@ func (c *frameMarkController) finalize(m *Monitor) error {
         Requests:c.records,
     }
     for i:=0;i<10;i++ {doc.EndChannelSamples[i]=m.summary.Channels[i].Samples}
+    // Original _Unit125:008089A8 calls WriteData/WriteValues stage
+    // machine with its stop flag even if an operator did not click OFF.
+    // Never fake a user's request or pretend this is an incoming frame.
+    // Preserve the last REAL complete-frame counters and SHA in a
+    // separately labeled, machine-verifiable end-of-thread receipt.
+    cleanStop:=(m.summary.EndReason=="STOPPED_BY_USER" ||
+        m.summary.EndReason=="DURATION_REACHED" ||
+        m.summary.EndReason=="SIZE_LIMIT_REACHED")
+    if cleanStop && !m.captureOnly && !m.summary.SourceTCPMultiSocket {
+        open:=map[string]frameMarkReceipt{}
+        consistent:=true
+        for _,record:=range c.records{
+            if !record.Applied {consistent=false;break}
+            kind:=""
+            switch record.Event{
+            case "data_begin","data_end":kind="data"
+            case "values_begin","values_end":kind="values"
+            default:consistent=false
+            }
+            if !consistent {break}
+            isBegin:=strings.HasSuffix(record.Event,"_begin")
+            if isBegin {
+                if _,exists:=open[kind];exists {consistent=false;break}
+                open[kind]=record
+            }else{
+                if _,exists:=open[kind];!exists{consistent=false;break}
+                delete(open,kind)
+            }
+        }
+        if consistent {
+            for _,kind:=range []string{"data","values"}{
+                start,exists:=open[kind]
+                if !exists{continue}
+                end:=frameMarkReceipt{
+                    Event:kind+"_end",RequestedUTC:m.summary.EndedUTC,
+                    AppliedUTC:m.summary.EndedUTC,Applied:true,
+                    Reason:"SOURCE_TMVKTHREAD_FORCED_WRITER_CLOSE",
+                    FramesDecoded:m.summary.TotalFrames,
+                    AUX4700Updates:m.summary.Aux4700,
+                    SourceValuesTicks:m.summary.ValuesTicks,
+                    SourceReadOnly:m.sourceTask2TX!=nil &&
+                        m.sourceTask2TX.sentBytes>0,
+                    Boundary:"AT_SOURCE_TASK2_FINALIZE",
+                    Channels:start.Channels,Spec:start.Spec,
+                    Values:start.Values,
+                }
+                for i:=0;i<10;i++ {
+                    end.ChannelSamples[i]=m.summary.Channels[i].Samples
+                }
+                doc.AutoClosed=append(doc.AutoClosed,end)
+            }
+        }
+    }
     data,err:=json.MarshalIndent(doc,"","  ")
     if err!=nil {return err}
     data=append(data,byte(10))
