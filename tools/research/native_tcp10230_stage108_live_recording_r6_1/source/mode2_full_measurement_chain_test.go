@@ -122,7 +122,7 @@ func TestMode2WholeMeasurementStartToFinishOnOneTCPWithBothWriters(t *testing.T)
     var receipt sourceLiveValuesEvent
     if e=json.Unmarshal(bytes.TrimSpace(valuesOut),&receipt);e!=nil{t.Fatal(e)}
     if receipt.TickIndex!=0 ||
-       receipt.ParamPayloadLEHex!="9abccdef" ||
+       receipt.PayloadLEHex!="9abccdef" ||
        receipt.Address!="0x3100"{
         t.Fatalf("original WriteValues 0x3100 event not received: %+v",receipt)
     }
