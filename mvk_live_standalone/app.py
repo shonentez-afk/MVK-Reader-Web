@@ -1292,7 +1292,20 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._generation+=1
         self.spec_curve.setData([],[])
         self.wave_curve.setData([],[])
+        self.wave_stats.setText(
+            "Временной сигнал: ожидание подтверждённого АЦП для нового сеанса")
+        self.wave_info.setText(
+            "Ожидание новой калиброванной записи · X время, Y м/с²")
         self.metrics.setText(message)
+        self.features_label.setText(
+            "APP_DERIVED: ожидание реальных отсчётов АЦП")
+        self.bearing_diagnostics.setText(
+            "Подшипники/редукторы: нет подтверждённых расчётных данных")
+        self._last_result=None
+        self.trend_line.setData([],[])
+        self.waterfall_img.clear()
+        self.extra_line.setData([],[])
+        self.extra_image.clear()
 
     def _render_spectrum(self):
         if self._spectrum is None:return
