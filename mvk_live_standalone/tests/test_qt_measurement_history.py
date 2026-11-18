@@ -121,7 +121,7 @@ def test_compare_fft_four_modes_and_waveforms_from_three_saved_dates(w):
     entries=[e for e,_,_,_ in ui._last_overlay]
     assert all(e.adc==1 for e in entries)
     assert all("FFT" in label for _,_,_,label in ui._last_overlay)
-    assert "Fs различается" in ui.compare_info.text()
+    assert "Разные частоты дискретизации" in ui.compare_info.text()
     assert ui.compare_plot.viewRange()[0][1]==pytest.approx(1024,rel=.001)
     for view,unit in (("fft_log","дБ"),("fft_vs","мм/с"),
                       ("fft_vp","мкм")):
