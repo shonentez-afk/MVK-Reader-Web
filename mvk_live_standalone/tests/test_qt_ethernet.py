@@ -81,7 +81,7 @@ def test_operator_must_confirm_device_connection_and_correct_ip(gui,monkeypatch)
             seen.append(args) or QtWidgets.QMessageBox.StandardButton.No))
     w.start_native()
     assert len(seen)==1
-    assert "Ethernet" in seen[0][3] and "192.168.10.101" in seen[0][3]
+    assert "Ethernet" in seen[0][2] and "192.168.10.101" in seen[0][2]
     assert w._native.state()==QtCore.QProcess.ProcessState.NotRunning
     assert w._capture_root is None
     # A manual Wi-Fi source or typo cannot silently replace the already
