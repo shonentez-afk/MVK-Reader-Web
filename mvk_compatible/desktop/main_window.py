@@ -3487,14 +3487,19 @@ class MainWindow(QMainWindow):
         close_note=(
             f"Go закрыл {auto_closed} исходные записи при отключении; "
             if auto_closed else "")
+        wire_files=report.get("source_write_data_wire_payload_files",0)
+        wire_note=(
+            f"RAW: {wire_files} файлов точных байтов ADC/TACH без калибровки; "
+            if wire_files and report.get("source_write_data_wire_payload_byte_exact")
+            else "")
         self.statusBar().showMessage(
-            "Оригинальная запись: проверенные локальные интервалы сохранены "
+            "Запись MVKView: проверенные локальные интервалы сохранены "
             f"({report['files_written']} файлов, {report['windows']} окон). "
             +("Go подтвердил границы кадров; " if
              report.get("verified_frame_boundaries") else
              "Границы по периодическому статусу; ")
-            +values_note+close_note+
-            "не исходные Delphi BIN/CSV.")
+            +values_note+wire_note+close_note+
+            "оригинальные условия Freeze/SetRate и Delphi BIN/CSV ещё не сверены.")
 
     def _source_write_export_failed(self,message):
         self._source_writer_last_export={
