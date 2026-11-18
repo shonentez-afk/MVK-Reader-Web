@@ -140,7 +140,7 @@ def test_stft_view_from_selected_real_buffer(gui):
     assert w._extra_future is None
     assert w.extra_button.isEnabled()
     assert w.views.currentWidget()==w.extra_panel
-    assert w.extra_pages.currentWidget()==w.extra_plot
+    assert w.extra_pages.currentWidget()==w.extra_method_pages["stft"]
     assert "STFT" in w.extra_plot.getPlotItem().titleLabel.text
 
 
@@ -162,3 +162,31 @@ def test_small_fft_ipc_starts_without_waiting_65536_samples(gui):
     with pytest.raises(IPCNotReady):
         w._ipc_future.result(timeout=10)
     assert seen==[(1,8192)]
+
+def test_extra_methods_have_independent_tabs_settings_and_plots(gui):
+    w,app=gui
+    keys=("stft","cwt","cepstrum")
+    assert len({id(w.extra_method_plots[key]) for key in keys})==3
+    assert len({id(w.extra_method_images[key]) for key in keys})==3
+    assert w.stft_nperseg.currentData()==1024
+    assert w.cwt_scales.currentData()==40
+    assert w.cwt_min_hz.value()==10
+    assert w.cepstrum_max_s.value()==.1
+    assert all(w.extra_pages.indexOf(w.extra_method_pages[key])>=0
+               for key in keys)
+    assert "Сode" not in w.extra_header.text()
+
+def test_cwt_and_cepstrum_dedicated_result_tabs(gui):
+    w,app=gui
+    t=np.arange(8192)/8192
+    feed(w,np.sin(2*np.pi*500*t))
+    for mode in ("cwt","cepstrum"):
+        w._start_extra_mode(mode)
+        assert w._extra_future is not None
+        w._extra_future.result(timeout=15)
+        w._poll_extra()
+        assert w.extra_pages.currentWidget()==w.extra_method_pages[mode]
+        assert w.extra_method_buttons[mode].isEnabled()
+        assert "APP_DERIVED" in w.extra_method_infos[mode].text()
+    # Stale CWT pixels must not disappear when a cepstrum is computed.
+    assert "CWT" in w.extra_method_plots["cwt"].getPlotItem().titleLabel.text

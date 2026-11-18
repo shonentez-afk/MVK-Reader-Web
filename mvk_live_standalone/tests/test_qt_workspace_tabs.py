@@ -61,7 +61,7 @@ def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
         "Показатели MVK Live",
     ]
     assert [w.extra_pages.tabText(i) for i in range(w.extra_pages.count())]==[
-        "Водопад","Тренд СКЗ","STFT / CWT / Кепстр",
+        "Водопад","Тренд СКЗ","STFT","CWT Morlet","Кепстр",
         "Подшипники / редукторы",
     ]
     assert w.dsp_pages.widget(0)!=w.dsp_pages.widget(2)

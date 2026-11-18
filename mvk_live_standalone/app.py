@@ -386,8 +386,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.extra_mode.addItem("STFT (частота–время)","stft")
         self.extra_mode.addItem("CWT Morlet (качественный)","cwt")
         self.extra_mode.addItem("Кепстр (кэфренция)","cepstrum")
-        self.extra_button=QtWidgets.QPushButton("Рассчитать")
-        self.extra_button.clicked.connect(self._calculate_extra)
+        self.extra_button=QtWidgets.QPushButton("Рассчитать STFT")
+        self.extra_button.clicked.connect(lambda: self._start_extra_mode("stft"))
         storage.addStretch(1)
         self.rotation_info=QtWidgets.QLabel("1×: вручную или предложение по ВС. Тахометр не используется.")
         self.advanced_layout.addWidget(self.rotation_info)
@@ -475,12 +475,12 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.views.addTab(self.wave_page,"Временной сигнал")
         self.extra_panel=QtWidgets.QWidget()
         self.extra_layout=QtWidgets.QVBoxLayout(self.extra_panel)
-        self.extra_controls=QtWidgets.QHBoxLayout()
-        self.extra_controls.addWidget(QtWidgets.QLabel("Дополнительный метод"))
-        self.extra_controls.addWidget(self.extra_mode)
-        self.extra_controls.addWidget(self.extra_button)
-        self.extra_controls.addStretch(1)
-        self.extra_layout.addLayout(self.extra_controls)
+        self.extra_header=QtWidgets.QLabel(
+            "Дополнительные измерения: каждый метод имеет отдельные "
+            "настройки и сохраняет собственный график. "
+            "Все результаты APP_DERIVED, исходный AUX4700 не изменяется.")
+        self.extra_header.setWordWrap(True)
+        self.extra_layout.addWidget(self.extra_header)
         self.extra_pages=QtWidgets.QTabWidget()
         self.extra_layout.addWidget(self.extra_pages,stretch=1)
         self.waterfall=pg.PlotWidget(title="Водопад · последовательные APP_DERIVED спектры")
@@ -582,12 +582,87 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.trend_plot.setLabel("left","Виброускорение СКЗ",units="м/с²")
         self.trend_line=self.trend_plot.plot(pen=pg.mkPen("#21a179",width=1.4))
         self.extra_pages.addTab(self.trend_plot,"Тренд СКЗ")
-        self.extra_plot=pg.PlotWidget(title="Дополнительный анализ механической вибрации")
-        self.extra_plot.showGrid(x=True,y=True,alpha=.2)
-        self.extra_image=pg.ImageItem()
-        self.extra_plot.addItem(self.extra_image)
-        self.extra_line=self.extra_plot.plot(pen=pg.mkPen("#c05c91",width=1.1))
-        self.extra_pages.addTab(self.extra_plot,"STFT / CWT / Кепстр")
+        # Independent workspaces instead of one plot overwritten by a
+        # global STFT/CWT/Cepstrum combobox on every calculation.
+        self.extra_method_pages={}
+        self.extra_method_plots={}
+        self.extra_method_images={}
+        self.extra_method_lines={}
+        self.extra_method_buttons={}
+        self.extra_method_infos={}
+        self.extra_method_windows={}
+        for mode,label in (("stft","STFT"),("cwt","CWT Morlet"),
+                           ("cepstrum","Кепстр")):
+            page=QtWidgets.QWidget()
+            layout=QtWidgets.QVBoxLayout(page)
+            options=QtWidgets.QHBoxLayout()
+            options.addWidget(QtWidgets.QLabel("Окно исходных отсчётов"))
+            window=QtWidgets.QComboBox()
+            for samples in (4096,8192,16384,32768):
+                window.addItem(f"{samples} отсчётов",samples)
+            window.setCurrentIndex(window.findData(8192))
+            self.extra_method_windows[mode]=window
+            options.addWidget(window)
+            if mode=="stft":
+                options.addWidget(QtWidgets.QLabel("STFT: отсчётов/сегмент"))
+                self.stft_nperseg=QtWidgets.QComboBox()
+                for nseg in (256,512,1024,2048,4096):
+                    self.stft_nperseg.addItem(f"{nseg}",nseg)
+                self.stft_nperseg.setCurrentIndex(
+                    self.stft_nperseg.findData(1024))
+                options.addWidget(self.stft_nperseg)
+            elif mode=="cwt":
+                options.addWidget(QtWidgets.QLabel("CWT: масштабов"))
+                self.cwt_scales=QtWidgets.QComboBox()
+                for count in (16,24,40,64):
+                    self.cwt_scales.addItem(str(count),count)
+                self.cwt_scales.setCurrentIndex(self.cwt_scales.findData(40))
+                options.addWidget(self.cwt_scales)
+                options.addWidget(QtWidgets.QLabel("Минимум, Гц"))
+                self.cwt_min_hz=QtWidgets.QDoubleSpinBox()
+                self.cwt_min_hz.setRange(2.,16000.)
+                self.cwt_min_hz.setValue(10.)
+                self.cwt_min_hz.setSuffix(" Гц")
+                options.addWidget(self.cwt_min_hz)
+            else:
+                options.addWidget(QtWidgets.QLabel("Макс. кэфренция"))
+                self.cepstrum_max_s=QtWidgets.QDoubleSpinBox()
+                self.cepstrum_max_s.setRange(.001,1.)
+                self.cepstrum_max_s.setDecimals(3)
+                self.cepstrum_max_s.setValue(.1)
+                self.cepstrum_max_s.setSuffix(" с")
+                options.addWidget(self.cepstrum_max_s)
+            button=(self.extra_button if mode=="stft" else
+                    QtWidgets.QPushButton(f"Рассчитать {label}"))
+            if mode!="stft":
+                button.clicked.connect(
+                    lambda checked=False,method=mode:
+                    self._start_extra_mode(method))
+            self.extra_method_buttons[mode]=button
+            options.addWidget(button)
+            options.addStretch(1)
+            layout.addLayout(options)
+            plot=pg.PlotWidget(title=f"{label} · ожидание исходного АЦП")
+            plot.showGrid(x=True,y=True,alpha=.2)
+            image=pg.ImageItem()
+            plot.addItem(image)
+            line=plot.plot(pen=pg.mkPen("#c05c91",width=1.1))
+            layout.addWidget(plot,stretch=1)
+            info=QtWidgets.QLabel(
+                f"{label}: выберите параметры и нажмите «Рассчитать». "
+                "Обработка только локального проверенного сигнала.")
+            info.setWordWrap(True)
+            layout.addWidget(info)
+            self.extra_method_pages[mode]=page
+            self.extra_method_plots[mode]=plot
+            self.extra_method_images[mode]=image
+            self.extra_method_lines[mode]=line
+            self.extra_method_infos[mode]=info
+            self.extra_pages.addTab(page,label)
+        # Compatibility aliases for existing STFT integration tests.
+        self.extra_plot=self.extra_method_plots["stft"]
+        self.extra_image=self.extra_method_images["stft"]
+        self.extra_line=self.extra_method_lines["stft"]
         self.views.addTab(self.extra_panel,"Доп. анализ")
         self.history_ui=HistoryWorkspaces(self._archive,self.adc,self)
         self.views.insertTab(3,self.history_ui.trend_page,"Тренды")
@@ -1986,6 +2061,12 @@ class LiveWindow(QtWidgets.QMainWindow):
             ("; ".join(observations) if observations else "Нет разрешённых линий")
         )
 
+    def _start_extra_mode(self,mode):
+        if mode not in self.extra_method_pages:
+            raise ValueError("Неизвестный дополнительный метод")
+        self.extra_mode.setCurrentIndex(self.extra_mode.findData(mode))
+        self._calculate_extra()
+
     def _calculate_extra(self):
         if self._extra_future is not None and not self._extra_future.done():
             return
@@ -2002,18 +2083,24 @@ class LiveWindow(QtWidgets.QMainWindow):
                     raise ValueError("Недостаточно подтверждённых отсчётов")
                 fs=ch.rate_hz
                 data=ch.latest(min(ch.available,32768))
+            data=data[-min(len(data),
+                           self.extra_method_windows[mode].currentData()):]
             if mode=="stft":
                 work=stft_vibration
-                kwargs={"nperseg":1024}
+                kwargs={"nperseg":self.stft_nperseg.currentData()}
             elif mode=="cwt":
                 work=cwt_morlet_vibration
-                kwargs={"scales":40,"min_frequency_hz":max(10.,fs/4096)}
+                kwargs={"scales":self.cwt_scales.currentData(),
+                        "min_frequency_hz":self.cwt_min_hz.value()}
             else:
                 work=real_cepstrum
                 kwargs={}
             self._extra_kind=mode
             self._extra_future=self._extra_executor.submit(work,data,fs,**kwargs)
-            self.extra_button.setEnabled(False)
+            for button in self.extra_method_buttons.values():
+                button.setEnabled(False)
+            self.extra_method_infos[mode].setText(
+                f"Расчёт по N={len(data)}, Fs={fs} Гц · APP_DERIVED")
             self.status.setText(f"Расчёт {mode.upper()} по текущему окну (без эталонов)")
         except (ValueError,RuntimeError) as exc:
             self.status.setText(f"Дополнительный анализ: {exc}")
@@ -2036,43 +2123,53 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         pending=self._extra_future
         self._extra_future=None
-        self.extra_button.setEnabled(True)
+        for button in self.extra_method_buttons.values():
+            button.setEnabled(True)
         try:
             view=pending.result()
         except (ValueError,RuntimeError,FloatingPointError) as exc:
+            self.extra_method_infos[self._extra_kind].setText(
+                f"Расчёт отклонён: {exc}. Данные прибора не изменены.")
             self.status.setText(f"Специальный анализ: {exc}")
             return
         mode=self._extra_kind
+        plot=self.extra_method_plots[mode]
+        image=self.extra_method_images[mode]
+        line=self.extra_method_lines[mode]
         self.views.setCurrentWidget(self.extra_panel)
-        self.extra_pages.setCurrentWidget(self.extra_plot)
+        self.extra_pages.setCurrentWidget(self.extra_method_pages[mode])
         if mode=="cepstrum":
-            self.extra_image.clear()
-            self.extra_line.setData(view.quefrency_s,view.magnitude)
-            self.extra_plot.setLabel("bottom","Кэфренция",units="с")
-            self.extra_plot.setLabel("left","Вещественный кепстр",units="отн.")
-            self.extra_plot.setTitle(view.description)
+            image.clear()
+            line.setData(view.quefrency_s,view.magnitude)
+            plot.setLabel("bottom","Кэфренция",units="с")
+            plot.setLabel("left","Вещественный кепстр",units="отн.")
+            plot.setTitle(view.description)
+            plot.setXRange(0,self.cepstrum_max_s.value(),padding=0)
         else:
-            self.extra_line.setData([],[])
+            line.setData([],[])
             mag=view.magnitude
             if view.calibrated_amplitude:
                 values=20*np.log10(np.maximum(mag,1e-15)/1e-6)
-                self.extra_plot.setTitle(view.description+" · дБ отн. 10⁻⁶ м/с²")
+                plot.setTitle(view.description+" · дБ отн. 10⁻⁶ м/с²")
             else:
                 values=20*np.log10(
                     np.maximum(mag,1e-15)/max(float(np.max(mag)),1e-15))
-                self.extra_plot.setTitle(view.description+" · дБ отн. локального максимума")
-            self.extra_image.setImage(
+                plot.setTitle(view.description+" · дБ отн. локального максимума")
+            image.setImage(
                 np.asarray(values,dtype=np.float32),
                 autoLevels=False,levels=(-120,120))
             t=view.time_s
             freqs=view.frequency_hz
             width=max(float(t[-1]-t[0]),1e-9)
             height=max(float(freqs[-1]-freqs[0]),1e-9)
-            self.extra_image.setRect(QtCore.QRectF(float(t[0]),float(freqs[0]),
-                                                  width,height))
-            self.extra_plot.setLabel("bottom","Время",units="с")
-            self.extra_plot.setLabel("left","Частота",units="Гц")
-        self.extra_plot.enableAutoRange()
+            image.setRect(QtCore.QRectF(float(t[0]),float(freqs[0]),
+                                        width,height))
+            plot.setLabel("bottom","Время",units="с")
+            plot.setLabel("left","Частота",units="Гц")
+            plot.enableAutoRange()
+        self.extra_method_infos[mode].setText(
+            f"{view.description} · APP_DERIVED · график сохранён на вкладке "
+            "при переключении других методов; без внешнего эталона.")
         self.status.setText(
             f"Дополнительный анализ {mode.upper()} · APP_DERIVED, без внешнего эталона")
 
