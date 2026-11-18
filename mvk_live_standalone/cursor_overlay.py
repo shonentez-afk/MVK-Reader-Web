@@ -48,6 +48,8 @@ class MeasurementCursors(QtCore.QObject):
         self._build_controls()
         self._build_lines()
         self._connect_plots()
+        self._mode_changed()
+        self._time_mode_changed()
         self.refresh_spectrum()
         self.refresh_time()
         self.refresh_bearing()
@@ -152,8 +154,6 @@ class MeasurementCursors(QtCore.QObject):
         time_panel = self.win._modern_inspector.widget(1)
         layout = time_panel.layout()
         layout.insertWidget(max(0, layout.count()-1), time_group)
-        self._mode_changed()
-        self._time_mode_changed()
 
     def _build_lines(self):
         self.a_spec = self.win.cursor   # retain the existing tested cursor
@@ -188,6 +188,9 @@ class MeasurementCursors(QtCore.QObject):
     def _connect_plots(self):
         self.a_overview.sigPositionChanged.connect(
             lambda *_: self._spectrum_line_moved(self.a_overview, "a"))
+        for first in (self.a_spec, self.a_overview):
+            first.sigPositionChangeFinished.connect(
+                lambda *_: self._snap_primary_after_drag())
         self.b_spec.sigPositionChanged.connect(
             lambda *_: self._spectrum_line_moved(self.b_spec, "b"))
         self.b_overview.sigPositionChanged.connect(
@@ -293,6 +296,10 @@ class MeasurementCursors(QtCore.QObject):
         else:
             self.b_hz = freq
         self.refresh_spectrum()
+
+    def _snap_primary_after_drag(self):
+        if not self._busy and self.mode.currentData() == "peak":
+            self._set_spectrum_selection(self.a_hz, "a")
 
     def _set_spectrum_selection(self, freq: float, side=None):
         s = self._spec_data()
