@@ -70,7 +70,10 @@ def _channel_quality(ch: dict) -> str:
     code = ch["dsp_sensor_status_hex"]
     if code is None:
         return "DSP НЕ ПОЛУЧЕН"
-    return "DSP: OK (0x0)" if code == "0x00000000" else "DSP: ПРЕДУПРЕЖДЕНИЕ"
+    # The original ResultStatus at relative 0x120 contains several
+    # independent bit fields. Zero is an OBSERVED bit pattern, never
+    # proof that the instrument/sensor is operational or calibrated.
+    return "DSP: статус 0x00000000" if code == "0x00000000" else "DSP: статус "+code
 
 
 def validate_live_status(payload: dict, *, expected_run: str,

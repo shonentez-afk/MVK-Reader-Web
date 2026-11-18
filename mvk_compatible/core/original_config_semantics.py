@@ -6,8 +6,8 @@ No device reads/writes, config editor, or synthetic translated strings.
 """
 from dataclasses import dataclass
 from .original_config_idp_tables import (
-    SOURCE_SELECTOR_IDS, source_octave_frequencies_float32,
-    source_type_description,
+    SOURCE_SELECTOR_IDS, SOURCE_SELECTOR_PREFIXES,
+    source_octave_frequencies_float32, source_type_description,
 )
 
 UNKNOWN="—"
@@ -44,7 +44,10 @@ class AdvancedCell:
         check_uint32(value)
         if self.composite:
             labels=[x.title for x in self.values if (x.id&value)==x.id]
-            return "; ".join(labels) if labels else "---"
+            # _Unit115.pas:007D08C1..007D08E1 concatenates titles
+            # in constructor/list order using EXACT delimiter ', '.
+            # A bit mask has no priority sorting or unique-label filter.
+            return ", ".join(labels) if labels else "---"
         index=self.get_index_by_id(value)
         return self.values[index].title if index>=0 else f"(0x{value:08X})"
 
@@ -70,6 +73,20 @@ SOURCE_ADVANCED_OPTIONS["octave_band"]=AdvancedCell((
     AdvancedValue(0,"Off"),
 )+tuple(AdvancedValue(index+1,f"{hz:.6g} Гц")
         for index,hz in enumerate(source_octave_frequencies_float32())))
+# Restore ALL original selector families used by the status/measurement
+# and configuration pages, not only the five network/config lists.
+# _Unit125.pas:00802664 sets UseCompositeTitle=True for AlarmAlert.
+# _Unit115:007D0808 selects exact ID for other lists and returns
+# '(0xXXXXXXXX)' for a missing non-composite ID. Translated titles
+# remain UNKNOWN; these are source localization keys, not Russian text.
+for _kind in (
+    "alarm_band", "alarm_state", "alarm_alert", "tacho_function",
+    "result_overload", "result_buffers", "result_sensor_state",
+):
+    SOURCE_ADVANCED_OPTIONS[_kind]=AdvancedCell(tuple(
+        AdvancedValue(num, SOURCE_SELECTOR_PREFIXES[_kind]+"Cell"+str(num))
+        for num in SOURCE_SELECTOR_IDS[_kind]
+    ), composite=(_kind=="alarm_alert"))
 # Source enum IDs and octave scalar values are recovered from original IDP.
 # Dynamic locale titles like 'WifiModeCell1' remain unverified translations.
 

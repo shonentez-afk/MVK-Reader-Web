@@ -17,7 +17,7 @@ import struct
 import tempfile
 
 from .native_r6_bridge import STOP_REQUEST,validate_ipv4
-from .original_config_semantics import section_fields
+from .original_config_semantics import section_fields, SOURCE_ADVANCED_OPTIONS
 from .original_config_idp_tables import source_type_description
 
 SCHEMA = "MVK_SOURCE_TASK0_CONFIG_IP_READ_V1"
@@ -120,7 +120,10 @@ def _replay_original_param(raw:bytes) -> tuple[bytes,tuple[bool,...],int,int]:
         if length>len(raw)-cursor:break
         frame=raw[cursor:cursor+length]
         if kind==0xFF800C0D:
-            if length<32:
+            # Original TMVKThread 0080841B..0080844F permits a
+            # 28-byte PARAM with zero descriptors. It is a no-op,
+            # not evidence of a successful configuration read.
+            if length<28:
                 raise ValueError("Task0 PARAM too short")
             count=struct.unpack_from("<I",frame,24)[0]
             if count>4096:
@@ -263,6 +266,22 @@ def original_task0_field_text(key:str,field:dict)->str:
         return ".".join(str(x) for x in reversed(raw))
     if key in _SOURCE_PORT_KEYS:
         return str(struct.unpack("<I",raw)[0])
+    # Original TMvkCellList.GetValueText 007CF4A4 dispatches type 10
+    # through TMvkAdvancedCell.GetTitleByID 007D0808. The source ID
+    # and localization KEY are now recovered; the runtime translated
+    # title is not. Preserve the full UInt32 instead of showing the
+    # misleading little-endian on-wire hex as a numeric value.
+    source_adv={
+        "ConfigModbusEndian":"modbus_endian",
+        "ConfigWifiModbusEndian":"modbus_endian",
+        "ConfigNumGroups":"num_groups",
+        "ConfigOption":"option",
+        "ConfigWifiMode":"wifi_mode",
+    }
+    if key in source_adv:
+        code=struct.unpack("<I",raw)[0]
+        source_list=SOURCE_ADVANCED_OPTIONS[source_adv[key]]
+        return f"0x{code:08X} · {source_list.get_title_by_id(code)}"
     return "0x"+payload.upper()
 
 

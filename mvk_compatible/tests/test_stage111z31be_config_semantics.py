@@ -57,7 +57,8 @@ def test_advanced_exact_composite_id_link():
     assert exact.get_link_by_id(1)=="link"
     composite=AdvancedCell((AdvancedValue(1,"A"),AdvancedValue(3,"AB"),
                              AdvancedValue(2,"B")),composite=True)
-    assert composite.get_title_by_id(3)=="A; AB; B"
+    # Original _Unit115:007D08C6..007D08E1 joins with comma+space.
+    assert composite.get_title_by_id(3)=="A, AB, B"
     assert composite.get_title_by_id(4)=="---"
     with pytest.raises(IndexError):exact.get_id(2)
     for bad in (-1,2**32,True,"3"):

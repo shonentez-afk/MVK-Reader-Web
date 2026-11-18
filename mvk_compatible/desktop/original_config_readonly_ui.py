@@ -178,6 +178,8 @@ class OriginalConfigReadOnlyPanel:
                 f"Task0: {checked['confirmed_fields']} полей получены "
                 "и независимо сверены с RAW и SHA256. "
                 "Остальные поля остаются неизвестными; пароли скрыты. "
+                "Advanced-поля показывают исходный ID и ключ локализации; "
+                "оригинальный перевод Delphi не подтверждён. "
                 "Flash, Reset и Upload не выполнялись.")
         else:
             self.source_note.setText(
@@ -230,7 +232,7 @@ class OriginalConfigReadOnlyPanel:
         task0=(self._task0_receipt if self.source_mode==4 else None)
         table.setHorizontalHeaderLabels(
             ("Исходное поле","Адрес","IDR тип",
-             "RAW прибора (LE)" if task0 else "Локальный RAW",
+             "Получено / исходный ID" if task0 else "Локальный RAW",
              "Исходные пределы / список"))
         table.setRowCount(len(rows))
         for index,info in enumerate(rows):

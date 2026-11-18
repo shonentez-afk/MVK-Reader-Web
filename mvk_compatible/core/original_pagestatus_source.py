@@ -13,6 +13,8 @@ No network, original binary, or firmware code is embedded in this module.
 """
 from __future__ import annotations
 
+from .original_result_status_source import source_result_sensor_display
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -177,7 +179,19 @@ def source_pagestatus_table(index: int, calculated: dict | None) -> StatusTable:
         rows=[("Системный DSP (0x1020)",
                system.get("global_dsp_status_hex") if system.get("available") else UNAVAILABLE)]
         for ch,entry in enumerate(channels,1):
-            rows.append((f"АЦП{ch} · состояние датчика",_text(entry.get("sensor_status"))))
+            # _Unit125.pas: 00804A82..00804B31 exposes three source
+            # selectors inside the SAME actual 0x120 ResultStatus DWORD.
+            # Show only the source-proven SensorState ID beside the
+            # observed status; never replace 0 with assumed 'healthy'.
+            status=entry.get("sensor_status")
+            observed=_text(status)
+            if (type(status) is int or
+                    type(status) is str and status.startswith("0x")):
+                try:
+                    observed=source_result_sensor_display(status,ch)
+                except ValueError:
+                    pass  # Unknown/invalid status remains untrusted RAW.
+            rows.append((f"АЦП{ch} · состояние датчика",observed))
         rows.append(("Источник времени",str(calculated.get("time_kind","HOST_CLOCK_VALUES"))))
         return StatusTable(index,MODE_NAMES[index],("Состояние","Исходное значение"),
                            tuple((str(a),str(b)) for a,b in rows),
