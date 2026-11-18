@@ -384,6 +384,12 @@ Fast Kurtogram из PySDKit, использованное по лицензии 
 
 ## Полный каталог измерений, графиков и экранов настроек
 
+**Разбор пяти ключевых пробелов и план исследования четырёх направлений:**
+[FIVE_GAPS_AND_DIAGNOSTIC_RESEARCH_PLAN_RU.md](FIVE_GAPS_AND_DIAGNOSTIC_RESEARCH_PLAN_RU.md).
+**Отдельная передача новому чату:**
+[START_NEW_CHAT_MVK_LIVE_DIAGNOSTICS_20261118_RU.md](START_NEW_CHAT_MVK_LIVE_DIAGNOSTICS_20261118_RU.md).
+Оба документа — спецификация/план, а не реализация новых DSP-методов.
+
 **Единая спецификация** для разработки интерфейса и контроля объёма работ:
 [FULL_VIBRATION_METHODS_REALTIME_RECORDINGS_SETTINGS_SCREENS_RU.md](FULL_VIBRATION_METHODS_REALTIME_RECORDINGS_SETTINGS_SCREENS_RU.md).
 
