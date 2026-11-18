@@ -82,4 +82,8 @@ def test_qt_original_missing_or_unavailable_never_falls_back_to_fft(window):
     assert "ещё не получены" in w.dsp_info.text()
     w._last_status["phase"]="COMPLETED"
     w._render_dsp()
+    assert "НЕ Live" in w.dsp_info.text()
+    assert w.dsp_curve.getData()[0].size==43
+    w._last_status["phase"]="CONNECTING"
+    w._render_dsp()
     assert "ожидание" in w.dsp_info.text()
