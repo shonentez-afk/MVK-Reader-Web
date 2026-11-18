@@ -63,7 +63,7 @@ def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
     ]
     assert w.dsp_pages.widget(0)!=w.dsp_pages.widget(2)
     assert "APP_DERIVED" in w.derived_layout.itemAt(0).widget().text()
-    assert "AUX4700" in w.dsp_info.text() or "Данные" in w.dsp_info.text()
+    assert "DSP" in w.dsp_info.text() and "ожидание" in w.dsp_info.text()
 
 
 def test_time_page_has_own_x_y_and_filter_not_affected_by_spectrum(gui):
