@@ -105,6 +105,7 @@
 | W29 | **Ширина резонансного пика / damping marker** — частотные пороги, ширина, Q при валидной FRF | [Dewesoft damping](https://manual.dewesoft.com/x/setupmodule/modules/general/processing-markers/2d-3d-markers/damping-marker) | selected peak, dB cutoff, interpolation; FRF presence required for физический Q/ζ | ОКНО/NPZ: ширина возможна; физическое демпфирование УСЛОВНО |
 | W30 | **Поиск периодических ударов** — waveform с метками событий и гистограмма межударных периодов | [c-spectrum monitor](https://github.com/arkid-lutaj/c-spectrum/blob/main/src/cs_monitor.c), [enDAQ shock](https://github.com/MideTechnology/endaq-python/blob/main/endaq/calc/shock.py) | event threshold, noise floor, dead time, min repeats, envelope/filtered input | ОКНО/NPZ, ПЛАН; единичный удар не доказывает дефект |
 | W31 | **Time-Synchronous Averaging (TSA)** — оборотное среднее и остаточная вибрация | [pyvib diagnosis](https://github.com/andrek10/bearing-vibration-diagnostics-toolbox/blob/master/examples/diagnosis.py), [MATLAB TSA reference](https://github.com/matlab/matlab-agentic-toolkit/blob/main/skills-catalog/control-systems/matlab-extract-rotating-machinery-features/references/tsa.md) | подтверждённая RPM(t)/shaft angle, resampling, cycles, rejection, residual FFT | **УСЛОВНО**, ОТЛОЖЕНО до проверенной фазы/тахометра |
+| W32 | **Поиск признаков неисправностей** — отдельная вкладка с таблицей диагностических гипотез и фактических спектральных доказательств | [c-spectrum envelope](https://github.com/arkid-lutaj/c-spectrum/blob/main/src/cs_envelope.c), [viblearn evidence](https://github.com/Liang-Guo-SD/viblearn/blob/main/src/viblearn/diagnostics.py), [экран и алгоритм](CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md) | АЦП/реальная NPZ, подтверждённые RPM/1×, семейство дефекта, геометрия по необходимости, полоса огибающей/Fast Kurtogram, FFT, Hn, tolerance, local SNR, коллизии, статус/ограничения | **ОКНО / NPZ, ПЛАН**; отдельная функция, НЕ автоматическая постановка диагноза |
 
 **Правило для тяжёлых методов:** пользователь должен видеть на экране «Источник: АЦП / сеанс / фрагмент / Fs / N», нажимать «Рассчитать», а при смене канала результат предыдущего сеанса должен быть отброшен или помечен как исторический. Вкладки не запускают дополнительный TCP.
 
@@ -131,6 +132,7 @@
 | A17 | **Наложение 2–8 спектров с отдельными семейными маркерами** — общий FFT и таблица коллизий по датам | [OROS marker](https://wiki.oros.com/index.php?title=NVGate_Marker), [MVK history widgets](history_widgets.py) | trace/source per date, 1× per date, compatibility, Hn and legend display | архивные NPZ/совместимые кривые; ПЛАН поверх существующего overlay |
 | A18 | **Сравнение признаков при сопоставимых оборотах и нагрузке** — группы дат/графики и необнаруженные пики | [riya bearing monitor](https://github.com/riya0920/bearing-condition-monitoring), [bearing diagnostics dataset](https://github.com/Dingding1996/bearing-fault-diagnosis) | физически подтверждённые RPM/load metadata, same ADC/method/band, count | только серия архива; ПЛАН; нет load → не сравнивать под видом одного режима |
 | A19 | **Повторяемость семейства на независимых записях** — доля наблюдений, 2+ гармоники, collision history | [viblearn diagnostics](https://github.com/Liang-Guo-SD/viblearn/blob/main/src/viblearn/diagnostics.py), [CWRU study](https://github.com/riya0920/bearing-condition-monitoring) | источник, семейство, tolerances, min windows, noise floor, UTC, missing not zero | только серия NPZ/проверенных спектров, ПЛАН; не автономный диагноз |
+| A20 | **Ретроспективный поиск и подтверждение признаков дефектов** — сравнение гипотез по сериям записей, фактические подтверждения и SNR-тренд | [viblearn evidence ledger](https://github.com/Liang-Guo-SD/viblearn/blob/main/src/viblearn/diagnostics.py), [c-spectrum monitor](https://github.com/arkid-lutaj/c-spectrum/blob/main/src/cs_monitor.c), [экран архива](CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md) | совместимые NPZ/спектры, АЦП, даты, RPM по каждой записи, единицы, источник, Hn и минимум независимых наблюдений, baseline/пропуски | **ТОЛЬКО СЕРИЯ АРХИВНЫХ ЗАПИСЕЙ, ПЛАН**; не реконструировать FFT из AUX4700 |
 
 **Методы не «архивные» только потому, что данные хранятся.** Кюртограмма/STFT/CWT работают по **одному NPZ**, а тренды и EWMA требуют **серии**. Из одного сохранённого набора scalar AUX нельзя честно создавать исходный waveform.
 
@@ -217,6 +219,12 @@
 - [DewesoftX — Campbell Widget](https://manual.dewesoft.com/x/measure/viscontrol/vector-matrix-graphs/campbell-plot): отдельные настройки и отображение частота×RPM.
 - [Adash DDS](https://adash.com/software-vibration-analysis/digital-diagnostics-system): совместное отображение waveform, FFT, stacked spectra и trend.
 - [DREAM 5 ВАСТ — реальные видеоуроки](https://rutube.ru/channel/33303047/): диагностические графики и тренды, но **никаких** карточек/дерева машин в нашем текущем UI.
+
+### Отдельные настройки подключения и список IP профилей
+
+Подключение МВК01 необходимо вынести из главного экрана: компактное имя выбранного профиля и статус в шапке, полный экран с сохранёнными IP/избранными/последними успешными адресами в диалоге. Локальный Ethernet продолжает определяться автоматически; выбор IP не отправляет TCP и не обходит подтверждение оператора. Архитектура Qt QSettings, экраны и тесты: [CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md](CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md).
+
+**Поиск признаков дефектов выделен отдельно:** W32 для выбранного окна реального временного сигнала и A20 для сопоставимых архивных записей. Это два планируемых рабочих экрана, а не то же самое, что W26 (совпадение гармоник) или A10 (общий контроль изменений).
 
 ## 7. Рекомендуемая структура MVK Live: что видно без переключений
 
@@ -418,6 +426,7 @@
 - [Fast Kurtogram / waterfall / fault evidence](KURTOGRAM_WATERFALL_FAULT_DETECTION_RU.md).
 - [Дополнительные методы и исходники](ADVANCED_GRAPHS_METHODS_SOURCE_COMPARISON_RU.md).
 - [Гармоники и новые методы диагностики: исходники, настройки, применение к разным графикам](HARMONIC_OVERLAYS_AND_DIAGNOSTIC_METHODS_CATALOG_RU.md).
+- [Подключение, список IP и отдельные экраны поиска дефектов](CONNECTION_PROFILES_SETTINGS_AND_FAULT_SEARCH_UX_RU.md).
 - [Текущий README и фактические возможности](README_RU.md).
 
 **Итог:** основной экран должен быть быстрым живым осциллографом/спектроанализатором, экран анализа окна — лабораторией тяжёлых методов по реальным отсчётам, архив — инструментом истории и верификации. Каждый метод имеет отдельный источник, параметры и экран; не смешивать LIVE, ОКНО и АРХИВ.
