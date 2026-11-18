@@ -407,3 +407,33 @@ func TestStage108StreamingSafelyTrimsOnlyLastIncompleteFrame(t *testing.T) {
 		t.Fatalf("wrong final-tail policy %+v %v", stat, e)
 	}
 }
+
+
+func TestStage108ValidUnknownPacketBetweenOriginalFramesStillExports(t *testing.T) {
+    // The original _Unit125 Execute 008087BB consumes unknown payloads
+    // and resumes receiving. Exporter must make the SAME distinction:
+    // unknown valid envelope is not malformed, and must remain in RAW.
+    original:=fixtureBytes(makeFixture())
+    first:=makeIdentity()
+    if len(original)<len(first) || !bytes.Equal(original[:len(first)],first){
+        t.Fatal("fixture identity changed")
+    }
+    unknown:=make([]byte,16)
+    binary.LittleEndian.PutUint32(unknown[:4],0xDEADBEEF)
+    binary.LittleEndian.PutUint32(unknown[4:8],uint32(len(unknown)))
+    copy(unknown[8:],[]byte("MVK-TEST"))
+    stream:=append(append(append([]byte{},original[:len(first)]...),unknown...),original[len(first):]...)
+    dir,s:=makeNativeMonitorForFixture(t,stream,"REPLAY_EOF")
+    if s.CaptureOnly || s.InvalidFrames!=0 || s.FrameCounts["DEADBEEF/16"]!=1 {
+        t.Fatalf("valid unknown packet must not fail original receiver: %+v",s)
+    }
+    result,e:=completeStage108Export(dir,s,nil,true,7*60,nil)
+    if e!=nil || result.State!="EXPORTED" || result.ADCFiles!=8 {
+        t.Fatalf("verified unknown packet incorrectly blocks exporter: %+v %v",result,e)
+    }
+    disk,e:=os.ReadFile(filepath.Join(dir,"incoming.raw"))
+    if e!=nil || !bytes.Equal(disk,stream) {t.Fatal("original RAW bytes changed during export",e)}
+    if result.OriginalRawSHA256!=s.RawSHA256 {
+        t.Fatal("reconstructed output lost original RAW hash linkage")
+    }
+}
