@@ -494,6 +494,160 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._ethernet_timer.setInterval(120)
         self._ethernet_timer.timeout.connect(self._collect_ethernet_discovery)
 
+    def _toggle_advanced(self,checked):
+        self.advanced_panel.setVisible(bool(checked))
+        self.advanced_toggle.setText(
+            "Дополнительные расчёты и настройки ▾" if checked else
+            "Дополнительные расчёты и настройки ▸")
+        self._show_envelope_if_needed()
+
+    def _show_envelope_if_needed(self):
+        show=(self.advanced_toggle.isChecked() and
+              self.analysis.currentData()=="envelope")
+        self.envelope_label.setVisible(show)
+        self.envelope_band.setVisible(show)
+
+    def _rebuild_y_height(self):
+        with QtCore.QSignalBlocker(self.y_height_choice):
+            self.y_height_choice.clear()
+            for label,value in y_height_options(self.spectrum_view.currentData()):
+                self.y_height_choice.addItem(label,value)
+
+    def _select_primary_spectrum(self,*_):
+        # An operator view changes kind, dB/linear and regular FFT TOGETHER.
+        kind,scale=view_settings(self.spectrum_view.currentData())
+        blocks=[QtCore.QSignalBlocker(w) for w in (
+            self.kind,self.yscale,self.xscale,self.analysis)]
+        try:
+            self.kind.setCurrentIndex(self.kind.findData(kind))
+            self.yscale.setCurrentIndex(self.yscale.findData(scale))
+            self.xscale.setCurrentIndex(self.xscale.findData("linear"))
+            self.analysis.setCurrentIndex(self.analysis.findData("fft"))
+        finally:
+            del blocks
+        self._rebuild_y_height()
+        self._show_envelope_if_needed()
+        self._on_control_change()
+
+    def _select_primary_filter(self,*_):
+        mode=self.filter_choice.currentData()
+        blocks=[QtCore.QSignalBlocker(w) for w in (
+            self.band,self.notch,self.custom_low,self.custom_high)]
+        try:
+            selected=self.band.findData(
+                "custom" if mode in ("highpass","lowpass","bandpass") else
+                PRESET_BANDS["Весь диапазон"])
+            self.band.setCurrentIndex(selected)
+            notch={"notch50":50.0,"notch60":60.0}.get(mode)
+            self.notch.setCurrentIndex(self.notch.findData(notch))
+            if mode=="highpass":
+                if self.custom_low.value()<=0:self.custom_low.setValue(10)
+                self.custom_high.setValue(0)
+            elif mode=="lowpass":
+                self.custom_low.setValue(0)
+                if self.custom_high.value()<=0:self.custom_high.setValue(1000)
+            elif mode=="bandpass":
+                if self.custom_low.value()<=0:self.custom_low.setValue(10)
+                if self.custom_high.value()<=self.custom_low.value():
+                    self.custom_high.setValue(max(1000,self.custom_low.value()+10))
+        finally:
+            del blocks
+        self.filter_button.setEnabled(mode in ("highpass","lowpass","bandpass"))
+        self._on_control_change()
+
+    def _filter_description(self):
+        mode=self.filter_choice.currentData()
+        if mode=="none":
+            text="Без пользовательского фильтра"
+            if self.kind.currentData() in ("velocity","displacement"):
+                text+=" (ВС/ВП: защитный HP 2 Гц при интеграции)"
+            return text
+        if mode=="highpass":
+            return f"ФВЧ от {self.custom_low.value():g} Гц"
+        if mode=="lowpass":
+            return f"ФНЧ до {self.custom_high.value():g} Гц"
+        if mode=="bandpass":
+            return (f"Полосовой {self.custom_low.value():g}–"
+                    f"{self.custom_high.value():g} Гц")
+        return {"notch50":"Режектор 50 Гц, Q=35",
+                "notch60":"Режектор 60 Гц, Q=35"}.get(mode,"Неизвестный фильтр")
+
+    def _edit_filter(self):
+        mode=self.filter_choice.currentData()
+        if mode not in ("highpass","lowpass","bandpass"):
+            return
+        dlg=QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Фильтр спектра: параметры")
+        form=QtWidgets.QFormLayout(dlg)
+        lo=QtWidgets.QDoubleSpinBox(dlg)
+        hi=QtWidgets.QDoubleSpinBox(dlg)
+        for box in (lo,hi):
+            box.setRange(0,32768)
+            box.setDecimals(2)
+            box.setSuffix(" Гц")
+        lo.setValue(self.custom_low.value() or 10)
+        hi.setValue(self.custom_high.value() or 1000)
+        if mode!="lowpass":form.addRow("Нижняя граница ФВЧ",lo)
+        if mode!="highpass":form.addRow("Верхняя граница ФНЧ",hi)
+        ch=self._gui_ring.channel(self.adc.currentData())
+        nyquist=ch.rate_hz/2 if ch else None
+        note=(f"Fs={ch.rate_hz} Гц, Nyquist={nyquist:g} Гц"
+              if ch else "Fs уточняется после приёма. Фильтр должен быть ниже Nyquist.")
+        form.addRow(QtWidgets.QLabel(note))
+        buttons=QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok|QtWidgets.QDialogButtonBox.Cancel,dlg)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        if dlg.exec()!=QtWidgets.QDialog.DialogCode.Accepted:return
+        lower=0.0 if mode=="lowpass" else lo.value()
+        upper=0.0 if mode=="highpass" else hi.value()
+        if ((mode!="lowpass" and lower<=0) or
+            (mode!="highpass" and upper<=0) or
+            (mode=="bandpass" and lower>=upper) or
+            (nyquist is not None and max(lower,upper)>=nyquist)):
+            QtWidgets.QMessageBox.warning(
+                self,"Фильтр отклонён","Границы должны быть положительными, "
+                "упорядоченными и строго ниже Nyquist АЦП.")
+            return
+        blocks=[QtCore.QSignalBlocker(self.custom_low),
+                QtCore.QSignalBlocker(self.custom_high)]
+        try:
+            self.custom_low.setValue(lower)
+            self.custom_high.setValue(upper)
+        finally:
+            del blocks
+        self._select_primary_filter()
+
+    def _apply_operator_ranges(self):
+        selected=self.x_limit_choice.currentData()
+        view=self._spectrum
+        ch=self._gui_ring.channel(self.adc.currentData())
+        rate=view.rate_hz if view is not None else (ch.rate_hz if ch else None)
+        xmax,clipped=x_limit_hz(selected,rate)
+        self.spec.setXRange(0,xmax,padding=0)
+        self.waterfall.setXRange(0,xmax,padding=0)
+        note=(f" · Fs={rate} Гц, доступно до {xmax:g} Гц (Nyquist)"
+              if clipped else "")
+        self.operator_info.setText(
+            self._filter_description()+
+            f" · просмотр X: 0–{selected:g} Гц"+note)
+        scale=self.yscale.currentData()
+        if view is not None:
+            values=vibration_plot_values(
+                view,scale,reference=self.db_ref.currentData())
+            mask=(np.isfinite(values)&np.isfinite(view.hz)&
+                  (view.hz>=0)&(view.hz<=xmax))
+            visible=values[mask].tolist()
+        else:
+            visible=[]
+        y_height=(self.y_height_choice.currentData()
+                  if self.analysis.currentData()=="fft" and
+                  (self.kind.currentData(),scale)==view_settings(
+                      self.spectrum_view.currentData()) else None)
+        ymin,ymax=visible_y_range(visible,scale,y_height)
+        self.spec.setYRange(ymin,ymax,padding=0)
+
     def _read_settings(self):
         band=self.band.currentData()
         if band=="custom":
@@ -504,6 +658,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.analysis.currentData(),self.envelope_band.currentData(),self.notch.currentData())
 
     def _on_control_change(self,*_):
+        self._show_envelope_if_needed()
         self._last_fft_submit=0.0
         self._last_submitted_key=None
         if self._spectrum is not None and (
@@ -528,6 +683,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.spec_curve.setData([],[])
             self.metrics.setText("Пересчёт выбранного физического спектра")
         self._render_wave()
+        if self._spectrum is None:self._apply_operator_ranges()
         self._schedule_fft()
 
     def _apply_axes(self):
@@ -560,7 +716,8 @@ class LiveWindow(QtWidgets.QMainWindow):
 
     def _redraw_from_current(self,*_):
         self._apply_axes()
-        self._render_spectrum()
+        if self._spectrum is None:self._apply_operator_ranges()
+        else:self._render_spectrum()
         self._update_markers()
 
     def _update_markers(self,*_):
@@ -980,6 +1137,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                     chosen.extend([segment[0],segment[np.argmax(s.rms[segment])]])
             ix=np.array(sorted(set(chosen)),dtype=int)
         self.spec_curve.setData(x[ix],y[ix],connect="finite")
+        self._apply_operator_ranges()
         self._cursor_text()
         label=({"fft":"FFT","welch":"Welch PSD",
                "asd":"ASD Уэлча","third_octave":"1/3 октавы","envelope":"Hilbert огибающая"}[s.mode])
