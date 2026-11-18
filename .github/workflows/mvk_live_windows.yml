@@ -41,8 +41,13 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check numpy scipy PySide6 pyqtgraph pytest pyinstaller
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pytest -q mvk_live_standalone/tests/
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Test each Qt module in a fresh native process, avoiding
+          # cross-module PySide6/shiboken destructor state; failures remain fatal.
+          Get-ChildItem mvk_live_standalone/tests/test_*.py | ForEach-Object {
+            Write-Host "Qt regression: $($_.FullName)"
+            python -X faulthandler -m pytest -q $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Qt suite failure: $($_.Name)" }
+          }
       - name: Build independent Qt GUI containing its matched Go receiver
         shell: pwsh
         run: |
