@@ -280,6 +280,7 @@ class HistoryWorkspaces(QtCore.QObject):
         self.compare_plot=pg.PlotWidget(title="Сравнение по реальным сохранённым датам")
         self.compare_plot.showGrid(x=True,y=True,alpha=.2)
         self.compare_legend=self.compare_plot.addLegend()
+        self._compare_curves=[]
         splitter.addWidget(self.compare_plot)
         splitter.setStretchFactor(0,1)
         splitter.setStretchFactor(1,3)
@@ -375,9 +376,13 @@ class HistoryWorkspaces(QtCore.QObject):
         self._clear_plot()
 
     def _clear_plot(self):
-        self.compare_plot.clear()
-        if self.compare_plot.plotItem.legend is not None:
-            self.compare_plot.plotItem.legend.clear()
+        # Remove each graphical curve ONCE. PlotItem.removeItem already
+        # unlinks the matching LegendItem row; calling plot.clear AND
+        # legend.clear used to double-delete Qt-backed graphics pointers
+        # across repeated archive windows (PySide6 none_dealloc crash).
+        for curve in self._compare_curves:
+            self.compare_plot.removeItem(curve)
+        self._compare_curves=[]
         self._last_overlay=[]
 
     def _draw_comparison(self,*_):
@@ -463,10 +468,11 @@ class HistoryWorkspaces(QtCore.QObject):
                 y=np.asarray(y)[good]
                 color=COLORS[i % len(COLORS)]
                 name=entry.pretty
-                self.compare_plot.plot(
+                curve=self.compare_plot.plot(
                     x,y,pen=pg.mkPen(color,width=1.6),name=name,
                     symbol="o" if mode.startswith("vendor") else None,
                     symbolSize=4 if mode.startswith("vendor") else None)
+                self._compare_curves.append(curve)
                 self._last_overlay.append((entry,x.copy(),y.copy(),unit))
             except (ValueError,OSError,KeyError,IndexError) as exc:
                 skipped.append(f"{entry.time_utc[:19]}: {exc}")
