@@ -142,7 +142,7 @@ def test_logarithmic_frequency_axis_has_no_zero_and_physical_cursor(widget):
     assert high == pytest.approx(3,abs=1e-3)  # log10(1000 Hz)=3
     w.cursor.setValue(math.log10(100))
     w._cursor_text()
-    assert "100" in w.spec.getPlotItem().titleLabel.text
+    assert "100" in w._professional_cursors.spec_readout.text()
     # This dB mode is a numeric Y ordinate; a second log Y is invalid.
     w.yscale.setCurrentIndex(w.yscale.findData("db"))
     assert "дБ" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
