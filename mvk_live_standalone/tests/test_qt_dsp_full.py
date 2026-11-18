@@ -119,7 +119,7 @@ def test_calculated_original_band_to_exact_metric_trend_navigation(window):
     w.dsp_bands_table.setCurrentCell(index,0)
     w.dsp_band_trend_button.click()
     ui=w.history_ui
-    assert w.views.currentWidget()==ui.trend_page
+    assert w._modern_windows["archive-trends"].centralWidget()==ui.trend_page
     assert ui.trend_group.currentData()=="third_octave"
     assert ui.trend_position.currentData()==index
     assert w.adc.currentData()==3
@@ -146,4 +146,4 @@ def test_calculated_24_position_and_local_metric_navigate_to_own_provenance(wind
     w.local_trend_button.click()
     assert ui.trend_group.currentData()=="velocity_rms_10_1000"
     assert ui.trend_adc.currentData()==3
-    assert w.views.currentWidget()==ui.trend_page
+    assert w._modern_windows["archive-trends"].centralWidget()==ui.trend_page
