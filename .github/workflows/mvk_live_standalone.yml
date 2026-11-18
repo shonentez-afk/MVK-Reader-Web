@@ -67,6 +67,48 @@ jobs:
             echo "::endgroup::"
           done
 
+
+      - name: Capture actual modern Qt screenshots for operator review (NO DEVICE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ui_review
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          os.environ["QT_QPA_PLATFORM"] = "offscreen"
+          from PySide6 import QtWidgets
+          from mvk_live_standalone.app import LiveWindow
+          from mvk_live_standalone.modern_shell import apply_theme
+
+          app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+          app.setQuitOnLastWindowClosed(False)
+          win = LiveWindow()
+          # This is only a visual screenshot of an OFFLINE application.
+          # No test waveform is introduced and no TCP connection is started.
+          win.resize(1600, 900)
+          win.show()
+          app.processEvents()
+          assert win._native.state() == win._native.ProcessState.NotRunning
+          assert win._capture_root is None
+          assert win.views.count() == 4
+          for mode in ("light", "dark"):
+              apply_theme(win, mode)
+              app.processEvents()
+              shot = win.grab()
+              assert not shot.isNull(), mode
+              target = Path("ui_review") / f"MVK_Live_main_{mode}_NO_DEVICE.png"
+              assert shot.save(str(target), "PNG"), target
+              print(f"UI preview: {target}, {shot.width()}x{shot.height()}")
+          win.close()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MVK_Live_Modern_Main_UI_Review_NO_DEVICE
+          path: ui_review/MVK_Live_main_*_NO_DEVICE.png
+          retention-days: 14
+          if-no-files-found: error
+
   live-go-ipc:
     runs-on: ubuntu-latest
     timeout-minutes: 20
