@@ -106,6 +106,7 @@ def test_original_dsp_nonfinite_is_missing_not_synthetic_zero(tmp_path):
     history=MeasurementHistory(tmp_path/"archive")
     row=vendor_row(1,1)
     row["band_peak_equiv"][7]=None
+    row["nonfinite_fields"]=1
     history.record_vendor_row("TEST_A",row)
     pts,*_=history.trend(1,"band_peak_equiv:7")
     assert pts==[]
