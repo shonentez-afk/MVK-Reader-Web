@@ -80,7 +80,7 @@ def test_aux_does_not_create_phantom_original_values_rows(tmp_path):
 
 
 @pytest.mark.parametrize("mutator", [
-    lambda p,a: p.write_bytes(p.read_bytes()[:-1] + b"X"),
+    lambda p,a: p.write_bytes(p.read_bytes()[:-1] + b"Y"),
     lambda p,a: a.update(expected_ticks=a["expected_ticks"] + 1),
     lambda p,a: a.update(expected_aux=a["expected_aux"] + 1),
     lambda p,a: a.update(expected_tail_bytes=0),
