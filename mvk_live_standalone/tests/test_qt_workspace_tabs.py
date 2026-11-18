@@ -44,11 +44,14 @@ def _feed(w,fs=8192):
 def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
     w,_=gui
     assert [w.views.tabText(i) for i in range(w.views.count())]==[
-        "Спектр","Временной сигнал","Расчётные данные","Доп. анализ"]
+        "Спектр","Временной сигнал","Расчётные данные",
+        "Тренды","Сравнение","Доп. анализ"]
     assert w.views.widget(0)==w.spectrum_page
     assert w.views.widget(1)==w.wave_page
     assert w.views.widget(2)==w.calculated_page
-    assert w.views.widget(3)==w.extra_panel
+    assert w.views.widget(3)==w.history_ui.trend_page
+    assert w.views.widget(4)==w.history_ui.compare_page
+    assert w.views.widget(5)==w.extra_panel
     assert w.wave.parent() is not w.centralWidget()
     assert w.spec.parent() is not w.centralWidget()
     assert w.views.currentWidget()==w.spectrum_page
