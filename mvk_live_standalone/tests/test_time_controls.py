@@ -35,10 +35,11 @@ def test_time_filter_off_does_not_reapply_native_frange():
 
 def test_filtered_time_signal_changes_only_frequency_component_selected():
     fs=8192
-    t=np.arange(8192)/fs
+    t=np.arange(32768)/fs
     raw=np.sqrt(2)*(np.sin(2*np.pi*50*t)+np.sin(2*np.pi*1000*t))
     def magnitude(arr,f):
-        return 2*np.abs(np.fft.rfft(arr)[int(f)])/len(arr)/np.sqrt(2)
+        index=int(round(f*len(arr)/fs))
+        return 2*np.abs(np.fft.rfft(arr)[index])/len(arr)/np.sqrt(2)
     hp=time_filter_waveform(raw,fs,mode="highpass",low=500)
     assert magnitude(hp,50)<.01 and magnitude(hp,1000)==pytest.approx(1,rel=.02)
     lp=time_filter_waveform(raw,fs,mode="lowpass",high=200)
