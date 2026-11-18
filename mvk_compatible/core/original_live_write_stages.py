@@ -36,6 +36,7 @@ from .native_r6_tach_evidence import validate_tach_evidence
 from .original_pagefile_recording import OriginalPageFileSelection
 from .original_measure_controls import table_rows
 from .original_values_3100_timeline import scan_original_values_3100
+from .original_write_data_wire_replay import export_source_wire_write_intervals
 
 SOURCE="SOURCE_IDR_00809414_008099CF_LIVE_WRITE_STAGES_COMPAT_V1"
 STAGE_OPEN=0
@@ -443,6 +444,18 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             provenance=audit["output_file_sha256"]
             tach=validate_tach_evidence(archive,audit)
             source_values_events=None
+            source_wire_evidence=[]
+            raw_summary=None
+            native_raw_path=directory/"incoming.raw"
+            if (frame_mark_evidence is not None and native_raw_path.exists()):
+                summary_path=directory/"summary.json"
+                if (summary_path.is_symlink() or not summary_path.is_file()
+                        or summary_path.stat().st_size>1048576):
+                    raise ValueError("Original source write needs trusted Go summary")
+                raw_summary=json.loads(summary_path.read_text(encoding="utf-8"))
+                if (not isinstance(raw_summary,dict) or
+                        raw_summary.get("raw_sha256")!=audit.get("source_raw_sha256")):
+                    raise ValueError("Original wire writer RAW/ZIP mismatch")
             if (frame_mark_evidence is not None and
                     any(w.kind=="values" for w in ledger.windows)):
                 # The original writer runs on PARAM descriptor 0x3100,
@@ -450,14 +463,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 # one untouched Native RAW, independently verify its SHA,
                 # packet count, AUX and source trigger count; use actual Go
                 # next-frame marks for every selected VALUES interval.
-                summary_path=directory/"summary.json"
-                if (summary_path.is_symlink() or not summary_path.is_file()
-                        or summary_path.stat().st_size>1048576):
-                    raise ValueError("Original VALUES requires local Go summary")
-                raw_summary=json.loads(summary_path.read_text(encoding="utf-8"))
-                if (not isinstance(raw_summary,dict) or
-                        raw_summary.get("raw_sha256")!=audit.get("source_raw_sha256")):
-                    raise ValueError("Original VALUES source RAW/ZIP mismatch")
+                if raw_summary is None:
+                    raise ValueError("Original VALUES needs authenticated RAW and summary")
                 ranges=[(number,w.start_source_values_ticks,
                          w.end_source_values_ticks)
                         for number,w in enumerate(ledger.windows,1)
@@ -471,6 +478,42 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     expected_ticks=raw_summary.get("values_ticks_address_3100"),
                     expected_tail_bytes=raw_summary.get("incomplete_final_frame_bytes"),
                     ranges=ranges)
+            if (raw_summary is not None and frame_mark_evidence is not None
+                    and any(w.kind=="data" for w in ledger.windows)):
+                # Never silently re-scale raw ADC/TACH bytes: exact source
+                # TmpStream.FMemory from original Execute 008082D3..
+                # 008082DE is distinct from Native gain-corrected .f32.
+                # Actual Delphi rate/freeze gate and file naming still
+                # require a matching live original session to prove 1:1.
+                go_channels=raw_summary.get("channels")
+                if (not isinstance(go_channels,list) or len(go_channels)!=10):
+                    raise ValueError("Original wire export missing Go ten-channel counts")
+                final_counts=[]
+                for i,item in enumerate(go_channels):
+                    if not isinstance(item,dict):
+                        raise ValueError("Original wire export invalid Go channel counter")
+                    final_counts.append(_int(item.get("samples"),
+                                             f"original wire channel {i+1}"))
+                wire_cuts=[]
+                for number,window in enumerate(ledger.windows,1):
+                    if window.kind!="data":continue
+                    for ch,chosen in enumerate(window.channels,1):
+                        if chosen and (window.end_samples[ch-1]>
+                                       window.start_samples[ch-1]):
+                            wire_cuts.append((number,ch,
+                                              window.start_samples[ch-1],
+                                              window.end_samples[ch-1]))
+                source_wire_evidence=export_source_wire_write_intervals(
+                    native_raw_path,target,
+                    expected_sha256=audit["source_raw_sha256"],
+                    expected_raw_bytes=raw_summary.get("raw_bytes"),
+                    expected_frames=raw_summary.get("frames_decoded"),
+                    expected_tail_bytes=raw_summary.get(
+                        "incomplete_final_frame_bytes"),
+                    expected_channel_samples=final_counts,
+                    cuts=wire_cuts)
+                emitted.extend({"kind":"source_raw_wire_payload",**item}
+                               for item in source_wire_evidence)
             for number,window in enumerate(ledger.windows,1):
                 if window.session_id!=ledger.session_id:
                     raise ValueError("Cross-run source write interval")
@@ -642,6 +685,10 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "legacy_aux_result_export_is_not_original_values_trigger":
                 source_values_events is None,
             "source_values_csv_exact_delphi_layout_verified":False,
+            "source_write_data_wire_payload_files":len(source_wire_evidence),
+            "source_write_data_wire_payload_byte_exact":
+                bool(source_wire_evidence),
+            "source_write_data_delphi_rate_freeze_parity_verified":False,
             "original_tach_calibration_verified":False,
         }
         (target/"SOURCE_WRITE_WINDOWS_AUDIT.json").write_text(
@@ -661,6 +708,10 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     source_values_events is not None else 0,
                 "source_thread_auto_closed_writers":(frame_mark_evidence or {}).get(
                     "source_thread_auto_closed_writers",0),
+                "source_write_data_wire_payload_files":len(source_wire_evidence),
+                "source_write_data_wire_payload_byte_exact":
+                    bool(source_wire_evidence),
+                "source_write_data_delphi_rate_freeze_parity_verified":False,
                 "source_values_csv_exact_delphi_layout_verified":False}
     except Exception:
         if created:
