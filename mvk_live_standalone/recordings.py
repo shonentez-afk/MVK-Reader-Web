@@ -8,6 +8,7 @@ No IP, authentication token, MAC address or source register image is stored.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import csv
 import hashlib
 import io
@@ -32,6 +33,7 @@ class OfflineSnapshot:
     capture_end: int
     sha256: str
     source: str = "OFFLINE_REOPENED_LOCAL_SNAPSHOT_NOT_DEVICE_PROOF"
+    saved_utc: str | None = None  # file creation timestamp; NOT the acquisition instant
 
 
 def _checked(acceleration_m_s2: np.ndarray, adc: int, rate_hz: int) -> np.ndarray:
@@ -59,6 +61,7 @@ def save_snapshot(
         "sample_count":len(x),"sha256":digest,
         "unit":"m/s^2","source":"MVK_NATIVE_VERIFIED_APP_DERIVED_EXPORT",
         "not_hardware_reference":True,
+        "saved_utc":datetime.now(timezone.utc).isoformat(),
     }
     output=Path(path)
     if output.suffix.lower()!=".npz":
@@ -113,8 +116,20 @@ def load_snapshot(path: str | Path) -> OfflineSnapshot:
         or type(meta.get("capture_end")) is not int
         or not x.size<=meta["capture_end"]<2**64):
         raise ValueError("Snapshot data or provenance does not match SHA256")
+    stored_time=meta.get("saved_utc")
+    if stored_time is not None:
+        if not isinstance(stored_time,str) or len(stored_time)>80:
+            raise ValueError("Invalid local NPZ save timestamp")
+        try:
+            dt=datetime.fromisoformat(stored_time.replace("Z","+00:00"))
+        except ValueError as exc:
+            raise ValueError("Invalid local NPZ save timestamp") from exc
+        if dt.tzinfo is None:
+            raise ValueError("NPZ save timestamp must have a timezone")
+        stored_time=dt.astimezone(timezone.utc).isoformat()
     return OfflineSnapshot(x,meta["adc"],meta["rate_hz"],
-                           meta["source_session"],meta["capture_end"],expected)
+                           meta["source_session"],meta["capture_end"],expected,
+                           saved_utc=stored_time)
 
 
 def save_spectrum_csv(
