@@ -212,16 +212,25 @@ class HistoryWorkspaces(QtCore.QObject):
               "band_peak_equiv":"vendor24_peak",
               "band_span_equiv":"vendor24_span"}.get(family,"fft_vu")
         self.compare_mode.setCurrentIndex(self.compare_mode.findData(mode))
-        # Select the closest *same-origin and same-ADC* saved sample. Never
-        # silently link a vendor trend to a local FFT made at another time.
+        # An operator clicking a historical metric must open the
+        # EXACT dated packet, never the nearest saved window at an
+        # unrelated point in time (even if we loaded only 500 rows).
         rows=[r for r in self._available_entries.values()
-              if (r.source==(LOCAL if kind=="window" else VENDOR))]
-        if rows:
-            selected=min(rows,key=lambda r:abs(
-                (datetime.fromisoformat(r.time_utc)-dt).total_seconds()))
-            self._table_selected={selected.key}
+              if (r.source==(LOCAL if kind=="window" else VENDOR))
+              and datetime.fromisoformat(r.time_utc)==dt]
+        if len(rows)==1:
+            self._table_selected={rows[0].key}
             self._populate_compare_table()
             self._draw_comparison()
+        elif rows:
+            self.compare_info.setText(
+                "Несколько записей с одинаковым временем; "
+                "уточните измерение в таблице, не выбирая случайное.")
+        else:
+            self.compare_info.setText(
+                "В списке нет ТОГО ЖЕ измерения и времени. "
+                "Нажмите «Обновить записи» или используйте фильтр архива; "
+                "ближайший, но другой пакет не подставляется.")
         if self.on_open_comparison is not None:
             self.on_open_comparison()
 
