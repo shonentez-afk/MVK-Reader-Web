@@ -1,3 +1,13 @@
+## Итоговая программная приёмка 19.11.2026 — завершена
+
+- **Кодовый SHA:** `7bfd13775ebeb0e2d99880e309345f0ca704cb66`.
+- **GitHub Actions [#44489702966](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44489702966): 5/5 SUCCESS**, все задания завершены.
+- Linux original Go RX/export: PASS; Python Core: **2519 passed, 141 skipped**, 30 subtests PASS.
+- Windows Core: **2762 passed, 7 skipped**, 30 subtests PASS; отдельные группы Qt: **59, 50 и 194 passed**.
+- Windows native QPA/font: PASS; автономный PyInstaller EXE: PASS.
+- [Windows preview ZIP — `MVKViewCompatible_Stage111_Windows_Preview`, 69 468 967 байт](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44489702966/artifacts/14513555390).
+- Исходный аппаратный Win32 Delphi 1:1 всё ещё НЕ подтверждён. Этот PASS относится исключительно к программной/синтетической приёмке.
+
 # MVKView 1.0.47 — единый пакет LIVE PARAM → 15 вкладок PageStatus (19.11.2026)
 
 **Ветка:** research/stage111-mvkview-desktop-20261029.
