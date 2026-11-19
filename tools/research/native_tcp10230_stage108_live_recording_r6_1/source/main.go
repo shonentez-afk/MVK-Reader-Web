@@ -186,6 +186,9 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			if err := m.ProcessChunk(buf[:n], time.Now()); err != nil {
 				if errors.Is(err,errTask2SourceDenied){return "SOURCE_OPERATION_DENIED",err}
 				if errors.Is(err,errTask2SourceWrite){return "SOURCE_RATE_TX_FAILED",err}
+                if errors.Is(err,errTask2SourceInvalidPacket){
+                    return "SOURCE_INVALID_PACKET",err
+                }
 				return "LOCAL_WRITE_FAILED", err
 			}
 			m.publishLiveStatus("RECORDING", false, "")

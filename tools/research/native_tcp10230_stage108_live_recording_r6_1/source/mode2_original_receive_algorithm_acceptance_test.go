@@ -9,6 +9,7 @@ import (
  "encoding/binary"
  "encoding/hex"
  "encoding/json"
+ "errors"
  "fmt"
  "os"
  "path/filepath"
@@ -149,14 +150,19 @@ func TestMode2OriginalReceiveMalformedLengthPreservesRAWButNeverInventsADC(t *te
  after:=sourceLiveWriterSample(typeADC,0,65536,0,0x3F800000)
  all:=append(append(append([]byte{},start...),bad...),after...)
  now:=time.Now()
- if e:=m.ProcessChunk(all[:len(start)+len(bad)],now);e!=nil{t.Fatal(e)}
- if e:=m.ProcessChunk(after,now.Add(time.Millisecond));e!=nil{t.Fatal(e)}
+ // The OS TCP read can already contain bytes AFTER the invalid
+ // application envelope. Save them ALL in RAW, but NEVER decode them:
+ // the original Task2 socket raises immediately at that bad length.
+ e:=m.ProcessChunk(all,now)
+ if !errors.Is(e,errTask2SourceInvalidPacket){
+  t.Fatalf("invalid original Task2 header must abort socket: %v",e)
+ }
  m.sourceOriginalTask2Stage.onDisconnected("SOURCE_INVALID_PACKET")
  summary,_,e:=m.Finalize("SOURCE_INVALID_PACKET")
  if e!=nil{t.Fatal(e)}
  raw,e:=os.ReadFile(filepath.Join(m.dir,"incoming.raw"))
  if e!=nil || !bytes.Equal(raw,all){t.Fatalf("broken frame RAW loss: %v",e)}
- if !summary.CaptureOnly || summary.InvalidFrames!=1 ||
+ if !summary.CaptureOnly || summary.InvalidFrames!=1 || summary.SourceTask2ProtocolExceptions!=1 ||
   summary.Channels[0].Samples!=0 || summary.SourceLiveWriteDataWindows!=0 ||
   summary.RawBytes!=uint64(len(all)) || !summary.ReadOnly {
   t.Fatalf("malformed bytes misreported as ADC: %+v",summary)

@@ -91,6 +91,8 @@ type Summary struct {
 	Denials                uint64            `json:"denied_responses"`
 	Channels               []ChannelStats    `json:"channels"`
 	InvalidFrames          uint64            `json:"invalid_application_frames"`
+    SourceTask2ProtocolExceptions uint64 `json:"source_task2_protocol_exceptions,omitempty"`
+    SourceTask2LastProtocolError string `json:"source_task2_last_protocol_error,omitempty"`
 	CaptureOnly            bool              `json:"capture_only_after_parser_error"`
 	TailBytes              int               `json:"incomplete_final_frame_bytes"`
 	Warnings               []string          `json:"warnings"`
@@ -260,7 +262,7 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
 	frames, parseErr := m.f.Feed(chunk)
 	// At the first complete application frame in this TCP chunk,
 	// apply any queued LOCAL operator source marks before consuming it.
-	if parseErr == nil && len(frames) > 0 && m.frameMarks != nil {
+	if len(frames) > 0 && m.frameMarks != nil {
 		m.frameMarks.poll(m, at)
         // Apply operator toggles BEFORE processing the first complete
         // application frame, exactly where the original source thread
@@ -283,6 +285,17 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
             if e:=m.sourceTask2TX.sendNext(m);e!=nil {return e}
         }
 		if e := m.consume(f, at); e != nil {
+            if m.sourceOriginalTask2Stage!=nil &&
+               m.sourceOriginalTask2Stage.connected {
+                // The real Delphi Task2 thread unwinds this socket on
+                // malformed application packets, not an endless RAW-only
+                // receive loop. Local disk errors are a separate cause.
+                if errors.Is(e,errMalformed) {
+                    return m.sourceTask2InvalidPacket(
+                        fmt.Errorf("type=%08X: %w",f.Type,e))
+                }
+                return fmt.Errorf("source Task2 local writer: %w",e)
+            }
 			m.summary.InvalidFrames++
 			m.warn(fmt.Sprintf("frame type=%08X: %v; further data kept raw only", f.Type, e))
 			m.captureOnly = true
@@ -303,6 +316,16 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
         }
         if stageErr!=nil {return stageErr}
 	}
+    if parseErr!=nil && m.sourceOriginalTask2Stage!=nil &&
+       m.sourceOriginalTask2Stage.connected {
+        // Valid frames preceding the malformed header were already
+        // consumed. Delphi dequeues the next FIFO before reading that
+        // bad header, even when OS TCP coalesced both packets.
+        if len(frames)>0 && m.sourceTask2TX!=nil {
+            if e:=m.sourceTask2TX.sendNext(m);e!=nil{return e}
+        }
+        return m.sourceTask2InvalidPacket(parseErr)
+    }
 	if parseErr != nil && !m.captureOnly {
 		m.summary.InvalidFrames++
 		m.warn(fmt.Sprintf("application framing: %v; further data kept raw only", parseErr))
@@ -590,6 +613,14 @@ func (m *Monitor) CloseFiles() error {
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
 	if !m.closed {
 		m.summary.EndReason = reason
+        // Continue decoding a fresh approved TCP socket after a fault,
+        // but NEVER certify the aggregate measurement after any bad
+        // source packet. Fail closed only at the finalization boundary.
+        if m.summary.SourceTask2ProtocolExceptions>0 {
+            m.captureOnly=true
+            m.warn(fmt.Sprintf("%d original Task2 packet exceptions; RAW preserved, no combined certified BIN",
+                m.summary.SourceTask2ProtocolExceptions))
+        }
 		m.summary.EndedUTC = time.Now().UTC().Format(time.RFC3339Nano)
 		m.summary.DurationSeconds = time.Since(m.start).Seconds()
 		m.summary.CaptureOnly = m.captureOnly

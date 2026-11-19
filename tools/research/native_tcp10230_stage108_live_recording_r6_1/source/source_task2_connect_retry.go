@@ -74,7 +74,7 @@ func sourceTask2CaptureAddressRetry(ctx context.Context,m *Monitor,addr string,
   // without it the denial remains terminal and its RAW is retained.
   if reason!="CONNECT_FAILED" && reason!="REMOTE_DISCONNECTED" &&
     reason!="SOURCE_READ_TIMEOUT" && reason!="SOCKET_READ_FAILED" &&
-    reason!="SOURCE_OPERATION_DENIED" {
+    reason!="SOURCE_OPERATION_DENIED" && reason!="SOURCE_INVALID_PACKET" {
    return reason,err
   }
   if m.summary.RawBytes>0 && !m.sourceAfterRAWReconnect{
