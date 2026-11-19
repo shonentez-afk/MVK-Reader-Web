@@ -96,3 +96,23 @@ func TestSourceFIRGetSignalFromRealRingBoundToHScaleAndSourceIndex(t *testing.T)
         t.Fatal("source GetSignal accepted GetSpectrum menu metadata")
     }
 }
+
+
+func TestSourceFIRGetSignalTwentySecondsNeverUses262144PreviewCutoff(t *testing.T){
+    n,post,fs,e:=sourceFIRGetSignalWindowLength(65536,20,0)
+    if e!=nil || n!=1310771 || post!=655360 || fs!=32768 {
+        t.Fatalf("source 20s filtered GetSignal N=%d post=%d Fs=%d err=%v",
+            n,post,fs,e)
+    }
+    if n>sourceOriginalStorageSamples || n<=262144 {
+        t.Fatal("source ring 20s FIR history cannot be substituted by preview")
+    }
+    for _,tag:=range []int{0,1,2,3,4,5,6,7,8,9,10,11,12,13}{
+        size,after,outRate,e:=sourceFIRGetSignalWindowLength(65536,20,tag)
+        if e!=nil || size==0 || after==0 || outRate!=32768 ||
+            size>sourceOriginalStorageSamples{
+            t.Fatalf("source live FIR HTag%d: %d / %d Fs%d %v",
+                tag,size,after,outRate,e)
+        }
+    }
+}

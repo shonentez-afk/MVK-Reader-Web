@@ -123,7 +123,8 @@ def envelope_plan(signal_length:int,sample_rate:int,code:int)->dict:
             'source':'APP_DERIVED_ENVELOPE_LENGTH_IDR_CANDIDATE'}
 
 
-def _fir_step(data:np.ndarray,stage:int,profile:EnvelopeProfile,*,quadrature:bool)->np.ndarray:
+def _fir_step(data:np.ndarray,stage:int,profile:EnvelopeProfile,*,
+              quadrature:bool,cancelled=None)->np.ndarray:
     taps,step=FIR_TAPS[stage],FIR_DECIM[stage]
     if len(data)<taps+step:
         raise ValueError("Original Delphi Invalid signal length for envelope/decimation")
@@ -134,10 +135,16 @@ def _fir_step(data:np.ndarray,stage:int,profile:EnvelopeProfile,*,quadrature:boo
     i=np.zeros(n,dtype=np.float32)
     q=np.zeros(n,dtype=np.float32) if quadrature else None
     for j in range(taps):
+        # Only a background LIVE worker passes this hook. The standard
+        # archive/FFT code path is unchanged, and no partial FIR can escape.
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Original GetSignal FIR interrupted")
         x=data[idx-j].astype(np.float64)
         i=np.asarray(i.astype(np.float64)+float(bank[2*j] if quadrature else bank[j])*x,dtype=np.float32)
         if quadrature:
             q=np.asarray(q.astype(np.float64)+float(bank[2*j+1])*x,dtype=np.float32)
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Original GetSignal FIR interrupted")
     if quadrature:
         return np.asarray(np.sqrt(i.astype(np.float64)**2+q.astype(np.float64)**2),dtype=np.float32)
     return i
@@ -145,7 +152,7 @@ def _fir_step(data:np.ndarray,stage:int,profile:EnvelopeProfile,*,quadrature:boo
 
 def process_original_envelope_candidate(
     samples:np.ndarray,sample_rate:int,code:int,profile:EnvelopeProfile,
-    *,f_range:float=1.0
+    *,f_range:float=1.0,cancelled=None
 )->dict:
     """IDR: NoDC -> optional decimators -> I/Q FIR -> sqrt(I²+Q²) -> FRange.
 
@@ -160,13 +167,20 @@ def process_original_envelope_candidate(
     if raw.ndim!=1 or not len(raw) or not np.isfinite(raw).all():
         raise ValueError("Envelope input must be finite float32 1D samples")
     plan=envelope_plan(len(raw),sample_rate,code)
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Original GetSignal FIR interrupted")
     centered,removed_mean=mean_center_float32(raw)
     step_data=centered
     if plan['pre_stage']:
-        step_data=_fir_step(step_data,plan['pre_stage'],profile,quadrature=False)
+        step_data=_fir_step(step_data,plan['pre_stage'],profile,
+                           quadrature=False,cancelled=cancelled)
     if plan['second_stage']:
-        step_data=_fir_step(step_data,plan['second_stage'],profile,quadrature=False)
-    result=_fir_step(step_data,plan['stage'],profile,quadrature=True)
+        step_data=_fir_step(step_data,plan['second_stage'],profile,
+                           quadrature=False,cancelled=cancelled)
+    result=_fir_step(step_data,plan['stage'],profile,quadrature=True,
+                     cancelled=cancelled)
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Original GetSignal FIR interrupted")
     output=np.asarray(result.astype(np.float64)*f_range,dtype=np.float32)
     rms=float(np.float32(np.sqrt(np.mean(result.astype(np.float64)**2))*f_range))
     return {'chronological':output,'getsignal_buffer':output[::-1].copy(),

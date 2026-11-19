@@ -122,6 +122,10 @@ from ..core.original_live_grid_cursor import source_live_cursor_hit
 from .xor_cursor_overlay import QtSpectrumXorCursor
 from .source_pixel_audit_io import save_source_graph_pixel_audit, read_png_rgba
 from .original_shell import install_original_shell
+from .source_live_fir_worker import SourceLiveFIRWorker
+from ..core.original_live_getsignal_fir_processing import (
+    source_live_fir_job_key,source_live_filtered_cursor,
+)
 from .source_visual_skin import OriginalVisualSkin
 from .original_task_ui import make_original_channel_tabs
 from .source_control_canvas import source_control_canvas
@@ -148,6 +152,9 @@ class MainWindow(QMainWindow):
         self._live_long_window=None  # SHA verified source-ring bAdcHScale
         self._live_fft_window=None  # SHA verified source-ring bSpecLines
         self._live_long_rendered_key=None  # never replay the same 5MiB window per Qt tick
+        self._source_fir_worker=None  # one cancellable, background FIR/IQ job
+        self._source_fir_pending=None  # newest source-window while worker runs
+        self._source_fir_trace=None  # full reversed FIR float32, not plotted LOD
         self._source_getsignal_last_processed={}  # source PageAdc stable Mode2 64-bit cursor
         self._source_getsignal_last_preview_end={}  # verified device cursor per rendered window
         # High-N live FFT is full numerical work, never a 50Hz UI-timer
@@ -921,6 +928,7 @@ class MainWindow(QMainWindow):
         if self._live_active:
             # Switching the source code invalidates the last verified
             # Go ring request. Never reuse old unfiltered/filtered curves.
+            self._cancel_source_live_fir()
             self._live_long_window=None
             self._live_fft_window=None
             self._source_large_fft_key=None
@@ -970,6 +978,10 @@ class MainWindow(QMainWindow):
     def _wave_filter_selected(self,*_):
         # Source mEnvelopeType1Click changes both ADC and Spectrum Tags.
         # Recalculate both views even when the other page is hidden.
+        if self._live_active:
+            self._cancel_source_live_fir()
+            self._live_long_window=None
+            self._live_fft_window=None
         self._sync_original_envelope_menu_tag(self.wave_envelope_code)
         self._sync_wave_primary_labels()
         self._wave_envelope_dirty=True
@@ -986,6 +998,8 @@ class MainWindow(QMainWindow):
     def _wave_mode_selected(self,*_):
         # Source NoDC toggling changes the visible data, not RAW.
         # Rebind the local GetSignal last-processed read for this Tag.
+        if self._live_active:
+            self._cancel_source_live_fir()
         self._source_getsignal_last_processed.clear()
         self._source_getsignal_last_preview_end.clear()
         self._sync_wave_primary_labels()
@@ -996,6 +1010,7 @@ class MainWindow(QMainWindow):
             raise ValueError('Source ADC H menu Tag 0..13 required')
         self._source_getsignal_last_processed.clear()
         self._source_getsignal_last_preview_end.clear()
+        self._cancel_source_live_fir()
         self._live_long_window=None
         self._live_fft_window=None
         self._live_long_rendered_key=None
@@ -2864,6 +2879,7 @@ class MainWindow(QMainWindow):
         """Preview is a separate, explicitly unverified mode, never a ZIP session."""
         if self._live_active:
             return
+        self._cancel_source_live_fir()
         # Direct programmatic QA entry follows the same Delphi Mode2
         # visibility transition as the actual Measurement button.
         self.enter_measurement_mode()
@@ -3200,6 +3216,7 @@ class MainWindow(QMainWindow):
     def _invalidate_live_preview(self, reason):
         if not self._live_active:
             return
+        self._cancel_source_live_fir()
         self.original_shell.measure_controls.invalidate_preview()
         had_source=(self._live_long_window is not None or
                     self._live_fft_window is not None)
@@ -3227,17 +3244,29 @@ class MainWindow(QMainWindow):
         self._sync_spectrum_summary_primary()
         self.statusBar().showMessage('Предварительные графики скрыты, RAW Native не изменён')
 
-    def _render_source_live_filtered_wave(self,ch,tag,code):
-        """Original-IDP FIR/IQ candidate, SHA-bound Go ring and real HTag.
+    def _cancel_source_live_fir(self):
+        """Never publish an old FIR result after Stop, Freeze or menu change."""
+        self._source_fir_pending=None
+        self._source_fir_trace=None
+        self._live_long_rendered_key=None
+        worker=self._source_fir_worker
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+        line=getattr(self,'wave_line',None)
+        if line is not None:
+            line.setVisible(False)
 
-        Source: _Unit115:007D0C30/007D1158/007D1C48/007D1E70.
-        Reversed output, no second gain; Delphi x87 1:1 NOT verified.
+    def _render_source_live_filtered_wave(self,ch,tag,code):
+        """One independently SHA-bound full HTag window -> off-thread FIR.
+
+        _Unit115:007D0C30/007D1158/007D1C48/007D1E70.
+        Go and Qt NEVER issue another TCP request or apply FRange twice.
         """
         status=self._native_live_status or {}
         profile=self.envelope_profile
         window=self._live_long_window
-        if (self._source_live_view_frozen or
-                status.get("phase")!="RECORDING" or
+        if (self._source_live_view_frozen or self._measurement_exit_requested
+                or status.get("phase")!="RECORDING" or
                 status.get("snapshot_stale") is not False or
                 status.get("source_original_storage_verified") is not True or
                 status.get("source_rate_transition_during_live") is True):
@@ -3258,53 +3287,172 @@ class MainWindow(QMainWindow):
             raise ValueError(
                 f"Огибающая Code{code}: ожидание SHA-проверенного полного "
                 "pre-FIR HTag-окна Go; обычный сигнал не подменяет огибающую")
-        request=window.request
-        selected=request.sample_rate_hz*ADC_HORIZONTAL_MS[tag]//1000
-        plan=envelope_plan(selected,request.sample_rate_hz,code)
-        samples=window.preview.channels[ch].samples
-        if (request.samples!=plan["adjusted_input_length"] or
-                len(samples)!=request.samples):
-            raise ValueError("Original GetSignal: неверная FIR история")
-        # Large FIR must not block Qt's paint/event loop. The source
-        # window stays validated; a separate DSP worker is still needed.
-        if len(samples)>262144:
-            raise ValueError(
-                f"FIR HTag: полная история {len(samples)} отсчётов; "
-                "для длинного окна требуется отдельный DSP worker")
-        key=(request.request_id,self.wave_mode.currentIndex(),code,"SOURCE_FIR")
-        if self._live_long_rendered_key==key:
+        key=source_live_fir_job_key(
+            window,tag,code,self.wave_mode.currentIndex())
+        if (self._source_fir_trace is not None
+                and self._source_fir_trace['job_key']==key):
+            return  # Full result already rendered from exactly this SHA.
+        worker=self._source_fir_worker
+        if worker is not None:
+            # A new 750ms/3s TCP snapshot must not cause unbounded
+            # concurrent 20-second DSP jobs or freeze the 20ms Qt timer.
+            self._source_fir_pending=(window,profile,tag,code)
+            if (worker.configuration_key !=
+                    (window.request.session_id,ch,tag,code)):
+                worker.requestInterruption()
+            self.wave_hint.setText(
+                f"Огибающая Code{code}: FIR/IQ в отдельном потоке · "
+                "ожидается последний SHA-проверенный GetSignal")
             return
-        d=process_original_envelope_candidate(
-            samples,request.sample_rate_hz,code,profile,f_range=1.0)
-        values=np.asarray(d["getsignal_buffer"],dtype=np.float32)
-        if (len(values)==0 or len(values)>len(samples) or
-                not np.all(np.isfinite(values)) or
-                not np.array_equal(values,d["chronological"][::-1])):
-            raise ValueError("Source GetSignal: неверный обратный FIR буфер")
-        time_ms=np.arange(len(values),dtype=float)*1000./d["output_sample_rate_hz"]
+        worker=SourceLiveFIRWorker(
+            window,profile,tag,code,self.wave_mode.currentIndex(),self)
+        self._source_fir_worker=worker
+        self._source_fir_pending=None
+        worker.ready.connect(self._source_live_fir_ready)
+        worker.failed.connect(self._source_live_fir_failed)
+        worker.finished.connect(self._source_live_fir_finished)
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
         self.wave_line=None
-        self._wave_hover_window=None
+        self._wave_mouse_pixel=None
+        self._source_fir_trace=None
+        self.wave_mean_primary.setText(
+            f"Огибающая Code{code}: обработка реальной истории "
+            f"{window.request.samples} отсчётов")
+        self.wave_hint.setText(
+            f"Go 2²¹ → GetAdjustedEnvelopeLength → FIR/IQ · "
+            f"HTag={tag}, {ADC_HORIZONTAL_MS[tag]} мс · "
+            "обработка в отдельном потоке, без остановки TCP/GUI")
+        worker.start()
+
+    def _source_live_fir_ready(self,result):
+        """Display only same-run source proof; mouse reads full FIR, not LOD."""
+        worker=self._source_fir_worker
+        if (worker is None or result.get('job_key')!=worker.job_key or
+                not self._live_active or self._measurement_exit_requested or
+                self._source_live_view_frozen or
+                self._source_mode2_runtime.status_cells.system_error_latched):
+            return
+        status=self._native_live_status or {}
+        if (status.get("session_id")!=result['source_session_id'] or
+                self._ch()!=result['adc'] or
+                self._wave_hscale_tag!=result['source_h_tag'] or
+                int(self.wave_envelope_code.currentData() or 0)!=
+                    result['envelope_code'] or
+                self.wave_mode.currentIndex()!=result['source_mode']):
+            return
+        from ..core.original_live_view_gate import gate_live_preview
+        proof=gate_live_preview(
+            status,worker.window.preview,
+            stop_requested=self._measurement_exit_requested)
+        if not proof.allowed:
+            self.wave_hint.setText(
+                'FIR результат отклонён после изменения TCP: '+proof.reason)
+            return
+        if (worker.window.preview.channels[result['adc']].sha256 !=
+                result['source_float32_sha256'] or
+                result['source_pre_fir_samples']!=worker.window.request.samples):
+            self.wave_hint.setText('FIR результат: источник SHA/истории не совпал')
+            return
+        self._source_fir_trace=result
+        self.wave_plot.clear_source_tqgr_series()
+        self.wave_plot.clear()
         self.wave_plot.getViewBox().invertX(True)
         self.wave_plot.setLabel(
-            "bottom","Время до текущего отсчёта, мс · FIR кандидат")
-        self.wave_plot.setLabel("left","Огибающая, м/с² · не Delphi 1:1")
-        self.wave_plot.plot(time_ms,values,pen=pg.mkPen("#176c92"))
+            'bottom','Время до текущего отсчёта, мс · FIR кандидат')
+        self.wave_plot.setLabel('left','Огибающая, м/с² · не Delphi 1:1')
+        self.wave_plot.plot(result['plot_x_ms'],result['plot_y'],
+                            pen=pg.mkPen('#176c92'))
         self.wave_plot.setXRange(
-            0.,max(0.1,float(ADC_HORIZONTAL_MS[tag])),padding=0.)
+            0.,float(result['original_selected_ms']),padding=0.)
+        self.wave_line=pg.InfiniteLine(angle=90,movable=False,
+                                      pen=pg.mkPen('#ec9b20'))
+        self.wave_line.setVisible(False)
+        self.wave_plot.addItem(self.wave_line,ignoreBounds=True)
+        self._wave_mouse_pixel=None
+        self.wave_cursor_primary.setText('Курсор: —')
         self.wave_mean_primary.setText(
-            f"LIVE АЦП{ch} · FIR Code{code} · "
-            f"СКЗ-кандидат {d['rms_m_s2']:.5g} м/с²\n"
+            f"LIVE АЦП{result['adc']} · FIR Code{result['envelope_code']} · "
+            f"СКЗ-кандидат {result['rms_m_s2']:.5g} м/с²\n"
             "Оригинальный Delphi/x87 GetSignal ещё не принят")
         self.wave_hint.setText(
-            f"Источник Go 2²¹ SHA={window.preview.channels[ch].sha256[:12]} · "
-            f"HTag={tag} {ADC_HORIZONTAL_MS[tag]}мс · "
-            f"pre-FIR {len(samples)} → post-FIR {len(values)} · "
-            f"Fs={d['output_sample_rate_hz']} Гц · FRange=1 · "
-            "обратный буфер GetSignal; FIR/IQ кандидат, "
-            "Win32 и курсор 1:1 не проверены")
-        self._live_long_rendered_key=key
+            f"Go 2²¹ SHA={result['source_float32_sha256'][:12]} · "
+            f"pre-FIR {result['source_pre_fir_samples']} → "
+            f"post-FIR {result['output_samples']} · "
+            f"Fs={result['output_rate_hz']} Гц · "
+            f"LOD {result['plot_points']} точек; "
+            "курсор по полному обратному Float32 · FRange=1; "
+            "Win32 паритет не доказан")
+        self._live_long_rendered_key=result['job_key']
+
+    def _source_live_fir_failed(self,reason):
+        worker=self._source_fir_worker
+        if (worker is None or not isinstance(reason,tuple) or
+                len(reason)!=2 or reason[0]!=worker.job_key or
+                not self._live_active):
+            return
+        self._source_fir_trace=None
+        self.wave_plot.clear_source_tqgr_series()
+        self.wave_plot.clear()
+        self.wave_line=None
+        self.wave_hint.setText(
+            'Огибающая Code%d: FIR/IQ отклонён: %s' %
+            (worker.code,reason[1]))
+        self.wave_mean_primary.setText(
+            'LIVE FIR: исходный GetSignal не рассчитан; RAW не изменён')
+
+    def _source_live_fir_finished(self):
+        worker=self._source_fir_worker
+        if worker is None:
+            return
+        self._source_fir_worker=None
+        worker.deleteLater()
+        pending=self._source_fir_pending
+        self._source_fir_pending=None
+        if (pending is None or not self._live_active or
+                self._measurement_exit_requested or
+                self._source_live_view_frozen):
+            return
+        window,profile,tag,code=pending
+        if (self._live_long_window is window and
+                self.envelope_profile is profile and
+                tag==self._wave_hscale_tag and
+                code==int(self.wave_envelope_code.currentData() or 0)):
+            self._render_live_wave()
+
+    def _live_fir_cursor_from_scene(self,pos):
+        """Source UpdateCursor X -> full reversed FIR sample, never plot LOD."""
+        trace=self._source_fir_trace
+        if (trace is None or self.wave_line is None or
+                not isinstance(pos,QPointF) or not self._live_active or
+                self._measurement_exit_requested or
+                self._source_live_view_frozen or
+                self._ch()!=trace['adc'] or
+                self._wave_hscale_tag!=trace['source_h_tag'] or
+                int(self.wave_envelope_code.currentData() or 0)!=
+                    trace['envelope_code']):
+            return
+        vb=self.wave_plot.getViewBox()
+        if not vb.sceneBoundingRect().contains(pos):
+            self.wave_line.setVisible(False)
+            self.wave_cursor_primary.setText('Курсор: —')
+            return
+        x=float(vb.mapSceneToView(pos).x())
+        selected=source_live_filtered_cursor(trace,x)
+        if selected is None:
+            self.wave_line.setVisible(False)
+            self.wave_cursor_primary.setText('Курсор: —')
+            return
+        self.wave_line.setPos(selected['plot_x_ms'])
+        self.wave_line.setVisible(True)
+        self.wave_cursor_primary.setText(
+            f"{selected['plot_x_ms']:.6g} мс\n"
+            f"{selected['value_from_full_filtered_float32']:.7g} м/с²")
+        self.wave_hint.setText(
+            f"Go SHA={selected['source_float32_sha256'][:12]} · "
+            f"GetSignal FIR[{selected['output_index']}] "
+            f"= {selected['value_from_full_filtered_float32']:.8g} м/с² · "
+            "полный Float32, не LOD; Win32 пиксели не приняты")
 
     def _render_live_wave(self):
         if (not self._live_active or
@@ -3403,6 +3551,7 @@ class MainWindow(QMainWindow):
             self.wave_plot.clear()
             self.wave_line=None  # Original cursor requires audited archived samples
             self._wave_hover_window=None
+            self.wave_plot.getViewBox().invertX(False)
             self.wave_plot.setLabel('bottom','Индекс отсчёта/Fs, с · НЕ часы ПК')
             self.wave_plot.setLabel(
                 'left',
@@ -3613,6 +3762,7 @@ class MainWindow(QMainWindow):
     def _end_live_capture(self, exported):
         if not self._live_active:
             return
+        self._cancel_source_live_fir()
         self._source_interface_qtimer.stop()
         self._source_interface_clock.stop()
         self._source_interface_last_page=None
@@ -6067,6 +6217,9 @@ class MainWindow(QMainWindow):
         self._wave_at_scene_pos(scene_pos,force=False)
 
     def _wave_at_scene_pos(self,pos,*,force=False):
+        if self._live_active and self._source_fir_trace is not None:
+            self._live_fir_cursor_from_scene(pos)
+            return
         if not self.session or self.wave_line is None or not isinstance(pos,QPointF):
             return
         try:
@@ -6722,6 +6875,15 @@ class MainWindow(QMainWindow):
 
 
     def closeEvent(self,event):
+        fir_worker=self._source_fir_worker
+        if fir_worker is not None and fir_worker.isRunning():
+            # QThread may still hold the 2M validated Float32. Never let
+            # Qt destroy a running worker. Stop cancellation is cooperative.
+            fir_worker.requestInterruption()
+            self.statusBar().showMessage(
+                "Закрытие: завершается фоновая FIR обработка; RAW не изменён")
+            event.ignore()
+            return
         worker=self._source_writer_export_worker
         if worker is not None and worker.isRunning():
             QMessageBox.warning(
