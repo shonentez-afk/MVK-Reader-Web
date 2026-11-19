@@ -36,6 +36,8 @@ _SHA=re.compile(r"[0-9a-f]{64}\Z")
 MAX_PAIRS=40
 MAX_PAIR_BYTES=128*1024*1024
 MAX_TOTAL_BYTES=512*1024*1024
+MAX_RAW_BYTES=2048*1024*1024
+RAW_CHUNK_BYTES=2*1024*1024
 
 
 def _regular_dir(value):
@@ -52,10 +54,10 @@ def _safe_name(name):
     return name
 
 
-def _regular_file(directory,name):
+def _regular_file(directory,name,*,limit=MAX_PAIR_BYTES):
     p=directory/_safe_name(name)
     if (p.is_symlink() or not p.is_file() or
-            p.stat().st_size>MAX_PAIR_BYTES):
+            p.stat().st_size>limit):
         raise ValueError("Mode2 paired evidence missing/linked/oversized file")
     return p
 
@@ -66,6 +68,48 @@ def _file_bytes(folder,name):
     if len(body)>MAX_PAIR_BYTES:
         raise ValueError("Mode2 paired evidence changed during reading")
     return body
+
+
+def _stream_same_original_tcp_raw(reference,candidate,ref_name,new_name):
+    """Bounded streaming RAW SHA: up to 2 GiB per file, no full RAM copy.
+
+    Both files must remain immutable during the compare. A live writer
+    changing the source invalidates provenance even if the current bytes
+    happen to match. Do not follow symlinks or return private paths.
+    """
+    ra=_regular_file(reference,ref_name,limit=MAX_RAW_BYTES)
+    cb=_regular_file(candidate,new_name,limit=MAX_RAW_BYTES)
+    original_info,clone_info=ra.stat(),cb.stat()
+    if not original_info.st_size or not clone_info.st_size:
+        raise ValueError("Mode2 original TCP RAW must contain received bytes")
+    original_sha,candidate_sha=sha256(),sha256()
+    original_size,candidate_size=0,0
+    same=original_info.st_size==clone_info.st_size
+    with ra.open("rb") as original,cb.open("rb") as clone:
+        while True:
+            x=original.read(RAW_CHUNK_BYTES)
+            y=clone.read(RAW_CHUNK_BYTES)
+            if not x and not y:
+                break
+            original_sha.update(x);candidate_sha.update(y)
+            original_size+=len(x);candidate_size+=len(y)
+            if x!=y:
+                same=False
+    if (ra.stat().st_size!=original_info.st_size or
+            cb.stat().st_size!=clone_info.st_size or
+            ra.stat().st_mtime_ns!=original_info.st_mtime_ns or
+            cb.stat().st_mtime_ns!=clone_info.st_mtime_ns or
+            original_size!=original_info.st_size or
+            candidate_size!=clone_info.st_size):
+        raise ValueError("Mode2 paired original TCP RAW changed while reading")
+    return {
+        "reference_raw_sha256":original_sha.hexdigest(),
+        "candidate_raw_sha256":candidate_sha.hexdigest(),
+        "same_original_tcp_bytes":bool(same),
+        "reference_raw_bytes":original_size,
+        "candidate_raw_bytes":candidate_size,
+        "comparison_method":"BOUNDED_STREAMING_SHA256_AND_BYTE_EQUALITY",
+    }
 
 
 def _first_different_byte(before,after):
@@ -130,16 +174,8 @@ def compare_original_mode2_pair(
     raw_proof=None
     total=0
     if reference_raw_name is not None:
-        a=_file_bytes(reference,reference_raw_name)
-        b=_file_bytes(candidate,candidate_raw_name)
-        total+=len(a)+len(b)
-        raw_proof={
-            "reference_raw_sha256":sha256(a).hexdigest(),
-            "candidate_raw_sha256":sha256(b).hexdigest(),
-            "same_original_tcp_bytes":a==b,
-            "reference_raw_bytes":len(a),
-            "candidate_raw_bytes":len(b),
-        }
+        raw_proof=_stream_same_original_tcp_raw(
+            reference,candidate,reference_raw_name,candidate_raw_name)
         if not raw_proof["same_original_tcp_bytes"]:
             raise ValueError("Mode2 paired outputs originate from different RAW TCP streams")
     records=[]
