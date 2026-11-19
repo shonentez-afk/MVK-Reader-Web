@@ -227,7 +227,9 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.xscale.addItem(txt,key)
         self.nfft = QtWidgets.QComboBox()
         for n in FFT_SIZES:
-            self.nfft.addItem(f"FFT {n} · разрешение Fs/{n} Гц",n)
+            # Δf=Fs/N depends on the CURRENT verified acquisition rate,
+            # so do not promise numeric or symbolic resolution in this menu.
+            self.nfft.addItem(f"{n:,}".replace(",", " ")+" отсчётов",n)
         self.nfft.setCurrentIndex(2)
         self.band = QtWidgets.QComboBox()
         for label,bounds in PRESET_BANDS.items():

@@ -671,6 +671,9 @@ def test_spectrum_panel_physical_modes_and_controls_are_honest(widget):
         w.filter_center,w.envelope_band,w.smooth))
     assert w._modern_spectrum_setup_info.text()
     assert "Fs неизвестна" in w._modern_spectrum_setup_info.text()
+    assert "отсчётов" in w.nfft.currentText()
+    assert "Fs/" not in w.nfft.currentText()
+    assert len(w.nfft.currentText())<25
     assert "Хэнна" in w._modern_spectrum_setup_info.text()
     assert "Отсчётов в FFT" in " ".join(
         a.text() for a in panel.findChildren(QtWidgets.QLabel))
