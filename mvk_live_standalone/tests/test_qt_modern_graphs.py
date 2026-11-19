@@ -254,3 +254,62 @@ def test_overview_curve_is_cleared_after_switch_to_unavailable_adc(widget):
     assert sx is None or len(sx)==0
     assert tx is None or len(tx)==0
     assert "нет подтверждённых" in w.overview_wave.getPlotItem().titleLabel.text.lower()
+
+
+def test_bearing_window_pins_source_and_never_reconfigures_live_fft(widget):
+    """Independent bearing operation must not change main FFT settings."""
+    w,_=widget
+    from mvk_live_standalone.modern_shell import open_advanced_window
+    _feed(w)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    w.kind.setCurrentIndex(w.kind.findData("velocity"))
+    w.analysis.setCurrentIndex(w.analysis.findData("welch"))
+    w.bearing_fft.setCurrentIndex(w.bearing_fft.findData(8192))
+    before=(w.kind.currentData(),w.analysis.currentData(),
+            w.nfft.currentData(),w.envelope_band.currentData())
+    child=open_advanced_window(w,"bearing")
+    assert child.centralWidget() is w.diagnostics_page
+    pin=w._modern_method_pins["bearing"]
+    assert pin["adc"]==1 and pin["fs"]==8192
+    assert len(pin["samples"])==8192
+    assert not pin["samples"].flags.writeable
+    w._run_bearing_page()
+    view=w._bearing_spectrum
+    assert view is not None and view.mode=="envelope"
+    assert "АЦП 1" in w.bearing_plot.titleLabel.text
+    assert (w.kind.currentData(),w.analysis.currentData(),
+            w.nfft.currentData(),w.envelope_band.currentData())==before
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    assert w._bearing_spectrum is view
+    assert w._modern_method_pins["bearing"] is pin
+    assert w._professional_cursors.bearing_line.isVisible()
+    np.testing.assert_allclose(w.bearing_curve.getData()[0],view.hz)
+    w._clear("LIVE источник закрыт")
+    assert w._bearing_spectrum is view  # unrelated session reset
+    assert w._native.state()==w._native.ProcessState.NotRunning
+    assert open_advanced_window(w,"bearing") is child
+
+
+def test_bearing_source_must_be_explicit_and_large_fft_needs_new_capture(widget):
+    w,_=widget
+    from mvk_live_standalone.modern_shell import (
+        open_advanced_window, _pin_method_source)
+    child=open_advanced_window(w,"bearing")
+    assert "bearing" not in w._modern_method_pins
+    w._run_bearing_page()
+    assert w._bearing_spectrum is None
+    assert "Источник не закреплён" in w.bearing_diagnostics.text()
+    _feed(w)
+    w.bearing_fft.setCurrentIndex(w.bearing_fft.findData(8192))
+    assert _pin_method_source(w,"bearing",child)
+    w._run_bearing_page()
+    assert w._bearing_spectrum is not None
+    old_pin=w._modern_method_pins["bearing"]
+    w.bearing_fft.setCurrentIndex(w.bearing_fft.findData(16384))
+    w._run_bearing_page()
+    assert w._bearing_spectrum is None
+    assert "больше закреплённой выборки" in w.bearing_diagnostics.text()
+    assert w._modern_method_pins["bearing"] is old_pin
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    assert not _pin_method_source(w,"bearing",child)
+    assert w._modern_method_pins["bearing"] is old_pin

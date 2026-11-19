@@ -156,15 +156,16 @@ def test_envelope_has_independent_measured_cursor_without_fault_claim(gui):
     from mvk_live_standalone.vibration import analyze_vibration
     w, _ = gui
     x, fs = _feed(w)
-    w._spectrum = analyze_vibration(
+    w._bearing_spectrum = analyze_vibration(
         x, fs, mode="envelope", kind="acceleration", nfft=8192,
-        band_hz=(500., 1500.))
+        envelope_band_hz=(500., 1500.))
+    assert w._spectrum is None
     w._show_bearing_diagnostics()
     c = w._professional_cursors
     assert c.bearing_line.isVisible()
     assert "Измеренная линия огибающей" in c.bearing_readout.text()
     assert "не заключение о дефекте" in c.bearing_readout.text()
-    w._spectrum = None
+    w._bearing_spectrum = None
     c.refresh_bearing()
     assert not c.bearing_line.isVisible()
 

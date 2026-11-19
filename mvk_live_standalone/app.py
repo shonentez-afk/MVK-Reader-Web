@@ -99,6 +99,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._last_submitted_key = None
         self._last_status = None
         self._spectrum: VibrationView | None = None
+        self._bearing_spectrum: VibrationView | None = None  # independent pinned source
         self._last_fft_submit=0.0
         self._waterfall_rows=[]
         self._waterfall_key=None
@@ -872,9 +873,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             ("Делительный диаметр, мм",
              self.bearing_pitch_diameter,self.pitch_diameter),
             ("Угол контакта",self.bearing_contact_angle,self.contact_angle)):
+            # Seed once for convenience; thereafter this window's method
+            # parameters do not rewrite (or follow) the LIVE RPM/geometry.
             local.setValue(original.value())
-            local.valueChanged.connect(original.setValue)
-            original.valueChanged.connect(local.setValue)
+            local.valueChanged.connect(self._show_bearing_diagnostics)
             bearing_form.addRow(label,local)
         self.diagnostics_layout.addLayout(bearing_form)
         bearing_options=QtWidgets.QHBoxLayout()
@@ -1605,9 +1607,15 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.extra_method_infos[mode].setText(
                 f"АЦП {self.adc.currentData()} · выберите параметры и "
                 "пересчитайте из этого канала")
-        self.bearing_curve.setData([],[])
-        self.bearing_diagnostics.setText(
-            f"АЦП {self.adc.currentData()} · нажмите «Рассчитать огибающую»")
+        # A detached bearing window is pinned to its original ADC even when
+        # the global LIVE selector changes. In legacy/no-pin mode clear it.
+        if "bearing" not in pinned:
+            self._bearing_spectrum=None
+            self.bearing_curve.setData([],[])
+            self.bearing_diagnostics.setText(
+                f"АЦП {self.adc.currentData()} · выберите источник огибающей")
+            if cursors is not None:
+                cursors.refresh_bearing()
 
     def _redraw_short_trend(self,*_):
         if not hasattr(self,"short_trend_info"):return
@@ -1911,7 +1919,8 @@ class LiveWindow(QtWidgets.QMainWindow):
                         f" · автополоса {choice.low_hz:.0f}–{choice.high_hz:.0f} Гц"
                         f" (PySDKit Fast Kurtogram, эксцесс SK={choice.envelope_kurtosis:.2f}; "
                         f"{choice.confidence})")
-                self._show_bearing_diagnostics()
+                # Detached bearing analysis keeps its own immutable snapshot;
+                # the next LIVE FFT must not replace its spectrum.
         self._future=None
         self._schedule_fft()
 
@@ -2064,8 +2073,14 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.metrics.setText(message)
         self.features_label.setText(
             "APP_DERIVED: ожидание реальных отсчётов АЦП")
-        self.bearing_diagnostics.setText(
-            "Подшипники/редукторы: нет подтверждённых расчётных данных")
+        if "bearing" not in getattr(self,"_modern_method_pins",{}):
+            self._bearing_spectrum=None
+            self.bearing_curve.setData([],[])
+            self.bearing_diagnostics.setText(
+                "Подшипники: нет подтверждённого источника для расчёта")
+            cursors=getattr(self,"_professional_cursors",None)
+            if cursors is not None:
+                cursors.refresh_bearing()
         self._last_result=None
         self.trend_line.setData([],[])
         self.waterfall_img.clear()
@@ -2243,7 +2258,8 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.rotation_info.setText(
                 f"1×: {value/60:.3f} Гц (введено вручную)" if value>0
                 else "1×: не задана; можно получить гипотезу по спектру ВС")
-        self._show_bearing_diagnostics()
+        # Operator RPM changes the LIVE markers, not a detached method's
+        # snapshot or independently entered bearing-analysis parameters.
 
     def _propose_rotation(self):
         if self._speed_future is not None and not self._speed_future.done():
@@ -2274,7 +2290,6 @@ class LiveWindow(QtWidgets.QMainWindow):
             f"1× принята оператором по ВС: {proposal.hz:.2f} Гц / "
             f"{proposal.rpm:.1f} об/мин · {proposal.confidence}. НЕ тахометр.")
         self._update_markers()
-        self._show_bearing_diagnostics()
 
     def _archive_tab_changed(self,index):
         # Do not rebuild checkboxes while the operator is choosing a
@@ -2546,25 +2561,45 @@ class LiveWindow(QtWidgets.QMainWindow):
         )
 
     def _run_bearing_page(self):
-        # PySide6 QVariant matching via findData() is unreliable for
-        # tuple-valued frequency bands (it may return -1, silently selecting
-        # "no band"). Compare actual itemData() values instead.
-        requested=self.bearing_resonance.currentData()
-        matching=next((i for i in range(self.envelope_band.count())
-                       if self.envelope_band.itemData(i)==requested),-1)
-        if matching<0:
-            self.bearing_diagnostics.setText(
-                "Полоса огибающей отсутствует в списке: расчёт отменён")
+        """Calculate in the detached window; never change the main FFT.
+
+        A modern bearing window requires an operator-pinned, SHA-verified
+        ADC copy. Changing the global ADC, Freeze or incoming RX data later
+        cannot change this input. FRange is already applied by Native Go.
+        """
+        try:
+            nfft=int(self.bearing_fft.currentData())
+            band=self.bearing_resonance.currentData()
+            if not isinstance(band,(tuple,list)) or len(band)!=2:
+                raise ValueError("Выберите корректную полосу огибающей")
+            pinned=getattr(self,"_modern_method_pins",{}).get("bearing")
+            if pinned is not None:
+                source=pinned["samples"]
+                fs=int(pinned["fs"])
+                if len(source)<nfft:
+                    raise ValueError(
+                        "FFT N больше закреплённой выборки; нажмите "
+                        "«Взять новое текущее окно АЦП»")
+            elif getattr(self,"_modern_installed",False):
+                raise ValueError(
+                    "Источник не закреплён. Нажмите «Взять новое текущее "
+                    "окно АЦП» в окне подшипников")
+            else:
+                source,fs,_=self._current_window(nfft)
+            view=analyze_vibration(
+                source,int(fs),kind="acceleration",mode="envelope",nfft=nfft,
+                envelope_band_hz=(float(band[0]),float(band[1])))
+        except (ValueError,TypeError,IndexError) as exc:
+            self._bearing_spectrum=None
+            self.bearing_curve.setData([],[])
+            cursors=getattr(self,"_professional_cursors",None)
+            if cursors is not None:
+                cursors.refresh_bearing()
+            self.bearing_diagnostics.setText(f"Огибающая не рассчитана: {exc}")
             return
-        self.envelope_band.setCurrentIndex(matching)
-        self.nfft.setCurrentIndex(
-            self.nfft.findData(self.bearing_fft.currentData()))
-        self.kind.setCurrentIndex(self.kind.findData("acceleration"))
-        self.analysis.setCurrentIndex(self.analysis.findData("envelope"))
-        self._on_control_change()
-        self.bearing_diagnostics.setText(
-            "Спектр огибающей заказан по проверенным АЦП: "
-            "без новых команд прибору и второго применения FRange.")
+        self._bearing_spectrum=view
+        self.bearing_plot.enableAutoRange()
+        self._show_bearing_diagnostics()
 
     def _refresh_gear_table(self,*_):
         if self.rpm.value()<=0 or self.gear_teeth.value()<=0:
@@ -2595,35 +2630,40 @@ class LiveWindow(QtWidgets.QMainWindow):
             "APP_DERIVED · теоретические GMF, гармоники и боковые полосы "
             "по введённым 1×/числу зубьев; не эталон и не диагноз.")
 
-    def _show_bearing_diagnostics(self):
-        view=self._spectrum
+    def _show_bearing_diagnostics(self,*_):
+        view=self._bearing_spectrum
         if view is None or view.mode!="envelope":
             self.bearing_curve.setData([],[])
             cursors=getattr(self,"_professional_cursors",None)
             if cursors is not None:
                 cursors.refresh_bearing()
             self.bearing_diagnostics.setText(
-                "Нажмите «Рассчитать огибающую» с выбранной полосой и FFT N.")
+                "Нажмите «Рассчитать огибающую» по закреплённому АЦП.")
             return
         self.bearing_curve.setData(view.hz,view.rms)
         cursors=getattr(self,"_professional_cursors",None)
         if cursors is not None:
             cursors.refresh_bearing()
+        pinned=getattr(self,"_modern_method_pins",{}).get("bearing")
+        source_label=(f"АЦП {pinned['adc']} · " if pinned is not None
+                      else "текущее окно · ")
         self.bearing_plot.setTitle(
-            f"APP_DERIVED · FFT огибающей · Fs={view.rate_hz} Гц")
-        self.bearing_plot.enableAutoRange()
-        if self.rpm.value()<=0 or self.balls.value()<3:
+            f"APP_DERIVED · FFT огибающей · {source_label}Fs={view.rate_hz} Гц")
+        if self.bearing_rpm.value()<=0 or self.bearing_balls.value()<3:
             self.bearing_diagnostics.setText(
-                "Подшипники: укажите 1× и геометрию. Обороты только вручную/по ВС, без TACH")
+                "Подшипники: задайте в этом окне 1× и геометрию. "
+                "Без TACH; один спектр не является диагнозом.")
             return
         try:
             lines=envelope_fault_lines(
-                view,float(self.rpm.value()),balls=int(self.balls.value()),
-                ball_diameter_mm=float(self.ball_diameter.value()),
-                pitch_diameter_mm=float(self.pitch_diameter.value()),
-                contact_angle_deg=float(self.contact_angle.value()))
+                view,float(self.bearing_rpm.value()),
+                balls=int(self.bearing_balls.value()),
+                ball_diameter_mm=float(self.bearing_ball_diameter.value()),
+                pitch_diameter_mm=float(self.bearing_pitch_diameter.value()),
+                contact_angle_deg=float(self.bearing_contact_angle.value()))
         except (ValueError,TypeError) as exc:
-            self.bearing_diagnostics.setText(f"Геометрия/спектр ещё не готовы: {exc}")
+            self.bearing_diagnostics.setText(
+                f"Геометрия/спектр ещё не готовы: {exc}")
             return
         observations=[]
         for item in lines:
@@ -2632,7 +2672,8 @@ class LiveWindow(QtWidgets.QMainWindow):
                 f"{item.label} {item.expected_hz:.1f} Гц: {item.snr_db:.1f} дБ, "
                 f"гарм. {item.harmonics_found} ({status})")
         self.bearing_diagnostics.setText(
-            "APP_DERIVED · локальный фон текущей записи, НЕ диагноз и НЕ эталон · "+
+            "APP_DERIVED · измеренный спектр закреплённого окна; "
+            "локальный SNR, НЕ диагноз и НЕ эталон · "+
             ("; ".join(observations) if observations else "Нет разрешённых линий")
         )
 
@@ -2776,18 +2817,20 @@ class LiveWindow(QtWidgets.QMainWindow):
         # Reuse the existing Hilbert-envelope spectrum, not a second
         # allegedly OEM spectrum or the decimated PySDKit envelope.
         label=f"Fast Kurtogram: {low:.1f}–{high:.1f} Гц"
-        for combo in (self.envelope_band,self.bearing_resonance):
-            for i in range(combo.count()-1,-1,-1):
-                if combo.itemText(i).startswith("Fast Kurtogram:"):
-                    combo.removeItem(i)
-            combo.addItem(label,(low,high))
-            combo.setCurrentIndex(combo.count()-1)
-        self._run_bearing_page()
+        # A kurtogram band is a suggestion for the DETACHED bearing method,
+        # not a request to change the primary LIVE envelope/FFT controls.
+        combo=self.bearing_resonance
+        for i in range(combo.count()-1,-1,-1):
+            if combo.itemText(i).startswith("Fast Kurtogram:"):
+                combo.removeItem(i)
+        combo.addItem(label,(low,high))
+        combo.setCurrentIndex(combo.count()-1)
         if getattr(self,"_modern_installed",False):
             open_advanced_window(self,"bearing")
         else:
             self.views.setCurrentWidget(self.extra_panel)
             self.extra_pages.setCurrentWidget(self.diagnostics_page)
+        self._run_bearing_page()
         self.kurtogram_info.setText(
             f"Полоса {low:.1f}–{high:.1f} Гц передана в локальную "
             "Hilbert-огибающую; частотная карта рассчитана PySDKit. "

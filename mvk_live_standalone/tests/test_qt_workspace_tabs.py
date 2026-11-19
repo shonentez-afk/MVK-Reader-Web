@@ -159,15 +159,20 @@ def test_extra_pages_independent_waterfall_trend_bearing_and_gears(gui):
     w.trend_max_points.setCurrentIndex(
         w.trend_max_points.findData(30))
     assert w.trend_max_points.currentData()==30
+    original_rpm=w.rpm.value()
+    original_balls=w.balls.value()
     w.bearing_rpm.setValue(1500)
-    assert w.rpm.value()==1500
-    assert w.gear_rpm.value()==1500
+    assert w.rpm.value()==original_rpm  # detached method cannot rewrite LIVE
+    w.gear_rpm.setValue(1500)
+    assert w.rpm.value()==1500  # existing gear/main link remains unchanged
+    w.rpm.setValue(1200)
+    assert w.bearing_rpm.value()==1500  # bearing context remains pinned
     w.gear_count.setValue(20)
     assert w.gear_teeth.value()==20
     assert w.gear_table.rowCount()>0
     assert "GMF" in w.gear_table.item(0,0).text()
     w.bearing_balls.setValue(8)
-    assert w.balls.value()==8
+    assert w.balls.value()==original_balls
     w.gear_count.setValue(0)
     assert w.gear_table.rowCount()==0
 
@@ -229,13 +234,16 @@ def test_full_pysdkit_kurtogram_tab_and_band_handoff(gui):
     assert w._kurt_selected==(0,0)
     w._select_kurt_best()
     lo,hi,_,_,_=view.best_band()
+    before=(w.kind.currentData(),w.analysis.currentData(),
+            w.nfft.currentData(),w.envelope_band.currentData())
     w._apply_kurt_band()
     assert "bearing" in w._modern_windows
     assert w._modern_windows["bearing"].centralWidget()==w.diagnostics_page
     assert w.views.currentWidget() != w.extra_panel
-    assert w.analysis.currentData()=="envelope"
-    assert w.envelope_band.currentData()==pytest.approx((lo,hi))
+    assert (w.kind.currentData(),w.analysis.currentData(),
+            w.nfft.currentData(),w.envelope_band.currentData())==before
     assert w.bearing_resonance.currentData()==pytest.approx((lo,hi))
+    assert w._modern_method_pins["bearing"]["adc"]==1
     w.adc.setCurrentIndex(1)
     assert w._kurt_result is None
     assert not w.kurtogram_apply.isEnabled()

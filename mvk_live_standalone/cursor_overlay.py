@@ -558,7 +558,8 @@ class MeasurementCursors(QtCore.QObject):
         self.refresh_bearing()
 
     def refresh_bearing(self):
-        s = self.win._spectrum
+        # Detached bearing view is not the LIVE/overview spectrum.
+        s = self.win._bearing_spectrum
         if s is None or s.mode != "envelope":
             self.bearing_line.hide()
             self.bearing_readout.setText(

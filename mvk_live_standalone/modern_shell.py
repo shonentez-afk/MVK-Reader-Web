@@ -319,9 +319,10 @@ def _pin_method_source(win, key, child):
     Only a verified, already-calibrated local snapshot is copied; reopening
     the window doesn't silently change ADC, Fs, Freeze state or RAW.
     """
-    if key not in ("stft", "cwt", "cepstrum", "kurtogram"):
+    if key not in ("stft", "cwt", "cepstrum", "kurtogram", "bearing"):
         return False
     length = (int(win.kurtogram_window.currentData()) if key == "kurtogram"
+              else int(win.bearing_fft.currentData()) if key == "bearing"
               else int(win.extra_method_windows[key].currentData()))
     try:
         samples, fs, stamp = win._current_window(length)
@@ -336,8 +337,21 @@ def _pin_method_source(win, key, child):
         "session": win._gui_ring.session_id,
         "frozen": bool(win.freeze.isChecked()),
     }
+    if key == "bearing":
+        # A new, explicit capture invalidates only the detached bearing view.
+        # Neither Live FFT settings nor the running Native recorder are touched.
+        win._bearing_spectrum = None
+        win.bearing_curve.setData([], [])
+        cursors = getattr(win, "_professional_cursors", None)
+        if cursors is not None:
+            cursors.refresh_bearing()
+        win.bearing_diagnostics.setText(
+            f"Закреплён АЦП {win.adc.currentData()} · Fs={fs} Гц · "
+            f"N={len(samples)}. Нажмите «Рассчитать огибающую». "
+            "Главный спектр не изменяется.")
+    label = "Подшипники · огибающая" if key == "bearing" else key.upper()
     child.setWindowTitle(
-        f"{key.upper()} · АЦП {win.adc.currentData()} · "
+        f"{label} · АЦП {win.adc.currentData()} · "
         f"Fs {fs} Гц · N {len(samples)} · ЗАФИКСИРОВАНО")
     child.statusBar().showMessage(
         "Подтверждённая копия АЦП; смена АЦП в главном окне "
@@ -361,7 +375,7 @@ def open_advanced_window(win, key):
     title, page = pages[key]
     first = key not in win._modern_windows
     w = _present_window(win, key, title, page, remove_from_tabs=win.extra_pages)
-    if first and key in ("stft", "cwt", "cepstrum", "kurtogram"):
+    if first and key in ("stft", "cwt", "cepstrum", "kurtogram", "bearing"):
         toolbar = QtWidgets.QToolBar("Источник окна", w)
         toolbar.setMovable(False)
         toolbar.addAction(
