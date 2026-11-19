@@ -46,7 +46,7 @@ def test_getsignal_rms_matches_stored_qword_scalar_sum_not_pairwise_mean():
 
 @pytest.mark.parametrize("passes",[1,2])
 def test_spectrum_power_integration_single_inverse_df_rounds_every_pass(passes):
-    p=np.arange(64,dtype=np.float32)**2
+    p=np.arange(512,dtype=np.float32)**2  # source GetSpectrum power is N/2
     before=p.copy()
     got=_delphi_integration_power(p,1024,32768,passes)
     scalar=p.copy()
