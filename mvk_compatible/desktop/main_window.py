@@ -3242,7 +3242,8 @@ class MainWindow(QMainWindow):
                 status.get("source_original_storage_verified") is not True or
                 status.get("source_rate_transition_during_live") is True):
             raise ValueError(
-                "Фильтрованный GetSignal: источник/Fs/Freeze не подтверждены")
+                f"Огибающая Code{code}: источник/Fs/Freeze не подтверждены. "
+                "Обычный сигнал не подменяет огибающую")
         if (profile is None or
                 profile.provenance!="USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED"):
             raise ValueError(
