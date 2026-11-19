@@ -22,7 +22,7 @@ LOCAL_TIME=re.compile(r"\d\d:\d\d:\d\d\.\d{3}\Z")
 MAX_EVENT_LINE=300_000
 MAX_OUTPUT_BYTES=500_000_000
 MAX_ROWS=100_000
-MAX_CELLS=8*(43+24+43)+2*6
+MAX_CELLS=8*(43+6+24)+2*6
 TACH_OFFSETS=(0,2,4,6,8,0xFE)
 GROUPS=("SPEC","RESULT","BAND","TACH")
 
@@ -40,11 +40,14 @@ def _expected_address(channel,group,index):
     if type(index) is not int or index<0:
         raise ValueError("Invalid source selected original cell index")
     if channel<=8:
-        if group=="SPEC" and index<43:return None,"UNMAPPED"
-        if group=="RESULT" and index<24:
-            return 0x2000+(channel-1)*0x200+0x60+2*index,"F32_CANDIDATE"
-        if group=="BAND" and index<43:
+        if group=="SPEC" and index<43:
             return 0x2000+(channel-1)*0x200+2+2*index,"F32_CANDIDATE"
+        if group=="RESULT" and index<6:
+            addr=(0x120,0x120,0x120,0,0x5E,0x5C)[index]
+            return (0x2000+(channel-1)*0x200+addr,
+                    "U32_ADVANCED_UNFORMATTED" if index<3 else "F32_CANDIDATE")
+        if group=="BAND" and index<24:
+            return 0x2000+(channel-1)*0x200+0x60+2*index,"F32_CANDIDATE"
     elif group=="TACH" and index<6:
         return (0x3000+(channel-9)*0x100+TACH_OFFSETS[index],
                 "F32_CANDIDATE" if index<2 else "U32_CANDIDATE")
@@ -123,6 +126,12 @@ def parse_source_values_3100_event(event:dict)->dict:
             proof["unknown_or_unmapped_selected_cells"]!=unknown):
         raise ValueError("Source WriteValues selected source valid-word counts mismatch")
     rawrow=(row+"\r\n").encode("ascii")
+    # The old compatibility editor has 73 VALUES boxes; original
+    # bWriteValuesClick copies only 6+24+6=36. Do not silently
+    # interpret legacy index 36..72 as a vendor list field.
+    legacy=proof.get("non_original_legacy_73_flag_bits_ignored",0)
+    if type(legacy) is not int or not 0<=legacy<=37:
+        raise ValueError("Source WriteValues invalid legacy flag count")
     if not isinstance(proof.get("source_raw_layout_line_sha256"),str) or (
             proof["source_raw_layout_line_sha256"]!=sha256(rawrow).hexdigest()):
         raise ValueError("Source WriteValues row bytes/SHA mismatch")

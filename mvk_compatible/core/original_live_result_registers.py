@@ -101,9 +101,26 @@ def parse_live_result_registers(status:dict)->dict|None:
                          ("control_8_status_raw_u32_le",8)):
             cleaned[key]=_word_array(raw.get(key),size,key)
             observed+=sum(v is not None for v in cleaned[key])
+        # From source _Unit125:00804A30: six ResultAdcCellList
+        # entries, including three advanced bit slices of +0x120.
+        # Older Go receipts have no explicit six, and must stay UNKNOWN.
+        six_raw=raw.get("result_adc_six_raw_dwords_le")
+        six=(_word_array(six_raw,6,"result ADC six") if six_raw is not None
+             else (None,)*6)
+        cleaned["result_adc_six_raw_dwords_le"]=six
+        if six[0] is not None and (
+                six[0]!=six[1] or six[1]!=six[2]):
+            raise ValueError("Source PageStatus advanced ResultADC6 source words differ")
+        # Only the last three are new unique words. First three
+        # reference the already-counted +0x120 sensor status.
+        observed+=sum(value is not None for value in six[3:])
         cleaned["sensor_status_raw_u32_le"]=_word(
             raw.get("sensor_status_raw_u32_le"),"sensor status")
         observed+=cleaned["sensor_status_raw_u32_le"] is not None
+        if six[0] is not None and (
+                cleaned["sensor_status_raw_u32_le"] is not None and
+                six[0]!=cleaned["sensor_status_raw_u32_le"]):
+            raise ValueError("Source PageStatus ResultADC6 sensor status overlaps incorrectly")
         adcs.append(cleaned)
     for index,raw in enumerate(incoming_tach):
         base=0x3000+index*0x100

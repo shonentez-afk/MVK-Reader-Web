@@ -32,7 +32,7 @@ TABLE_SOURCE="MVK_MODE2_SOURCE_LAYOUT_LIVE_RAW_TABLE_V1"
 TABLE_PREFIX="TABLE-"
 _ALLOWED_BASENAME=re.compile(r"TABLE-\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}(?:-[0-9]{1,3})?\.csv\Z")
 MAX_TABLE_BYTES=250_000
-MAX_TABLE_ROWS=24+43+6
+MAX_TABLE_ROWS=6+24+6
 MAX_CAPTURE_BYTES=(1<<64)-1
 FORMAT="utf-8-sig"  # not asserted as Win32/TTextRec system ANSI code page
 
@@ -80,14 +80,13 @@ def _cell(word,kind):
 
 
 def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
-    """Original _Unit128:0084E020 has TWO independent sections.
+    """Original _Unit128:0084E020 source-checked 6+24 ADC / 6 TACH.
 
-    1. ADC header (checked of 8), 24 ResultAdcCells + 43
-       ResultAdcBandCells; each data row ends in source GetUnits.
-    2. EMPTY line; separate TACH header (checked of 2), then exactly 6
-       ResultTachCellList rows; also with a final source GetUnits.
-    Original TLanguage labels, units and GetValueText remain unverified;
-    we do NOT mix ADC and TACH columns into a fabricated 10-wide grid.
+    Constructed original form _Unit128:008443CF..00844454:
+      ResultAdcCellList (1044) = 6, from _Unit125:00804A30,
+      ResultAdcBandCellList (10C0) = 24, _Unit125:00804DEC,
+      ResultTachCellList (10AC) = 6, _Unit125:008053B8.
+    Spec43 (1064) belongs ONLY to WriteValues, not bWriteTable.
     """
     if not live_table_snapshot_ready(status):
         raise ValueError("Source TABLE: no fresh, source-validated PARAM bank")
@@ -97,30 +96,37 @@ def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
     tachs=tuple(i-8 for i in selected_indices if i>=8)
     if len(bank["adc"])!=8 or len(bank["tach"])!=2:
         raise ValueError("Source TABLE: wrong register bank counts")
-    # A trailing empty cell for xParamName|xChannelN| mirrors the source
-    # WriteLn header (which has no unit label). On data rows the final
-    # cell is original GetUnits, left unknown without original metadata.
-    adc_header=("Параметр (RAW)",)+tuple(
-        f"АЦП {i+1}" for i in adcs)+("",)
-    rows=[adc_header]
+    rows=[("Параметр (RAW)",)+tuple(
+        f"АЦП {i+1}" for i in adcs)+("",)]
+    original_addresses=(0x120,0x120,0x120,0x00,0x5E,0x5C)
+    for n,addr in enumerate(original_addresses):
+        # A legacy old Go capture might not include the separate six
+        # raw words. Only the first three can be derived from exactly
+        # the same accepted +0x120 sensor Status WORD; the other
+        # addresses MUST be unknown until explicitly received.
+        values=[]
+        for i in adcs:
+            adc=bank["adc"][i]
+            six=adc.get("result_adc_six_raw_dwords_le") or (None,)*6
+            word=six[n]
+            if word is None and n<3:
+                word=adc.get("sensor_status_raw_u32_le")
+            values.append(_cell(word,"UInt32" if n<3 else "Float32"))
+        rows.append((
+            f"ResultAdcCells {n+1} · +0x{addr:03X}",
+            *values,UNAVAILABLE))
+    # The original writes the first (RMS) of THREE parallel
+    # 24-cell ResultAdcBandCellList slices; not the 43 SPEC bank.
     for n in range(24):
         rows.append((
-            f"ResultAdcCells {n+1} · RMS +0x{0x60+2*n:03X}",
+            f"ResultAdcBandCells {n+1} · +0x{0x60+2*n:03X}",
             *(_cell(bank["adc"][i]["rms_24_raw_f32_le"][n],"Float32")
-              for i in adcs),
-            UNAVAILABLE,  # GetUnits from the original TMvkCellList
-        ))
-    for n in range(43):
-        rows.append((
-            f"ResultAdcBandCells {n+1} · 43-band +0x{2+2*n:03X}",
-            *(_cell(bank["adc"][i]["bands_43_raw_f32_le"][n],"Float32")
               for i in adcs),
             UNAVAILABLE,
         ))
-    rows.append(())  # original 0084E478..0084E48A writes a blank line
-    tach_header=("Параметр (RAW)",)+tuple(
-        f"Тахометр {i+1}" for i in tachs)+("",)
-    rows.append(tach_header)
+    rows.append(())
+    rows.append(("Параметр (RAW)",)+tuple(
+        f"Тахометр {i+1}" for i in tachs)+("",))
     for n,offset in enumerate((0,2,4,6,8,0xFE)):
         rows.append((
             f"ResultTachCellList {n+1} · +0x{offset:02X}",
@@ -131,12 +137,12 @@ def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
         ))
     if len(rows)!=MAX_TABLE_ROWS+3:
         raise ValueError("Source TABLE original 2-section count mismatch")
-    if any(len(row)!=(2+len(adcs)) for row in rows[:68]):
+    if any(len(row)!=(2+len(adcs)) for row in rows[:31]):
         raise ValueError("Source TABLE original ADC row column count mismatch")
-    if rows[68]!=() or any(
-            len(row)!=(2+len(tachs)) for row in rows[69:]):
+    if rows[31]!=() or any(
+            len(row)!=(2+len(tachs)) for row in rows[32:]):
         raise ValueError("Source TABLE original TACH row column count mismatch")
-    actual_data=tuple(rows[1:68])+tuple(rows[70:])
+    actual_data=tuple(rows[1:31])+tuple(rows[33:])
     if not any(
         v!=UNAVAILABLE for row in actual_data for v in row[1:-1]):
         raise ValueError("Source TABLE selected channels contain no known PARAM values")
@@ -179,7 +185,7 @@ def export_live_table_snapshot(status:dict,selected,filename,
         readback=target.read_bytes()
         if readback!=raw:
             raise ValueError("Source TABLE local byte readback differs")
-        # Both source headers, 67 ADC rows, separator and 6 TACH
+        # Both source headers, 30 ADC rows, separator and 6 TACH
         # rows must reopen exactly, not merely pass a SHA comparison.
         assert len(rows)==MAX_TABLE_ROWS+3
         checks=(readback.decode(FORMAT).splitlines())
@@ -192,7 +198,7 @@ def export_live_table_snapshot(status:dict,selected,filename,
             "original_table_layout_sep_pipe_verified":True,
             "source_table_row_count":MAX_TABLE_ROWS,
             "source_table_section_count":2,
-            "source_adc_data_rows":67,
+            "source_adc_data_rows":30,
             "source_tach_data_rows":6,
             "source_adcs_in_first_section":[i+1 for i in _check_channels(selected) if i<8],
             "source_tachs_in_second_section":[i-7 for i in _check_channels(selected) if i>=8],

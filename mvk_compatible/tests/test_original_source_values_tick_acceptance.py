@@ -16,18 +16,20 @@ def synthetic_tick(*,frame=2,tick=0):
     word=struct.pack("<f",1.5).hex()
     cells=[
         dict(channel=1,source_list_group="SPEC",source_cell_index=0,
-             raw_dword_le_hex=None,type_candidate="UNMAPPED",
-             source_two_words_valid=False),
-        dict(channel=1,source_list_group="RESULT",source_cell_index=0,
-             source_word_address=0x2060,
+             source_word_address=0x2002,
              raw_dword_le_hex=word,type_candidate="F32_CANDIDATE",
+             source_two_words_valid=True),
+        dict(channel=1,source_list_group="RESULT",source_cell_index=0,
+             source_word_address=0x2120,
+             raw_dword_le_hex="51000000",type_candidate="U32_ADVANCED_UNFORMATTED",
              source_two_words_valid=True),
         dict(channel=9,source_list_group="TACH",source_cell_index=5,
              source_word_address=0x30FE,
              raw_dword_le_hex=None,type_candidate="U32_CANDIDATE",
              source_two_words_valid=False),
     ]
-    line="16:24:12.123|UNKNOWN|RAW_F32_CANDIDATE:"+word+"|UNKNOWN\r\n"
+    line=("16:24:12.123|RAW_F32_CANDIDATE:"+word+
+          "|RAW_U32_ADVANCED_UNFORMATTED:51000000|UNKNOWN\r\n")
     payload=bytes.fromhex("cafebabe")
     return {
         "frame_index":frame,"source_values_tick_index":tick,
@@ -39,8 +41,8 @@ def synthetic_tick(*,frame=2,tick=0):
             "schema":"MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V1",
             "local_source_capture_hh_nn_ss_zzz":"16:24:12.123",
             "original_selected_cell_order":cells,
-            "source_known_full_register_dwords":1,
-            "unknown_or_unmapped_selected_cells":2,
+            "source_known_full_register_dwords":2,
+            "unknown_or_unmapped_selected_cells":1,
             "source_raw_layout_line_sha256":sha256(line.encode()).hexdigest(),
             "original_get_value_text_parity_verified":False,
             "original_delphi_local_time_parity_verified":False,
@@ -54,8 +56,8 @@ def test_source_3100_record_exact_tick_group_and_original_f32_hex():
     result=parse_source_values_3100_event(event)
     assert result["raw_line_bytes"]==row
     assert result["source_ordered_cells"]==3
-    assert result["source_valid_raw_dwords"]==1
-    assert result["unmapped_or_missing_cells"]==2
+    assert result["source_valid_raw_dwords"]==2
+    assert result["unmapped_or_missing_cells"]==1
     assert not result["original_get_value_text_parity_verified"]
 
 
@@ -67,8 +69,8 @@ def test_independent_files_sha_per_tick_and_no_raw_paths_in_report(tmp_path):
     layout.write_bytes(b"".join(y for _,y in rows))
     receipt=verify_source_values_tick_files(events,layout)
     assert receipt["accepted_actual_param_3100_ticks"]==2
-    assert receipt["source_valid_raw_dwords"]==2
-    assert receipt["unmapped_or_missing_cells"]==4
+    assert receipt["source_valid_raw_dwords"]==4
+    assert receipt["unmapped_or_missing_cells"]==2
     assert receipt["paired_csv_sha256"]==sha256(layout.read_bytes()).hexdigest()
     assert not receipt["original_delphi_get_value_text_parity_verified"]
     assert "tmp_path" not in json.dumps(receipt)
@@ -86,7 +88,7 @@ def test_independent_files_sha_per_tick_and_no_raw_paths_in_report(tmp_path):
     lambda x:x["source_ordered_raw_tick"]["original_selected_cell_order"][1].
         update(source_word_address=0x3002),
     lambda x:x["source_ordered_raw_tick"]["original_selected_cell_order"][0].
-        update(raw_dword_le_hex="0000803f",source_two_words_valid=True),
+        update(source_word_address=0x3002),
     lambda x:x["source_ordered_raw_tick"]["original_selected_cell_order"][1].
         update(source_two_words_valid=False),
     lambda x:x["source_ordered_raw_tick"]["original_selected_cell_order"].reverse(),

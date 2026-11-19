@@ -49,7 +49,7 @@ def test_live_bwrite_table_one_shot_without_writevalues_device_tx(
         assert dest.read_bytes().startswith(b"\xef\xbb\xbfsep=|\r\n")
         receipt=controls.panel.property("sourceOriginalLiveTableSnapshotReceipt")
         assert receipt is not None
-        assert receipt["source_table_row_count"]==73
+        assert receipt["source_table_row_count"]==36
         assert receipt["source_table_selected_channels"]==list(range(1,9))
         assert receipt["instrument_commands_sent"] is False
         assert win._source_live_writer.receipt()["write_values_requested"]==before

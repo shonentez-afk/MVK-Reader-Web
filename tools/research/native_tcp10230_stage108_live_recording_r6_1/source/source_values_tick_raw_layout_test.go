@@ -44,13 +44,14 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
     var values [73]bool
     channels[0]=true;channels[8]=true
     spec[0]=true
-    values[0]=true;values[24]=true
-    values[67]=true;values[72]=true
+    values[0]=true;values[6]=true
+    values[30]=true;values[35]=true
     sourceSelectedMark(t,marks,m,1,"values_begin",channels,spec,values)
     loc:=time.FixedZone("ORIGINAL_LOCAL",2*3600)
     at:=time.Date(2026,11,19,16,24,12,123000000,loc)
     seed:=makeParam([]RegBlock{
         {Addr:0x2060,Words:2,Payload:sourceRawTestWords(0x3fc00000)},
+        {Addr:0x2120,Words:2,Payload:sourceRawTestWords(0x00000051)},
         {Addr:0x2002,Words:2,Payload:sourceRawTestWords(0x40200000)},
         {Addr:0x3000,Words:2,Payload:sourceRawTestWords(0x40d00000)},
         {Addr:0x30fe,Words:2,Payload:sourceRawTestWords(0x00000666)},
@@ -83,8 +84,9 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
     }
     csvName:=filepath.Join(m.dir,"SOURCE_W01_VALUES_3100_RAW_LAYOUT.csv")
     text,e:=os.ReadFile(csvName);if e!=nil{t.Fatal(e)}
-    expected:="16:24:12.173|UNKNOWN|RAW_F32_CANDIDATE:0000c03f"+
-        "|RAW_F32_CANDIDATE:00002040|RAW_F32_CANDIDATE:0000d040|UNKNOWN\r\n"
+    expected:="16:24:12.173|RAW_F32_CANDIDATE:00002040"+
+        "|RAW_U32_ADVANCED_UNFORMATTED:51000000"+
+        "|RAW_F32_CANDIDATE:0000c03f|RAW_F32_CANDIDATE:0000d040|UNKNOWN\r\n"
     if string(text)!=expected{
         t.Fatalf("original selected list order or source time wrong: %q",text)
     }
@@ -95,13 +97,13 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
     ev:=event.RawTickEvidence
     if ev==nil || ev.Schema!=sourceValuesRawLayoutSchema ||
        ev.LocalTime!="16:24:12.173" ||
-       len(ev.OrderedFields)!=5 || ev.ValidDWORDs!=3 ||
-       ev.UnknownSelected!=2 || ev.OriginalGetValueTextParityVerified ||
+       len(ev.OrderedFields)!=5 || ev.ValidDWORDs!=4 ||
+       ev.UnknownSelected!=1 || ev.OriginalGetValueTextParityVerified ||
        ev.OriginalCSVByteParityVerified || ev.OriginalLocalTimeParityVerified{
         t.Fatalf("false or lost original GetValueText evidence: %+v",ev)
     }
-    if ev.OrderedFields[0].Group!="SPEC" || ev.OrderedFields[0].WordAddr!=nil ||
-       ev.OrderedFields[0].RawLE!=nil || ev.OrderedFields[1].Group!="RESULT" ||
+    if ev.OrderedFields[0].Group!="SPEC" || ev.OrderedFields[0].WordAddr==nil ||
+       ev.OrderedFields[0].RawLE==nil || ev.OrderedFields[1].Group!="RESULT" ||
        ev.OrderedFields[2].Group!="BAND" ||
        ev.OrderedFields[3].Channel!=9 ||
        ev.OrderedFields[4].CellIndex!=5 ||
@@ -120,7 +122,7 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
 func TestOriginalWriteValuesStaleTachPulseOnlyFromCurrentParam(t *testing.T){
     m,_:=markFixture(t)
     var channels [10]bool;channels[8]=true
-    var values [73]bool;values[72]=true
+    var values [73]bool;values[35]=true
     w:=&sourceLiveValuesWindow{
         Channels:channels,Values:values,
     }

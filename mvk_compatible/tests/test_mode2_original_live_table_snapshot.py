@@ -39,14 +39,14 @@ def test_one_shot_live_table_uses_only_selected_valid_param_and_pipe_layout(
     assert live_table_snapshot_ready(status)
     selected=(True,)+(False,)*7+(True,False)
     rows=build_live_table_rows(status,selected)
-    assert len(rows)==MAX_TABLE_ROWS+3==76
+    assert len(rows)==MAX_TABLE_ROWS+3==39
     assert rows[0]==("Параметр (RAW)","АЦП 1","")
-    assert rows[68]==()
-    assert rows[69]==("Параметр (RAW)","Тахометр 1","")
-    assert rows[1][1]=="1.5 (RAW)"
+    assert rows[31]==()
+    assert rows[32]==("Параметр (RAW)","Тахометр 1","")
+    assert rows[1][1]=="0x00000051 (RAW)"
     assert rows[1][2]=="—"   # original ADC GetUnits is not yet verified
-    assert rows[25][1]=="0.25 (RAW)"
-    assert rows[25][2]=="—"
+    assert rows[7][1]=="1.5 (RAW)"
+    assert rows[7][2]=="—"
     assert rows[-6][1]=="50.5 (RAW)"
     assert rows[-6][2]=="—"  # original TACH GetUnits unknown
     assert rows[-1][1]=="—"  # no stale +FE TACH pseudo-impulse
@@ -56,9 +56,9 @@ def test_one_shot_live_table_uses_only_selected_valid_param_and_pipe_layout(
         status,selected,filename,expected_session_id=status["session_id"])
     assert receipt["source"]==TABLE_SOURCE
     assert receipt["source_table_selected_channels"]==[1,9]
-    assert receipt["source_table_row_count"]==73
+    assert receipt["source_table_row_count"]==36
     assert receipt["source_table_section_count"]==2
-    assert receipt["source_adc_data_rows"]==67
+    assert receipt["source_adc_data_rows"]==30
     assert receipt["source_tach_data_rows"]==6
     assert receipt["source_param_frames"]==3
     assert receipt["source_tcp_connection_count"]==1
@@ -71,7 +71,7 @@ def test_one_shot_live_table_uses_only_selected_valid_param_and_pipe_layout(
     import hashlib
     payload=filename.read_bytes()
     assert payload.startswith(b"\xef\xbb\xbfsep=|\r\n")
-    assert payload.count(b"\r\n")==77  # sep + 2 headers + separator + 73 data
+    assert payload.count(b"\r\n")==40  # sep + 2 headers + separator + 36 data
     assert receipt["csv_sha256"]==hashlib.sha256(payload).hexdigest()
     assert "1.5 (RAW)" in payload.decode("utf-8-sig")
     assert "GetValueText" not in payload.decode("utf-8-sig")
