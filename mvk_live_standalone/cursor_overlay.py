@@ -398,8 +398,21 @@ class MeasurementCursors(QtCore.QObject):
             (s.rms[1:-1] >= s.rms[2:])) + 1
         maximum = min(float(self.win.x_limit_choice.currentData()),
                       float(s.hz[-1]))
+        displayed = np.flatnonzero((s.hz > 0) & (s.hz <= maximum) &
+                                  np.isfinite(s.rms))
+        if not len(displayed):
+            return
+        # Float32/Hann leakage creates tiny mathematical local maxima even
+        # between two strong, physically meaningful spectral lines. Arrows
+        # should jump to audible-sized measured peaks, not numerical ripple.
+        # This 60 dB-relative NAVIGATION threshold is only a UI preference:
+        # manual clicks still select every actual peak/bin and all measured
+        # FFT values remain unmodified and visible.
+        minimum = max(float(np.max(s.rms[displayed])) * 1e-3,
+                      np.finfo(np.float64).eps)
         indices = indices[(s.hz[indices] > 0) &
-                          (s.hz[indices] <= maximum)]
+                          (s.hz[indices] <= maximum) &
+                          (s.rms[indices] >= minimum)]
         if not len(indices):
             return
         frequencies = s.hz[indices]
