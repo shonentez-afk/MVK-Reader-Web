@@ -94,18 +94,26 @@ jobs:
           assert win.views.count() == 4
           for mode in ("light", "dark"):
               apply_theme(win, mode)
-              app.processEvents()
-              shot = win.grab()
-              assert not shot.isNull(), mode
-              target = Path("ui_review") / f"MVK_Live_main_{mode}_NO_DEVICE.png"
-              assert shot.save(str(target), "PNG"), target
-              print(f"UI preview: {target}, {shot.width()}x{shot.height()}")
+              for page, name, expected_inspector in (
+                  (win.overview_page, "main", 2),
+                  (win.spectrum_page, "spectrum", 0),
+                  (win.wave_page, "time", 1),
+              ):
+                  win.views.setCurrentWidget(page)
+                  app.processEvents()
+                  assert win._modern_inspector.currentIndex() == expected_inspector
+                  shot = win.grab()
+                  assert not shot.isNull(), (mode, name)
+                  target = Path("ui_review") / (
+                      f"MVK_Live_{name}_{mode}_NO_DEVICE.png")
+                  assert shot.save(str(target), "PNG"), target
+                  print(f"UI preview: {target}, {shot.width()}x{shot.height()}")
           win.close()
           PY
       - uses: actions/upload-artifact@v4
         with:
           name: MVK_Live_Modern_Main_UI_Review_NO_DEVICE
-          path: ui_review/MVK_Live_main_*_NO_DEVICE.png
+          path: ui_review/MVK_Live_*_NO_DEVICE.png
           retention-days: 14
           if-no-files-found: error
 

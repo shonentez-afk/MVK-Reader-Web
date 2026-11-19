@@ -77,6 +77,7 @@ def _field(column, text, widget):
 
 def _title(text):
     lab = QtWidgets.QLabel(text)
+    lab.setWordWrap(True)
     lab.setProperty("sectionTitle", True)
     return lab
 
@@ -1007,10 +1008,10 @@ def install_modern_shell(win, main, panel, review, storage):
     ov.setSpacing(11)
     ov.addWidget(_title("ОБЗОР · быстрые настройки"))
     ov.addWidget(_hint(
-        "Верхний график — спектр частот, нижний — сигнал во времени. "
-        "Оба используют АЦП, выбранный в верхней панели измерения."))
+        "У каждого графика свои параметры. Общий АЦП выбирается "
+        "только в верхней панели измерения."))
     spec_card, spec_column = _quick_card(
-        "СПЕКТР · верхний график", "Уровень и диапазон частот")
+        "СПЕКТР", "Верхний график · частотная область")
     win._overview_kind = _mirror_control(
         win.kind, spec_column, "Вибрационная величина")
     win._overview_yscale = _mirror_control(
@@ -1020,25 +1021,26 @@ def install_modern_shell(win, main, panel, review, storage):
     spec_hint = _hint("")
     win._overview_spectrum_filter_note = spec_hint
     spec_column.addWidget(spec_hint)
-    spec_go = QtWidgets.QPushButton("Все настройки спектра…")
+    spec_go = QtWidgets.QPushButton("Параметры спектра…")
+    spec_go.setToolTip("Открыть полную вкладку «Спектр»")
     spec_go.clicked.connect(lambda: _focus_inspector(win, "spectrum"))
     spec_column.addWidget(spec_go)
     ov.addWidget(spec_card)
     time_card, time_column = _quick_card(
-        "ВРЕМЕННОЙ СИГНАЛ · нижний график",
-        "Осциллограмма всегда показывает ВУ · м/с²")
+        "ВРЕМЕННОЙ СИГНАЛ", "Нижний график · ВУ, м/с²")
     win._overview_timebase = _mirror_control(
         win.timebase, time_column, "Развёртка времени")
     time_hint = _hint("")
     win._overview_time_filter_note = time_hint
     time_column.addWidget(time_hint)
-    time_go = QtWidgets.QPushButton("Все настройки временного сигнала…")
+    time_go = QtWidgets.QPushButton("Параметры времени…")
+    time_go.setToolTip("Открыть полную вкладку «Временной сигнал»")
     time_go.clicked.connect(lambda: _focus_inspector(win, "time"))
     time_column.addWidget(time_go)
     ov.addWidget(time_card)
     ov.addWidget(_hint(
-        "Фильтры, FFT N, дБ-опора и подробные курсоры настраиваются "
-        "только на соответствующих вкладках, не в Обзоре."))
+        "Фильтры, FFT N и курсоры — на подробных вкладках. "
+        "На обзоре только быстрые параметры."))
     ov.addStretch(1)
     inspector.addWidget(overview_panel)
 
