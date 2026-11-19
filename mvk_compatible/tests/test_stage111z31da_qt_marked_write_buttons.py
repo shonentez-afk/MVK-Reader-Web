@@ -86,7 +86,7 @@ def test_original_qt_buttons_queue_true_next_frame_marks_not_status_counters(
         assert not win._source_live_writer.receipt()["hardware_commands_sent"]
         assert win.original_shell.file_channels.count()==10
         assert win.original_shell.file_spec.count()==43
-        assert win.original_shell.file_values.count()==73
+        assert win.original_shell.file_values.count()==36  # original Mode2; Go mark remains 73
         assert panel.panel.height()==53
         assert win.original_shell.file_capture_panel.height()==207
         win.original_visual_skin.reveal_page(5)

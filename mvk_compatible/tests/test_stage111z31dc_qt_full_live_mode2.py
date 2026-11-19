@@ -45,7 +45,7 @@ def test_real_qt_all_four_live_pages_share_one_source_core_and_no_device_write(
             ORIGINAL_LIVE_VISIBLE)
         assert win.original_shell.file_channels.count()==10
         assert win.original_shell.file_spec.count()==43
-        assert win.original_shell.file_values.count()==73
+        assert win.original_shell.file_values.count()==36  # original Mode2; Go mark remains 73
         assert not before["native_capture_started"]
         assert not win.original_measure_controls.buttons["bWriteAdc"].isEnabled()
         win._begin_live_capture()

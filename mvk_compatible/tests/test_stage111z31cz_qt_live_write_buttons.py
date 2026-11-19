@@ -53,7 +53,7 @@ def test_source_write_buttons_start_stop_and_same_native_run_exports(
         assert "WriteDataStage=0" in win.original_shell._file_selection_status()
         assert win.original_shell.file_channels.count()==10
         assert win.original_shell.file_spec.count()==43
-        assert win.original_shell.file_values.count()==73
+        assert win.original_shell.file_values.count()==36  # original Mode2; Go mark remains 73
         assert win.original_shell.file_capture_panel.height()==207
         win.original_visual_skin.reveal_page(5)
         qt_app.processEvents()
