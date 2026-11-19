@@ -31,6 +31,9 @@ def test_source_live_ring_receipt_has_real_frange1_not_native_gain(tmp_path):
     run,status=long_source_status(tmp_path)
     assert status["source_original_storage"]["channels"][0]["input_domain"]==(
         SOURCE_LIVE_ADC_DOMAIN)
+    # The source-window fixture previously tested only selected IPC
+    # fields. Storage receipt QA requires its explicit Go V1 schema.
+    status["source_original_storage"]["schema"]="MVK_SOURCE_CHANNEL_STORAGE_V1"
     receipt=validate_original_storage_receipt(
         status["source_original_storage"],status["channels"])
     assert receipt is not None

@@ -97,7 +97,8 @@ def test_short_verified_source_ring_is_not_classified_as_tcp_preview(tmp_path):
     for number,channel in enumerate(status["channels"],1):
         rows.append({
             "channel":number,
-            "input_domain":"CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32",
+            "input_domain":"ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32",
+            "original_live_f_range_single":1.0,
             "rx_pos_64":ch_count,
             "first_readable_pos_64":0,
             "next_device_sample_index":4096+ch_count,
@@ -109,7 +110,8 @@ def test_short_verified_source_ring_is_not_classified_as_tcp_preview(tmp_path):
     }
     # Status data is produced by the validated Go ring receipt in a
     # real session; these synthetic fields only exercise view routing.
-    win=replace(preview,source_ring_provenance_verified=True)
+    win=replace(preview,input_domain="ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32",
+                source_ring_provenance_verified=True)
     assert gate_live_preview(validated,win).allowed
     # Explicit source provenance may NEVER fall back to a legacy TCP
     # preview when the current validated Go ring disappears.

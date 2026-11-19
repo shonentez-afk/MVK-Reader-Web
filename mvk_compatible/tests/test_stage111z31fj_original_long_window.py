@@ -257,7 +257,9 @@ def test_source_getspectrum_uses_exact_source_ring_n_and_sha(tmp_path):
     assert spectrum["source_fft_n_matches_requested_bSpecLines"]
     assert spectrum["original_delphi_numerical_parity"] is False
     assert spectrum["f_range_used"]==1.
-    assert spectrum["input_domain"]=="calibrated_bin"
+    assert spectrum["input_domain"]=="original_float_storage"
+    assert spectrum["source_history_uses_original_live_f_range1_float32"]
+    assert not spectrum["source_history_uses_exact_calibrated_float32"]
     assert spectrum["original_storage_read_divided_by_range"] is False
     assert spectrum["source_fft_full_power_bins"]==32768
     # Mis-tagged ZIP, wrong channel, and a made-up N must fail closed.
