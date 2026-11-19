@@ -88,7 +88,7 @@ def test_native_validated_live_status_delivers_8_adc_2_tach_raw_words():
     assert parsed["source_live_page_status_banks_verified"]
     banks=parsed["source_live_page_status_banks"]
     assert banks["accepted_param_frames"]==3
-    assert banks["known_complete_dwords"]==43+6+3+5
+    assert banks["known_complete_dwords"]==43+3+2+1+5
     assert banks["adc"][0]["bands_43_raw_f32_le"][0]==w(0.25)
     assert banks["adc"][1]["bands_43_raw_f32_le"][0] is None
     assert banks["tach"][0]["source_field_0_2_4_6_8_fe_raw_le"][5] is None
