@@ -141,6 +141,7 @@ class OriginalMeasureControls:
 
     def begin_live(self):
         self.state=self.state.begin_live()
+        self.panel.setProperty("sourceOriginalLiveTableSnapshotReceipt",None)
         self.window._source_live_view_frozen=False
         self.render()
 
@@ -154,6 +155,7 @@ class OriginalMeasureControls:
 
     def end_live(self):
         self.state=self.state.finish()
+        self.panel.setProperty("sourceOriginalLiveTableSnapshotReceipt",None)
         self.window._source_live_view_frozen=False
         self.render()
 
