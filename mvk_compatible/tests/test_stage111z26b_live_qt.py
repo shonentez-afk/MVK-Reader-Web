@@ -486,8 +486,9 @@ def test_original_long_20s_getsignal_renders_full_source_ring_in_real_qt(
             first_readable_pos_64=0,available_elements=count,
             last_sample_rate_hz=ch["sample_rates_hz"][0],
             next_device_sample_index=device_end,
-            input_domain=("CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
+            input_domain=("ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
                           if adc else TACH_DOMAIN),
+            original_live_f_range_single=1.0 if adc else None,
             sequence_gaps=0,rate_changes=0,rejected_nonfinite_frames=0))
     status["source_original_storage"]=dict(
         schema=SCHEMA,buffer_elements_per_channel=BUFFER_ELEMENTS,
@@ -504,6 +505,7 @@ def test_original_long_20s_getsignal_renders_full_source_ring_in_real_qt(
         trusted["raw_bytes"],trusted["frames_decoded"],
         {1:PreviewADC(1,65536,(4096-n)&0xffffffff,4096,values,
                       sha256(payload).hexdigest(),n)},
+        input_domain="ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32",
         source_ring_provenance_verified=True)
     window=MainWindow()
     try:
