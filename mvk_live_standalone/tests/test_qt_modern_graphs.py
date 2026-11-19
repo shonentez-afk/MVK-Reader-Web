@@ -922,3 +922,138 @@ def test_spectrum_envelope_does_not_silently_use_fft_only_filter(widget):
     assert w.filter_button.isEnabled()
     assert w._read_settings()[3]==(200.,None)
     assert w._modern_spectrum_envelope_row.isHidden()
+
+
+
+def test_time_scope_settings_show_real_fs_samples_duration_and_full_measurements(widget):
+    w,_=widget
+    panel=w._modern_inspector.widget(1)
+    assert "Fs и реальные отсчёты не подтверждены" in w._modern_time_setup_info.text()
+    assert "развёртка 1 с" in w._modern_time_setup_info.text()
+    _feed(w,fs=8192,n=16384)
+    w._render_wave()
+    assert "Fs 8192 Гц" in w._modern_time_setup_info.text()
+    assert "8192 подтверждённых отсчётов" in w._modern_time_setup_info.text()
+    assert "шаг 0.12207 мс" in w._modern_time_setup_info.text()
+    assert "показано 1 с" in w._modern_time_setup_info.text()
+    assert "СКЗ AC (DC вычтено)" in w.wave_stats.text()
+    assert "СКЗ полный" in w.wave_stats.text()
+    assert "Среднее/DC" in w.wave_stats.text()
+    assert "Макс" in w.wave_stats.text() and "Мин" in w.wave_stats.text()
+    assert "Crest AC" in w.wave_stats.text()
+    assert "Пик-пик" in w.wave_stats.text()
+    assert "подтверждённых отсчётов" in w._modern_time_setup_info.text()
+    w.timebase.setCurrentIndex(w.timebase.findData(5.))
+    assert "ограничение доступной истории" in w._modern_time_setup_info.text()
+    assert "показано 2 с" in w._modern_time_setup_info.text()
+    assert "доступно только 2 с из запрошенных 5 с" in w.wave_info.text()
+    a=w._cursor_time_samples
+    assert len(a)==16384
+    assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+def test_time_scope_minmax_plot_has_genuine_impulse_order_and_cursor_source(widget):
+    from mvk_live_standalone.live_ipc import IPCPreview, IPCChannel, DOMAIN
+    w,_=widget
+    fs,n=8192,32768
+    samples=np.zeros(n,dtype="<f4")
+    samples[16000]=3.5
+    samples[16001]=-2.25
+    channel=IPCChannel(1,fs,samples,n%(1<<32),n,
+                       hashlib.sha256(samples.tobytes()).hexdigest())
+    preview=IPCPreview("TEST_TIME_EXTREMA",DOMAIN,True,
+                       datetime.now(timezone.utc),{1:channel})
+    w._gui_ring.ingest_preview(preview)
+    w._preview=preview
+    w.timebase.setCurrentIndex(w.timebase.findData(5.))
+    w._render_wave()
+    xx,yy=w.wave_curve.getData()
+    indices=np.rint(xx*fs+n).astype(int)
+    assert np.all(np.diff(xx)>0)
+    np.testing.assert_array_equal(yy,w._cursor_time_samples[indices])
+    assert np.where(indices==16000)[0].size==1
+    assert np.where(indices==16001)[0].size==1
+    assert np.where(indices==16000)[0][0]<np.where(indices==16001)[0][0]
+    assert np.max(yy)==3.5 and np.min(yy)==-2.25
+    assert "Пик-пик 5.75" in w.wave_stats.text()
+    ox,oy=w.overview_wave_curve.getData()
+    np.testing.assert_array_equal(ox,xx)
+    np.testing.assert_array_equal(oy,yy)
+
+
+def test_time_scope_filtering_is_not_recomputed_on_each_cropped_10ms_window(widget):
+    from mvk_live_standalone.live_ipc import IPCPreview, IPCChannel, DOMAIN
+    from mvk_live_standalone.time_controls import time_filter_waveform
+    w,_=widget
+    fs,n=8192,32768
+    times=np.arange(n,dtype=np.float64)/fs
+    raw=(np.sqrt(2)*np.sin(2*np.pi*100*times)
+         +np.sqrt(2)*np.sin(2*np.pi*1000*times)).astype("<f4")
+    channel=IPCChannel(1,fs,raw,n%(1<<32),n,
+                       hashlib.sha256(raw.tobytes()).hexdigest())
+    preview=IPCPreview("TEST_TIME_FULL_HISTORY",DOMAIN,True,
+                       datetime.now(timezone.utc),{1:channel})
+    w._gui_ring.ingest_preview(preview)
+    w._preview=preview
+    w.time_filter_choice.setCurrentIndex(
+        w.time_filter_choice.findData("lowpass"))
+    w.time_filter_high=200.
+    w.timebase.setCurrentIndex(w.timebase.findData(.01))
+    actual=w._cursor_time_samples.copy()
+    assert len(actual)==int(round(.01*fs))
+    expected=time_filter_waveform(
+        raw,fs,mode="lowpass",high=200.)[-len(actual):]
+    np.testing.assert_allclose(actual,expected,rtol=0,atol=1e-7)
+    assert "ФНЧ ≤200 Гц" in w._modern_time_filter_note.text()
+    assert "не влияет" not in w._modern_time_filter_note.text()
+    assert "Fs 8192" in w._modern_time_setup_info.text()
+    # Only the selected local time filter changes, never a spectrum setting.
+    assert w.filter_choice.currentData()=="none"
+    assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+def test_time_scope_invalid_nyquist_filter_clears_data_and_displays_constraint(widget):
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w._render_wave()
+    assert len(w.wave_curve.getData()[0])>0
+    w.time_filter_choice.setCurrentIndex(
+        w.time_filter_choice.findData("third_octave"))
+    assert w.time_filter_center.findData(8000.)>=0
+    w.time_filter_center.setCurrentIndex(
+        w.time_filter_center.findData(8000.))
+    assert "НЕДОПУСТИМО" in w._modern_time_filter_note.text()
+    assert "Nyquist" in w.wave_stats.text()
+    assert w._cursor_time_samples is None
+    empty=w.overview_wave_curve.getData()[0]
+    assert empty is None or len(empty)==0
+    w.time_filter_center.setCurrentIndex(
+        w.time_filter_center.findData(1000.))
+    assert len(w.wave_curve.getData()[0])>0
+    assert "1000 Гц" in w._modern_time_filter_note.text()
+    assert w._cursor_time_samples is not None
+
+
+def test_time_scope_freeze_history_and_independent_y_axis(widget):
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w._render_wave()
+    before=w._cursor_time_samples.copy()
+    w.freeze.setChecked(True)
+    w._toggle_freeze(True)
+    assert w.freeze.isChecked()
+    assert "Freeze" in w._modern_time_setup_info.text() or (
+        w._modern_refresh_time_setup() is None and
+        "Freeze" in w._modern_time_setup_info.text())
+    w.time_y_width.setCurrentIndex(w.time_y_width.findData(10.))
+    assert w.wave.viewRange()[1]==pytest.approx([-10.,10.])
+    assert w.overview_wave.viewRange()[1]==pytest.approx([-10.,10.])
+    w.history.setValue(.25)
+    assert "Freeze" in w._modern_time_setup_info.text()
+    assert not np.array_equal(w._cursor_time_samples,before)
+    # Source is static; history changes the reviewed interval rather than
+    # making measurements from the newest part of the same frozen buffer.
+    assert w._cursor_time_samples.size==8192
+    w.freeze.setChecked(False)
+    w._toggle_freeze(False)
+    assert "Live" in w._modern_time_setup_info.text()

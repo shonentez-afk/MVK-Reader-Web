@@ -8,6 +8,7 @@ the native Go ring, calibrated BIN/IPC bytes or device FRange.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 import numpy as np
 from scipy import signal
 
@@ -93,12 +94,88 @@ def signed_time_limits(x: np.ndarray, limit: float|None) -> tuple[float,float]:
     return (-float(limit),float(limit))
 
 
-def display_time_stats(x: np.ndarray,fs:int) -> tuple[float,float,float]:
-    """RMS of time-window acceleration, absolute peak and true max-min."""
+@dataclass(frozen=True)
+class TimeWindowMetrics:
+    """Statistics of the COMPLETE displayed, filtered acceleration window.
+
+    AC RMS excludes its measured mean; total RMS does not. In nonzero-DC
+    measurements these are deliberately different quantities.
+    """
+    samples: int
+    fs_hz: int
+    duration_s: float
+    mean_m_s2: float
+    rms_ac_m_s2: float
+    rms_total_m_s2: float
+    minimum_m_s2: float
+    maximum_m_s2: float
+    absolute_peak_m_s2: float
+    peak_to_peak_m_s2: float
+    crest_ac: float | None
+
+
+def summarize_time_window(x: np.ndarray, fs: int) -> TimeWindowMetrics:
     data=np.asarray(x,dtype=np.float64)
-    if data.ndim!=1 or data.size<2 or not np.all(np.isfinite(data)) or fs<=0:
-        raise ValueError("No real time series for local statistics")
-    centered=data-data.mean()
-    return (float(np.sqrt(np.mean(centered**2))),
-            float(np.max(np.abs(data))),
-            float(np.max(data)-np.min(data)))
+    if (data.ndim!=1 or data.size<2 or not np.all(np.isfinite(data)) or
+            type(fs) is not int or fs<=0):
+        raise ValueError("No real, finite time samples for window statistics")
+    mean=float(np.mean(data))
+    centered=data-mean
+    ac_rms=float(np.sqrt(np.mean(centered**2)))
+    total_rms=float(np.sqrt(np.mean(data**2)))
+    minimum=float(np.min(data))
+    maximum=float(np.max(data))
+    ac_peak=float(np.max(np.abs(centered)))
+    return TimeWindowMetrics(
+        samples=int(data.size),fs_hz=fs,duration_s=data.size/fs,
+        mean_m_s2=mean,rms_ac_m_s2=ac_rms,rms_total_m_s2=total_rms,
+        minimum_m_s2=minimum,maximum_m_s2=maximum,
+        absolute_peak_m_s2=max(abs(minimum),abs(maximum)),
+        peak_to_peak_m_s2=maximum-minimum,
+        crest_ac=(ac_peak/ac_rms if ac_rms>0 else None),
+    )
+
+
+def time_plot_extrema(
+    samples: np.ndarray, fs: int, *, max_points: int = 5002,
+) -> tuple[np.ndarray,np.ndarray]:
+    """Rendering only: min and max retain their REAL sample timestamps.
+
+    The previous renderer placed every minimum at the start of its bucket
+    and every maximum at its end, inventing the temporal order of impulses.
+    Here positions are taken from argmin/argmax indices and sorted before
+    plotting. Include real first/last samples; do not interpolate or pad.
+    Analysis and cursors must continue to use the full original samples.
+    """
+    data=np.asarray(samples,dtype=np.float64)
+    if (data.ndim!=1 or data.size==0 or not np.all(np.isfinite(data)) or
+            type(fs) is not int or fs<=0 or
+            type(max_points) is not int or max_points<10):
+        raise ValueError("Invalid physical time plot source")
+    n=int(data.size)
+    if n<=max_points:
+        ix=np.arange(n,dtype=np.int64)
+    else:
+        step=int(math.ceil(n / ((max_points-2)//2)))
+        candidates=[0]
+        for start in range(0,n,step):
+            segment=data[start:min(start+step,n)]
+            imin=start+int(np.argmin(segment))
+            imax=start+int(np.argmax(segment))
+            if imin==imax:
+                candidates.append(imin)
+            elif imin<imax:
+                candidates.extend((imin,imax))
+            else:
+                candidates.extend((imax,imin))
+        candidates.append(n-1)
+        ix=np.unique(np.asarray(candidates,dtype=np.int64))
+    # Same time convention as the existing tested time_point/time_interval:
+    # newest physical sample is -1/Fs, zero is the end boundary of the block.
+    return (ix.astype(np.float64)-n)/fs, data[ix].copy()
+
+
+def display_time_stats(x: np.ndarray,fs:int) -> tuple[float,float,float]:
+    """Back-compatible: AC RMS (DC removed), raw abs peak and raw p-p."""
+    m=summarize_time_window(x,fs)
+    return m.rms_ac_m_s2,m.absolute_peak_m_s2,m.peak_to_peak_m_s2

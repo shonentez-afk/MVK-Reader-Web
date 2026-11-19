@@ -1162,48 +1162,46 @@ def install_modern_shell(win, main, panel, review, storage):
     ts.setSpacing(9)
     ts.addWidget(_title("ВРЕМЕННОЙ СИГНАЛ · осциллограмма"))
     ts.addWidget(_hint(
-        "Здесь настраивается нижний график обзора и вкладка "
-        "«Временной сигнал». Значения — мгновенное ускорение "
-        "в м/с² со знаком, не спектральный СКЗ."))
-    ts.addWidget(_title("Отображение во времени"))
-    tform = QtWidgets.QVBoxLayout()
-    tform.setSpacing(9)
-    for label, widget in (
-        ("Развёртка времени", win.timebase),
-        ("Масштаб виброускорения", win.time_y_width),
-    ):
-        _field(tform, label, widget)
-    ts.addLayout(tform)
-    ts.addWidget(_title("Обработка · только временной сигнал"))
+        "Только настоящий калиброванный АЦП: уровень со знаком в м/с², "
+        "время в секундах. Вкладка «Спектр» рассчитывается независимо."))
+
+    ts.addWidget(_title("1. Развёртка и источник"))
+    settings_fields = QtWidgets.QVBoxLayout()
+    settings_fields.setSpacing(8)
+    _field(settings_fields, "Развёртка времени", win.timebase)
+    ts.addLayout(settings_fields)
+    time_setup_info = _hint("")
+    win._modern_time_setup_info = time_setup_info
+    ts.addWidget(time_setup_info)
+    ts.addWidget(_title("2. Амплитуда и единицы"))
+    amplitude_fields = QtWidgets.QVBoxLayout()
+    amplitude_fields.setSpacing(8)
+    _field(amplitude_fields, "Масштаб виброускорения", win.time_y_width)
+    ts.addLayout(amplitude_fields)
     ts.addWidget(_hint(
-        "Свой локальный фильтр. Его изменение не влияет на FFT и "
-        "не переписывает калиброванные отсчёты."))
+        "Ось: ±м/с², значения со знаком. Авто учитывает фактические "
+        "минимум/максимум выбранного окна. Отсчёты не нормируются."))
+
+    ts.addWidget(_title("3. Фильтр осциллограммы"))
+    ts.addWidget(_hint(
+        "Локальный двупроходный фильтр реальной истории АЦП (SOS / "
+        "filtfilt), затем выбор времени. Не изменяет Native RAW, FRange, "
+        "спектр или заводские значения AUX4700."))
     tf = QtWidgets.QVBoxLayout()
-    tf.setSpacing(9)
+    tf.setSpacing(8)
     _field(tf, "Тип фильтра", win.time_filter_choice)
     time_centre = _field(tf, "Центральная частота полосы",
                          win.time_filter_center)
     time_centre_label = time_centre.findChild(QtWidgets.QLabel)
     ts.addLayout(tf)
     ts.addWidget(win.time_filter_button)
-    win.time_filter_button.setText("Задать границы фильтра…")
+    win.time_filter_button.setText("Установить частотные границы…")
     time_note = _hint("")
+    win._modern_time_filter_note = time_note
     ts.addWidget(time_note)
-    def time_filter_visibility(*_):
-        mode = win.time_filter_choice.currentData()
-        time_centre.setVisible(mode in (
-            "original_preset", "octave", "third_octave", "double_octave"))
-        time_centre_label.setText(
-            "Полоса из меню MVKView" if mode == "original_preset"
-            else "Центральная частота полосы")
-        win.time_filter_button.setVisible(mode in (
-            "highpass", "lowpass", "bandpass"))
-        time_note.setText(filter_notes.get(mode, "").replace(
-            "спектр", "временной сигнал"))
-    win.time_filter_choice.currentIndexChanged.connect(time_filter_visibility)
-    time_filter_visibility()
+
     time_detail = QtWidgets.QToolButton()
-    time_detail.setText("Просмотр участка и АЧХ")
+    time_detail.setText("Просмотр участка и реальной АЧХ")
     time_detail.setCheckable(True)
     time_detail.setArrowType(QtCore.Qt.ArrowType.RightArrow)
     time_detail.setToolButtonStyle(
@@ -1212,8 +1210,9 @@ def install_modern_shell(win, main, panel, review, storage):
     time_advanced = QtWidgets.QWidget()
     time_advanced_layout = QtWidgets.QVBoxLayout(time_advanced)
     time_advanced_layout.setContentsMargins(0, 0, 0, 0)
+    time_advanced_layout.setSpacing(8)
     _field(time_advanced_layout, "Смещение в режиме Freeze", win.history)
-    response_time = QtWidgets.QPushButton("Посмотреть АЧХ временного фильтра…")
+    response_time = QtWidgets.QPushButton("АЧХ временного фильтра…")
     response_time.clicked.connect(lambda: _filter_response_dialog(win, "time"))
     time_advanced_layout.addWidget(response_time)
     ts.addWidget(time_advanced)
@@ -1224,6 +1223,113 @@ def install_modern_shell(win, main, panel, review, storage):
             QtCore.Qt.ArrowType.DownArrow if checked
             else QtCore.Qt.ArrowType.RightArrow)
     time_detail.toggled.connect(toggle_time_detail)
+    win._modern_time_detail = time_detail
+
+    def refresh_time_setup(*_):
+        mode=win.time_filter_choice.currentData()
+        show_center=mode in (
+            "original_preset", "octave", "third_octave", "double_octave")
+        time_centre.setVisible(show_center)
+        time_centre_label.setText(
+            "Полоса из меню MVKView" if mode=="original_preset"
+            else "Центральная частота, Гц")
+        win.time_filter_button.setVisible(mode in (
+            "highpass", "lowpass", "bandpass"))
+        requested=float(win.timebase.currentData())
+        adc=win.adc.currentData()
+        frozen=win.freeze.isChecked() and win._freeze_samples is not None
+        if frozen:
+            if adc==win._freeze_channel:
+                fs=int(win._freeze_rate)
+                offset=int(round(win.history.value()*fs))
+                available=max(0,len(win._freeze_samples)-offset)
+            else:
+                fs=None
+                available=0
+        else:
+            ch=win._gui_ring.channel(adc)
+            fs=int(ch.rate_hz) if ch is not None else None
+            available=min(ch.available,262144) if ch is not None else 0
+        if fs is not None and fs>0:
+            samples=min(available,max(2,int(round(requested*fs))))
+            shown=samples/fs
+            time_setup_info.setText(
+                f"АЦП {adc} · Fs {fs:g} Гц · шаг {1e3/fs:.5g} мс · "
+                f"запрошено {requested:g} с · показано {shown:.5g} с / "
+                f"{samples} подтверждённых отсчётов"
+                +(" · ограничение доступной истории"
+                  if shown<requested-1/fs else "")
+                +(" · Freeze/архивный просмотр" if frozen else " · Live")
+            )
+        else:
+            time_setup_info.setText(
+                f"АЦП {adc} · Fs и реальные отсчёты не подтверждены; "
+                f"выбрана развёртка {requested:g} с. "
+                "Нулевые измерения не подставляются.")
+        selected=win.time_filter_center.currentData()
+        description="Без локального фильтра; данные как приняты после FRange."
+        try:
+            if mode=="original_preset":
+                if not isinstance(selected,tuple) or len(selected)!=2:
+                    raise ValueError("Выберите полосу из оригинального меню")
+                fam,centre=selected
+                if fam=="none":
+                    description="Меню MVKView · Без фильтра (локальный режим)."
+                else:
+                    from .octave_filters import preset_description
+                    description=(
+                        "Каталог названий MVKView · "+
+                        preset_description(fam,centre))
+                    from .octave_filters import preset_band
+                    lo,hi=preset_band(fam,centre)
+            elif mode in ("octave","third_octave","double_octave"):
+                from .octave_filters import preset_description,preset_band
+                description=preset_description(mode,selected)
+                lo,hi=preset_band(mode,selected)
+            elif mode=="highpass":
+                lo,hi=win.time_filter_low,None
+                description=f"ФВЧ ≥{lo:g} Гц · Butterworth 4, два прохода."
+            elif mode=="lowpass":
+                lo,hi=0.,win.time_filter_high
+                description=f"ФНЧ ≤{hi:g} Гц · Butterworth 4, два прохода."
+            elif mode=="bandpass":
+                lo,hi=win.time_filter_low,win.time_filter_high
+                description=(
+                    f"Полосовой {lo:g}–{hi:g} Гц · "
+                    "Butterworth 4, два прохода.")
+            elif mode in ("notch50","notch60"):
+                hz=50. if mode=="notch50" else 60.
+                lo,hi=None,None
+                description=f"Режектор {hz:g} Гц, Q=35, два прохода."
+                if fs is not None and hz>=fs/2:
+                    description+=(
+                        f" НЕДОПУСТИМО: Nyquist {fs/2:g} Гц.")
+            else:
+                lo,hi=None,None
+            if mode in (
+                "octave","third_octave","double_octave",
+                "highpass","lowpass","bandpass") or (
+                mode=="original_preset" and
+                isinstance(selected,tuple) and selected[0]!="none"):
+                if (fs is not None and
+                        (lo>=fs/2 or hi is not None and hi>=fs/2)):
+                    description+=(
+                        f" НЕДОПУСТИМО для Fs {fs:g} Гц: "
+                        f"Nyquist {fs/2:g} Гц.")
+            if mode!="none" and available and available<32:
+                description+=(
+                    " Не хватает исходных отсчётов для фильтра "
+                    f"(доступно {available}, нужно минимум 32).")
+        except (ValueError,TypeError) as exc:
+            description=f"Некорректный выбор фильтра: {exc}"
+        time_note.setText(description)
+
+    win._modern_refresh_time_setup=refresh_time_setup
+    for control in (win.timebase,win.time_y_width,win.adc,
+                    win.time_filter_choice,win.time_filter_center):
+        control.currentIndexChanged.connect(refresh_time_setup)
+    win.history.valueChanged.connect(refresh_time_setup)
+    refresh_time_setup()
     ts.addStretch(1)
     inspector.addWidget(time_panel)
 

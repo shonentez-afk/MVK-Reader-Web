@@ -50,7 +50,8 @@ from .measurement_history import MeasurementHistory, MAX_IMPORT_ROWS
 from .history_widgets import HistoryWorkspaces
 from .time_controls import (TIME_WINDOWS_S, Y_ABSOLUTE_LIMITS_M_S2,
                             TIME_FILTERS, time_filter_waveform,
-                            signed_time_limits, display_time_stats)
+                            signed_time_limits, summarize_time_window,
+                            time_plot_extrema)
 from .graph_policies import spectrum_x_limits
 from .modern_shell import install_modern_shell, open_archive_window, open_advanced_window
 from .vibration import (
@@ -1792,6 +1793,9 @@ class LiveWindow(QtWidgets.QMainWindow):
                 plot.setYRange(-height,height,padding=0)
 
     def _render_wave(self,*_):
+        refresh=getattr(self,"_modern_refresh_time_setup",None)
+        if refresh is not None:
+            refresh()
         requested=float(self.timebase.currentData())
         if self.freeze.isChecked() and self._freeze_samples is not None:
             if self.adc.currentData()!=self._freeze_channel:
@@ -1825,7 +1829,6 @@ class LiveWindow(QtWidgets.QMainWindow):
         # Only genuine ring samples: do not extend a 4-s packet to a
         # requested 30-s scope or assume a missing sample rate.
         n=min(len(data),max(2,int(round(requested*fs))))
-        window=data[-n:]
         mode=self.time_filter_choice.currentData()
         if mode=="original_preset":
             selected=self.time_filter_center.currentData()
@@ -1841,10 +1844,15 @@ class LiveWindow(QtWidgets.QMainWindow):
             filter_center=(self.time_filter_center.currentData()
                            if mode in FAMILIES else None)
         try:
-            physical=time_filter_waveform(
-                window,fs,mode=filter_mode,
+            # Filtering only the cropped 10 ms/100 ms scope creates severe
+            # false edge transients (filtfilt assumes each crop is a whole
+            # signal). Filter existing REAL buffered history first, then
+            # select the display span. No invented warm-up samples.
+            processed=time_filter_waveform(
+                data,fs,mode=filter_mode,
                 low=self.time_filter_low,high=self.time_filter_high,
                 center=filter_center)
+            physical=processed[-n:]
         except ValueError as exc:
             self.wave_curve.setData([],[])
             self._clear_overview_plot("time")
@@ -1858,18 +1866,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         # Peak-preserving min/max decimation is strictly for presentation.
         # All stats below use the FULL filtered source window, not the
         # decimated trace or any AUX4700 sensor DSP registers.
-        step=max(1,int(math.ceil(len(physical)/2500)))
-        if step>1 and len(physical)>=step:
-            block=physical[-(len(physical)//step)*step:].reshape(-1,step)
-            lo=block.min(axis=1)
-            hi=block.max(axis=1)
-            y=np.stack((lo,hi),axis=1).reshape(-1)
-            index=np.repeat(np.arange(len(block))*step,2)
-            index[1::2]+=step-1
-            x=(index-len(block.reshape(-1)))/fs
-        else:
-            y=physical
-            x=(np.arange(len(physical),dtype=np.float64)-len(physical))/fs
+        x,y=time_plot_extrema(physical,int(fs))
         self.wave_curve.setData(x,y)
         overview=getattr(self,"overview_wave_curve",None)
         if overview is not None:
@@ -1903,19 +1900,29 @@ class LiveWindow(QtWidgets.QMainWindow):
                   "bandpass":f"Полосовой {self.time_filter_low:g}–{self.time_filter_high:g} Гц",
                   "notch50":"Режектор 50 Гц",
                   "notch60":"Режектор 60 Гц"}[mode]
-        cropped=(f" · доступно {available_seconds:g} с" if
+        cropped=(f" · доступно только {available_seconds:g} с из "
+                 f"запрошенных {requested:g} с" if
                  available_seconds<requested-.001 else "")
         self.wave_info.setText(
             f"Временной сигнал · АЦП {self.adc.currentData()} · "
-            f"Fs={fs} Гц · {info} · откалиброван Native Go ×FRange один раз"
-            f"{cropped}")
+            f"Fs={fs} Гц · просмотр {available_seconds:g} с · "
+            f"{len(physical)} реальных отсчётов · {info} · "
+            f"откалиброван Native Go ×FRange один раз{cropped}")
         if physical.size>=2:
-            rms,peak,span=display_time_stats(physical,fs)
+            m=summarize_time_window(physical,int(fs))
+            crest=(f"{m.crest_ac:.3g}" if m.crest_ac is not None
+                   else "не определён (нулевая AC СКЗ)")
             self.wave_stats.setText(
-                f"APP_DERIVED · по выбранному временному окну · "
-                f"СКЗ {rms:.5g} м/с² · Пик {peak:.5g} м/с² · "
-                f"Пик-пик {span:.5g} м/с² · N={len(physical)}; "
-                "не путать с исходным расчётным AUX4700 прибора")
+                f"APP_DERIVED · только по видимому отфильтрованному окну · "
+                f"СКЗ AC (DC вычтено) {m.rms_ac_m_s2:.5g} м/с² · "
+                f"СКЗ полный {m.rms_total_m_s2:.5g} м/с² · "
+                f"Среднее/DC {m.mean_m_s2:+.5g} м/с² · "
+                f"Макс {m.maximum_m_s2:+.5g} / "
+                f"Мин {m.minimum_m_s2:+.5g} м/с² · "
+                f"Пик {m.absolute_peak_m_s2:.5g} м/с² · "
+                f"Пик-пик {m.peak_to_peak_m_s2:.5g} м/с² · "
+                f"Crest AC {crest} · N={m.samples}; "
+                "не подменяет исходный AUX4700 прибора")
 
     def _schedule_fft(self):
         if self._preview is None or (

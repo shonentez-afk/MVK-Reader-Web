@@ -666,7 +666,7 @@ class MeasurementCursors(QtCore.QObject):
                     span = time_interval(values, fs, first.position, second.position)
                     text += (
                         f"\nВыделено {span.samples} реальных отсчётов · "
-                        f"СКЗ {span.rms:.6g} м/с² · "
+                        f"СКЗ полный {span.rms:.6g} м/с² · "
                         f"размах {span.peak_to_peak:.6g} м/с²")
                 except ValueError as exc:
                     text += f"\n{exc}"
