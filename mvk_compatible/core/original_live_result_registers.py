@@ -78,7 +78,7 @@ def parse_live_result_registers(status:dict)->dict|None:
         raise ValueError("Source PageStatus results came from another TCP")
     if (data.get("original_get_value_text_parity_verified") is not False or
             data.get("original_delphi_runtime_parity_verified") is not False):
-        raise ValueError("Unverified Delphi text/runtime parity asserted")
+        raise ValueError("Source PageStatus: unverified Delphi text/runtime parity asserted")
     incoming_adc=data.get("adc")
     incoming_tach=data.get("tach")
     if (not isinstance(incoming_adc,list) or len(incoming_adc)!=8 or
