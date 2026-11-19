@@ -276,7 +276,12 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
             }
         }
 	}
-	for _, f := range frames {
+	for frameIndex, f := range frames {
+        // Original reads ONE application frame at a time. Coalesced
+        // TCP frames still need one FIFO dispatch between packets.
+        if frameIndex>0 && m.sourceTask2TX!=nil {
+            if e:=m.sourceTask2TX.sendNext(m);e!=nil {return e}
+        }
 		if e := m.consume(f, at); e != nil {
 			m.summary.InvalidFrames++
 			m.warn(fmt.Sprintf("frame type=%08X: %v; further data kept raw only", f.Type, e))

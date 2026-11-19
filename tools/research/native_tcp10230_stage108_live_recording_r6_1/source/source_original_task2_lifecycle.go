@@ -17,6 +17,7 @@ type sourceOriginalTask2Lifecycle struct {
     paramsAfterConnect uint64
     knownSystem0 bool
     system0 uint32
+    status0SocketMask uint8 // track only new-socket 16-bit words
     systemErrorLatched bool
     ackObserved uint64
     denialObserved uint64
@@ -50,7 +51,8 @@ func (s *sourceOriginalTask2Lifecycle) onConnected(nonempty uint64) {
     s.connected=true;s.disconnected=false
     s.stage=0;s.lastLiveStage=0;s.attempts++
     s.firstParamBase=nonempty;s.paramsAfterConnect=0
-    s.knownSystem0=false;s.system0=0;s.systemErrorLatched=false
+    s.knownSystem0=false;s.system0=0;s.status0SocketMask=0
+    s.systemErrorLatched=false
     s.endReason=""
 }
 func (s *sourceOriginalTask2Lifecycle) afterReceivedFrame(m *Monitor,f Frame) error {
@@ -63,9 +65,17 @@ func (s *sourceOriginalTask2Lifecycle) afterReceivedFrame(m *Monitor,f Frame) er
         // Do not invent Status0=0 or treat the unobserved FF sentinel
         // as a physically observed instrument system error.
         if s.stage==0 && s.paramsAfterConnect>0 {s.stage=1}
-        if v,e:=m.image.Uint32(0x1006);e==nil {
-            s.knownSystem0=true;s.system0=v
-            if v>0 {s.systemErrorLatched=true;s.stage=3}
+        // Read a fresh Status0 only after BOTH 16-bit register words
+        // arrived on this TCP socket, never from a prior socket's
+        // persistent RegisterImage or a frozen PARAM.
+        if m.sourceOriginalRXGate==nil || !m.sourceOriginalRXGate.frozen {
+            s.status0SocketMask|=sourceTask2Status0WordMask(f)
+            if s.status0SocketMask==3 {
+                if v,e:=m.image.Uint32(0x1006);e==nil {
+                    s.knownSystem0=true;s.system0=v
+                    if v>0 {s.systemErrorLatched=true;s.stage=3}
+                }
+            }
         }
     case typeAck:
         s.ackObserved++ // temporal only, never matched to a TX sequence

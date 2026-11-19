@@ -26,6 +26,7 @@ type sourceLiveTask2TX struct {
  stage int
  status0Seen bool
  status0 uint32
+ status0SocketMask uint8 // two words observed in current TCP socket
  systemErrorLatched bool
  pending []uint32
  lastQueuedRate uint32
@@ -42,12 +43,13 @@ func newSourceLiveTask2TX() *sourceLiveTask2TX {
  return &sourceLiveTask2TX{enabled:true,pending:[]uint32{65536},lastQueuedRate:65536}
 }
 func (s *sourceLiveTask2TX) resetForNewSourceSocket(m *Monitor){
- s.stage=0;s.status0Seen=false;s.status0=0;s.systemErrorLatched=false
+ s.stage=0;s.status0Seen=false;s.status0=0;s.status0SocketMask=0
+ s.systemErrorLatched=false
  s.sentInSocket=0
  s.paramCounterBase=m.summary.SourceNonemptyParameters
  s.conn=nil
  // A new socket may require the operator-approved original source rate.
- // It is NEVER written until a fresh PARAM and valid STATUS0=0 arrive.
+ // It is sent on original Stage1 (positive Status0 latches Stage3).
  if len(s.pending)==0 && s.lastQueuedRate!=0 {s.pending=[]uint32{s.lastQueuedRate}}
 }
 func (s *sourceLiveTask2TX) queueRate(rate uint32) error {
@@ -63,9 +65,17 @@ func (s *sourceLiveTask2TX) afterReceivedFrame(m *Monitor,f Frame) error {
  switch f.Type {
  case typeParam:
   if m.summary.SourceNonemptyParameters>s.paramCounterBase && s.stage==0 {s.stage=1}
-  if status0,e:=m.image.Uint32(0x1006);e==nil {
-   s.status0Seen=true;s.status0=status0
-   if status0>0 {s.stage=3;s.systemErrorLatched=true}
+  // The RegisterImage persists across socket reconnects; do NOT
+  // attribute its old Status0 to the new socket's first partial PARAM.
+  // FreezeUpdate skips original StatusCells updates.
+  if m.sourceOriginalRXGate==nil || !m.sourceOriginalRXGate.frozen {
+   s.status0SocketMask|=sourceTask2Status0WordMask(f)
+   if s.status0SocketMask==3 {
+    if status0,e:=m.image.Uint32(0x1006);e==nil {
+     s.status0Seen=true;s.status0=status0
+     if status0>0 {s.stage=3;s.systemErrorLatched=true}
+    }
+   }
   }
  case typeAck:
   if s.sentInSocket>0{s.ackAfterTX++} // SAME socket, temporal only; no transaction ID
@@ -79,7 +89,11 @@ func (s *sourceLiveTask2TX) afterReceivedFrame(m *Monitor,f Frame) error {
  return nil
 }
 func (s *sourceLiveTask2TX) sendNext(m *Monitor) error {
- if !s.enabled || s.stage!=1 || !s.status0Seen || s.status0!=0 ||
+ // _Unit125:00807E8F checks Stage1 and nonempty FIFO. It does not
+ // add a second Status0==0 condition. A positive observed Status0
+ // already advances Stage3 and inhibits this dispatch.
+ // Physical TX still requires the operator-approved source-rate flag.
+ if !s.enabled || s.stage!=1 ||
     s.systemErrorLatched || len(s.pending)==0 {return nil}
  if s.conn==nil{return nil}
  rate:=s.pending[0]
