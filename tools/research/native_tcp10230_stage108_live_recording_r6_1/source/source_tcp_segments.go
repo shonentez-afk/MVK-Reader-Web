@@ -67,6 +67,28 @@ func (l *sourceTCPLedger) begin(m *Monitor) error {
 }
 func (l *sourceTCPLedger) finish(m *Monitor,reason string) {
  if l==nil||l.Active==0{return}
+ // _Unit125 TMVKThread.Execute 008089A3..008089AD invokes
+ // CloseFiles 00809414 at the END OF EACH SOCKET, before the Task2
+ // backoff and next TIdTCPClient. Do NOT append the new socket to an
+ // old original WriteData/WriteValues window, even if the operator
+ // has not yet received a reconnect UI notification.
+ outcome:="SOURCE_SOCKET_"+reason
+ if reason=="STOPPED_BY_USER" || reason=="DURATION_REACHED" ||
+    reason=="SIZE_LIMIT_REACHED" {
+     outcome="CLOSED_BY_SOURCE_THREAD"
+ }
+ if m.sourceLiveDataWriter!=nil && m.sourceLiveDataWriter.active!=nil {
+     if err:=m.sourceLiveDataWriter.closeWindow(m,outcome);err!=nil {
+         m.captureOnly=true
+         m.warn("original source per-socket WriteData close failed: "+err.Error())
+     }
+ }
+ if m.sourceLiveValuesWriter!=nil && m.sourceLiveValuesWriter.active!=nil {
+     if err:=m.sourceLiveValuesWriter.closeWindow(m,outcome);err!=nil {
+         m.captureOnly=true
+         m.warn("original source per-socket WriteValues close failed: "+err.Error())
+     }
+ }
  s:=&l.Segments[l.Active-1]
  s.DisconnectedUTC=time.Now().UTC().Format(time.RFC3339Nano)
  s.EndOffset=m.summary.RawBytes

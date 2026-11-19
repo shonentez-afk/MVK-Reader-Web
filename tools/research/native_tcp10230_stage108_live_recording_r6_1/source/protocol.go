@@ -148,7 +148,12 @@ func decodeSampleHeader(f Frame) (SampleHeader, error) {
     samples:=(len(f.Raw)-28)/4
 	channel := binary.LittleEndian.Uint32(f.Raw[20:24])
 	rate := binary.LittleEndian.Uint32(f.Raw[24:28])
-	if (f.Type == typeADC && channel >= 8) || (f.Type == typeTach && (channel < 8 || channel > 9)) || !acceptedRates[rate] {
+	// Original _Unit125.pas 00808192..0080823B reads Fs as a raw uint32
+    // and compares it to MvkSampleRate AFTER receiving the payload.
+    // Even an unsupported/zero device Fs is valid wire data: it is
+    // skipped by original channel storage, never a protocol exception.
+    // Unknown SOURCE channel identifiers remain invalid packets.
+    if (f.Type == typeADC && channel >= 8) || (f.Type == typeTach && (channel < 8 || channel > 9)) {
 		return SampleHeader{}, fmt.Errorf("%w: sample channel/rate=%d/%d", errMalformed, channel, rate)
 	}
 	var nonFinite uint32
