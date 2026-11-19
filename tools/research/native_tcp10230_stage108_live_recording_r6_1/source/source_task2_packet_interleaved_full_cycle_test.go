@@ -185,3 +185,59 @@ func TestSourceOriginalTask2CoalescedPARAMDENIEDSendsBeforeReplyAndKeepsRAW(t *t
         t.Fatal("forensic TCP RAW is not byte-exact after early DENIED")
     }
 }
+
+
+func TestSourceTask2PartialNonzeroStatusWordBlocksRealCommand(t *testing.T){
+    // Original 00805D08 loads the complete StatusCells dword on an
+    // overlapping PARAM address. A NEW nonzero half is conclusive
+    // evidence of error; it must latch Stage3 before next packet TX.
+    for _,tc:=range []struct{addr uint16;value []byte}{
+        {0x1005,[]byte{0,0,0x2A,0}}, // low 16-bit system status nonzero
+        {0x1007,[]byte{0x01,0,0,0}}, // high 16-bit system status nonzero
+    }{
+        m,_,_:=sourceDuplexFixture(t)
+        partial:=makeParam([]RegBlock{{
+            Addr:tc.addr,Words:2,Payload:tc.value,
+        }})
+        sample:=sourceLiveWriterSample(typeADC,0,65536,0,0x3F800000)
+        joined:=append(append([]byte{},partial...),sample...)
+        if e:=m.ProcessChunk(joined,time.Now());e!=nil{t.Fatal(e)}
+        if m.sourceOriginalTask2Stage.stage!=3 ||
+            !m.sourceOriginalTask2Stage.systemErrorLatched ||
+            m.sourceTask2TX.stage!=3 || !m.sourceTask2TX.systemErrorLatched ||
+            m.sourceTask2TX.sentBytes!=0 ||
+            m.sourceTask2TX.sentCommands!=0 ||
+            len(m.sourceTask2TX.pending)!=1 ||
+            m.sourceOriginalTask2Stage.receipt().UnobservedFFSentinelRisk ||
+            m.summary.TotalFrames!=2 || m.summary.InvalidFrames!=0 {
+            t.Fatalf("partial source System0 error lost on addr=%X",tc.addr)
+        }
+    }
+}
+
+func TestSourceTask2DuplicateStatusDescriptorFinalValueWins(t *testing.T){
+    // Same PARAM can contain duplicate overlapping register records.
+    // Delphi applies each in order, then tests final StatusCells0.
+    for _,tc:=range []struct{first,second uint32;fault bool}{
+        {42,0,false},{0,42,true},
+    }{
+        m,_,_:=sourceDuplexFixture(t)
+        word:=func(v uint32)[]byte{
+            return []byte{byte(v),byte(v>>8),byte(v>>16),byte(v>>24)}
+        }
+        frame:=makeParam([]RegBlock{
+            {Addr:0x1006,Words:2,Payload:word(tc.first)},
+            {Addr:0x1006,Words:2,Payload:word(tc.second)},
+        })
+        if e:=m.ProcessChunk(frame,time.Now());e!=nil{t.Fatal(e)}
+        wantStage:=uint32(1)
+        if tc.fault{wantStage=3}
+        if m.sourceOriginalTask2Stage.systemErrorLatched!=tc.fault ||
+           m.sourceTask2TX.systemErrorLatched!=tc.fault ||
+           m.sourceOriginalTask2Stage.stage!=wantStage ||
+           m.sourceTask2TX.stage!=int(wantStage) ||
+           m.sourceTask2TX.status0!=tc.second {
+           t.Fatal("source Stage3 after duplicate descriptors differs from final register value")
+        }
+    }
+}

@@ -69,7 +69,11 @@ func (s *sourceLiveTask2TX) afterReceivedFrame(m *Monitor,f Frame) error {
   // attribute its old Status0 to the new socket's first partial PARAM.
   // FreezeUpdate skips original StatusCells updates.
   if m.sourceOriginalRXGate==nil || !m.sourceOriginalRXGate.frozen {
-   s.status0SocketMask|=sourceTask2Status0WordMask(f)
+   wordMask,partialFault:=sourceTask2Status0WordEvidence(f)
+   s.status0SocketMask|=wordMask
+   // With one new 16-bit word nonzero, the final 32-bit
+   // source System0 is DEFINITELY nonzero; never send SetRate.
+   if partialFault{s.stage=3;s.systemErrorLatched=true}
    if s.status0SocketMask==3 {
     if status0,e:=m.image.Uint32(0x1006);e==nil {
      s.status0Seen=true;s.status0=status0

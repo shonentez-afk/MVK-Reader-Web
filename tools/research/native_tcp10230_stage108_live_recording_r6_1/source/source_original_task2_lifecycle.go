@@ -69,7 +69,11 @@ func (s *sourceOriginalTask2Lifecycle) afterReceivedFrame(m *Monitor,f Frame) er
         // arrived on this TCP socket, never from a prior socket's
         // persistent RegisterImage or a frozen PARAM.
         if m.sourceOriginalRXGate==nil || !m.sourceOriginalRXGate.frozen {
-            s.status0SocketMask|=sourceTask2Status0WordMask(f)
+            wordMask,partialFault:=sourceTask2Status0WordEvidence(f)
+            s.status0SocketMask|=wordMask
+            // A newly observed nonzero 16-bit half is already a
+            // conclusive nonzero Status0, even before full readback.
+            if partialFault{s.systemErrorLatched=true;s.stage=3}
             if s.status0SocketMask==3 {
                 if v,e:=m.image.Uint32(0x1006);e==nil {
                     s.knownSystem0=true;s.system0=v
@@ -102,7 +106,8 @@ func (s *sourceOriginalTask2Lifecycle) receipt() sourceOriginalTask2LifecycleRec
         Connected:s.connected,Attempts:s.attempts,
         NonemptyParamSinceConnect:s.paramsAfterConnect,
         Status0RegisterValid:s.knownSystem0,
-        UnobservedFFSentinelRisk:s.connected && s.paramsAfterConnect>0 && !s.knownSystem0,
+        UnobservedFFSentinelRisk:s.connected && s.paramsAfterConnect>0 &&
+            !s.knownSystem0 && !s.systemErrorLatched,
         SystemErrorLatched:s.systemErrorLatched,
         AckObserved:s.ackObserved,DenialObserved:s.denialObserved,
         Disconnected:s.disconnected,LastEndReason:s.endReason,
