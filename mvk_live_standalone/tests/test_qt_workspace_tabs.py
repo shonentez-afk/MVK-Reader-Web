@@ -120,14 +120,19 @@ def test_time_local_filter_is_real_and_does_not_change_spectrum(gui):
     _feed(w)
     w.timebase.setCurrentIndex(w.timebase.findData(1.))
     w._render_wave()
-    _,before=w.wave_curve.getData()
+    before=w._cursor_time_samples.copy()
     before_std=float(np.std(before))
     w.time_filter_choice.setCurrentIndex(w.time_filter_choice.findData("lowpass"))
     w.time_filter_high=200.
     w._render_wave()
-    _,after=w.wave_curve.getData()
+    after=w._cursor_time_samples.copy()
+    # Decimation can keep a different number of drawn extrema after a filter.
+    # Verify unchanged sample count and real amplitude statistics instead.
     assert len(after)==len(before)
     assert np.std(after)<before_std*.85
+    render_t,render_y=w.wave_curve.getData()
+    assert len(render_t)==len(render_y) and len(render_t)>2
+    assert np.all(np.diff(render_t)>0)
     assert w.filter_choice.currentData()=="none"
     assert w._read_settings()[3]==(0.,None)
     assert "ФНЧ до 200" in w.wave_info.text()
