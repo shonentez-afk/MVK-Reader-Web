@@ -723,7 +723,8 @@ def test_spectrum_real_fft_resolution_and_stale_filter_are_not_misleading(widget
     w.custom_low.setValue(200.)
     assert w._spectrum is None
     assert w._last_completed_spectrum_settings is None
-    assert len(w.overview_spec_curve.getData()[0])==0
+    stale=w.overview_spec_curve.getData()[0]
+    assert stale is None or len(stale)==0
     assert "Пересчёт" in w.metrics.text()
     filtered=calculate()
     attenuation=filtered.rms[np.argmin(abs(filtered.hz-100))]
@@ -761,12 +762,16 @@ def test_spectrum_welch_density_and_asd_square_root_with_real_source(widget):
     i=int(np.argmin(abs(power.hz-100)))
     p=float(power.rms[i])
     assert p>0
-    assert "(м/с²)²/Гц" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
+    # The default dB display is a valid PSD representation:
+    # 10*log10(power/reference^2), not linear power in physical units.
+    assert "дБ" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
     assert not w.smooth.isEnabled()
     assert "50%" in w._modern_spectrum_setup_info.text()
     assert "сегм." in w._modern_spectrum_setup_info.text()
     assert vibration_plot_values(power,"db")[i] == pytest.approx(
         10*math.log10(p/(1e-6**2)),abs=1e-5)
+    w.yscale.setCurrentIndex(w.yscale.findData("linear"))
+    assert "(м/с²)²/Гц" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
     w.analysis.setCurrentIndex(w.analysis.findData("asd"))
     assert w._spectrum is None
     amplitude=calculate("asd")
@@ -783,8 +788,9 @@ def test_spectrum_out_of_nyquist_filter_never_uses_stale_curve(widget):
     w.nfft.setCurrentIndex(w.nfft.findData(8192))
     w.filter_choice.setCurrentIndex(
         w.filter_choice.findData("third_octave"))
+    assert w.filter_center.findData(8000.)>=0
     w.filter_center.setCurrentIndex(
-        w.filter_center.findData(25000.))
+        w.filter_center.findData(8000.))
     assert "НЕДОПУСТИМО" in w._modern_spectrum_filter_note.text()
     w._last_fft_submit=0.0
     w._schedule_fft()
@@ -793,7 +799,8 @@ def test_spectrum_out_of_nyquist_filter_never_uses_stale_curve(widget):
     w._collect_analysis()
     assert w._spectrum is None
     assert "спектр недоступен" in w.metrics.text()
-    assert len(w.overview_spec_curve.getData()[0])==0
+    empty=w.overview_spec_curve.getData()[0]
+    assert empty is None or len(empty)==0
     assert w._native.state()==w._native.ProcessState.NotRunning
 
 
