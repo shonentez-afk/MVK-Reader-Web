@@ -2,7 +2,7 @@
 
 Дата: 19 ноября 2026 года. Исследовательская ветка `research/stage111-mvkview-desktop-20261029`.
 Код: [`6c4a4cb`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/6c4a4cbaa0a3f308f5f004df8c7d5deb64bc149a), [`2f728e6`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/2f728e6840401a8f25a31a7aff27810b5738f963), [`0cd35cf`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/0cd35cf022f42f27790ae69e964b227403cccbea), [`7196169`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/71961692b8116d9d648840c5142c48d49dfe31e5).
-Финальная регрессия: [GitHub Actions #44464375293](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44464375293). До полного окончания **не заявлять software PASS** и не заменять аппаратную парную проверку синтетическими данными.
+Финальная регрессия: [GitHub Actions #44465224484](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44465224484). До полного окончания **не заявлять software PASS** и не заменять аппаратную парную проверку синтетическими данными.
 
 ## Три приватных источника — использованы вместе, без публикации
 
@@ -37,6 +37,8 @@
 - Python `original_source_ring_receipt.py`, `original_source_long_window.py` и `original_live_view_gate.py` требуют **оба доказательства**: Go-домен исходного кольца **и** `FRange Single=1`. Прошлое название калиброванного BIN отвергается; склеить старый ZIP и новый статус нельзя.
 - `native_r6_live_preview.py` различает старое forensic BIN-preview и оригинальную картину приёма. FFT-кандидат для источника передаёт `input_domain=original_float_storage` и `f_range=1.0`, а не `calibrated_bin`; GetSignal/FIR использует полный `float32`, не коэффициент экспортёра повторно.
 - `sourceApplyOriginalFRange` отдельно проверяет представимость типа Single и Float32-произведение. Для двух нормальных конечных binary32 множителей Float64 обеспечивает точный 48-битный продукт перед корректным округлением в Float32; **это не претензия на общий Win32 x87 1:1** для NaN, субнормалов, изменённого CW и сложных DSP-цепочек.
+
+**Повторная Windows Qt регрессия:** предыдущий запуск #44464375293 показал 58/59 Qt PASS и одно отклонение 20-секундного графика, потому что синтетическая фикстура использовала прежний домен CALIBRATED_BIN вместо исходного Go FRxPos/FRange1. Исправлено [8bda290](https://github.com/shonentez-afk/MVK-Reader-Web/commit/8bda29092baaa834e780ed653caff5f23de78351) — Qt-тест по-прежнему требует полный 1 310 720-отсчётный график, SHA и источник FRange1; никаких проверок не отключено. Повторный 5-job Actions #44465224484 проверить по итогам, сейчас не утверждать PASS.
 
 ## Новая сквозная регрессия
 
