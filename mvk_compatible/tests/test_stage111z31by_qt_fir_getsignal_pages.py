@@ -38,13 +38,14 @@ def test_filtered_source_adc_horizontal_time_and_cursor_from_full_fir(
         assert isinstance(full,OriginalEnvelopeCursor)
         assert full.code==20
         assert axis["series_samples"]==len(full.full_values)
-        # This 20 ms window produces 680 filtered samples, below Qt's
+        # Original 20ms HTag: 1310 raw + 51 FIR history = 1361,
+        # giving (1361-51)/2 = 655 filtered samples, below Qt's
         # 4000-point visual LOD budget. In that case the graph is not
         # decimated. The pure Core test forces 12 display points and
         # independently proves that the cursor reads the FULL FIR series.
         assert axis["series_samples"]>=len(w._source_wave_trace["amplitude"])
         assert axis["output_sample_rate_hz"]==32768
-        assert axis["required_input_samples"]==1412
+        assert axis["required_input_samples"]==1361
         assert axis["series_xscale_single"]==pytest.approx(1000/32768,rel=1e-6)
         assert axis["axis_unit"]=="мс"
         assert axis["scr_left_single"]==20. and axis["scr_width_single"]==-20.
@@ -53,7 +54,7 @@ def test_filtered_source_adc_horizontal_time_and_cursor_from_full_fir(
         assert vb.viewRange()[0]==pytest.approx([0.,20.],abs=1e-4)
         assert w.wave_plot.getPlotItem().getAxis('bottom').labelText=="мс"
         assert w._source_wave_readout is None  # FIR is NOT plain GetSignal
-        assert "1412 реальной истории" in w.wave_mean_primary.toolTip()
+        assert "1361 реальной истории" in w.wave_mean_primary.toolTip()
         point=vb.mapViewToScene(QPointF(10.,0.))
         w._wave_at_scene_pos(point,force=True)
         qt_app.processEvents()
