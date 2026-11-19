@@ -451,7 +451,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             // original channel store. Only a SECOND accepted rate proves
             // an actual SetRate transition; wrong-Fs RAW alone does not.
             if m.sourceTask2TX!=nil && sourceStoreAllowed &&
-               len(c.rates)>1 && !m.sourceRateTransitionDetected {
+               m.sourceOriginalStorage!=nil &&
+               m.sourceOriginalStorage.channels[sample.Channel].seen &&
+               m.sourceOriginalStorage.channels[sample.Channel].sampleRate!=sample.Rate &&
+               !m.sourceRateTransitionDetected {
 				m.sourceRateTransitionDetected=true
 				m.summary.SourceRateTransition=true
 				m.warn("Original SetRate changed ADC Fs during capture: RAW retained, single-rate BIN export unavailable")
