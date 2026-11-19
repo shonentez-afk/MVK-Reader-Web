@@ -1259,6 +1259,10 @@ def install_modern_shell(win, main, panel, review, storage):
     # an empty source still must never render synthetic samples.
     win._apply_axes()
     win._apply_operator_ranges()
+    # There is no ADC at startup; even the EMPTY oscilloscope uses a
+    # signed acceleration axis, never a misleading 0..positive scale.
+    # No samples are fabricated or inferred by this blank redraw.
+    win._render_wave()
     from .cursor_overlay import install_measurement_cursors
     install_measurement_cursors(win)
     win._modern_installed = True

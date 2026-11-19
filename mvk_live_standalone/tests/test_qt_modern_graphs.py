@@ -528,6 +528,8 @@ def test_inspector_titlebar_close_can_be_restored_by_toolbar_menu_and_popup(widg
 def test_overview_blank_adc_rescales_both_time_axes_without_inventing_data(widget):
     w,_=widget
     assert w._gui_ring.channel(1) is None
+    assert w.overview_wave.viewRange()[1]==pytest.approx([-1.,1.],abs=1e-5)
+    assert w.wave.viewRange()[1]==pytest.approx([-1.,1.],abs=1e-5)
     w._overview_timebase.setCurrentIndex(
         w._overview_timebase.findData(.05))
     w._overview_time_y_width.setCurrentIndex(
