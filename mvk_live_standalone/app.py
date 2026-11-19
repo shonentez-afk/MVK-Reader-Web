@@ -1803,7 +1803,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.wave_stats.setText(message)
         self.wave_info.setText(
             f"Временной сигнал · АЦП {self.adc.currentData()} · "
-            f"нет отображаемой подтверждённой осциллограммы · {message}")
+            f"нет отображаемой подтверждённой осциллограммы · "
+            f"время в мс/с · уровень в м/с² · {message}")
         self._empty_wave_axes(requested)
 
     def _render_wave(self,*_):
