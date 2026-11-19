@@ -1175,7 +1175,7 @@ def install_modern_shell(win, main, panel, review, storage):
             else "Центральная частота полосы")
         win.time_filter_button.setVisible(mode in (
             "highpass", "lowpass", "bandpass"))
-        time_note.setText(notes.get(mode, "").replace(
+        time_note.setText(filter_notes.get(mode, "").replace(
             "спектр", "временной сигнал"))
     win.time_filter_choice.currentIndexChanged.connect(time_filter_visibility)
     time_filter_visibility()
