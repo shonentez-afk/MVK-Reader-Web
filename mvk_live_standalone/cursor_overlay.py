@@ -42,6 +42,10 @@ class MeasurementCursors(QtCore.QObject):
         self.a_seconds = -0.1
         self.b_seconds = -0.05
         self.bearing_hz = 100.0
+        # The Overview cursor tracks the strongest visible measured line
+        # until the operator explicitly picks a frequency. From then on,
+        # the chosen frequency is stable across incoming verified FFT frames.
+        self._overview_peak_manual = False
         self._busy = False
         self._comb_key = None
         self._comb_lines = []
@@ -193,6 +197,22 @@ class MeasurementCursors(QtCore.QObject):
         self.win.spec.addItem(self.b_spec)
         self.win.overview_spec.addItem(self.a_overview)
         self.win.overview_spec.addItem(self.b_overview)
+        # Compact, on-graph measured peak readout. Only the COMPLETE FFT
+        # drives its physical values, never the decimated rendered curve.
+        self.overview_peak_dot = pg.ScatterPlotItem(
+            size=10, pen=pg.mkPen(_A_COLOR, width=1.8),
+            brush=pg.mkBrush("#17212D"))
+        self.overview_peak_label = pg.TextItem(
+            text="", anchor=(0.5, 0),
+            color="#EBF1F7",
+            border=pg.mkPen("#61798C", width=1),
+            fill=pg.mkBrush(23, 33, 45, 228))
+        self.win.overview_spec.addItem(self.overview_peak_dot,
+                                       ignoreBounds=True)
+        self.win.overview_spec.addItem(self.overview_peak_label,
+                                       ignoreBounds=True)
+        self.overview_peak_dot.setData(x=[], y=[])
+        self.overview_peak_label.hide()
         self.a_time = _line(_A_COLOR)
         self.b_time = _line(_B_COLOR)
         self.a_time_overview = _line(_A_COLOR)
@@ -218,7 +238,8 @@ class MeasurementCursors(QtCore.QObject):
             lambda *_: self._spectrum_line_moved(self.a_overview, "a"))
         for first in (self.a_spec, self.a_overview):
             first.sigPositionChangeFinished.connect(
-                lambda *_: self._snap_primary_after_drag())
+                lambda *_args, item=first:
+                self._snap_primary_after_drag(item))
         self.b_spec.sigPositionChanged.connect(
             lambda *_: self._spectrum_line_moved(self.b_spec, "b"))
         self.b_overview.sigPositionChanged.connect(
@@ -252,8 +273,12 @@ class MeasurementCursors(QtCore.QObject):
                     shortcut.activated.connect(
                         lambda d=direction: self.step_time(d))
                 elif kind == "spectrum":
-                    shortcut.activated.connect(
-                        lambda d=direction: self.step_spectrum(d))
+                    if plot is self.win.overview_spec:
+                        shortcut.activated.connect(
+                            lambda d=direction: self.step_overview_peak(d))
+                    else:
+                        shortcut.activated.connect(
+                            lambda d=direction: self.step_spectrum(d))
         self.win.xscale.currentIndexChanged.connect(self.refresh_spectrum)
 
     def _mode_changed(self, *_):
@@ -320,19 +345,26 @@ class MeasurementCursors(QtCore.QObject):
         freq = self._view_to_freq(float(line.value()))
         if side == "a":
             self.a_hz = freq
+            self._overview_peak_manual = True
         else:
             self.b_hz = freq
         self.refresh_spectrum()
 
-    def _snap_primary_after_drag(self):
-        if not self._busy and self.mode.currentData() == "peak":
+    def _snap_primary_after_drag(self, source=None):
+        if self._busy:
+            return
+        if source is self.a_overview:
+            # Overview always snaps to measured local maxima on release.
+            self._set_spectrum_selection(self.a_hz, "a", snap_peak=True)
+        elif self.mode.currentData() == "peak":
             self._set_spectrum_selection(self.a_hz, "a")
 
-    def _set_spectrum_selection(self, freq: float, side=None):
+    def _set_spectrum_selection(self, freq: float, side=None, *,
+                                snap_peak=False):
         s = self._spec_data()
         if s is None or not math.isfinite(freq):
             return
-        if self.mode.currentData() == "peak":
+        if snap_peak or self.mode.currentData() == "peak":
             point = nearest_local_peak(s.hz, s.rms, freq)
         else:
             point = nearest_point(s.hz, s.rms, freq)
@@ -341,6 +373,7 @@ class MeasurementCursors(QtCore.QObject):
             self.b_hz = point.position
         else:
             self.a_hz = point.position
+            self._overview_peak_manual = True
         self.refresh_spectrum()
 
     def step_spectrum(self, amount: int):
@@ -354,6 +387,34 @@ class MeasurementCursors(QtCore.QObject):
         idx = max(0, min(len(s.hz)-1, idx + int(amount)))
         self._set_spectrum_selection(float(s.hz[idx]), side)
 
+    def step_overview_peak(self, amount: int):
+        """Arrows on Overview traverse REAL measured local peaks, not bins."""
+        s = self._spec_data()
+        if s is None or not amount:
+            return
+        # The same full-resolution samples drive the cursor and the chart.
+        indices = np.flatnonzero(
+            (s.rms[1:-1] > s.rms[:-2]) &
+            (s.rms[1:-1] >= s.rms[2:])) + 1
+        maximum = min(float(self.win.x_limit_choice.currentData()),
+                      float(s.hz[-1]))
+        indices = indices[(s.hz[indices] > 0) &
+                          (s.hz[indices] <= maximum)]
+        if not len(indices):
+            return
+        frequencies = s.hz[indices]
+        if amount > 0:
+            next_index = int(np.searchsorted(
+                frequencies, self.a_hz, side="right"))
+            chosen = min(len(indices)-1, next_index + abs(int(amount))-1)
+        else:
+            before = int(np.searchsorted(
+                frequencies, self.a_hz, side="left")) - 1
+            chosen = max(0, before - abs(int(amount)) + 1)
+        self.a_hz = float(frequencies[chosen])
+        self._overview_peak_manual = True
+        self.refresh_spectrum()
+
     def _plot_clicked(self, event, plot, kind):
         if event.button() != QtCore.Qt.MouseButton.LeftButton:
             return
@@ -365,11 +426,18 @@ class MeasurementCursors(QtCore.QObject):
         if not math.isfinite(position):
             return
         if kind == "spectrum":
-            side = (self.active.currentData() if self.mode.currentData()
-                    in ("dual", "band") else "a")
-            self._set_spectrum_selection(self._view_to_freq(position), side)
-            if side == "a" and self.mode.currentData() in ("dual", "band"):
-                self.active.setCurrentIndex(1)
+            if plot is self.win.overview_spec:
+                # A simple click on Overview must behave professionally:
+                # nearest local peak, irrespective of detailed cursor mode.
+                self._set_spectrum_selection(
+                    self._view_to_freq(position), "a", snap_peak=True)
+            else:
+                side = (self.active.currentData() if self.mode.currentData()
+                        in ("dual", "band") else "a")
+                self._set_spectrum_selection(
+                    self._view_to_freq(position), side)
+                if side == "a" and self.mode.currentData() in ("dual", "band"):
+                    self.active.setCurrentIndex(1)
         elif kind == "time":
             side = (self.time_active.currentData() if self.time_mode.currentData()
                     != "single" else "a")
@@ -384,9 +452,22 @@ class MeasurementCursors(QtCore.QObject):
         s = self._spec_data()
         if s is None:
             self._visible_spec(False)
+            self.overview_peak_dot.setData(x=[], y=[])
+            self.overview_peak_label.hide()
+            self._overview_peak_manual = False
             self.spec_readout.setText("Нет подтверждённого спектра")
             self._clear_comb()
             return
+        if not self._overview_peak_manual:
+            # At first measurement show the strongest REAL line in the
+            # visible frequency range. Do not fabricate an RMS or a peak.
+            maximum = min(float(self.win.x_limit_choice.currentData()),
+                          float(s.hz[-1]))
+            visible = np.flatnonzero((s.hz > 0) & (s.hz <= maximum) &
+                                   np.isfinite(s.rms))
+            if len(visible):
+                strongest = visible[int(np.argmax(s.rms[visible]))]
+                self.a_hz = float(s.hz[strongest])
         self.a_hz = float(np.clip(self.a_hz, s.hz[0], s.hz[-1]))
         self.b_hz = float(np.clip(self.b_hz, s.hz[0], s.hz[-1]))
         self._busy = True
@@ -431,7 +512,34 @@ class MeasurementCursors(QtCore.QObject):
         except ValueError as exc:
             text = str(exc)
         self.spec_readout.setText(text)
+        self._update_overview_peak(s, display)
         self._draw_comb(s)
+
+    def _update_overview_peak(self, s, display):
+        """In-graph frequency/amplitude at the SELECTED original FFT bin."""
+        try:
+            point = nearest_point(s.hz, display, self.a_hz)
+        except ValueError:
+            self.overview_peak_dot.setData(x=[], y=[])
+            self.overview_peak_label.hide()
+            return
+        index = point.index
+        local_max = (0 < index < len(s.rms)-1 and
+                     s.rms[index] > s.rms[index-1] and
+                     s.rms[index] >= s.rms[index+1])
+        units = ("дБ" if self.win.yscale.currentData() == "db"
+                 else self._unit(s))
+        self.overview_peak_label.setText(
+            f"{point.position:.5g} Гц\n"
+            f"{point.value:.5g} {units}"
+            + (" · пик" if local_max else " · линия"))
+        # The TextItem is in ViewBox coordinates, so log X needs log10 Hz;
+        # the ScatterPlotItem is a plotted data item and takes actual Hz.
+        self.overview_peak_label.setPos(
+            self._freq_to_view(point.position), point.value)
+        self.overview_peak_dot.setData(
+            x=[point.position], y=[point.value])
+        self.overview_peak_label.show()
 
     def _clear_comb(self):
         for plot, line in self._comb_lines:

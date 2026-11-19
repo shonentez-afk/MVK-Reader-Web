@@ -181,3 +181,71 @@ def test_adc_change_clears_old_spectrum_and_cursors_before_next_window(gui):
     assert not c.bearing_line.isVisible()
     assert "Нет подтверждённого спектра" in c.spec_readout.text()
     assert w._gui_ring.channel(2) is None
+
+
+def test_overview_click_always_snaps_to_measured_peak_with_in_plot_readout(gui):
+    from mvk_live_standalone.cursor_math import nearest_point
+    from mvk_live_standalone.vibration import vibration_plot_values
+    w,_=gui
+    _spectrum(w)
+    c=w._professional_cursors
+    # The detailed cursor remains in its initial simple-bin mode.
+    assert c.mode.currentData()=="single"
+    c._set_spectrum_selection(103., "a", snap_peak=True)
+    assert c.a_hz==pytest.approx(100., abs=1.)
+    assert c.a_overview.isVisible()
+    assert c.overview_peak_label.isVisible()
+    label=c.overview_peak_label.textItem.toPlainText()
+    expected=nearest_point(
+        w._spectrum.hz,
+        vibration_plot_values(w._spectrum,w.yscale.currentData(),
+                              reference=w.db_ref.currentData()),
+        c.a_hz)
+    assert f"{expected.position:.5g} Гц" in label
+    assert f"{expected.value:.5g}" in label
+    assert "м/с²" in label and "пик" in label
+    assert c.a_spec.value()==pytest.approx(c.a_overview.value())
+    assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+def test_overview_reads_actual_db_and_velocity_units_not_stale_vu(gui):
+    from mvk_live_standalone.vibration import (
+        analyze_vibration, vibration_plot_values)
+    from mvk_live_standalone.cursor_math import nearest_point
+    w,_=gui
+    x,fs=_spectrum(w)
+    c=w._professional_cursors
+    w.yscale.setCurrentIndex(w.yscale.findData("db"))
+    c._set_spectrum_selection(103., "a", snap_peak=True)
+    expected=nearest_point(
+        w._spectrum.hz, vibration_plot_values(
+            w._spectrum,"db",reference=w.db_ref.currentData()), c.a_hz)
+    label=c.overview_peak_label.textItem.toPlainText()
+    assert "дБ" in label and f"{expected.value:.5g}" in label
+    w.spectrum_view.setCurrentIndex(
+        w.spectrum_view.findData("linear_vs"))
+    w._spectrum=analyze_vibration(
+        x,fs,kind="velocity",mode="fft",nfft=8192)
+    w._render_spectrum()
+    c._set_spectrum_selection(103.,"a",snap_peak=True)
+    label=c.overview_peak_label.textItem.toPlainText()
+    assert "мм/с" in label and "дБ" not in label
+    assert c.a_hz==pytest.approx(100.,abs=1.)
+
+
+def test_overview_navigation_moves_between_peaks_and_clears_on_adc_change(gui):
+    w,_=gui
+    _spectrum(w)
+    c=w._professional_cursors
+    c._set_spectrum_selection(100.,"a",snap_peak=True)
+    c.step_overview_peak(1)
+    assert c.a_hz==pytest.approx(200.,abs=1.)
+    assert "200" in c.overview_peak_label.textItem.toPlainText()
+    c.step_overview_peak(-1)
+    assert c.a_hz==pytest.approx(100.,abs=1.)
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    assert w._spectrum is None
+    assert not c.overview_peak_label.isVisible()
+    assert not c.overview_peak_dot.points()
+    assert not c.a_overview.isVisible()
+    assert not c._overview_peak_manual
