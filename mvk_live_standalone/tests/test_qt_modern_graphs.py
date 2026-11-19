@@ -535,8 +535,11 @@ def test_overview_blank_adc_rescales_both_time_axes_without_inventing_data(widge
     for plot in (w.wave,w.overview_wave):
         assert plot.viewRange()[0]==pytest.approx([-.05,0.],abs=1e-5)
         assert plot.viewRange()[1]==pytest.approx([-5.,5.],abs=1e-5)
-    assert len(w.overview_wave_curve.getData()[0])==0
-    assert len(w.wave_curve.getData()[0])==0
+    for curve in (w.overview_wave_curve,w.wave_curve):
+        # pyqtgraph returns None, not an empty ndarray, for a curve
+        # which has never received even a test sample.
+        values=curve.getData()[0]
+        assert values is None or len(values)==0
     assert w._native.state()==w._native.ProcessState.NotRunning
 
 
