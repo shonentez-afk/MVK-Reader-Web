@@ -1057,3 +1057,43 @@ def test_time_scope_freeze_history_and_independent_y_axis(widget):
     w.freeze.setChecked(False)
     w._toggle_freeze(False)
     assert "Live" in w._modern_time_setup_info.text()
+
+
+
+def test_time_scope_manual_y_clipping_warns_but_never_clips_real_statistics(widget):
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w._render_wave()
+    full=w._cursor_time_samples.copy()
+    assert np.max(np.abs(full))>1.4
+    w.time_y_width.setCurrentIndex(w.time_y_width.findData(.5))
+    assert "ВНИМАНИЕ: масштаб ±0.5 м/с²" in w.wave_info.text()
+    assert "данные и расчёты не обрезаны" in w.wave_info.text()
+    np.testing.assert_array_equal(w._cursor_time_samples,full)
+    assert w.wave.viewRange()[1]==pytest.approx([-.5,.5])
+    assert w.overview_wave.viewRange()[1]==pytest.approx([-.5,.5])
+    assert "Пик 1.4142" in w.wave_stats.text()
+    w.time_y_width.setCurrentIndex(w.time_y_width.findData(None))
+    assert "ВНИМАНИЕ" not in w.wave_info.text()
+    assert w.wave.viewRange()[1][1]>1.4
+
+
+def test_time_scope_selected_adc_without_data_clears_old_source_and_cursor(widget):
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w._render_wave()
+    assert "Fs=8192" in w.wave_info.text()
+    assert "APP_DERIVED" in w.wave_stats.text()
+    assert w._cursor_time_samples is not None
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    w._render_wave()
+    assert "АЦП 2" in w.wave_info.text()
+    assert "нет отображаемой подтверждённой осциллограммы" in w.wave_info.text()
+    assert "Fs=8192" not in w.wave_info.text()
+    assert "ожидание подтверждённых АЦП" in w.wave_stats.text()
+    assert w._cursor_time_samples is None
+    for curve in (w.wave_curve,w.overview_wave_curve):
+        xx=curve.getData()[0]
+        assert xx is None or len(xx)==0
+    assert "Fs и реальные отсчёты не подтверждены" in (
+        w._modern_time_setup_info.text())

@@ -1792,6 +1792,17 @@ class LiveWindow(QtWidgets.QMainWindow):
                 plot.setXRange(-seconds,0.0,padding=0)
                 plot.setYRange(-height,height,padding=0)
 
+    def _time_unavailable(self,message,requested):
+        # Old sample-rate/provenance labels are as dangerous as stale curves
+        # after an ADC switch, invalid filter, or insufficient source.
+        self.wave_curve.setData([],[])
+        self._clear_overview_plot("time")
+        self.wave_stats.setText(message)
+        self.wave_info.setText(
+            f"Временной сигнал · АЦП {self.adc.currentData()} · "
+            f"нет отображаемой подтверждённой осциллограммы · {message}")
+        self._empty_wave_axes(requested)
+
     def _render_wave(self,*_):
         refresh=getattr(self,"_modern_refresh_time_setup",None)
         if refresh is not None:
@@ -1799,11 +1810,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         requested=float(self.timebase.currentData())
         if self.freeze.isChecked() and self._freeze_samples is not None:
             if self.adc.currentData()!=self._freeze_channel:
-                self.wave_curve.setData([],[])
-                self._clear_overview_plot("time")
-                self.wave_stats.setText(
-                    "В замороженном сигнале выбран другой канал АЦП")
-                self._empty_wave_axes(requested)
+                self._time_unavailable(
+                    "В замороженном сигнале выбран другой канал АЦП",
+                    requested)
                 return
             fs=self._freeze_rate
             offset=int(round(self.history.value()*fs))
@@ -1812,19 +1821,16 @@ class LiveWindow(QtWidgets.QMainWindow):
         else:
             ch=self._gui_ring.channel(self.adc.currentData())
             if ch is None or ch.available==0:
-                self.wave_curve.setData([],[])
-                self._clear_overview_plot("time")
-                self.wave_stats.setText(
-                    "Временной сигнал: ожидание подтверждённых АЦП Float32")
-                self._empty_wave_axes(requested)
+                self._time_unavailable(
+                    "Временной сигнал: ожидание подтверждённых АЦП Float32",
+                    requested)
                 return
             fs=ch.rate_hz
             data=ch.latest(min(ch.available,262144))
-        if fs<=0 or len(data)==0:
-            self.wave_curve.setData([],[])
-            self._clear_overview_plot("time")
-            self.wave_stats.setText("Нет допустимых отсчётов выбранного АЦП")
-            self._empty_wave_axes(requested)
+        if fs<=0 or len(data)<2:
+            self._time_unavailable(
+                "Недостаточно подтверждённых отсчётов выбранного АЦП "
+                "(требуется минимум два)",requested)
             return
         # Only genuine ring samples: do not extend a 4-s packet to a
         # requested 30-s scope or assume a missing sample rate.
@@ -1833,10 +1839,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         if mode=="original_preset":
             selected=self.time_filter_center.currentData()
             if not isinstance(selected,tuple) or len(selected)!=2:
-                self.wave_curve.setData([],[])
-                self._clear_overview_plot("time")
-                self.wave_stats.setText("Выберите полосу из меню MVKView")
-                self._empty_wave_axes(requested)
+                self._time_unavailable(
+                    "Выберите полосу из меню MVKView",requested)
                 return
             filter_mode,filter_center=selected
         else:
@@ -1854,10 +1858,8 @@ class LiveWindow(QtWidgets.QMainWindow):
                 center=filter_center)
             physical=processed[-n:]
         except ValueError as exc:
-            self.wave_curve.setData([],[])
-            self._clear_overview_plot("time")
-            self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
-            self._empty_wave_axes(requested)
+            self._time_unavailable(
+                f"Временной сигнал / фильтр: {exc}",requested)
             return
         # Cursor measurements read the COMPLETE locally filtered physical window.
         # Screen min/max decimation below never changes cursor amplitudes/intervals.
@@ -1908,6 +1910,16 @@ class LiveWindow(QtWidgets.QMainWindow):
             f"Fs={fs} Гц · просмотр {available_seconds:g} с · "
             f"{len(physical)} реальных отсчётов · {info} · "
             f"откалиброван Native Go ×FRange один раз{cropped}")
+        manual_height=self.time_y_width.currentData()
+        physical_peak=float(np.max(np.abs(physical)))
+        if manual_height is not None and physical_peak>manual_height:
+            # Clipping is DISPLAY ONLY. All signal and statistical values
+            # still use the full un-clipped physically calibrated waveform.
+            self.wave_info.setText(
+                self.wave_info.text()+
+                f" · ВНИМАНИЕ: масштаб ±{manual_height:g} м/с² "
+                f"скрывает пики до {physical_peak:.5g} м/с²; "
+                "данные и расчёты не обрезаны")
         if physical.size>=2:
             m=summarize_time_window(physical,int(fs))
             crest=(f"{m.crest_ac:.3g}" if m.crest_ac is not None
