@@ -28,8 +28,8 @@ func TestSourceOriginalLiveFRange1IsNotNativeBINGain(t *testing.T){
     defer m.CloseFiles()
     m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
     if e=m.EnableLiveBinSpool();e!=nil{t.Fatal(e)}
-    if m.liveBin.sourceOriginalStorage!=nil {
-        t.Fatal("forensic BIN-gain spool must NEVER own original live ring")
+    if m.sourceOriginalStorage.receipt().Channels[0].RxPos!=0{
+        t.Fatal("source original ring unexpectedly already received samples")
     }
     frames:=makeFixture()
     // Initial all-register PARAM has ADC1 gain=510, not FRange=1.

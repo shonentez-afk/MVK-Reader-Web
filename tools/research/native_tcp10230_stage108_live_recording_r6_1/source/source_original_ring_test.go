@@ -151,41 +151,56 @@ func TestOriginalSourceRingMonitorReceivesAndProvesAllTenChannels(t *testing.T) 
 }
 
 
-func TestOriginalRingAndCalibratedSpoolUseIdenticalAcceptedFloat32Bytes(t *testing.T) {
-    // 0080828C calls ProcessBufferChunk after the verified ADC packet.
-    // Our Native calibrated spool is already gain-applied; inserting it
-    // into the new original ring must never apply a second FRange.
+func TestReconstructedCalibratedSpoolCannotWriteOriginalFloat32Ring(t *testing.T) {
+    // No sourceOriginalStorage pointer exists on LiveBinSpool anymore.
+    // Source original bTaskConnectClick FRange1 storage must be written
+    // ONLY by Monitor.consume after the original rate/Freeze gate.
     r:=newSourceOriginalStorageRing()
-    spool:=&LiveBinSpool{begun:true,sourceOriginalStorage:r}
-    f,e:=os.Create(filepath.Join(t.TempDir(),"verified_adc1.partial"))
-    if e!=nil {t.Fatal(e)}
+    spool:=&LiveBinSpool{begun:true}
+    f,e:=os.Create(filepath.Join(t.TempDir(),"forensic_adc1.partial"))
+    if e!=nil{t.Fatal(e)}
     defer f.Close()
     spool.files[0]=f
     spool.digest[0]=sha256.New()
     spool.gain[0]=2.0
     payload:=make([]byte,1052)
-    for i:=0;i<256;i++ {
+    for i:=0;i<256;i++{
         binary.LittleEndian.PutUint32(payload[28+i*4:],
             math.Float32bits(1.25))
     }
-    header:=SampleHeader{Channel:0,Rate:65536,Index:0xFFFFFF00,Samples:256}
-    if e:=spool.adcFrame(Frame{Type:typeADC,Raw:payload},header);e!=nil {
+    h:=SampleHeader{Channel:0,Rate:65536,Index:0xFFFFFF00,Samples:256}
+    if e:=spool.adcFrame(Frame{Type:typeADC,Raw:payload},h);e!=nil{
+        t.Fatal(e)
+    }
+    if r.receipt().Channels[0].RxPos!=0 {
+        t.Fatal("Native forensic spool wrote original live ring implicitly")
+    }
+    if e=r.appendFrame(h,payload[28:],sourceStorageOriginalLiveADC);e!=nil{
         t.Fatal(e)
     }
     win,e:=r.window(0,0,256)
-    if e!=nil {t.Fatal(e)}
-    if e:=f.Sync();e!=nil {t.Fatal(e)}
-    disk,e:=os.ReadFile(f.Name())
-    if e!=nil {t.Fatal(e)}
-    if !bytes.Equal(disk,win) {
-        t.Fatal("full original Float32 ring changed the verified calibrated BIN spool")
+    if e!=nil{t.Fatal(e)}
+    if !bytes.Equal(win,payload[28:]){
+        t.Fatal("original live ring differs from full wire Float32 payload")
     }
-    if got:=math.Float32frombits(binary.LittleEndian.Uint32(win));got!=2.5 {
-        t.Fatalf("source range applied zero/two times: %f",got)
+    if e:=f.Sync();e!=nil{t.Fatal(e)}
+    disk,e:=os.ReadFile(f.Name())
+    if e!=nil{t.Fatal(e)}
+    if bytes.Equal(disk,win) {
+        t.Fatal("two independent source/forensic domains merged")
+    }
+    if got:=math.Float32frombits(binary.LittleEndian.Uint32(win));got!=1.25 {
+        t.Fatalf("source live FRange1 applied exporter gain: %f",got)
+    }
+    if got:=math.Float32frombits(binary.LittleEndian.Uint32(disk));got!=2.5 {
+        t.Fatalf("forensic exporter lost gain: %f",got)
     }
     info:=r.receipt().Channels[0]
-    if info.Domain!=sourceStorageCalibratedADC ||
-       info.RxPos!=256 || info.NextDeviceIndex==nil || *info.NextDeviceIndex!=0 {
-        t.Fatalf("lost independent uint32/uint64 original cursor: %+v",info)
+    if info.Domain!=sourceStorageOriginalLiveADC ||
+        info.OriginalLiveFRangeSingle==nil ||
+        *info.OriginalLiveFRangeSingle!=1 ||
+        info.RxPos!=256 || info.NextDeviceIndex==nil ||
+        *info.NextDeviceIndex!=0{
+        t.Fatalf("lost original source FRange/RxPos evidence %+v",info)
     }
 }

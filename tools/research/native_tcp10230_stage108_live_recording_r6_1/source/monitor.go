@@ -213,11 +213,9 @@ func (m *Monitor) EnableLiveBinSpool() error {
 	if err != nil {
 		return err
 	}
-    // This spool is a FORENSIC reconstructed BIN candidate with register
-    // gains, not the original live TMvkChannelStorage.FRange. Original
-    // bTaskConnectClick creates ADC storage with FRange=1.0. Never let
-    // the unrelated BIN gain contaminate its 2**21 GetSignal ring.
-    stager.sourceOriginalStorage=nil
+    // FORENSIC reconstructed BIN and original Float32 ring are now
+    // separate by type: LiveBinSpool no longer holds any original ring
+    // pointer and cannot overwrite live ProcessBufferChunk(FRange=1).
 	m.liveBin = stager
 	m.note("Live calibrated BIN spool enabled: partial files never published before verification")
 	return nil
@@ -446,7 +444,6 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
         }
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
-            m.liveBin.sourceOriginalStoreBlocked=!sourceStoreAllowed
 			// Original mRate1Click permits rate changes. Keep every subsequent
 			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
 			// corrupt TCP. Existing single-rate BIN cannot certify this session.

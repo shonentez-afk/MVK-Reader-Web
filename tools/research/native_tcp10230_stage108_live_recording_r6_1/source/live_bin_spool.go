@@ -29,8 +29,6 @@ type LiveBinSpool struct {
 	files       [8]*os.File
 	digest      [8]hash.Hash
 	preview     *LivePreviewBuffer // Stage111Z26B opt-in, receives exact accepted bytes
-    sourceOriginalStorage *sourceOriginalStorageRing // 2^21, no per-tick ZIP copies
-    sourceOriginalStoreBlocked bool // false by default for old offline forensic/tests
 }
 
 func newLiveBinSpool(runDir string) (*LiveBinSpool, error) {
@@ -117,13 +115,10 @@ func (s *LiveBinSpool) adcFrame(f Frame, h SampleHeader) error {
 	_, _ = s.digest[ch].Write(bytesOut[:])
 	s.samples[ch] += uint64(h.Samples)
 	s.next[ch] = h.Index + uint32(h.Samples)
-    // Real original float32 storage, after the verified calibrated spool
-    // write; Go captures exactly the SAME already-scaled bytes. Original
-    // GetSignal must not apply FRange a second time to this domain.
-    if s.sourceOriginalStorage != nil && !s.sourceOriginalStoreBlocked {
-        if e:=s.sourceOriginalStorage.appendFrame(
-            h,bytesOut[:],sourceStorageCalibratedADC);e!=nil{return e}
-    }
+    // This exporter uses a reconstructed per-register gain. Its Float32
+    // bytes are NOT the original TMvkChannelStorage.ProcessBufferChunk
+    // domain (the live original constructor FRange is 1.0).
+    // Never write the original ring here, even under test.
 	// AFTER original spool write and digest: no preview may change a BIN byte.
 	if s.preview != nil {
 		if e := s.preview.appendCalibratedADC(h, bytesOut[:]); e != nil {

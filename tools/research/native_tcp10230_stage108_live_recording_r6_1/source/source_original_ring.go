@@ -15,8 +15,9 @@ package main
 // The on-wire TACH has 64 Float32 words = 256 raw bytes. Original TACH
 // storage is BYTE (data type 2): RxPos advances by 256 bytes, while its
 // device sample Index advances by 64. Those positions are NOT interchangeable.
-// The Float32 domain comes from the already-verified calibrated spool when
-// available, otherwise raw device Float32 bits are kept with a distinct label.
+// Original live Float32 comes ONLY from the admitted wire payload after
+// ProcessBufferChunk(FRange=1.0). The separately reconstructed BIN exporter
+// may use device register gain but cannot write this source GetSignal ring.
 // No TCP, device commands, periodic 64 MiB GUI snapshots or extra disk writes.
 import (
     "errors"
