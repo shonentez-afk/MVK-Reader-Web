@@ -246,6 +246,6 @@ def test_overview_navigation_moves_between_peaks_and_clears_on_adc_change(gui):
     w.adc.setCurrentIndex(w.adc.findData(2))
     assert w._spectrum is None
     assert not c.overview_peak_label.isVisible()
-    assert not c.overview_peak_dot.points()
+    assert len(c.overview_peak_dot.points()) == 0
     assert not c.a_overview.isVisible()
     assert not c._overview_peak_manual
