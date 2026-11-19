@@ -1,3 +1,5 @@
+> **19.11.2026 — ФИНАЛЬНАЯ ПРОГРАММНАЯ ПРИЁМКА FIR/source ring:** код [`f1d88fc`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f1d88fc024e633c67b74b371169fdf466c62c4d4) — [Actions #44436325996](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44436325996), **5/5 PASS**: Linux Go source ring/RAW/export, Linux Core 2486, Windows Core/Qt 2722, Windows QPA DPI100/150, автономный Windows EXE 69 433 230 байт до 03.12.2026. Исправлены неправильные тестовые ожидания старой FIR-истории (`GetSignal` Code20: 20мс HTag → 1310+51=1361 входных → 655 выходных), точные оригинальные пункты `bSpecLines` и временной курсор. Численный оригинальный Delphi/x87 и живой FIR GetSignal остаются НЕ принятыми; `original_delphi_compatibility_verified=false`. Это подтверждение локальной реализации, не аппаратный 1:1.
+
 # Единая цепочка MVK01 LIVE: bSpecLines (pre-FIR) → исходное кольцо Go → I/Q FIR → FFT
 
 Дата 19.11.2026. Ветка research/stage111-mvkview-desktop-20261029.
