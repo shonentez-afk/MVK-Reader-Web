@@ -3093,8 +3093,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         if self.xscale.currentData()=="log":
             xmin,xmax=math.log10(xmin),math.log10(xmax)
         self._manual_spec_axes=(xmin,xmax,ymin,ymax)
-        self.spec.setXRange(xmin,xmax,padding=0)
-        self.spec.setYRange(ymin,ymax,padding=0)
+        # The detailed FFT and the Overview reference the SAME physical
+        # displayed quantity. Do not wait for a later RX frame to synchronize
+        # a manually edited axis (including log10-Hz ViewBox coordinates).
+        for plot in (self.spec,getattr(self,"overview_spec",None)):
+            if plot is not None:
+                plot.setXRange(xmin,xmax,padding=0)
+                plot.setYRange(ymin,ymax,padding=0)
         self.status.setText("Ручной масштаб сохранён до явного автомасштаба")
 
     def showEvent(self,event):

@@ -831,3 +831,50 @@ def test_fft_smoothing_enforces_odd_width_even_when_typed_directly(widget):
     w.analysis.setCurrentIndex(w.analysis.findData("welch"))
     assert not w.smooth.isEnabled()
     assert w._modern_spectrum_smoothing_row.isHidden()
+
+
+
+def test_spectrum_db_reference_changes_actual_curve_by_120_db_not_just_label(widget):
+    from mvk_live_standalone.vibration import (
+        analyze_vibration, vibration_plot_values)
+    w,_=widget
+    fs,n=8192,8192
+    source=np.sqrt(2)*np.sin(
+        2*math.pi*100*np.arange(n,dtype=np.float64)/fs)
+    w.nfft.setCurrentIndex(w.nfft.findData(n))
+    w._spectrum=analyze_vibration(
+        source,fs,kind="acceleration",mode="fft",nfft=n)
+    w._render_spectrum()
+    assert w.yscale.currentData()=="db"
+    _,before=w.overview_spec_curve.getData()
+    assert np.isfinite(before).all()
+    w.db_ref.setCurrentIndex(w.db_ref.findData("unit"))
+    _,after=w.overview_spec_curve.getData()
+    np.testing.assert_allclose(after-before,-120.,atol=1e-8)
+    np.testing.assert_allclose(
+        after,vibration_plot_values(w._spectrum,"db",reference="unit"))
+    assert "1 м/с²" in w.overview_spec.getPlotItem().getAxis(
+        "left").label.toPlainText()
+    assert w._spectrum.kind=="acceleration"
+    assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+def test_spectrum_manual_axis_dialog_immediately_updates_overview(widget,monkeypatch):
+    from PySide6 import QtWidgets
+    w,_=widget
+    w.yscale.setCurrentIndex(w.yscale.findData("linear"))
+    def submit(dialog):
+        boxes=dialog.findChildren(QtWidgets.QDoubleSpinBox)
+        assert len(boxes)==4
+        for box,value in zip(boxes,[20.,200.,0.,3.]):
+            box.setValue(value)
+        return QtWidgets.QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QtWidgets.QDialog,"exec",submit)
+    w._edit_axes()
+    for plot in (w.spec,w.overview_spec):
+        assert plot.viewRange()[0]==pytest.approx([20.,200.],abs=1e-5)
+        assert plot.viewRange()[1]==pytest.approx([0.,3.],abs=1e-5)
+    assert w._manual_spec_axes==(20.,200.,0.,3.)
+    w._reset_spectrum_axis()
+    assert w._manual_spec_axes is None
+    assert w.spec.viewRange()[0]==w.overview_spec.viewRange()[0]

@@ -1105,6 +1105,13 @@ def install_modern_shell(win, main, panel, review, storage):
         win.filter_button.setVisible(filter_mode in (
             "highpass", "lowpass", "bandpass"))
         filter_text = filter_notes.get(filter_mode, "Неизвестный фильтр.")
+        if filter_mode not in ("none", "notch50", "notch60"):
+            try:
+                # Display ACTUAL edges/centre instead of only a generic
+                # definition: the operator must see what changed.
+                filter_text = win._filter_description() + " · " + filter_text
+            except (ValueError,TypeError):
+                pass  # invalid source/fs is reported explicitly below
         if fs is not None and fs > 0:
             try:
                 settings = win._read_settings()
