@@ -863,7 +863,8 @@ class OriginalRootShell:
         self.status_page.setProperty(
             "sourceLivePageStatusParamEvidence",
             result.receipt() if self.window._live_active and
-            1<=index<=14 else None)
+            1<=index<=14 and result.provenance.startswith("SOURCE_LIVE_")
+            else None)
         name=result.table_name
         # The original 4 TStringGrid objects have distinct identities and
         # visibility. Keep inactive grids empty to block stale AUX/VALUES.
