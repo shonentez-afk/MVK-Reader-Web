@@ -690,6 +690,7 @@ def test_spectrum_panel_physical_modes_and_controls_are_honest(widget):
     assert w.y_height_choice.isEnabled()
     w.analysis.setCurrentIndex(w.analysis.findData("envelope"))
     assert w.kind.currentData()=="acceleration"
+    assert not w.kind.isEnabled()
     assert not w._modern_spectrum_envelope_row.isHidden()
     assert w._modern_spectrum_smoothing_row.isHidden()
     w.kind.setCurrentIndex(w.kind.findData("velocity"))

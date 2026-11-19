@@ -1062,6 +1062,9 @@ def install_modern_shell(win, main, panel, review, storage):
         win.y_height_choice.setEnabled(mode == "fft")
         smoothing_row.setVisible(mode == "fft")
         win.smooth.setEnabled(mode == "fft")
+        # Hilbert envelope is only calculated from acceleration. The
+        # quantity selector cannot offer unsupported velocity/displacement.
+        win.kind.setEnabled(mode != "envelope")
         scale_note.setText(
             "Плотность мощности PSD, амплитудная плотность ASD и "
             "СКЗ третьоктавных полос имеют собственные единицы; "

@@ -103,17 +103,17 @@ def test_no_unsupported_envelope_in_velocity_mode_and_manual_source_label(app):
         _complete(widget,app)
         assert widget._spectrum is not None and widget._spectrum.mode=="envelope"
         assert widget._spectrum.peak[0]==pytest.approx(50,abs=1)
-        widget.kind.setCurrentIndex(1)
-        assert widget._spectrum is None
-        # Envelopes are only physically defined and labeled as VU here.
-        widget._schedule_fft()
-        if widget._future is not None:
-            try:
-                widget._future.result(timeout=6)
-            except ValueError:
-                pass
-            widget._collect_analysis()
-        assert widget._spectrum is None
+        # An unsupported programmatic choice must revert to acceleration;
+        # the real envelope already computed remains a valid VU result.
+        assert not widget.kind.isEnabled()
+        widget.kind.setCurrentIndex(widget.kind.findData("velocity"))
+        assert widget.kind.currentData()=="acceleration"
+        assert widget._spectrum is not None
+        assert widget._spectrum.kind=="acceleration"
+        assert widget._spectrum.mode=="envelope"
+        assert widget._spectrum.peak[0]==pytest.approx(50,abs=1)
+        widget.analysis.setCurrentIndex(widget.analysis.findData("fft"))
+        assert widget.kind.isEnabled()
         widget.rpm.setValue(1500)
         assert widget._marker_lines
     finally:
