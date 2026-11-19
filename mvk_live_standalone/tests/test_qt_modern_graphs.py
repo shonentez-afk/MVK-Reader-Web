@@ -66,9 +66,10 @@ def test_operator_labels_describe_real_quantities_not_x_y(widget):
     inspector_labels = [item.text() for item in
                         w._modern_inspector.findChildren(QtWidgets.QLabel)]
     for required in (
-        "Шкала значений", "Частотная шкала", "Показывать частоты до",
-        "Масштаб спектра", "Развёртка времени",
-        "Масштаб виброускорения", "Фильтр временного сигнала",
+        "Амплитуда · линейно или дБ",
+        "Частота · линейно или логарифмически",
+        "Предел частоты, Гц", "Развёртка времени",
+        "Масштаб виброускорения", "Тип фильтра",
     ):
         assert required in inspector_labels
     assert not any(re.search(r"(?<![A-Za-zА-Яа-я])[XY](?![A-Za-zА-Яа-я])", label)
@@ -313,3 +314,80 @@ def test_bearing_source_must_be_explicit_and_large_fft_needs_new_capture(widget)
     w.adc.setCurrentIndex(w.adc.findData(2))
     assert not _pin_method_source(w,"bearing",child)
     assert w._modern_method_pins["bearing"] is old_pin
+
+
+
+def test_overview_has_only_quick_settings_and_tab_owns_inspector(widget):
+    w,_=widget
+    assert w.views.currentWidget() is w.overview_page
+    assert w._modern_inspector.currentIndex()==2
+    assert "Обзор" in w._modern_inspector_dock.windowTitle()
+    assert w._overview_kind.currentData()==w.kind.currentData()
+    assert w._overview_yscale.currentData()==w.yscale.currentData()
+    assert w._overview_frequency_limit.currentData()==w.x_limit_choice.currentData()
+    assert w._overview_timebase.currentData()==w.timebase.currentData()
+    # Legacy one-click graph interaction never opens the detailed inspector.
+    from mvk_live_standalone.modern_shell import _chart_focus, _focus_inspector
+    _chart_focus(w,"spectrum")
+    assert w.views.currentWidget() is w.overview_page
+    assert w._modern_inspector.currentIndex()==2
+    _focus_inspector(w,"spectrum")
+    assert w.views.currentWidget() is w.spectrum_page
+    assert w._modern_inspector.currentIndex()==0
+    assert "Спектр" in w._modern_inspector_dock.windowTitle()
+    w.views.setCurrentWidget(w.wave_page)
+    assert w._modern_inspector.currentIndex()==1
+    assert "Временной сигнал" in w._modern_inspector_dock.windowTitle()
+    w.views.setCurrentWidget(w.calculated_page)
+    assert w._modern_inspector_dock.isHidden()
+    w.views.setCurrentWidget(w.overview_page)
+    assert w._modern_inspector.currentIndex()==2
+    assert not w._modern_inspector_dock.isHidden()
+
+
+def test_overview_quick_controls_reuse_exact_main_processing_values(widget):
+    w,_=widget
+    assert w.adc.count()==8 and w.dsp_adc.isHidden()
+    before_filter=(w.filter_choice.currentData(),
+                   w.time_filter_choice.currentData())
+    w._overview_kind.setCurrentIndex(
+        w._overview_kind.findData("velocity"))
+    assert w.kind.currentData()=="velocity"
+    w.kind.setCurrentIndex(w.kind.findData("displacement"))
+    assert w._overview_kind.currentData()=="displacement"
+    w._overview_yscale.setCurrentIndex(
+        w._overview_yscale.findData("linear"))
+    assert w.yscale.currentData()=="linear"
+    w._overview_frequency_limit.setCurrentIndex(
+        w._overview_frequency_limit.findData(4000))
+    assert w.x_limit_choice.currentData()==4000
+    w._overview_timebase.setCurrentIndex(
+        w._overview_timebase.findData(.5))
+    assert w.timebase.currentData()==.5
+    assert (w.filter_choice.currentData(),
+            w.time_filter_choice.currentData())==before_filter
+
+
+def test_filters_are_grouped_and_spectrum_and_time_have_independent_scopes(widget):
+    from PySide6 import QtWidgets
+    w,_=widget
+    assert w.filter_choice.itemText(
+        w.filter_choice.findData("original_preset")
+    ).startswith("Меню MVKView")
+    assert w.filter_choice.itemText(
+        w.filter_choice.findData("third_octave")
+    ).startswith("1/3 октавы")
+    assert w.filter_choice.itemText(0)=="Без фильтра"
+    assert w.time_filter_choice.itemText(0)=="Без фильтра"
+    spectrum_pane=w._modern_inspector.widget(0)
+    assert w.spectrum_view not in spectrum_pane.findChildren(QtWidgets.QComboBox)
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("highpass"))
+    assert "спектра" in w._overview_spectrum_filter_note.text()
+    assert w.time_filter_choice.currentData()=="none"
+    w.time_filter_choice.setCurrentIndex(
+        w.time_filter_choice.findData("third_octave"))
+    assert w.filter_choice.currentData()=="highpass"
+    assert w.time_filter_center.count()==43
+    assert "времени" in w._overview_time_filter_note.text()
+    assert w._modern_inspector.widget(0).findChild(
+        QtWidgets.QToolButton) is not None

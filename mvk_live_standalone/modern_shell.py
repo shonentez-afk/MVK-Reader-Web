@@ -81,6 +81,91 @@ def _title(text):
     return lab
 
 
+def _hint(text):
+    label = QtWidgets.QLabel(text)
+    label.setWordWrap(True)
+    label.setProperty("helpText", True)
+    return label
+
+
+def _filter_selector_for_operators(combo):
+    """Readable display groups over the existing filter keys and DSP logic.
+
+    Keep every legacy filter available; the MVKView nomenclature is grouped
+    under compatibility instead of being confused with the normal workflow.
+    """
+    selected = combo.currentData()
+    groups = (
+        (
+            ("Без фильтра", "none",
+             "Пропускать исходный подтверждённый сигнал без локального фильтра."),
+            ("ФВЧ · высокочастотный", "highpass",
+             "Оставить частоты выше указанной нижней границы."),
+            ("ФНЧ · низкочастотный", "lowpass",
+             "Оставить частоты ниже указанной верхней границы."),
+            ("Полосовой · диапазон частот", "bandpass",
+             "Оставить полосу от нижней до верхней границы."),
+            ("Режектор 50 Гц", "notch50",
+             "Только вручную: частота 50 Гц может быть полезным признаком вибрации."),
+            ("Режектор 60 Гц", "notch60",
+             "Только вручную: частота 60 Гц может быть полезным признаком вибрации."),
+        ),
+        (
+            ("1/1 октавы · фильтр сигнала", "octave",
+             "Локальная полосовая фильтрация; не режим 1/3-октавного спектра."),
+            ("1/3 октавы · фильтр сигнала", "third_octave",
+             "Локальная полосовая фильтрация; не приборные данные AUX4700."),
+            ("2 октавы · фильтр сигнала", "double_octave",
+             "Локальная полосовая фильтрация до расчёта."),
+        ),
+        (
+            ("Меню MVKView · 32 полосы", "original_preset",
+             "Исторические названия полос; локальный фильтр, не OEM FIR."),
+        ),
+    )
+    with QtCore.QSignalBlocker(combo):
+        combo.clear()
+        for pos, group in enumerate(groups):
+            if pos:
+                combo.insertSeparator(combo.count())
+            for label, key, tooltip in group:
+                combo.addItem(label, key)
+                combo.setItemData(
+                    combo.count() - 1, tooltip,
+                    QtCore.Qt.ItemDataRole.ToolTipRole)
+        index = combo.findData(selected)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+
+
+def _mirror_control(source, column, label):
+    """Overview proxy: one shared settings state, no parallel DSP settings."""
+    proxy = QtWidgets.QComboBox()
+    for index in range(source.count()):
+        proxy.addItem(source.itemText(index), source.itemData(index))
+    proxy.setCurrentIndex(source.currentIndex())
+    def source_changed(index):
+        with QtCore.QSignalBlocker(proxy):
+            proxy.setCurrentIndex(index)
+    def quick_changed(index):
+        if index >= 0 and index != source.currentIndex():
+            source.setCurrentIndex(index)
+    source.currentIndexChanged.connect(source_changed)
+    proxy.currentIndexChanged.connect(quick_changed)
+    _field(column, label, proxy)
+    return proxy
+
+
+def _quick_card(title, subtitle):
+    frame = QtWidgets.QFrame()
+    frame.setObjectName("quickSettingsCard")
+    layout = QtWidgets.QVBoxLayout(frame)
+    layout.setContentsMargins(10, 10, 10, 10)
+    layout.setSpacing(8)
+    layout.addWidget(_title(title))
+    layout.addWidget(_hint(subtitle))
+    return frame, layout
+
+
 def apply_theme(win, theme="system"):
     if theme not in ("system", "dark", "light"):
         theme = "system"
@@ -126,6 +211,11 @@ def apply_theme(win, theme="system"):
         QFrame#kpiCard { background-color: %(panel)s;
              border-radius: 8px; border: 1px solid %(border)s; }
         QFrame#kpiCard QLabel { background: transparent; border: none; }
+        QFrame#quickSettingsCard {
+            background-color: %(panel)s; border-radius: 8px;
+            border: 1px solid %(border)s; }
+        QFrame#quickSettingsCard QLabel { background: transparent; }
+        QLabel[helpText="true"] { color: %(muted)s; font-size: 12px; }
     """ % c)
     for plot in (getattr(win, "spec", None),
                  getattr(win, "wave", None),
@@ -509,9 +599,29 @@ def _build_menu(win):
         "Дополнительные методы APP_DERIVED; это не автоматически поставленный диагноз."))
 
 
+def _sync_inspector_for_tab(win):
+    """Always label the settings by their owning tab/physical domain."""
+    active = win.views.currentWidget()
+    mapping = (
+        (win.overview_page, 2, "Обзор · быстрые настройки"),
+        (win.spectrum_page, 0, "Спектр · настройки частотного графика"),
+        (win.wave_page, 1, "Временной сигнал · настройки осциллограммы"),
+    )
+    for page, index, title in mapping:
+        if active is page:
+            win._modern_inspector.setCurrentIndex(index)
+            win._modern_inspector_dock.setWindowTitle(title)
+            win._modern_inspector_dock.show()
+            return
+    # The calculated-data page has no active FFT/time processing controls.
+    win._modern_inspector_dock.hide()
+
+
 def _focus_inspector(win, kind):
-    win._modern_inspector.setCurrentIndex(0 if kind == "spectrum" else 1)
-    win._modern_inspector_dock.show()
+    target = win.spectrum_page if kind == "spectrum" else win.wave_page
+    if win.views.currentWidget() is not target:
+        win.views.setCurrentWidget(target)
+    _sync_inspector_for_tab(win)
     win._modern_inspector_dock.raise_()
 
 
@@ -551,7 +661,13 @@ def _refresh_status(win):
                 label.setText("—")
 
 
-def _chart_focus(win, kind):
+def _chart_focus(win, kind, event=None):
+    # A single click in the overview belongs to cursors/graph interaction.
+    # A double click, or its explicit details button, opens the owning tab.
+    if win.views.currentWidget() is win.overview_page:
+        if event is not None and event.double():
+            _focus_inspector(win, kind)
+        return
     _focus_inspector(win, kind)
 
 
@@ -689,72 +805,119 @@ def install_modern_shell(win, main, panel, review, storage):
     inspector.setMinimumWidth(0)
     inspector.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
                             QtWidgets.QSizePolicy.Policy.Preferred)
+    # Filters are grouped by their physical purpose instead of a flat list.
+    # This changes only labels and choice order, never the existing values.
+    _filter_selector_for_operators(win.filter_choice)
+    _filter_selector_for_operators(win.time_filter_choice)
+
     spectrum_panel = QtWidgets.QWidget()
     spectrum_panel.setMinimumWidth(0)
     spectrum_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
                                  QtWidgets.QSizePolicy.Policy.Preferred)
     ss = QtWidgets.QVBoxLayout(spectrum_panel)
     ss.setContentsMargins(12, 12, 12, 12)
-    ss.setSpacing(10)
-    ss.addWidget(_title("Спектр"))
+    ss.setSpacing(9)
+    ss.addWidget(_title("СПЕКТР · частотная область"))
+    ss.addWidget(_hint(
+        "Эти настройки управляют FFT / PSD / ASD выбранного АЦП и верхним "
+        "графиком обзора. Временной сигнал имеет собственные параметры."))
+    ss.addWidget(_title("Отображение спектра"))
     basic = QtWidgets.QVBoxLayout()
     basic.setSpacing(9)
     for label, widget in (
-        ("Величина", win.kind),
-        ("Анализ", win.analysis),
-        ("Шкала значений", win.yscale),
-        ("Частотная шкала", win.xscale),
-        ("Показывать частоты до", win.x_limit_choice),
-        ("Масштаб спектра", win.y_height_choice),
-        ("Фильтр спектра", win.filter_choice),
+        ("Вибрационная величина", win.kind),
+        ("Метод спектрального анализа", win.analysis),
+        ("Амплитуда · линейно или дБ", win.yscale),
+        ("Частота · линейно или логарифмически", win.xscale),
+        ("Предел частоты, Гц", win.x_limit_choice),
+        ("Масштаб амплитуды", win.y_height_choice),
     ):
         _field(basic, label, widget)
-    centre = _field(basic, "Центральная полоса", win.filter_center)
-    def spectrum_filter_visibility(*_):
-        enabled = win.filter_choice.currentData()
-        centre.setVisible(enabled in (
-            "original_preset", "octave", "third_octave", "double_octave"))
-        win.filter_button.setVisible(enabled in (
-            "highpass", "lowpass", "bandpass"))
-    win.filter_choice.currentIndexChanged.connect(spectrum_filter_visibility)
+    win.xscale.setToolTip(
+        "Только ось частот, Гц. Не меняет амплитуду в децибелах.")
+    win.yscale.setToolTip(
+        "Линейные физические единицы или дБ с опорным уровнем. "
+        "Не меняет шкалу частоты.")
     ss.addLayout(basic)
+
+    ss.addWidget(_title("Обработка · только спектр"))
+    ss.addWidget(_hint(
+        "Фильтр применяется локально к спектральному анализу, "
+        "не изменяет временную осциллограмму, Native RAW и AUX4700."))
+    filter_form = QtWidgets.QVBoxLayout()
+    filter_form.setSpacing(8)
+    _field(filter_form, "Тип фильтра", win.filter_choice)
+    centre = _field(filter_form, "Центральная частота полосы", win.filter_center)
+    centre_label = centre.findChild(QtWidgets.QLabel)
+    ss.addLayout(filter_form)
     ss.addWidget(win.filter_button)
+    win.filter_button.setText("Задать границы фильтра…")
+    spectrum_filter_note = _hint("")
+    ss.addWidget(spectrum_filter_note)
+    notes = {
+        "none": "Обработка отключена: спектр по всему доступному диапазону.",
+        "highpass": "ФВЧ: задайте нижнюю границу в герцах.",
+        "lowpass": "ФНЧ: задайте верхнюю границу в герцах.",
+        "bandpass": "Полосовой фильтр: задайте обе границы в герцах.",
+        "notch50": "Режектор 50 Гц включается только вручную.",
+        "notch60": "Режектор 60 Гц включается только вручную.",
+        "octave": "1/1 октавы: полосовой фильтр до расчёта FFT.",
+        "third_octave": "1/3 октавы: фильтр входного сигнала, не приборные третьоктавы.",
+        "double_octave": "2 октавы: полосовой фильтр до расчёта FFT.",
+        "original_preset": "Совместимость с 32 названиями MVKView; это не аппаратный FIR.",
+    }
+    def spectrum_filter_visibility(*_):
+        mode = win.filter_choice.currentData()
+        centre.setVisible(mode in (
+            "original_preset", "octave", "third_octave", "double_octave"))
+        centre_label.setText(
+            "Полоса из меню MVKView" if mode == "original_preset"
+            else "Центральная частота полосы")
+        win.filter_button.setVisible(mode in (
+            "highpass", "lowpass", "bandpass"))
+        spectrum_filter_note.setText(notes.get(mode, ""))
+    win.filter_choice.currentIndexChanged.connect(spectrum_filter_visibility)
     spectrum_filter_visibility()
 
-    advanced_toggle = QtWidgets.QToolButton()
-    advanced_toggle.setText("Точные параметры спектра")
-    advanced_toggle.setCheckable(True)
-    advanced_toggle.setArrowType(QtCore.Qt.ArrowType.RightArrow)
-    advanced_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-    ss.addWidget(advanced_toggle)
+    spectrum_detail = QtWidgets.QToolButton()
+    spectrum_detail.setText("Точные параметры FFT и графика")
+    spectrum_detail.setCheckable(True)
+    spectrum_detail.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+    spectrum_detail.setToolButtonStyle(
+        QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    ss.addWidget(spectrum_detail)
     advanced_frame = QtWidgets.QWidget()
     advanced_column = QtWidgets.QVBoxLayout(advanced_frame)
     advanced_column.setContentsMargins(0, 0, 0, 0)
     advanced_column.setSpacing(9)
-    for label, widget in (
-        ("Быстрый пресет MVKView", win.spectrum_view),
-        ("FFT · число реальных отсчётов N", win.nfft),
-        ("Опорный уровень дБ", win.db_ref),
-        ("Сглаживание по частоте", win.smooth),
-    ):
-        _field(advanced_column, label, widget)
+    _field(advanced_column, "Число реальных отсчётов FFT · N", win.nfft)
+    db_row = _field(
+        advanced_column, "Опорный уровень амплитуды в дБ", win.db_ref)
+    _field(advanced_column, "Сглаживание спектральных линий", win.smooth)
     advanced_column.addWidget(win.axis_button)
     auto = QtWidgets.QPushButton("Вернуть автомасштаб")
     auto.clicked.connect(win._reset_spectrum_axis)
     advanced_column.addWidget(auto)
-    response = QtWidgets.QPushButton("АЧХ локального фильтра…")
+    response = QtWidgets.QPushButton("Посмотреть АЧХ фильтра спектра…")
     response.clicked.connect(lambda: _filter_response_dialog(win, "spectrum"))
     advanced_column.addWidget(response)
-    ss.addWidget(advanced_frame)
-    advanced_frame.setVisible(False)
-    def toggle_advanced(checked):
-        advanced_frame.setVisible(checked)
-        advanced_toggle.setArrowType(
-            QtCore.Qt.ArrowType.DownArrow if checked else QtCore.Qt.ArrowType.RightArrow)
-    advanced_toggle.toggled.connect(toggle_advanced)
     win.operator_info.setWordWrap(True)
-    win.operator_info.setProperty("fieldLabel", True)
-    ss.addWidget(win.operator_info)
+    win.operator_info.setProperty("helpText", True)
+    advanced_column.addWidget(win.operator_info)
+    ss.addWidget(advanced_frame)
+    advanced_frame.hide()
+    def toggle_spectrum_detail(checked):
+        advanced_frame.setVisible(checked)
+        spectrum_detail.setArrowType(
+            QtCore.Qt.ArrowType.DownArrow if checked
+            else QtCore.Qt.ArrowType.RightArrow)
+    spectrum_detail.toggled.connect(toggle_spectrum_detail)
+    win._modern_spectrum_detail = spectrum_detail
+    def db_visibility(*_):
+        db_row.setVisible(win.yscale.currentData() == "db")
+    win.yscale.currentIndexChanged.connect(db_visibility)
+    win.spectrum_view.currentIndexChanged.connect(db_visibility)
+    db_visibility()
     ss.addStretch(1)
     inspector.addWidget(spectrum_panel)
 
@@ -764,54 +927,137 @@ def install_modern_shell(win, main, panel, review, storage):
                              QtWidgets.QSizePolicy.Policy.Preferred)
     ts = QtWidgets.QVBoxLayout(time_panel)
     ts.setContentsMargins(12, 12, 12, 12)
-    ts.setSpacing(10)
-    ts.addWidget(_title("Временной сигнал"))
+    ts.setSpacing(9)
+    ts.addWidget(_title("ВРЕМЕННОЙ СИГНАЛ · осциллограмма"))
+    ts.addWidget(_hint(
+        "Здесь настраивается нижний график обзора и вкладка "
+        "«Временной сигнал». Значения — мгновенное ускорение "
+        "в м/с² со знаком, не спектральный СКЗ."))
+    ts.addWidget(_title("Отображение во времени"))
     tform = QtWidgets.QVBoxLayout()
     tform.setSpacing(9)
     for label, widget in (
         ("Развёртка времени", win.timebase),
         ("Масштаб виброускорения", win.time_y_width),
-        ("Фильтр временного сигнала", win.time_filter_choice),
     ):
         _field(tform, label, widget)
-    time_centre = _field(tform, "Центральная полоса", win.time_filter_center)
+    ts.addLayout(tform)
+    ts.addWidget(_title("Обработка · только временной сигнал"))
+    ts.addWidget(_hint(
+        "Свой локальный фильтр. Его изменение не влияет на FFT и "
+        "не переписывает калиброванные отсчёты."))
+    tf = QtWidgets.QVBoxLayout()
+    tf.setSpacing(9)
+    _field(tf, "Тип фильтра", win.time_filter_choice)
+    time_centre = _field(tf, "Центральная частота полосы",
+                         win.time_filter_center)
+    time_centre_label = time_centre.findChild(QtWidgets.QLabel)
+    ts.addLayout(tf)
+    ts.addWidget(win.time_filter_button)
+    win.time_filter_button.setText("Задать границы фильтра…")
+    time_note = _hint("")
+    ts.addWidget(time_note)
     def time_filter_visibility(*_):
         mode = win.time_filter_choice.currentData()
         time_centre.setVisible(mode in (
             "original_preset", "octave", "third_octave", "double_octave"))
+        time_centre_label.setText(
+            "Полоса из меню MVKView" if mode == "original_preset"
+            else "Центральная частота полосы")
         win.time_filter_button.setVisible(mode in (
             "highpass", "lowpass", "bandpass"))
+        time_note.setText(notes.get(mode, "").replace(
+            "спектр", "временной сигнал"))
     win.time_filter_choice.currentIndexChanged.connect(time_filter_visibility)
-    ts.addLayout(tform)
-    ts.addWidget(win.time_filter_button)
     time_filter_visibility()
     time_detail = QtWidgets.QToolButton()
-    time_detail.setText("Просмотр / расширенные")
+    time_detail.setText("Просмотр участка и АЧХ")
     time_detail.setCheckable(True)
     time_detail.setArrowType(QtCore.Qt.ArrowType.RightArrow)
-    time_detail.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    time_detail.setToolButtonStyle(
+        QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
     ts.addWidget(time_detail)
     time_advanced = QtWidgets.QWidget()
     time_advanced_layout = QtWidgets.QVBoxLayout(time_advanced)
-    time_advanced_layout.setContentsMargins(0,0,0,0)
-    _field(time_advanced_layout, "Смещение Freeze", win.history)
-    response_time = QtWidgets.QPushButton("АЧХ фильтра времени…")
+    time_advanced_layout.setContentsMargins(0, 0, 0, 0)
+    _field(time_advanced_layout, "Смещение в режиме Freeze", win.history)
+    response_time = QtWidgets.QPushButton("Посмотреть АЧХ временного фильтра…")
     response_time.clicked.connect(lambda: _filter_response_dialog(win, "time"))
     time_advanced_layout.addWidget(response_time)
     ts.addWidget(time_advanced)
     time_advanced.hide()
-    time_detail.toggled.connect(lambda enabled: (
-        time_advanced.setVisible(enabled),
+    def toggle_time_detail(checked):
+        time_advanced.setVisible(checked)
         time_detail.setArrowType(
-            QtCore.Qt.ArrowType.DownArrow if enabled else QtCore.Qt.ArrowType.RightArrow)))
-    info = QtWidgets.QLabel(
-        "Мгновенное виброускорение, м/с² (с положительными и отрицательными пиками). "
-        "Фильтр временного сигнала не изменяет спектр.")
-    info.setWordWrap(True)
-    info.setProperty("fieldLabel", True)
-    ts.addWidget(info)
+            QtCore.Qt.ArrowType.DownArrow if checked
+            else QtCore.Qt.ArrowType.RightArrow)
+    time_detail.toggled.connect(toggle_time_detail)
     ts.addStretch(1)
     inspector.addWidget(time_panel)
+
+    # Overview keeps only four quick controls for two different graphs.
+    # Proxies reuse the same core setting; the ADC selector stays in the
+    # measurement toolbar and is never duplicated here.
+    overview_panel = QtWidgets.QWidget()
+    overview_panel.setMinimumWidth(0)
+    overview_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                                 QtWidgets.QSizePolicy.Policy.Preferred)
+    ov = QtWidgets.QVBoxLayout(overview_panel)
+    ov.setContentsMargins(12, 12, 12, 12)
+    ov.setSpacing(11)
+    ov.addWidget(_title("ОБЗОР · быстрые настройки"))
+    ov.addWidget(_hint(
+        "Верхний график — спектр частот, нижний — сигнал во времени. "
+        "Оба используют АЦП, выбранный в верхней панели измерения."))
+    spec_card, spec_column = _quick_card(
+        "СПЕКТР · верхний график", "Уровень и диапазон частот")
+    win._overview_kind = _mirror_control(
+        win.kind, spec_column, "Вибрационная величина")
+    win._overview_yscale = _mirror_control(
+        win.yscale, spec_column, "Амплитуда · линейно или дБ")
+    win._overview_frequency_limit = _mirror_control(
+        win.x_limit_choice, spec_column, "Частоты до, Гц")
+    spec_hint = _hint("")
+    win._overview_spectrum_filter_note = spec_hint
+    spec_column.addWidget(spec_hint)
+    spec_go = QtWidgets.QPushButton("Все настройки спектра…")
+    spec_go.clicked.connect(lambda: _focus_inspector(win, "spectrum"))
+    spec_column.addWidget(spec_go)
+    ov.addWidget(spec_card)
+    time_card, time_column = _quick_card(
+        "ВРЕМЕННОЙ СИГНАЛ · нижний график",
+        "Осциллограмма всегда показывает ВУ · м/с²")
+    win._overview_timebase = _mirror_control(
+        win.timebase, time_column, "Развёртка времени")
+    time_hint = _hint("")
+    win._overview_time_filter_note = time_hint
+    time_column.addWidget(time_hint)
+    time_go = QtWidgets.QPushButton("Все настройки временного сигнала…")
+    time_go.clicked.connect(lambda: _focus_inspector(win, "time"))
+    time_column.addWidget(time_go)
+    ov.addWidget(time_card)
+    ov.addWidget(_hint(
+        "Фильтры, FFT N, дБ-опора и подробные курсоры настраиваются "
+        "только на соответствующих вкладках, не в Обзоре."))
+    ov.addStretch(1)
+    inspector.addWidget(overview_panel)
+
+    def update_overview_filter_notes(*_):
+        spectrum_text = (win._filter_description()
+                         if win.filter_choice.currentData() != "none"
+                         else "без фильтра")
+        time_text = (
+            win.time_filter_choice.currentText()
+            if win.time_filter_choice.currentData() != "none"
+            else "без фильтра")
+        win._overview_spectrum_filter_note.setText(
+            "Фильтр спектра: " + spectrum_text)
+        win._overview_time_filter_note.setText(
+            "Фильтр времени: " + time_text)
+    for combo in (win.filter_choice, win.filter_center,
+                  win.time_filter_choice, win.time_filter_center):
+        combo.currentIndexChanged.connect(update_overview_filter_notes)
+    update_overview_filter_notes()
     win._modern_inspector = inspector
     dock = QtWidgets.QDockWidget("Параметры активного графика", win)
     dock.setObjectName("mainGraphInspector")
@@ -838,11 +1084,8 @@ def install_modern_shell(win, main, panel, review, storage):
         (win.overview_spec, "spectrum"), (win.overview_wave, "time"),
         (win.spec, "spectrum"), (win.wave, "time")):
         plot.scene().sigMouseClicked.connect(
-            lambda event, k=kind: _chart_focus(win, k))
-    win.views.currentChanged.connect(
-        lambda _: _focus_inspector(
-            win, "time" if win.views.currentWidget() is win.wave_page
-            else "spectrum"))
+            lambda event, k=kind: _chart_focus(win, k, event))
+    win.views.currentChanged.connect(lambda _: _sync_inspector_for_tab(win))
     # pyqtgraph's manually changed signal is distinct from programmatic
     # LIVE repaints; remember zoom coordinates after a user drag/wheel.
     def remember_zoom(plot):
@@ -859,6 +1102,7 @@ def install_modern_shell(win, main, panel, review, storage):
     remember_zoom(win.overview_spec)
     win.setWindowTitle("MVK Live · Анализатор вибрации")
     _build_menu(win)
+    _sync_inspector_for_tab(win)
     _refresh_status(win)
     win._modern_status_timer = QtCore.QTimer(win)
     win._modern_status_timer.setInterval(700)
