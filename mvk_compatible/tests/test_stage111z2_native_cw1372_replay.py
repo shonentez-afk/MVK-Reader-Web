@@ -34,7 +34,9 @@ def native_cw_replay_executable(tmp_path_factory):
     build = subprocess.run(
         [gcc, "-O0", "-fno-fast-math", "-mfpmath=387", "-std=c11",
          "-Wall", "-Wextra", str(source), "-lm", "-o", str(executable)],
-        capture_output=True, text=True, timeout=30, check=False,
+        # Shared Windows CI can delay MinGW due to AV and parallel Qt.
+        # Keep compiling the real x87 oracle; do not weaken assertions.
+        capture_output=True, text=True, timeout=120, check=False,
     )
     assert build.returncode == 0, build.stderr[-1200:]
     return executable

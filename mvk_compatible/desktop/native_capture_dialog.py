@@ -78,6 +78,12 @@ class NativeCaptureDialog(QDialog):
         self._active_local_ipv4 = None
         self._source_rate_tx_enabled = False
         self._source_auto_reconnect_enabled = False
+        # Source bTaskConnectClick executes original Mode2 -> SetRate
+        # without an extra passive gate. Standalone Native stays passive.
+        # Actual device TX still needs the operator's explicit per-run
+        # Ethernet grant and a final QMessageBox with Yes as non-default.
+        self._original_mode2_auto_setrate = bool(
+            getattr(parent, "_measurement_mode_selected", False))
         self._live_last_error = None
         self._last_preview_stamp = None
         self._preview_last_error = None
@@ -108,8 +114,10 @@ class NativeCaptureDialog(QDialog):
         root = QVBoxLayout(self)
         label = QLabel(
             "Измерения с МВК01 · отдельный уже испытанный приёмник Native R6.1.\n"
-            "TCP/10230: приём без команд по умолчанию. Оригинальная SetRate "
-            "доступна только после отдельного разрешения; Flash/Reboot запрещены.")
+            "TCP/10230: оригинальный режим «Измерить» использует "
+            "двусторонний Task2/SetRate; пассивный приём можно выбрать ниже. "
+            "Перед реальным подключением требуется явное подтверждение. "
+            "Flash/Reboot/IP не выполняются.")
         label.setWordWrap(True)
         root.addWidget(label)
         self.availability_label = QLabel(availability)
@@ -169,10 +177,10 @@ class NativeCaptureDialog(QDialog):
         self.confirm.toggled.connect(self._sync_buttons)
         root.addWidget(self.confirm)
         self.source_rate_tx = QCheckBox(
-            "Разрешаю оригинальную передачу SetRate при измерении "
-            "и изменение частоты через штатное меню (36 байт; только эта команда)")
+            "Оригинальный обмен MVKView: отправлять SetRate при «Измерить» "
+            "и изменении частоты (36 байт; пассивный режим — снимите флажок)")
         self.source_rate_tx.setObjectName("r6OriginalSourceSetRateTX")
-        self.source_rate_tx.setChecked(False)
+        self.source_rate_tx.setChecked(self._original_mode2_auto_setrate)
         self.source_rate_tx.setToolTip(
             "На реальном МВК это может изменить параметры измерения. "
             "Не включайте без допуска к управлению прибором. "
@@ -526,6 +534,10 @@ class NativeCaptureDialog(QDialog):
         self.stop_button.setEnabled(self._mode == "capture")
         self.open_button.setEnabled(self._zip is not None or self._raw_only_dir is not None)
         self.browse_button.setEnabled(idle)
+        # The checkbox always reflects actual per-session permission;
+        # do not allow changing its appearance while Go is recording.
+        self.source_rate_tx.setEnabled(idle)
+        self.source_auto_reconnect.setEnabled(idle)
 
     def choose_folder(self):
         path = QFileDialog.getExistingDirectory(
@@ -683,9 +695,11 @@ class NativeCaptureDialog(QDialog):
             f"Начать подключение TCP/10230 к {spec.device_ipv4} через "
             f"выбранный Ethernet {spec.local_ipv4} "
             f"{spec.duration_description()}?\n" +
-            ("ВНИМАНИЕ: будет отправлена исходная 36-байтная SetRate(65536) "
-             "после подтверждённого PARAM; меню сможет отправлять новые SetRate. "
-             "Это может изменить частоту прибора. Flash/Reboot исключены. "
+            ("ВНИМАНИЕ: будет отправлена оригинальная 36-байтная SetRate(65536) "
+             "после первого непустого PARAM (Stage1), даже если Status0 "
+             "ещё не известен. При обнаружении ошибки Stage3 передача "
+             "блокируется; меню сможет отправлять следующие SetRate. "
+             "Это изменяет частоту прибора. Flash/Reboot/IP исключены. "
              if spec.source_rate_tx else
              "Пассивный режим: клиент только читает. ")+
             ("ПОСЛЕ РАЗРЫВА возможны повторные TCP-подключения "
@@ -732,8 +746,11 @@ class NativeCaptureDialog(QDialog):
         self.live_quality.setText("Подключение ожидается. Состояние датчиков ещё неизвестно.")
         self.log.clear()
         self.confirm.setChecked(False)  # every separate live session needs fresh consent
-        self.source_rate_tx.setChecked(False)  # reset dangerous permission after use
-        self.source_auto_reconnect.setChecked(False)
+        # Keep the displayed mode equal to the ACTIVE CaptureSpec; the
+        # next session still needs a NEW unchecked Ethernet grant and
+        # explicit Yes confirmation before Go opens its socket.
+        self.source_rate_tx.setChecked(spec.source_rate_tx)
+        self.source_auto_reconnect.setChecked(spec.source_auto_reconnect)
         self._mode = "capture"
         self.status_label.setText(
             "Запись запускается через Native R6.1. RAW сохраняется без изменений.")
