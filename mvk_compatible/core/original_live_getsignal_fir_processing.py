@@ -124,6 +124,9 @@ def source_live_filtered_getsignal(
         rms_m_s2=dsp['rms_m_s2'],
         f_range_applied_to_calibrated_input=1.0,
         calibration_already_applied=True,
+        live_original_f_range_single=1.0,
+        live_original_f_range_source="TmvkChannelStorage.Create_007D0A61",
+        native_bin_exporter_gain_applied=False,
         original_delphi_numerical_parity_verified=False,
         original_canvas_cursor_parity_verified=False,
     )

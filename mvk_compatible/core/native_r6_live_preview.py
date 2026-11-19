@@ -17,6 +17,8 @@ import zipfile
 import numpy as np
 
 from .native_r6_live_status import _utc_stamp
+from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
+from .storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
 from .offline_export import waveform_for_zip, spectrum_for_zip
 from .original_getsignal_live_source import (
     source_live_adc_menu_length,source_getsignal_readiness,
@@ -278,7 +280,14 @@ def provisional_waveform(
     offset = extended_first/channel.rate_hz
     out["time_s"] = [offset + float(x) for x in out["time_s"]]
     _mark_absolute_live_source_window(out,channel)
-    out["source"] = "LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED"
+    is_source=(
+        preview.source_ring_provenance_verified and
+        preview.input_domain==SOURCE_LIVE_ADC_DOMAIN)
+    out["source"] = ("LIVE_SOURCE_TMVK_CHANNEL_FRANGE1_UNVERIFIED"
+                     if is_source else
+                     "LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED")
+    out["input_domain"]=(
+        "original_live_f_range1" if is_source else DOMAIN)
     out["provisional_not_audited"] = True
     out["source_waveform_latest_real_samples"] = visible
     out["source_waveform_max_display_seconds"] = 30
@@ -290,8 +299,12 @@ def provisional_waveform(
         out["source_getsignal_readiness"] = source_receipt.receipt()
         out["source_getsignal_exact_selected_count"] = (
             out["window_samples"] == visible)
-    out["warning"] = ("Предварительный GetSignal-кандидат по уже калиброванным "
-                      "битам R6.1. Не результат оригинального MVKView.")
+    out["warning"] = (
+        "Исходный живой Float32 FRange=1, SHA-проверенное Go кольцо; "
+        "Win32 численный паритет не доказан."
+        if is_source else
+        "Предварительный GetSignal-кандидат по уже калиброванным "
+        "битам R6.1. Не результат оригинального MVKView.")
     return out
 
 
@@ -318,6 +331,9 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
             f"FFT N={n_fft}: требуется {n_fft} реальных отсчётов, "
             f"в текущем Live окне {len(channel.samples)}; "
             "уменьшение N или нулевое дополнение запрещено")
+    is_source=(
+        preview.source_ring_provenance_verified and
+        preview.input_domain==SOURCE_LIVE_ADC_DOMAIN)
     out = spectrum_for_zip(
         Path("NOT_OPENED"), adc, n_fft, mode, None,
         # Full N/2 power and summary are still computed. Only the
@@ -325,7 +341,8 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
         # <=5000 bins, avoiding a 131072-point repaint every tick.
         max_hz=channel.rate_hz/2, max_points=5000,
         backend="idr_float32",
-        f_range=1.0, input_domain="calibrated_bin",
+        f_range=1.0, input_domain=(
+            DOMAIN_ORIGINAL_STORAGE if is_source else "calibrated_bin"),
         sample_provider=preview.samples_for_offline_candidate)
     _mark_absolute_live_source_window(out,channel)
     out["source"] = "LIVE_NATIVE_R6_FFT_IDR_CANDIDATE_UNVERIFIED"
@@ -333,11 +350,15 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
     out["source_selected_fft_n"] = n_fft
     out["source_fft_n_matches_requested_bSpecLines"] = True
     out["original_bSpecLines_source"] = "_Unit128.pas:0084819A-00848200"
-    out["source_history_uses_exact_calibrated_float32"] = True
+    out["source_history_uses_exact_calibrated_float32"] = not is_source
+    out["source_history_uses_original_live_f_range1_float32"] = is_source
     out["source_fft_full_power_bins"] = n_fft//2
     out["source_plot_peak_preserving_max_points"] = 5000
     out["original_delphi_numerical_parity"] = False
     out["warning"] = (
-        "Live FFT из реальных калиброванных отсчётов R6.1 (FRange=1 после "
-        "BIN spool, без второго gain). Оригинальный MVKView parity НЕ доказан.")
+        "Оригинальное живое кольцо Float32/FRxPos с FRange=1.0, "
+        "без коэффициента экспортёра BIN; x87/Delphi FFT ещё не доказан."
+        if is_source else
+        "Live FFT из калиброванного BIN-превью R6.1 (FRange=1, "
+        "без второго gain). Оригинальный MVKView parity НЕ доказан.")
     return out

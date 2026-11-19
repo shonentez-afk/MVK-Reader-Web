@@ -30,6 +30,13 @@ const (
     sourceOriginalStorageSchema = "MVK_SOURCE_CHANNEL_STORAGE_V1"
     sourceStorageUnscaledADC = "RAW_DEVICE_FLOAT32_NOT_YET_CALIBRATED"
     sourceStorageCalibratedADC = "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32"
+    // Original live Mode2: FRange Single is initialized to 1.0 in
+    // TMvkChannelStorage.Create 007D0A61; ProcessBufferChunk at
+    // 007D23D1..007D23E1 applies it in-place BEFORE FRxPos advances.
+    // Unlike the reconstructed exporter gain, this is not sourced
+    // from 0x100+ADC*0x100 + 0x0E register data.
+    sourceOriginalLiveFRange float32=1.0
+    sourceStorageOriginalLiveADC = "ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
     sourceStorageTachBytes = "TACH_EXACT_DEVICE_PAYLOAD_BYTES"
 )
 
@@ -81,7 +88,8 @@ func (r *sourceOriginalStorageRing) appendFrame(
         expectDomain=sourceStorageTachBytes
     }
     if h.Channel < 8 {
-        if domain != expectDomain && domain != sourceStorageUnscaledADC {
+        if domain != expectDomain && domain != sourceStorageUnscaledADC &&
+            domain != sourceStorageOriginalLiveADC {
             return errors.New("unknown original ADC storage input domain")
         }
     } else if domain != expectDomain {
@@ -168,6 +176,7 @@ type sourceOriginalChannelReceipt struct {
     SampleRate uint32 `json:"last_sample_rate_hz"`
     NextDeviceIndex *uint32 `json:"next_device_sample_index,omitempty"`
     Domain string `json:"input_domain"`
+    OriginalLiveFRangeSingle *float32 `json:"original_live_f_range_single,omitempty"`
     SequenceGaps uint64 `json:"sequence_gaps"`
     RateChanges uint64 `json:"rate_changes"`
     RejectedNonfinite uint64 `json:"rejected_nonfinite_frames"`
@@ -202,6 +211,10 @@ func (r *sourceOriginalStorageRing) receipt() sourceOriginalStorageReceipt {
         if c.seen {
             next:=c.nextDeviceIndex
             row.NextDeviceIndex=&next
+        }
+        if c.domain==sourceStorageOriginalLiveADC && c.rxPos>0 {
+            sourceFRange:=sourceOriginalLiveFRange
+            row.OriginalLiveFRangeSingle=&sourceFRange
         }
         result.Channels=append(result.Channels,row)
     }

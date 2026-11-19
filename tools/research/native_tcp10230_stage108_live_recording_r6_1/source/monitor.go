@@ -213,7 +213,11 @@ func (m *Monitor) EnableLiveBinSpool() error {
 	if err != nil {
 		return err
 	}
-	stager.sourceOriginalStorage=m.sourceOriginalStorage
+    // This spool is a FORENSIC reconstructed BIN candidate with register
+    // gains, not the original live TMvkChannelStorage.FRange. Original
+    // bTaskConnectClick creates ADC storage with FRange=1.0. Never let
+    // the unrelated BIN gain contaminate its 2**21 GetSignal ring.
+    stager.sourceOriginalStorage=nil
 	m.liveBin = stager
 	m.note("Live calibrated BIN spool enabled: partial files never published before verification")
 	return nil
@@ -441,7 +445,6 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             m.sourceOriginalStorage!=nil {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
         }
-        storedByCalibratedSpool:=false
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
             m.liveBin.sourceOriginalStoreBlocked=!sourceStoreAllowed
 			// Original mRate1Click permits rate changes. Keep every subsequent
@@ -464,15 +467,25 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
                 // verified PARAM gain image and may not certify early
                 // samples. Do not misclassify valid TCP as malformed.
 				if e := m.liveBin.adcFrame(f, *sample);e!=nil{return e}
-                storedByCalibratedSpool=true
-			}
-		}
-        // A read-only capture without exported BIN must STILL have the
-        // source's in-memory 2^21 ring. Its domain is explicitly raw;
-        // this is not the gain-corrected GetSignal of original Delphi.
-        if typ==typeADC && sourceStoreAllowed && !storedByCalibratedSpool &&
-            m.sourceOriginalStorage!=nil {
-            if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageUnscaledADC);e!=nil{return e}
+            }
+        }
+        // Original _Unit125 00808284/0080828C calls ProcessBufferChunk
+        // with ApplyRange=true for every admitted ADC. Source
+        // bTaskConnectClick instantiates each live storage via
+        // TMvkChannelStorage.Create, which sets FRange:Single=1.0.
+        // Only the ARCHIVE viewer assigns the separate sensor ratio.
+        // Thus source live ring must contain the WIRE Float32 values,
+        // not Native BIN * gain. The ring is the sole GetSignal source.
+        if typ==typeADC && sourceStoreAllowed && m.sourceOriginalStorage!=nil {
+            domain:=sourceStorageUnscaledADC
+            if m.sourceOriginalRXGate!=nil {
+                domain=sourceStorageOriginalLiveADC
+            }
+            aligned,e:=sourceApplyOriginalFRange(
+                f.Raw[28:],sourceOriginalLiveFRange)
+            if e!=nil{return e}
+            if e=m.sourceOriginalStorage.appendFrame(
+                *sample,aligned,domain);e!=nil{return e}
         }
 	case typeParam:
         sourceFrozen:=m.sourceOriginalRXGate!=nil && m.sourceOriginalRXGate.frozen

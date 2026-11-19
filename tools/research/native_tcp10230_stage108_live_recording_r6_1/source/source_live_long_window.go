@@ -267,12 +267,12 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
             return errors.New("source original gate not ready for long GetSignal")
         }
     }
-    if !channel.seen || channel.domain!=sourceStorageCalibratedADC ||
+    if !channel.seen || channel.domain!=sourceStorageOriginalLiveADC ||
        channel.sampleRate!=req.SampleRateHz ||
        channel.rxPos!=allowedCount ||
        summary.SequenceDiscontinuities>0 || summary.NonFiniteSamples>0 ||
        len(summary.rates)!=1 {
-        return errors.New("source long window not a confirmed contiguous calibrated ADC stream")
+        return errors.New("source long window not confirmed original live FRange1 ADC")
     }
     if req.CaptureEnd<uint64(req.Samples) ||
        req.CaptureEnd>channel.rxPos {
@@ -300,7 +300,7 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         Samples:req.Samples,CaptureEnd:req.CaptureEnd,
         SampleRateHz:req.SampleRateHz,
         FirstIndex:req.DeviceEnd-req.Samples,NextIndex:req.DeviceEnd,
-        InputDomain:sourceStorageCalibratedADC,
+        InputDomain:sourceStorageOriginalLiveADC,
         CalibrationAlreadyApplied:true,Provisional:true,
         RawBytes:m.summary.RawBytes,FramesDecoded:m.summary.TotalFrames,
         SHA256:hex.EncodeToString(sum[:]),

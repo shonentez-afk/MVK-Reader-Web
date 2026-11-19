@@ -9,7 +9,10 @@ from __future__ import annotations
 
 SCHEMA="MVK_SOURCE_CHANNEL_STORAGE_V1"
 BUFFER_ELEMENTS=1<<21
+# Exact original LIVE FRange source; never mix with Native exporter gain.
+SOURCE_LIVE_ADC_DOMAIN="ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
 ADC_DOMAIN=frozenset((
+    SOURCE_LIVE_ADC_DOMAIN,
     "RAW_DEVICE_FLOAT32_NOT_YET_CALIBRATED",
     "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32",
 ))
@@ -86,6 +89,14 @@ def validate_original_storage_receipt(
                 dropped>channels[i].get("nonfinite_samples",-1)):
             raise ValueError("Original storage: source RX counters disagree")
         domain=row.get("input_domain")
+        live_range=row.get("original_live_f_range_single")
+        if domain==SOURCE_LIVE_ADC_DOMAIN:
+            if type(live_range) not in (int,float) or live_range!=1.0:
+                raise ValueError(
+                    "Original live FRange: source ring must prove Single 1.0")
+        elif live_range is not None:
+            raise ValueError(
+                "Original live FRange: cannot attach factor to foreign domain")
         if i>=8 and dropped!=0:
             raise ValueError("Original storage: byte TACH cannot reject Float32 NaN")
         allowed=ADC_DOMAIN if i<8 else frozenset((TACH_DOMAIN,))
@@ -114,6 +125,7 @@ def validate_original_storage_receipt(
             "valid_pos_64":valid,"first_readable_pos_64":first,
             "available_elements":available,"last_sample_rate_hz":sample_rate,
             "next_device_sample_index":idx,"input_domain":domain,
+            "original_live_f_range_single":live_range,
             "sequence_gaps":gap,"rate_changes":rate_changes,
             "rejected_nonfinite_frames":dropped,
         })

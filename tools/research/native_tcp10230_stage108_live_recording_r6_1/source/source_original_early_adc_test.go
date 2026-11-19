@@ -32,7 +32,7 @@ func TestOriginalSourceADCBeforeFullPARAMRetainsRXWithoutFalseFramingError(t *te
     }
     row:=m.sourceOriginalStorage.receipt().Channels[0]
     if row.RxPos!=256 || row.Available!=256 ||
-       row.Domain!=sourceStorageUnscaledADC ||
+       row.Domain!=sourceStorageOriginalLiveADC ||
        row.NextDeviceIndex==nil || *row.NextDeviceIndex!=0 {
         t.Fatalf("original source default FRange storage unavailable: %+v",row)
     }

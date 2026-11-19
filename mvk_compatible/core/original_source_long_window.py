@@ -22,7 +22,8 @@ import zipfile
 
 import numpy as np
 
-from .native_r6_live_preview import LivePreview, PreviewADC, DOMAIN, MAX_SAMPLES
+from .native_r6_live_preview import LivePreview, PreviewADC, MAX_SAMPLES
+from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
 from .native_r6_live_status import _utc_stamp
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
 from .original_source_ring_receipt import BUFFER_ELEMENTS
@@ -132,14 +133,16 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         admissible=g["accepted_elements"]
         if admissible+skipped!=live["samples"]:
             raise ValueError("Source GetSignal: source gate/native RX mismatch")
-    if (row["input_domain"]!=DOMAIN or rate==0 or
+    if (row["input_domain"]!=SOURCE_LIVE_ADC_DOMAIN or
+            row.get("original_live_f_range_single")!=1.0 or
+            rate==0 or
             rate not in live["sample_rates_hz"] or
             live["sequence_discontinuities"] or live["nonfinite_samples"] or
             row["rate_changes"] or row["rejected_nonfinite_frames"] or
             row["rx_pos_64"]!=admissible or
             row["sequence_gaps"]>allowed_source_gaps or
             row["next_device_sample_index"]!=live["next_sample_index"]):
-        raise ValueError("Source GetSignal: uncalibrated/discontinuous ADC")
+        raise ValueError("Source GetSignal: unverified live FRange1/discontinuous ADC")
     if h_tag==-2:
         source_plan=source_selected_envelope_fft_plan(
             fft_n,rate,envelope_code)
@@ -308,7 +311,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     meta.get("next_sample_index")!=request.device_end_index or
                     meta.get("first_sample_index")!=
                         ((request.device_end_index-count)&0xffffffff) or
-                    meta.get("input_domain")!=DOMAIN or
+                    meta.get("input_domain")!=SOURCE_LIVE_ADC_DOMAIN or
                     meta.get("calibration_already_applied") is not True or
                     meta.get("provisional_not_audited") is not True):
                 raise ValueError("Source GetSignal: foreign or malformed source window")
@@ -342,7 +345,7 @@ def load_source_long_window(root:str|Path,status:dict,
             digest=meta.get("sha256")
             if (not isinstance(digest,str) or SHA_RE.fullmatch(digest) is None
                     or hashlib.sha256(data).hexdigest()!=digest):
-                raise ValueError("Source GetSignal: calibrated Float32 SHA mismatch")
+                raise ValueError("Source GetSignal: original live FRange1 Float32 SHA mismatch")
             values=np.frombuffer(data,dtype="<f4")
             if len(values)!=count or not np.all(np.isfinite(values)):
                 raise ValueError("Source GetSignal: nonfinite original ring data")
@@ -353,6 +356,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     request.adc,rate,meta["first_sample_index"],
                     meta["next_sample_index"],values,digest,
                     request.capture_end)},
+                input_domain=SOURCE_LIVE_ADC_DOMAIN,
                 source_ring_provenance_verified=True,
             )
             return SourceLongWindow(request,preview)

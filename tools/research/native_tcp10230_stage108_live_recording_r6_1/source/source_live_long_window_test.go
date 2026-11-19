@@ -22,7 +22,7 @@ func sourceLongTestMonitor(t *testing.T, frames int) *Monitor {
     if e!=nil {t.Fatal(e)}
     t.Cleanup(func(){m.CloseFiles()})
     m.liveProgressEnabled=true
-    m.liveBin=&LiveBinSpool{} // existing calibrated Go source spool enabled
+    m.liveBin=&LiveBinSpool{} // local verified source ring, not BIN-gain injection
     m.summary.Channels[0].rates=map[uint32]bool{65536:true}
     firstDevice:=uint32(0xFFFFFE00)
     for i:=0;i<frames;i++ {
@@ -37,7 +37,7 @@ func sourceLongTestMonitor(t *testing.T, frames int) *Monitor {
         h:=SampleHeader{Channel:0,Rate:65536,
             Index:firstDevice+uint32(i*256),Samples:256}
         if e:=m.sourceOriginalStorage.appendFrame(h,buf,
-            sourceStorageCalibratedADC);e!=nil {t.Fatal(e)}
+            sourceStorageOriginalLiveADC);e!=nil {t.Fatal(e)}
     }
     m.summary.Channels[0].Samples=uint64(frames*256)
     m.summary.RawBytes=uint64(frames)*1052
@@ -89,7 +89,7 @@ func TestSourceLongWindowTwentySecondsFromActualOriginalRingAndSHA(t *testing.T)
        receipt.CaptureEnd!=uint64(count) ||
        receipt.NextIndex!=req.DeviceEnd ||
        receipt.FirstIndex!=req.DeviceEnd-uint32(count) ||
-       receipt.InputDomain!=sourceStorageCalibratedADC ||
+       receipt.InputDomain!=sourceStorageOriginalLiveADC ||
        !receipt.CalibrationAlreadyApplied ||
        !receipt.Provisional {
         t.Fatalf("wrong source full-window receipt: %+v, size=%d",receipt,len(data))
@@ -128,7 +128,7 @@ func TestSourceLongWindowRejectsOverwriteAndForgedSourceIndex(t *testing.T) {
             Index:c.nextDeviceIndex,Samples:256}
         buf:=make([]byte,1024)
         if e:=m.sourceOriginalStorage.appendFrame(h,buf,
-            sourceStorageCalibratedADC);e!=nil {t.Fatal(e)}
+            sourceStorageOriginalLiveADC);e!=nil {t.Fatal(e)}
         c=m.sourceOriginalStorage.channels[0]
     }
     m.summary.Channels[0].Samples=c.rxPos
@@ -347,7 +347,7 @@ func TestSourceEnvelopeGoRingExactPreFIRLengthAndRawSHA(t *testing.T){
     if receipt.HTag!=-2 || receipt.EnvelopeCode!=20 ||
        receipt.OriginalBSpecLines!=4096 || receipt.Samples!=4147 ||
        len(payload)!=int(n)*4 || receipt.CaptureEnd!=c.rxPos ||
-       receipt.InputDomain!=sourceStorageCalibratedADC{
+       receipt.InputDomain!=sourceStorageOriginalLiveADC{
         t.Fatalf("wrong original source FIR receipt: %+v bytes=%d",receipt,len(payload))
     }
     expected,e:=m.sourceOriginalStorage.window(0,c.rxPos-uint64(n),uint64(n))
