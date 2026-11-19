@@ -276,7 +276,7 @@ def test_bearing_window_pins_source_and_never_reconfigures_live_fft(widget):
     w._run_bearing_page()
     view=w._bearing_spectrum
     assert view is not None and view.mode=="envelope"
-    assert "АЦП 1" in w.bearing_plot.titleLabel.text
+    assert "АЦП 1" in w.bearing_plot.getPlotItem().titleLabel.text
     assert (w.kind.currentData(),w.analysis.currentData(),
             w.nfft.currentData(),w.envelope_band.currentData())==before
     w.adc.setCurrentIndex(w.adc.findData(2))
