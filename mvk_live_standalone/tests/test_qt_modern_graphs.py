@@ -795,7 +795,10 @@ def test_spectrum_out_of_nyquist_filter_never_uses_stale_curve(widget):
     w._last_fft_submit=0.0
     w._schedule_fft()
     assert w._future is not None
-    w._future.result(timeout=20)
+    # The worker MUST reject the non-physical filter. The GUI then owns
+    # the exception and displays a visible reason instead of a stale FFT.
+    with pytest.raises(ValueError,match="Nyquist"):
+        w._future.result(timeout=20)
     w._collect_analysis()
     assert w._spectrum is None
     assert "спектр недоступен" in w.metrics.text()
