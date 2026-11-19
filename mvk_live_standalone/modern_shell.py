@@ -138,19 +138,40 @@ def _filter_selector_for_operators(combo):
         combo.setCurrentIndex(index if index >= 0 else 0)
 
 
-def _mirror_control(source, column, label):
-    """Overview proxy: one shared settings state, no parallel DSP settings."""
+def _mirror_control(source, column, label, *, rebuild_on=(),
+                    force_select=None):
+    """One source of truth across Overview and the detailed graph page.
+
+    The source may rebuild its physical Y-height choices when switching
+    from dB to m/s², mm/s or µm; the overview must mirror the NEW list,
+    not retain a stale menu created at application startup.
+    """
     proxy = QtWidgets.QComboBox()
-    for index in range(source.count()):
-        proxy.addItem(source.itemText(index), source.itemData(index))
-    proxy.setCurrentIndex(source.currentIndex())
-    def source_changed(index):
+    def sync(*_):
+        values = [(source.itemText(i), source.itemData(i))
+                  for i in range(source.count())]
+        current = [(proxy.itemText(i), proxy.itemData(i))
+                   for i in range(proxy.count())]
         with QtCore.QSignalBlocker(proxy):
-            proxy.setCurrentIndex(index)
+            if current != values:
+                proxy.clear()
+                for caption, value in values:
+                    proxy.addItem(caption, value)
+            proxy.setCurrentIndex(source.currentIndex())
+            proxy.setEnabled(source.isEnabled())
     def quick_changed(index):
-        if index >= 0 and index != source.currentIndex():
+        if index < 0:
+            return
+        if index != source.currentIndex():
             source.setCurrentIndex(index)
-    source.currentIndexChanged.connect(source_changed)
+        elif force_select is not None:
+            # An operator can restore the same four-mode preset after
+            # choosing an advanced kind/dB combination on the Spectrum tab.
+            force_select()
+    source.currentIndexChanged.connect(sync)
+    for signal in rebuild_on:
+        signal.connect(sync)
+    sync()
     proxy.currentIndexChanged.connect(quick_changed)
     _field(column, label, proxy)
     return proxy
@@ -999,6 +1020,8 @@ def install_modern_shell(win, main, panel, review, storage):
     # Overview keeps only four quick controls for two different graphs.
     # Proxies reuse the same core setting; the ADC selector stays in the
     # measurement toolbar and is never duplicated here.
+    # Overview intentionally exposes only FIVE sizing/view controls.
+    # Each is a proxy of its real, single-purpose detailed-page setting.
     overview_panel = QtWidgets.QWidget()
     overview_panel.setMinimumWidth(0)
     overview_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
@@ -1006,60 +1029,63 @@ def install_modern_shell(win, main, panel, review, storage):
     ov = QtWidgets.QVBoxLayout(overview_panel)
     ov.setContentsMargins(12, 12, 12, 12)
     ov.setSpacing(11)
-    ov.addWidget(_title("ОБЗОР · быстрые настройки"))
-    ov.addWidget(_hint(
-        "У каждого графика свои параметры. Общий АЦП выбирается "
-        "только в верхней панели измерения."))
+    ov.addWidget(_title("ОБЗОР · масштабы графиков"))
+
     spec_card, spec_column = _quick_card(
-        "СПЕКТР", "Верхний график · частотная область")
-    win._overview_kind = _mirror_control(
-        win.kind, spec_column, "Вибрационная величина")
-    win._overview_yscale = _mirror_control(
-        win.yscale, spec_column, "Амплитуда · линейно или дБ")
+        "СПЕКТР", "Верхний график · четыре привычных вида")
+    win._overview_spectrum_view = _mirror_control(
+        win.spectrum_view, spec_column, "Вид спектра",
+        force_select=win._select_primary_spectrum)
+    win._overview_spectrum_view.setToolTip(
+        "Логарифмический вид = виброускорение в дБ; частотная ось "
+        "остаётся отдельной настройкой на вкладке «Спектр».")
     win._overview_frequency_limit = _mirror_control(
-        win.x_limit_choice, spec_column, "Частоты до, Гц")
-    spec_hint = _hint("")
-    win._overview_spectrum_filter_note = spec_hint
-    spec_column.addWidget(spec_hint)
-    spec_go = QtWidgets.QPushButton("Параметры спектра…")
-    spec_go.setToolTip("Открыть полную вкладку «Спектр»")
-    spec_go.clicked.connect(lambda: _focus_inspector(win, "spectrum"))
-    spec_column.addWidget(spec_go)
+        win.x_limit_choice, spec_column, "Показывать частоты до")
+    win._overview_y_height = _mirror_control(
+        win.y_height_choice, spec_column, "Вертикальный масштаб",
+        rebuild_on=(win.kind.currentIndexChanged,
+                    win.yscale.currentIndexChanged,
+                    win.spectrum_view.currentIndexChanged,
+                    win.analysis.currentIndexChanged))
+    win._overview_y_height.setToolTip(
+        "Доступный масштаб зависит от выбранного вида спектра: "
+        "дБ, м/с², мм/с или мкм.")
+
+    # Detailed Spectrum controls may select a combination outside the four
+    # overview presets (e.g. velocity measured in dB). Never pretend that
+    # such a combination is one of the four quick modes.
+    def sync_overview_mode(*_):
+        kind = win.kind.currentData()
+        scale = win.yscale.currentData()
+        chosen = {
+            ("acceleration", "db"): "log_vu",
+            ("acceleration", "linear"): "linear_vu",
+            ("velocity", "linear"): "linear_vs",
+            ("displacement", "linear"): "linear_vp",
+        }.get((kind, scale))
+        quick = win._overview_spectrum_view
+        with QtCore.QSignalBlocker(quick):
+            if chosen is None:
+                quick.setPlaceholderText("Особый вид · вкладка «Спектр»")
+                quick.setCurrentIndex(-1)
+            else:
+                quick.setCurrentIndex(quick.findData(chosen))
+    win.kind.currentIndexChanged.connect(sync_overview_mode)
+    win.yscale.currentIndexChanged.connect(sync_overview_mode)
+    win.spectrum_view.currentIndexChanged.connect(sync_overview_mode)
+    sync_overview_mode()
     ov.addWidget(spec_card)
+
     time_card, time_column = _quick_card(
-        "ВРЕМЕННОЙ СИГНАЛ", "Нижний график · ВУ, м/с²")
+        "ВРЕМЕННОЙ СИГНАЛ", "Нижний график · размер осциллограммы")
     win._overview_timebase = _mirror_control(
-        win.timebase, time_column, "Развёртка времени")
-    time_hint = _hint("")
-    win._overview_time_filter_note = time_hint
-    time_column.addWidget(time_hint)
-    time_go = QtWidgets.QPushButton("Параметры времени…")
-    time_go.setToolTip("Открыть полную вкладку «Временной сигнал»")
-    time_go.clicked.connect(lambda: _focus_inspector(win, "time"))
-    time_column.addWidget(time_go)
+        win.timebase, time_column, "Развёртка по времени")
+    win._overview_time_y_width = _mirror_control(
+        win.time_y_width, time_column, "Вертикальный масштаб · м/с²")
     ov.addWidget(time_card)
-    ov.addWidget(_hint(
-        "Фильтры, FFT N и курсоры — на подробных вкладках. "
-        "На обзоре только быстрые параметры."))
     ov.addStretch(1)
     inspector.addWidget(overview_panel)
 
-    def update_overview_filter_notes(*_):
-        spectrum_text = (win._filter_description()
-                         if win.filter_choice.currentData() != "none"
-                         else "без фильтра")
-        time_text = (
-            win.time_filter_choice.currentText()
-            if win.time_filter_choice.currentData() != "none"
-            else "без фильтра")
-        win._overview_spectrum_filter_note.setText(
-            "Фильтр спектра: " + spectrum_text)
-        win._overview_time_filter_note.setText(
-            "Фильтр времени: " + time_text)
-    for combo in (win.filter_choice, win.filter_center,
-                  win.time_filter_choice, win.time_filter_center):
-        combo.currentIndexChanged.connect(update_overview_filter_notes)
-    update_overview_filter_notes()
     win._modern_inspector = inspector
     dock = QtWidgets.QDockWidget("Параметры активного графика", win)
     dock.setObjectName("mainGraphInspector")

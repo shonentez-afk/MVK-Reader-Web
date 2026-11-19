@@ -322,10 +322,11 @@ def test_overview_has_only_quick_settings_and_tab_owns_inspector(widget):
     assert w.views.currentWidget() is w.overview_page
     assert w._modern_inspector.currentIndex()==2
     assert "Обзор" in w._modern_inspector_dock.windowTitle()
-    assert w._overview_kind.currentData()==w.kind.currentData()
-    assert w._overview_yscale.currentData()==w.yscale.currentData()
+    assert w._overview_spectrum_view.currentData()=="log_vu"
     assert w._overview_frequency_limit.currentData()==w.x_limit_choice.currentData()
+    assert w._overview_y_height.currentData()==w.y_height_choice.currentData()
     assert w._overview_timebase.currentData()==w.timebase.currentData()
+    assert w._overview_time_y_width.currentData()==w.time_y_width.currentData()
     # Legacy one-click graph interaction never opens the detailed inspector.
     from mvk_live_standalone.modern_shell import _chart_focus, _focus_inspector
     _chart_focus(w,"spectrum")
@@ -350,20 +351,41 @@ def test_overview_quick_controls_reuse_exact_main_processing_values(widget):
     assert w.adc.count()==8 and w.dsp_adc.isHidden()
     before_filter=(w.filter_choice.currentData(),
                    w.time_filter_choice.currentData())
-    w._overview_kind.setCurrentIndex(
-        w._overview_kind.findData("velocity"))
-    assert w.kind.currentData()=="velocity"
-    w.kind.setCurrentIndex(w.kind.findData("displacement"))
-    assert w._overview_kind.currentData()=="displacement"
-    w._overview_yscale.setCurrentIndex(
-        w._overview_yscale.findData("linear"))
-    assert w.yscale.currentData()=="linear"
+    modes={
+        "log_vu": ("acceleration","db","дБ"),
+        "linear_vu": ("acceleration","linear","м/с²"),
+        "linear_vs": ("velocity","linear","мм/с"),
+        "linear_vp": ("displacement","linear","мкм"),
+    }
+    assert w._overview_spectrum_view.count()==4
+    for key,(kind,scale,unit) in modes.items():
+        w._overview_spectrum_view.setCurrentIndex(
+            w._overview_spectrum_view.findData(key))
+        assert w.kind.currentData()==kind
+        assert w.yscale.currentData()==scale
+        # The Y scale selection must be fully rebuilt with new units.
+        assert w._overview_y_height.count()==w.y_height_choice.count()
+        assert unit in w._overview_y_height.itemText(1)
+        assert unit in w._overview_y_height.itemText(
+            w._overview_y_height.count()-1)
+        assert w._overview_y_height.currentData() is None
+        last=w._overview_y_height.count()-1
+        chosen=w._overview_y_height.itemData(last)
+        w._overview_y_height.setCurrentIndex(last)
+        assert w.y_height_choice.currentData()==chosen
+        low,high=w.spec.viewRange()[1]
+        assert high-low==pytest.approx(chosen,rel=1e-4)
+        if scale=="linear":
+            assert low==pytest.approx(0.,abs=1e-5)
     w._overview_frequency_limit.setCurrentIndex(
         w._overview_frequency_limit.findData(4000))
     assert w.x_limit_choice.currentData()==4000
     w._overview_timebase.setCurrentIndex(
         w._overview_timebase.findData(.5))
     assert w.timebase.currentData()==.5
+    w._overview_time_y_width.setCurrentIndex(
+        w._overview_time_y_width.findData(10.))
+    assert w.time_y_width.currentData()==10.
     assert (w.filter_choice.currentData(),
             w.time_filter_choice.currentData())==before_filter
 
@@ -381,13 +403,65 @@ def test_filters_are_grouped_and_spectrum_and_time_have_independent_scopes(widge
     assert w.time_filter_choice.itemText(0)=="Без фильтра"
     spectrum_pane=w._modern_inspector.widget(0)
     assert w.spectrum_view not in spectrum_pane.findChildren(QtWidgets.QComboBox)
+    overview=w._modern_inspector.widget(2)
+    assert [c.currentData() for c in
+            overview.findChildren(QtWidgets.QComboBox)] == [
+        w.spectrum_view.currentData(),w.x_limit_choice.currentData(),
+        w.y_height_choice.currentData(),w.timebase.currentData(),
+        w.time_y_width.currentData()]
+    assert not overview.findChildren(QtWidgets.QPushButton)
+    assert "Фильтр" not in " ".join(
+        label.text() for label in overview.findChildren(QtWidgets.QLabel))
     w.filter_choice.setCurrentIndex(w.filter_choice.findData("highpass"))
-    assert "спектра" in w._overview_spectrum_filter_note.text()
     assert w.time_filter_choice.currentData()=="none"
     w.time_filter_choice.setCurrentIndex(
         w.time_filter_choice.findData("third_octave"))
     assert w.filter_choice.currentData()=="highpass"
     assert w.time_filter_center.count()==43
-    assert "времени" in w._overview_time_filter_note.text()
     assert w._modern_inspector.widget(0).findChild(
         QtWidgets.QToolButton) is not None
+
+
+def test_overview_mode_follows_advanced_spectrum_without_stale_preset(widget):
+    w,_=widget
+    # Returning from a detailed view must reflect its actual physical mode.
+    w.kind.setCurrentIndex(w.kind.findData("velocity"))
+    w.yscale.setCurrentIndex(w.yscale.findData("linear"))
+    assert w._overview_spectrum_view.currentData()=="linear_vs"
+    assert "мм/с" in w._overview_y_height.itemText(1)
+    # A valid advanced combination outside the 4 presets must not claim to
+    # be 'logarithmic acceleration' while actually showing velocity in dB.
+    w.yscale.setCurrentIndex(w.yscale.findData("db"))
+    assert w._overview_spectrum_view.currentIndex()==-1
+    assert "дБ" in w._overview_y_height.itemText(1)
+    w._overview_spectrum_view.setCurrentIndex(
+        w._overview_spectrum_view.findData("log_vu"))
+    assert w.kind.currentData()=="acceleration"
+    assert w.yscale.currentData()=="db"
+    assert w._overview_spectrum_view.currentData()=="log_vu"
+    assert "дБ" in w._overview_y_height.itemText(1)
+
+
+def test_overview_scale_mirror_is_rebuilt_after_mode_and_fft_changes(widget):
+    w,_=widget
+    select=w._overview_spectrum_view
+    select.setCurrentIndex(select.findData("linear_vp"))
+    assert w._overview_y_height.itemText(1).endswith("мкм")
+    assert not any("дБ" in w._overview_y_height.itemText(i)
+                   for i in range(w._overview_y_height.count()))
+    w.analysis.setCurrentIndex(w.analysis.findData("welch"))
+    assert not w.y_height_choice.isEnabled()
+    assert not w._overview_y_height.isEnabled()
+    w.analysis.setCurrentIndex(w.analysis.findData("fft"))
+    assert w._overview_y_height.isEnabled()
+    w.y_height_choice.setCurrentIndex(w.y_height_choice.count()-1)
+    assert w._overview_y_height.currentData()==w.y_height_choice.currentData()
+    w._overview_y_height.setCurrentIndex(
+        w._overview_y_height.findData(5.))
+    assert w.y_height_choice.currentData()==5.
+    # Time's vertical limit stays an independently signed VU scale.
+    w._overview_time_y_width.setCurrentIndex(
+        w._overview_time_y_width.findData(2.))
+    assert w.time_y_width.currentData()==2.
+    w.time_y_width.setCurrentIndex(w.time_y_width.findData(20.))
+    assert w._overview_time_y_width.currentData()==20.

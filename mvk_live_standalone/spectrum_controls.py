@@ -16,11 +16,13 @@ VIEW_MODES = (
     ("Линейный ВП", "linear_vp", "displacement", "linear"),
 )
 X_LIMITS_HZ=(50,100,200,500,1000,2000,4000,8000,10000,12800,16000,25600)
+# Amplitude span for each of the four operator modes. These are real
+# physical plotting units, NOT interchangeable dimensionless Y limits.
 Y_WIDTH_CHOICES={
-    "log_vu":(20,40,60,80,100,120,160),
-    "linear_vu":(.01,.1,1,10,100,1000),
-    "linear_vs":(.01,.1,1,10,100,1000),
-    "linear_vp":(.1,1,10,100,1000,10000),
+    "log_vu":(20,40,60,80,100,120,160),       # dB span, top tracks peak
+    "linear_vu":(.01,.05,.1,.5,1,2,5,10,20,50,100,500,1000),  # m/s²
+    "linear_vs":(.1,.2,.5,1,2,5,10,20,50,100,200,500),       # mm/s
+    "linear_vp":(.5,1,2,5,10,20,50,100,200,500,1000,5000,10000), # µm
 }
 FILTER_CHOICES=(
     ("Без фильтра","none"),
