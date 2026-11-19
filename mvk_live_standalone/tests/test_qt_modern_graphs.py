@@ -66,9 +66,9 @@ def test_operator_labels_describe_real_quantities_not_x_y(widget):
     inspector_labels = [item.text() for item in
                         w._modern_inspector.findChildren(QtWidgets.QLabel)]
     for required in (
-        "Амплитуда · линейно или дБ",
-        "Частота · линейно или логарифмически",
-        "Предел частоты, Гц", "Развёртка времени",
+        "Амплитуда · линейно / дБ",
+        "Частота · линейно / логарифмически",
+        "Частотный диапазон до, Гц", "Развёртка времени",
         "Масштаб виброускорения", "Тип фильтра",
     ):
         assert required in inspector_labels
