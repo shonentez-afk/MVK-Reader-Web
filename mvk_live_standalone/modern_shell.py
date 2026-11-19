@@ -661,7 +661,7 @@ def _sync_inspector_for_tab(win):
     mapping = (
         (win.overview_page, 2, "Обзор · масштабы графиков"),
         (win.spectrum_page, 0, "Спектр · параметры"),
-        (win.wave_page, 1, "Временной сигнал · настройки осциллограммы"),
+        (win.wave_page, 1, "Временной сигнал · параметры"),
     )
     dock = win._modern_inspector_dock
     win._modern_inspector_syncing = True

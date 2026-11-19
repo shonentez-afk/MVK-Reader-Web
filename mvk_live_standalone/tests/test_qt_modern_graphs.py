@@ -1126,3 +1126,15 @@ def test_time_scope_timebase_change_under_freeze_never_resubmits_fft(widget):
     assert w._read_settings()==old_spec_settings
     w.freeze.setChecked(False)
     w._toggle_freeze(False)
+
+
+
+def test_time_scope_right_dock_title_fits_professional_inspector(widget):
+    w,app=widget
+    w.views.setCurrentWidget(w.wave_page)
+    app.processEvents()
+    assert w._modern_inspector_dock.windowTitle()==(
+        "Временной сигнал · параметры")
+    assert "настройки осциллограммы" not in (
+        w._modern_inspector_dock.windowTitle())
+    assert w._modern_inspector.currentIndex()==1
