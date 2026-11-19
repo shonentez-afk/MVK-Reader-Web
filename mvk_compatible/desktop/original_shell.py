@@ -839,8 +839,31 @@ class OriginalRootShell:
                 error=str(exc)
                 result=source_status_projection(index,None)
         else:
-            result=source_status_projection(index,None)
+            if (index in range(1,15) and self.window._live_active
+                    and self.window._native_live_status is not None):
+                status=self.window._native_live_status
+                live_banks=(status.get("source_live_page_status_banks")
+                    if status.get("source_live_page_status_banks_verified") is True
+                    else None)
+                from ..core.original_live_result_registers import (
+                    source_live_status_projection)
+                health=connected_system_status(status)
+                trace=getattr(self.window,"_source_mode2_runtime",None)
+                source_fault=bool(trace is not None and
+                    trace.status_cells.system_error_latched)
+                if (live_banks is not None and health.connection_verified
+                        and not health.data_integrity_alert and
+                        not source_fault):
+                    result=source_live_status_projection(index,live_banks)
+                else:
+                    result=source_status_projection(index,None)
+            else:
+                result=source_status_projection(index,None)
         self._source_status_projection=result
+        self.status_page.setProperty(
+            "sourceLivePageStatusParamEvidence",
+            result.receipt() if self.window._live_active and
+            1<=index<=14 else None)
         name=result.table_name
         # The original 4 TStringGrid objects have distinct identities and
         # visibility. Keep inactive grids empty to block stale AUX/VALUES.

@@ -17,6 +17,7 @@ from .original_task2_stage_receipt import validate_original_task2_stage
 from .original_mode2_transmit_evidence import validate_original_task2_tx
 from .original_mode2_retry_timing import SOURCE_BACKOFF_WAITS_MS
 from .original_mode2_active_tx_provenance import verify_source_native_tx_origin
+from .original_live_result_registers import parse_live_result_registers
 from .original_system_register_fields import verify_source_error_overlap
 from .original_source_ring_receipt import validate_original_storage_receipt
 from .original_receive_gate_receipt import validate_original_receive_gate_receipt
@@ -224,7 +225,11 @@ def validate_live_status(payload: dict, *, expected_run: str,
         payload.get("source_original_receive_gate"),safe)
     source_ring=validate_original_storage_receipt(
         payload.get("source_original_storage"),safe,source_receive_gate)
+    live_banks=parse_live_result_registers(payload)
     result = dict(payload)
+    result["source_live_page_status_banks_verified"]=live_banks is not None
+    if live_banks is not None:
+        result["source_live_page_status_banks"]=live_banks
     result["source_original_task2_stage_verified"]=task2_stage is not None
     if task2_stage is not None:
         result["source_original_task2_stage"]=task2_stage
