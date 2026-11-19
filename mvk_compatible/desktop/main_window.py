@@ -3251,7 +3251,7 @@ class MainWindow(QMainWindow):
         self._live_long_rendered_key=None
         worker=self._source_fir_worker
         if worker is not None and worker.isRunning():
-            worker.requestInterruption()
+            worker.cancel()
         line=getattr(self,'wave_line',None)
         if line is not None:
             line.setVisible(False)
@@ -3299,7 +3299,7 @@ class MainWindow(QMainWindow):
             self._source_fir_pending=(window,profile,tag,code)
             if (worker.configuration_key !=
                     (window.request.session_id,ch,tag,code)):
-                worker.requestInterruption()
+                worker.cancel()
             self.wave_hint.setText(
                 f"Огибающая Code{code}: FIR/IQ в отдельном потоке · "
                 "ожидается последний SHA-проверенный GetSignal")
@@ -6879,7 +6879,7 @@ class MainWindow(QMainWindow):
         if fir_worker is not None and fir_worker.isRunning():
             # QThread may still hold the 2M validated Float32. Never let
             # Qt destroy a running worker. Stop cancellation is cooperative.
-            fir_worker.requestInterruption()
+            fir_worker.cancel()
             self.statusBar().showMessage(
                 "Закрытие: завершается фоновая FIR обработка; RAW не изменён")
             event.ignore()

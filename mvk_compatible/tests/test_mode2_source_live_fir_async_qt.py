@@ -46,7 +46,7 @@ def test_live_fir_worker_cancellation_never_emits_fake_result(qt_app,tmp_path):
     ready=[]
     worker=SourceLiveFIRWorker(window,profile,9,20)
     worker.ready.connect(ready.append)
-    worker.requestInterruption()
+    worker.cancel()
     worker.start()
     assert worker.wait(15000)
     qt_app.processEvents()
