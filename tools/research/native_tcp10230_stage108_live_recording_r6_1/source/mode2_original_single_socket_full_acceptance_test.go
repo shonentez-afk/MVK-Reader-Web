@@ -105,6 +105,27 @@ func mode2WriteSourceWindowRequest(run string,id string,hTag int,count uint32,en
     return os.WriteFile(filepath.Join(run,sourceLongWindowRequestName),content,0600)
 }
 
+// Unlike older fixtures, this test must use its OWN run identity.
+func mode2QueueMark(t *testing.T,c *frameMarkController,run string,seq int,event string){
+    t.Helper()
+    channels:=make([]bool,10)
+    spec:=make([]bool,43)
+    values:=make([]bool,73)
+    for i:=range channels{channels[i]=true}
+    for i:=range spec{spec[i]=true}
+    for i:=range values{values[i]=true}
+    req:=frameMarkRequest{
+        Schema:frameMarkRequestSchema,Sequence:seq,SessionID:filepath.Base(run),
+        Event:event,RequestedUTC:"2026-11-19T12:00:00Z",
+        Channels:channels,Spec:spec,Values:values,
+    }
+    body,e:=json.Marshal(req)
+    if e!=nil{t.Fatal(e)}
+    if e=os.WriteFile(filepath.Join(c.inbox,fmt.Sprintf("%04d.json",seq)),body,0600);e!=nil{
+        t.Fatal(e)
+    }
+}
+
 func TestMode2OneRealLoopbackSocketSignalSpectrumWritersStopSourceProof(t *testing.T){
     ln,e:=net.Listen("tcp4","127.0.0.1:0")
     if e!=nil{t.Fatal(e)}
@@ -125,8 +146,8 @@ func TestMode2OneRealLoopbackSocketSignalSpectrumWritersStopSourceProof(t *testi
     m.sourceTCP=&sourceTCPLedger{}
     m.sourceOperatorRateChan=make(chan string,1) // no stdin/hardware listener
     m.liveProgressEnabled=true
-    queueMark(t,marks,1,"data_begin")
-    queueMark(t,marks,2,"values_begin")
+    mode2QueueMark(t,marks,run,1,"data_begin")
+    mode2QueueMark(t,marks,run,2,"values_begin")
 
     first:=task2Status0Param(0).Raw
     wire:=append([]byte{},first...)
