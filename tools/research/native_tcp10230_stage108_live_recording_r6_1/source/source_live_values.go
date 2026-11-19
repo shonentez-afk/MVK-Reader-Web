@@ -31,6 +31,7 @@ type sourceLiveValuesEvent struct {
     Words uint16 `json:"register_words"`
     PayloadLEHex string `json:"param_payload_le_hex"`
     PayloadSHA256 string `json:"param_payload_sha256"`
+    RawTickEvidence *sourceValuesRawTick `json:"source_ordered_raw_tick,omitempty"`
 }
 type sourceLiveValuesWindow struct {
     Window int `json:"window"`
@@ -47,6 +48,13 @@ type sourceLiveValuesWindow struct {
     Events uint64 `json:"events"`
     Bytes uint64 `json:"bytes"`
     SHA256 string `json:"sha256"`
+    SourceRawLayoutName string `json:"source_raw_layout_name"`
+    SourceRawLayoutRows uint64 `json:"source_raw_layout_rows"`
+    SourceRawLayoutBytes uint64 `json:"source_raw_layout_bytes"`
+    SourceRawLayoutSHA256 string `json:"source_raw_layout_sha256"`
+    OriginalDelphiCSVParityVerified bool `json:"original_delphi_values_csv_byte_parity_verified"`
+    layoutFile *os.File
+    layoutDigest hash.Hash
     Outcome string `json:"outcome"`
     file *os.File
     digest hash.Hash
@@ -93,17 +101,28 @@ func(w *sourceLiveValuesWriter)applyFrameMarks(m *Monitor)error{
             f,e:=os.OpenFile(filepath.Join(w.dir,name),
                 os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
             if e!=nil{return e}
+            rawLayoutName:=fmt.Sprintf("SOURCE_W%02d_VALUES_3100_RAW_LAYOUT.csv",n)
+            layout,e:=os.OpenFile(filepath.Join(w.dir,rawLayoutName),
+                os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
+            if e!=nil{
+                _=f.Close()
+                _=os.Remove(filepath.Join(w.dir,name))
+                return e
+            }
             current:=&sourceLiveValuesWindow{
                 Window:n,BeginOperatorSequence:mark.Sequence,
                 BeginTick:m.summary.ValuesTicks,
                 StartBeforeFrame:m.summary.TotalFrames,
                 Channels:mark.Channels,Spec:mark.Spec,Values:mark.Values,
                 Name:name,file:f,digest:sha256.New(),Outcome:"ACTIVE",
+                SourceRawLayoutName:rawLayoutName,
+                layoutFile:layout,layoutDigest:sha256.New(),
             }
             w.windows=append(w.windows,current)
             w.active=current
-            m.filenames=append(m.filenames,name)
+            m.filenames=append(m.filenames,name,rawLayoutName)
             m.summary.Files[name]=name
+            m.summary.Files[rawLayoutName]=rawLayoutName
         case "values_end":
             if w.active==nil{return errors.New("source live WriteValues end without begin")}
             w.active.EndOperatorSequence=mark.Sequence
@@ -134,6 +153,9 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
        m.summary.ValuesTicks==0{
         return errors.New("source 0x3100 malformed writer payload/tick")
     }
+    snapshot,rawLayout,e:=m.sourceValuesOrderedRawTick(
+        w.active,blocks,at)
+    if e!=nil{return e}
     digest:=sha256.Sum256(trigger.Payload)
     value:=sourceLiveValuesEvent{
         FrameIndex:m.summary.TotalFrames,TickIndex:m.summary.ValuesTicks-1,
@@ -141,6 +163,7 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
         Address:"0x3100",Words:trigger.Words,
         PayloadLEHex:hex.EncodeToString(trigger.Payload),
         PayloadSHA256:hex.EncodeToString(digest[:]),
+        RawTickEvidence:&snapshot,
     }
     raw,e:=json.Marshal(value)
     if e!=nil{return e}
@@ -149,6 +172,14 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
     if e!=nil{return e}
     if n!=len(raw){return errors.New("source WriteValues short local record write")}
     _,_=w.active.digest.Write(raw)
+    layoutWritten,e:=w.active.layoutFile.Write(rawLayout)
+    if e!=nil{return e}
+    if layoutWritten!=len(rawLayout){
+        return errors.New("source WriteValues short RAW layout record write")
+    }
+    _,_=w.active.layoutDigest.Write(rawLayout)
+    w.active.SourceRawLayoutRows++
+    w.active.SourceRawLayoutBytes+=uint64(layoutWritten)
     w.active.Bytes+=uint64(n)
     w.active.Events++
     w.events++
@@ -164,6 +195,12 @@ func(w *sourceLiveValuesWriter)closeWindow(m *Monitor,outcome string)error{
         if e:=current.file.Close();e!=nil{return e}
         current.file=nil
     }
+    if current.layoutFile!=nil{
+        if e:=current.layoutFile.Close();e!=nil{return e}
+        current.layoutFile=nil
+    }
+    current.SourceRawLayoutSHA256=hex.EncodeToString(
+        current.layoutDigest.Sum(nil))
     current.SHA256=hex.EncodeToString(current.digest.Sum(nil))
     w.active=nil
     return nil
@@ -206,5 +243,6 @@ func(w *sourceLiveValuesWriter)cleanup(){
     if w==nil{return}
     for _,win:=range w.windows {
         if win.file!=nil{_ = win.file.Close();win.file=nil}
+        if win.layoutFile!=nil{_ = win.layoutFile.Close();win.layoutFile=nil}
     }
 }
