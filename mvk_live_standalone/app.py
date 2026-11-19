@@ -100,6 +100,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._last_status = None
         self._spectrum: VibrationView | None = None
         self._last_completed_spectrum_settings = None
+        # New authenticated RX frames do not invalidate a physical FFT that
+        # was already submitted; only OPERATOR processing changes do.
+        self._processing_revision = 0
         self._bearing_spectrum: VibrationView | None = None  # independent pinned source
         self._last_fft_submit=0.0
         self._waterfall_rows=[]
@@ -1254,6 +1257,11 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.kind.setCurrentIndex(
                 self.kind.findData("acceleration"))
             return
+        if self.smooth.value()%2==0:
+            # Qt allows typed even values despite a spin step of two.
+            with QtCore.QSignalBlocker(self.smooth):
+                self.smooth.setValue(min(101,self.smooth.value()+1))
+        self._processing_revision += 1
         self._manual_spec_axes = None
         self._show_envelope_if_needed()
         self._last_fft_submit=0.0
@@ -1267,6 +1275,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._render_dsp()
         self._update_frange_label()
         self._request_update()
+        refresh=getattr(self,"_modern_refresh_spectrum_setup",None)
+        if refresh is not None:
+            refresh()
 
     def _request_update(self,*_):
         self._generation += 1
@@ -1940,7 +1951,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         self._last_fft_submit=time.monotonic()
         self._last_submitted_key=job_key
-        self._job_settings=(self._generation,self._preview.updated_utc,s,job_key)
+        self._job_settings=(self._processing_revision,self._preview.updated_utc,s,job_key)
         self._future=self._executor.submit(
             analyze_live,source,fs,
             kind=s[1],mode=s[5],nfft=s[2],band_hz=s[3],
@@ -1964,7 +1975,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                                 job[2]==self._read_settings())
             except (ValueError,TypeError):
                 settings_match=False
-            if (settings_match and job[0]==self._generation and
+            if (settings_match and job[0]==self._processing_revision and
                     self._preview is not None and
                     (job[3][0][0]=="FROZEN")==self.freeze.isChecked()):
                 self._last_result=result
@@ -2133,6 +2144,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._spectrum=None
         self._last_completed_spectrum_settings=None
         self._last_stamp=None
+        self._processing_revision+=1
         self._generation+=1
         self.spec_curve.setData([],[])
         self.wave_curve.setData([],[])

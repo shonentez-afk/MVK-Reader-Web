@@ -674,10 +674,10 @@ def test_spectrum_panel_physical_modes_and_controls_are_honest(widget):
     assert "Хэнна" in w._modern_spectrum_setup_info.text()
     assert "Отсчётов в FFT" in " ".join(
         a.text() for a in panel.findChildren(QtWidgets.QLabel))
-    assert not w._modern_spectrum_envelope_row.isVisible()
+    assert w._modern_spectrum_envelope_row.isHidden()
     w.analysis.setCurrentIndex(w.analysis.findData("welch"))
     assert "50%" in w._modern_spectrum_setup_info.text()
-    assert not w._modern_spectrum_smoothing_row.isVisible()
+    assert w._modern_spectrum_smoothing_row.isHidden()
     assert not w.smooth.isEnabled()
     assert not w.y_height_choice.isEnabled()
     assert "автомасштаб" in " ".join(
@@ -690,8 +690,8 @@ def test_spectrum_panel_physical_modes_and_controls_are_honest(widget):
     assert w.y_height_choice.isEnabled()
     w.analysis.setCurrentIndex(w.analysis.findData("envelope"))
     assert w.kind.currentData()=="acceleration"
-    assert w._modern_spectrum_envelope_row.isVisible()
-    assert not w._modern_spectrum_smoothing_row.isVisible()
+    assert not w._modern_spectrum_envelope_row.isHidden()
+    assert w._modern_spectrum_smoothing_row.isHidden()
     w.kind.setCurrentIndex(w.kind.findData("velocity"))
     assert w.kind.currentData()=="acceleration"
 
@@ -795,3 +795,32 @@ def test_spectrum_out_of_nyquist_filter_never_uses_stale_curve(widget):
     assert "спектр недоступен" in w.metrics.text()
     assert len(w.overview_spec_curve.getData()[0])==0
     assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+
+def test_fft_worker_survives_normal_new_rx_preview_generation(widget):
+    """A new authenticated RX frame must not discard a valid in-flight FFT."""
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    assert w._future is not None
+    revision=w._processing_revision
+    generation=w._generation
+    w._request_update()   # same processing settings, newer RX
+    assert w._processing_revision==revision
+    assert w._generation==generation+1
+    w._future.result(timeout=20)
+    w._collect_analysis()
+    assert w._spectrum is not None
+    assert w._spectrum.kind=="acceleration"
+    assert w._last_completed_spectrum_settings==w._read_settings()
+
+
+def test_fft_smoothing_enforces_odd_width_even_when_typed_directly(widget):
+    w,_=widget
+    w.smooth.setValue(4)
+    assert w.smooth.value()==5
+    assert w.analysis.currentData()=="fft"
+    w.analysis.setCurrentIndex(w.analysis.findData("welch"))
+    assert not w.smooth.isEnabled()
+    assert w._modern_spectrum_smoothing_row.isHidden()
