@@ -60,6 +60,7 @@ def test_live_bwrite_table_one_shot_without_writevalues_device_tx(
         win._end_live_capture(False)
         controls.render()
         assert not controls.buttons["bWriteTable"].isEnabled()
+        assert controls.panel.property("sourceOriginalLiveTableSnapshotReceipt") is None
         assert dest.read_bytes()==previous
     finally:
         if win._live_active:
