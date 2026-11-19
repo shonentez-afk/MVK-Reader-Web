@@ -18,10 +18,13 @@ from .test_envelope_idr_candidate import fake_profile
 def _pair(tmp_path,f_range=1.):
     session=OfflineSession.open(fixture_zip(tmp_path))
     profile=fake_profile(i=1.,q=.4)
-    # source:GetAdjustedEnvelopeLength(code20, desired1997) = 2099,
-    # inverse GetSpectrum history(code20,N1024) = 2099.
+    # SOURCE-PROVEN: GetAdjustedEnvelopeLength(code20,
+    # desired bAdc length 2048) = 2099 (2048 + taps51*ratio1).
+    # Inverse GetSpectrum history(code20, post-FIR FFT N1024)=2099.
+    # To deliberately match SAME raw window, end=4096:
+    # source GetSignal start=2048, duration=2048, history begins 1997.
     wave=session.envelope(
-        1,20,start_s=2099/65536,seconds=1997/65536,profile=profile,
+        1,20,start_s=2048/65536,seconds=2048/65536,profile=profile,
         f_range=f_range,display_order='chronological',points=2000)
     fft=session.spectrum_envelope(
         1,20,1024,profile,end_s=4096/65536,

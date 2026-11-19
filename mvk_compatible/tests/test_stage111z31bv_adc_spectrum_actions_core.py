@@ -137,7 +137,7 @@ def test_source_full_fir_cursor_uses_raw_filtered_array_not_decimated_plot(tmp_p
     flow=OfflineMeasurementFlow.bind(OfflineSession.open(source),channel=1)
     original_hash=sha256(source.read_bytes()).hexdigest()
     wave=flow.envelope(
-        20,start_s=2099/65536,seconds=1997/65536,
+        20,start_s=2048/65536,seconds=2048/65536,
         profile=fake_profile(i=1.,q=.4),
         display_order="chronological",points=32)
     full=wave["cursor_full_samples_float32"]
@@ -169,7 +169,7 @@ def test_source_fir_cursor_rejects_tampered_trace_or_wrong_selected_adc(tmp_path
     file=fixture_zip(tmp_path,sample_count=4096)
     flow=OfflineMeasurementFlow.bind(OfflineSession.open(file),channel=1)
     d=flow.envelope(
-        20,start_s=2099/65536,seconds=1997/65536,
+        20,start_s=2048/65536,seconds=2048/65536,
         profile=fake_profile(),display_order="getsignal_buffer",points=70)
     reversed_cursor=OriginalEnvelopeCursor.from_trace(flow,d)
     assert reversed_cursor.output_order=="getsignal_buffer"

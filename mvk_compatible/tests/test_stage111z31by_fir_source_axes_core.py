@@ -19,7 +19,7 @@ from ..core.original_adc_source_axes import (
 
 
 @pytest.mark.parametrize("code,output_rate,history",[
-    (20,32768,102), (1,16384,388),
+    (20,32768,51), (1,16384,97),
 ])
 def test_full_fir_output_x_uses_actual_rate_instead_of_raw_fs(
         tmp_path,code,output_rate,history):

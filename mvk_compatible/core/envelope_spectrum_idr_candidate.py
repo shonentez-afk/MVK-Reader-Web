@@ -63,9 +63,13 @@ def source_selected_envelope_fft_plan(selected_bspec_lines_n:int,
     and mutates Params.Count. 007D1FE8 THEN FFTs Params.Count.
     All source-derived control lengths: not original Win32 sample parity.
     """
+    # Original _Unit128.pas bSpecLines has an exact sparse menu:
+    # 2048 is a power of two but it is NOT an original bSpecLines Tag.
+    if (type(selected_bspec_lines_n) is not int or
+            selected_bspec_lines_n not in
+            (1024,4096,8192,16384,32768,65536,131072,262144)):
+        raise ValueError("Invalid original bSpecLines menu N")
     selected=check_n(selected_bspec_lines_n)
-    if selected<1024:
-        raise ValueError("Original bSpecLines selector starts at 1024")
     info=envelope_plan(selected,sample_rate,code)
     stages=tuple(x for x in (
         info["pre_stage"],info["second_stage"],info["stage"]) if x)
