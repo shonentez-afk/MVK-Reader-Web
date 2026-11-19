@@ -1097,3 +1097,27 @@ def test_time_scope_selected_adc_without_data_clears_old_source_and_cursor(widge
         assert xx is None or len(xx)==0
     assert "Fs и реальные отсчёты не подтверждены" in (
         w._modern_time_setup_info.text())
+
+
+
+def test_time_scope_timebase_change_under_freeze_never_resubmits_fft(widget):
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w.freeze.setChecked(True)
+    w._toggle_freeze(True)
+    assert w.freeze.isChecked()
+    old_revision=w._processing_revision
+    old_generation=w._generation
+    old_key=w._last_submitted_key
+    old_future=w._future
+    old_spec_settings=w._read_settings()
+    w.timebase.setCurrentIndex(w.timebase.findData(.1))
+    assert w.wave.viewRange()[0]==pytest.approx([-.1,0.],abs=1e-5)
+    assert w.overview_wave.viewRange()[0]==pytest.approx([-.1,0.],abs=1e-5)
+    assert w._generation==old_generation
+    assert w._processing_revision==old_revision
+    assert w._last_submitted_key==old_key
+    assert w._future is old_future
+    assert w._read_settings()==old_spec_settings
+    w.freeze.setChecked(False)
+    w._toggle_freeze(False)

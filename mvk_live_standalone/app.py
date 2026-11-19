@@ -379,7 +379,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         for seconds in (.1,.25,.5,1.,2.,5.,10.,30.):
             self.timebase.addItem(f"{seconds:g} с",seconds)
         self.timebase.setCurrentIndex(3)
-        self.timebase.currentIndexChanged.connect(self._review_changed)
+        # Changing the time scope length is a DISPLAY action only,
+        # even during Freeze. History offset (_review_changed) affects
+        # both spectra and waveforms; timebase never recomputes an FFT.
+        self.timebase.currentIndexChanged.connect(self._render_wave)
         self.rpm_detect=QtWidgets.QPushButton("Предложить 1× из ВС")
         self.rpm_detect.clicked.connect(self._propose_rotation)
         self.advanced_layout.addWidget(self.rpm_detect)
