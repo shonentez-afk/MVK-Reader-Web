@@ -1100,22 +1100,32 @@ def install_modern_shell(win, main, panel, review, storage):
                 processing += f" Принято {current.segments} сегм. Welch."
         calc_info.setText(f"{timing}. {processing}")
         filter_mode = win.filter_choice.currentData()
-        centre.setVisible(filter_mode in (
+        ordinary_enabled = mode != "envelope"
+        win.filter_choice.setEnabled(ordinary_enabled)
+        win.filter_center.setEnabled(ordinary_enabled)
+        centre.setVisible(ordinary_enabled and filter_mode in (
             "original_preset", "octave", "third_octave", "double_octave"))
         centre_label.setText(
             "Полоса меню MVKView" if filter_mode == "original_preset"
             else "Центральная частота, Гц")
-        win.filter_button.setVisible(filter_mode in (
+        win.filter_button.setVisible(ordinary_enabled and filter_mode in (
             "highpass", "lowpass", "bandpass"))
-        filter_text = filter_notes.get(filter_mode, "Неизвестный фильтр.")
-        if filter_mode not in ("none", "notch50", "notch60"):
+        win.filter_button.setEnabled(
+            ordinary_enabled and filter_mode in (
+                "highpass", "lowpass", "bandpass"))
+        filter_text = (
+            "Огибающая: работает только резонансная полоса выше. "
+            "Фильтр FFT/PSD сохранён, но в расчёте огибающей НЕ участвует."
+            if not ordinary_enabled else
+            filter_notes.get(filter_mode, "Неизвестный фильтр."))
+        if ordinary_enabled and filter_mode not in ("none", "notch50", "notch60"):
             try:
                 # Display ACTUAL edges/centre instead of only a generic
                 # definition: the operator must see what changed.
                 filter_text = win._filter_description() + " · " + filter_text
             except (ValueError,TypeError):
                 pass  # invalid source/fs is reported explicitly below
-        if fs is not None and fs > 0:
+        if ordinary_enabled and fs is not None and fs > 0:
             try:
                 settings = win._read_settings()
                 low, high = settings[3]

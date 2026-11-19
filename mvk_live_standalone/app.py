@@ -1231,23 +1231,30 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._apply_operator_ranges()
 
     def _read_settings(self):
-        band=self.band.currentData()
-        if self.filter_choice.currentData()=="original_preset":
-            selected=self.filter_center.currentData()
-            if selected is None:
-                raise ValueError("Не выбрана полоса из меню MVKView")
-            family,center=selected
-            band=((0.,None) if family=="none"
-                  else preset_band(family,center))
-        elif self.filter_choice.currentData() in FAMILIES:
-            band=preset_band(self.filter_choice.currentData(),
-                             self.filter_center.currentData())
-        elif band=="custom":
-            high=float(self.custom_high.value())
-            band=(float(self.custom_low.value()),high if high>0 else None)
+        # Hilbert demodulation has its OWN resonance-band selection. The
+        # ordinary FFT/PSD filter must not appear to work while silently
+        # being ignored by the envelope calculation. Preserve its widgets
+        # for returning to FFT, but exclude that processing from this job.
+        envelope=self.analysis.currentData()=="envelope"
+        band=(0.,None) if envelope else self.band.currentData()
+        notch=None if envelope else self.notch.currentData()
+        if not envelope:
+            if self.filter_choice.currentData()=="original_preset":
+                selected=self.filter_center.currentData()
+                if selected is None:
+                    raise ValueError("Не выбрана полоса из меню MVKView")
+                family,center=selected
+                band=((0.,None) if family=="none"
+                      else preset_band(family,center))
+            elif self.filter_choice.currentData() in FAMILIES:
+                band=preset_band(self.filter_choice.currentData(),
+                                 self.filter_center.currentData())
+            elif band=="custom":
+                high=float(self.custom_high.value())
+                band=(float(self.custom_low.value()),high if high>0 else None)
         return (self.adc.currentData(),self.kind.currentData(),self.nfft.currentData(),
                 band,self.smooth.value(),
-                self.analysis.currentData(),self.envelope_band.currentData(),self.notch.currentData())
+                self.analysis.currentData(),self.envelope_band.currentData(),notch)
 
     def _on_control_change(self,*_):
         # Envelope demodulation is physically defined for acceleration.

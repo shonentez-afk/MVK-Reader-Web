@@ -895,3 +895,26 @@ def test_spectrum_manual_axis_dialog_immediately_updates_overview(widget,monkeyp
     w._reset_spectrum_axis()
     assert w._manual_spec_axes is None
     assert w.spec.viewRange()[0]==w.overview_spec.viewRange()[0]
+
+
+
+def test_spectrum_envelope_does_not_silently_use_fft_only_filter(widget):
+    w,_=widget
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("highpass"))
+    w.custom_low.setValue(200.)
+    assert w._read_settings()[3]==(200.,None)
+    assert w.filter_choice.isEnabled()
+    w.analysis.setCurrentIndex(w.analysis.findData("envelope"))
+    assert w.analysis.currentData()=="envelope"
+    assert w.kind.currentData()=="acceleration"
+    assert w._read_settings()[3]==(0.,None)
+    assert w._read_settings()[-1] is None
+    assert not w.filter_choice.isEnabled()
+    assert not w.filter_button.isEnabled()
+    assert not w._modern_spectrum_envelope_row.isHidden()
+    assert "НЕ участвует" in w._modern_spectrum_filter_note.text()
+    w.analysis.setCurrentIndex(w.analysis.findData("fft"))
+    assert w.filter_choice.isEnabled()
+    assert w.filter_button.isEnabled()
+    assert w._read_settings()[3]==(200.,None)
+    assert w._modern_spectrum_envelope_row.isHidden()
