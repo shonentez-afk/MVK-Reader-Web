@@ -1028,6 +1028,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         # MVKView-like quick presets only choose physical kind and
         # ordinate; an operator's X-scale and FFT/PSD mode stay independent.
         kind,scale=view_settings(self.spectrum_view.currentData())
+        old_kind=self.kind.currentData()
+        old_scale=self.yscale.currentData()
         blocks=[QtCore.QSignalBlocker(w) for w in (self.kind,self.yscale)]
         try:
             self.kind.setCurrentIndex(self.kind.findData(kind))
@@ -1037,6 +1039,15 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._rebuild_y_height()
         self._show_envelope_if_needed()
         self._on_control_change()
+        if (old_kind==kind and old_scale!=scale and
+                self._spectrum is not None and
+                self._spectrum.kind==kind and
+                self._spectrum.mode==self.analysis.currentData()):
+            # Switching log-VU(dB) <-> linear-VU reuses the SAME physical
+            # acceleration FFT. The preset intentionally blocks Y signals,
+            # so redraw its ordinate immediately, even without live RX.
+            # A kind change (VU->VS/VP) still waits for a genuine recompute.
+            self._render_spectrum()
 
 
     def _select_primary_filter(self,*_):

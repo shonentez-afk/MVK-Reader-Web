@@ -615,3 +615,40 @@ def test_overview_all_controls_update_real_verified_graphs_and_physical_units(wi
     assert w.wave.viewRange()[1]==pytest.approx([-2,2],abs=1e-5)
     assert w.overview_wave.viewRange()[1]==pytest.approx([-2,2],abs=1e-5)
     assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+
+def test_overview_db_to_linear_vu_redraws_immediately_without_new_fft(widget):
+    """A physical FFT can be replotted in dB or m/s² without a device."""
+    from mvk_live_standalone.vibration import (
+        analyze_vibration, vibration_plot_values)
+    w,_=widget
+    fs=8192
+    n=8192
+    t=np.arange(n,dtype=np.float64)/fs
+    samples=np.sqrt(2.)*np.sin(2*math.pi*100.*t)
+    assert w._preview is None
+    w.nfft.setCurrentIndex(w.nfft.findData(n))
+    w._spectrum=analyze_vibration(
+        samples,fs,kind="acceleration",mode="fft",nfft=n)
+    w._render_spectrum()
+    assert w.yscale.currentData()=="db"
+    x,y_db=w.overview_spec_curve.getData()
+    assert len(x)>10
+    assert np.all(np.isfinite(y_db))
+    w._overview_spectrum_view.setCurrentIndex(
+        w._overview_spectrum_view.findData("linear_vu"))
+    assert w._spectrum is not None
+    assert w.kind.currentData()=="acceleration"
+    assert w.yscale.currentData()=="linear"
+    _,y_linear=w.overview_spec_curve.getData()
+    np.testing.assert_allclose(
+        y_linear, vibration_plot_values(w._spectrum,"linear"),
+        rtol=1e-12)
+    assert not np.array_equal(y_db,y_linear)
+    w._overview_spectrum_view.setCurrentIndex(
+        w._overview_spectrum_view.findData("log_vu"))
+    assert w.yscale.currentData()=="db"
+    _,y_back=w.overview_spec_curve.getData()
+    np.testing.assert_allclose(y_back,y_db,rtol=1e-12,atol=1e-10)
+    assert w._native.state()==w._native.ProcessState.NotRunning
