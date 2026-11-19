@@ -638,8 +638,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_plot.showGrid(x=True,y=True,alpha=.2)
         self.dsp_curve=self.dsp_plot.plot(pen=pg.mkPen("#6b8cbd",width=1.5),
                                           symbol="o",symbolSize=4)
-        # Third-octave centres are logarithmically spaced (Hz remain real).
-        self.dsp_plot.getPlotItem().setLogMode(x=True,y=False)
+        # Keep physical frequency coordinates unchanged; grouping is UI only.
         self.dsp_band_summary=QtWidgets.QLabel(
             "43 исходные полосы · ожидание данных МВК01",dsp_rms_page)
         self.dsp_band_summary.setWordWrap(True)
