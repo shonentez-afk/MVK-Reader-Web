@@ -9,10 +9,10 @@ from mvk_live_standalone.spectrum_controls import (
 
 def test_four_views_are_not_three_unrelated_selectors():
     assert [(label,key) for label,key,_,_ in VIEW_MODES]==[
-        ("Логарифмическая (ВУ, дБ)","log_vu"),
-        ("Линейный ВУ","linear_vu"),
-        ("Линейный ВС","linear_vs"),
-        ("Линейный ВП","linear_vp"),
+        ("ВУ · уровень в дБ","log_vu"),
+        ("ВУ · м/с²","linear_vu"),
+        ("ВС · мм/с","linear_vs"),
+        ("ВП · мкм","linear_vp"),
     ]
     assert view_settings("log_vu")==("acceleration","db")
     assert view_settings("linear_vu")==("acceleration","linear")
