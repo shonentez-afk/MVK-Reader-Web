@@ -46,6 +46,7 @@ type sourceLongWindowRequest struct {
     DeviceEnd uint32 `json:"device_end_index"`
     EnvelopeCode int `json:"envelope_code,omitempty"`
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
+    OriginalHTag int `json:"original_h_tag,omitempty"`
 }
 type sourceLongWindowResult struct {
     Schema string `json:"schema"`
@@ -69,6 +70,7 @@ type sourceLongWindowResult struct {
     SHA256 string `json:"sha256"`
     EnvelopeCode int `json:"envelope_code,omitempty"`
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
+    OriginalHTag int `json:"original_h_tag,omitempty"`
 }
 
 func sourceLongWindowLength(rate uint32,tag int) (uint32,error) {
@@ -116,51 +118,67 @@ var sourceFIREnvelopeStages=[32]int{
 var sourceFIRTaps=[11]uint32{0,97,129,161,193,51,49,45,89,177,353}
 var sourceFIRDecim=[11]uint32{0,4,4,4,8,2,1,2,4,8,16}
 
-func sourceFIREnvelopeWindowLength(rate uint32,code int,selected uint32)(uint32,error){
-    if !acceptedRates[rate] || code<1 || code>31{
-        return 0,errors.New("source FIR invalid ADC rate or EnvelopeCode")
+// Original 007D1158/007D1C48/007D1E70 source arithmetic shared by
+// spectrum and GetSignal. Time-domain post-FIR N is NOT a radix-2 FFT N.
+func sourceFIRWindowCounts(rate uint32,code int,selected uint32)(uint32,uint32,uint32,error){
+    if !acceptedRates[rate] || code<1 || code>31 || selected==0 {
+        return 0,0,0,errors.New("source FIR invalid ADC rate, code or window")
     }
-    if _,e:=sourceFFTWindowLength(selected);e!=nil{return 0,e}
     target:=sourceFIREnvelopeRates[code]
-    if target==0 || rate<target || rate%target!=0{
-        return 0,errors.New("source FIR target rate not supported by ADC")
+    if target==0 || rate<target || rate%target!=0 {
+        return 0,0,0,errors.New("source FIR target rate not supported by ADC")
     }
     ratio:=rate/target
-    // The native Go receiver accepts exactly the original known five
-    // MVK01 sample rates. Their valid source FIR ratios are 1/2/4/8;
-    // 16/32 are INVALID original Delphi ratios and must not be guessed.
     var prefix uint32
-    switch ratio{
+    switch ratio {
     case 1:prefix=0
     case 2:prefix=45
     case 4:prefix=89
     case 8:prefix=177
-    default:return 0,errors.New("original source FIR Invalid sample rate")
+    default:return 0,0,0,errors.New("original source FIR Invalid sample rate")
     }
     stage:=sourceFIREnvelopeStages[code]
     count:=uint64(selected)+uint64(prefix)+uint64(sourceFIRTaps[stage])*uint64(ratio)
-    if count==0 || count>sourceOriginalStorageSamples{
-        return 0,errors.New("source FIR request exceeds original 2M ring")
+    if count==0 || count>sourceOriginalStorageSamples {
+        return 0,0,0,errors.New("source FIR history exceeds original 2M ring")
     }
     n:=uint32(count)
-    if ratio>1{
+    if ratio>1 {
         var pre int
-        switch ratio{case 2:pre=7;case 4:pre=8;case 8:pre=9}
-        if n<sourceFIRTaps[pre]+sourceFIRDecim[pre]{
-            return 0,errors.New("source FIR pre-decimator lacks history")
+        switch ratio {case 2:pre=7;case 4:pre=8;case 8:pre=9}
+        if n<sourceFIRTaps[pre]+sourceFIRDecim[pre] {
+            return 0,0,0,errors.New("source FIR pre-decimator lacks history")
         }
         n=(n-sourceFIRTaps[pre])/sourceFIRDecim[pre]
     }
-    if n<sourceFIRTaps[stage]+sourceFIRDecim[stage]{
-        return 0,errors.New("source FIR I/Q lacks history")
+    if n<sourceFIRTaps[stage]+sourceFIRDecim[stage] {
+        return 0,0,0,errors.New("source FIR I/Q lacks history")
     }
     n=(n-sourceFIRTaps[stage])/sourceFIRDecim[stage]
     fsout:=target/sourceFIRDecim[stage]
+    if n==0 || fsout==0 {
+        return 0,0,0,errors.New("source FIR produced empty GetSignal")
+    }
+    return uint32(count),n,fsout,nil
+}
+
+func sourceFIREnvelopeWindowLength(rate uint32,code int,selected uint32)(uint32,error){
+    if _,err:=sourceFFTWindowLength(selected);err!=nil{return 0,err}
+    count,n,fsout,err:=sourceFIRWindowCounts(rate,code,selected)
+    if err!=nil{return 0,err}
     if n<2 || (n&(n-1))!=0 || n>262144 ||
        uint64(fsout)*uint64(selected)!=uint64(rate)*uint64(n){
         return 0,errors.New("source FIR Params.Count/FFT frequency grid mismatch")
     }
-    return uint32(count),nil
+    return count,nil
+}
+
+// bAdcHScale HTag 0..13 -> precise original PRE-FIR GetSignal history.
+// -3 is a strictly local IPC selector and NEVER a network command.
+func sourceFIRGetSignalWindowLength(rate uint32,code int,hTag int)(uint32,uint32,uint32,error){
+    selected,err:=sourceLongWindowLength(rate,hTag)
+    if err!=nil{return 0,0,0,err}
+    return sourceFIRWindowCounts(rate,code,selected)
 }
 
 func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
@@ -202,19 +220,29 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     m.sourceLongWindowLastID=req.RequestID
     // HTag>=0: original ADC time window. -1: plain bSpecLines FFT.
     // -2: original EnvelopeCode/GetAdjustedEnvelopeLength PRE-FIR window.
+    // -3: original filtered time-domain GetSignal HTag + FIR history.
     // The negative selector is LOCAL IPC ONLY and never reaches MVK01.
     var n uint32
     switch req.HTag {
+    case -3:
+        if req.OriginalBSpecLines!=0 {
+            return errors.New("filtered GetSignal cannot carry bSpecLines")
+        }
+        n,_,_,e=sourceFIRGetSignalWindowLength(
+            req.SampleRateHz,req.EnvelopeCode,req.OriginalHTag)
     case -2:
+        if req.OriginalHTag!=0{
+            return errors.New("spectrum FIR cannot carry ADC HTag")
+        }
         n,e=sourceFIREnvelopeWindowLength(
             req.SampleRateHz,req.EnvelopeCode,req.OriginalBSpecLines)
     case -1:
-        if req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0{
+        if req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0 || req.OriginalHTag!=0{
             return errors.New("plain FFT must not contain FIR metadata")
         }
         n,e=sourceFFTWindowLength(req.Samples)
     default:
-        if req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0{
+        if req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0 || req.OriginalHTag!=0{
             return errors.New("plain ADC HTag must not contain FIR metadata")
         }
         n,e=sourceLongWindowLength(req.SampleRateHz,req.HTag)
@@ -278,6 +306,7 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         SHA256:hex.EncodeToString(sum[:]),
         EnvelopeCode:req.EnvelopeCode,
         OriginalBSpecLines:req.OriginalBSpecLines,
+        OriginalHTag:req.OriginalHTag,
     }
     return writeSourceLongWindowAtomic(m.dir,entry,data,receipt)
 }

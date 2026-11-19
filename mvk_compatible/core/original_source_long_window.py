@@ -28,6 +28,7 @@ from .original_adc_view_controls import ADC_HORIZONTAL_MS
 from .original_source_ring_receipt import BUFFER_ELEMENTS
 from .original_sample_cursor32 import u32_preview_bounds, u32_matches_go_status
 from .envelope_spectrum_idr_candidate import source_selected_envelope_fft_plan
+from .envelope_idr_candidate import envelope_plan
 
 REQUEST_NAME="MVK_SOURCE_WINDOW_REQUEST.json"
 RESULT_NAME="MVK_SOURCE_WINDOW_RESULT.zip"
@@ -50,6 +51,7 @@ class SourceWindowRequest:
     device_end_index: int
     envelope_code: int = 0
     original_bspec_lines: int = 0
+    original_h_tag: int = 0
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,8 @@ SOURCE_FFT_LENGTHS=frozenset((1024,4096,8192,16384,32768,65536,131072,262144))
 def _trusted_source(status:dict,adc:int,h_tag:int,
                     *,require_history:bool=True,
                     fft_n:int|None=None,
-                    envelope_code:int=0):
+                    envelope_code:int=0,
+                    source_h_tag:int=0):
     if (not isinstance(status,dict) or
             status.get("phase")!="RECORDING" or
             status.get("capture_only") is not False or
@@ -98,13 +101,17 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
     if type(h_tag) is not int or not (
             0<=h_tag<len(ADC_HORIZONTAL_MS) or
             h_tag in (-1,-2) and type(fft_n) is int and
-            fft_n in SOURCE_FFT_LENGTHS):
+            fft_n in SOURCE_FFT_LENGTHS or h_tag==-3):
         raise ValueError("Source GetSignal/GetSpectrum: original HTag or FFT N required")
     if (type(envelope_code) is not int or
-            (h_tag==-2 and not 1<=envelope_code<=31) or
-            (h_tag!=-2 and envelope_code!=0)):
-        raise ValueError("Source GetSpectrum: original FIR code required only for -2")
-    if h_tag>=0 and fft_n is not None:
+            (h_tag in (-2,-3) and not 1<=envelope_code<=31) or
+            (h_tag not in (-2,-3) and envelope_code!=0)):
+        raise ValueError("Source GetSignal/GetSpectrum: source FIR code mismatch")
+    if (type(source_h_tag) is not int or
+            (h_tag==-3 and not 0<=source_h_tag<len(ADC_HORIZONTAL_MS)) or
+            (h_tag!=-3 and source_h_tag!=0)):
+        raise ValueError("Source GetSignal: original filtered HTag mismatch")
+    if (h_tag>=0 or h_tag==-3) and fft_n is not None:
         raise ValueError("Source GetSignal: FFT length with time-scale request")
     row=status["source_original_storage"]["channels"][adc-1]
     live=status["channels"][adc-1]
@@ -137,6 +144,12 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         source_plan=source_selected_envelope_fft_plan(
             fft_n,rate,envelope_code)
         count=source_plan["source_getadjusted_length_samples"]
+    elif h_tag==-3:
+        requested=rate*ADC_HORIZONTAL_MS[source_h_tag]//1000
+        if requested==0:
+            raise ValueError("Source GetSignal FIR: time-scale has no real samples")
+        count=envelope_plan(requested,rate,envelope_code)[
+            "adjusted_input_length"]
     elif h_tag==-1:
         count=fft_n
     else:
@@ -154,10 +167,12 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
 def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
                               *,request_id:str|None=None,
                               fft_n:int|None=None,
-                              envelope_code:int=0)->SourceWindowRequest|None:
+                              envelope_code:int=0,
+                              source_h_tag:int=0)->SourceWindowRequest|None:
     """Create ONE bounded GetSignal/FFT/FIR ring request; no socket or TX."""
     settings=_trusted_source(
-        status,adc,h_tag,fft_n=fft_n,envelope_code=envelope_code)
+        status,adc,h_tag,fft_n=fft_n,envelope_code=envelope_code,
+        source_h_tag=source_h_tag)
     if settings is None:
         return None
     row,live,rate,count=settings
@@ -171,7 +186,8 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
     req=SourceWindowRequest(
         status["session_id"],rid,adc,h_tag,count,end,rate,
         row["next_device_sample_index"],envelope_code,
-        fft_n if h_tag==-2 else 0)
+        fft_n if h_tag==-2 else 0,
+        source_h_tag if h_tag==-3 else 0)
     data={
         "schema":REQUEST_SCHEMA,"session_id":req.session_id,
         "request_id":req.request_id,"adc":req.adc,
@@ -182,6 +198,9 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
     if h_tag==-2:
         data["envelope_code"]=req.envelope_code
         data["original_bspec_lines"]=req.original_bspec_lines
+    elif h_tag==-3:
+        data["envelope_code"]=req.envelope_code
+        data["original_h_tag"]=req.original_h_tag
     encoded=json.dumps(data,separators=(",",":"),sort_keys=True).encode("ascii")
     if len(encoded)>1024:
         raise ValueError("Source GetSignal: oversized local request")
@@ -203,6 +222,19 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
             except OSError:
                 pass
     return req
+
+
+def submit_source_getsignal_envelope_window(
+        root:str|Path,status:dict,adc:int,original_h_tag:int,envelope_code:int,
+        *,request_id:str|None=None)->SourceWindowRequest|None:
+    """Read exact GetAdjustedEnvelopeLength(HTag,Code) from Go ring.
+
+    HTag=-3 is strictly local IPC, not Delphi/device HTag or TCP.
+    A separately verified original IDP must gate numerical display in Qt.
+    """
+    return submit_source_long_window(
+        root,status,adc,-3,source_h_tag=original_h_tag,
+        envelope_code=envelope_code,request_id=request_id)
 
 
 def submit_source_fft_window(root: str|Path,status:dict,adc:int,n_fft:int,
@@ -232,7 +264,8 @@ def load_source_long_window(root:str|Path,status:dict,
         status,request.adc,request.h_tag,
         fft_n=(request.original_bspec_lines if request.h_tag==-2 else
                request.samples if request.h_tag==-1 else None),
-        envelope_code=request.envelope_code)
+        envelope_code=request.envelope_code,
+        source_h_tag=request.original_h_tag)
     if settings is None:
         raise ValueError("Source GetSignal/GetSpectrum: real source history not resident")
     row,live,rate,count=settings
@@ -267,6 +300,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     meta.get("source_h_tag")!=request.h_tag or
                     meta.get("envelope_code",0)!=request.envelope_code or
                     meta.get("original_bspec_lines",0)!=request.original_bspec_lines or
+                    meta.get("original_h_tag",0)!=request.original_h_tag or
                     meta.get("entry")!=entry or
                     meta.get("samples")!=count or
                     meta.get("capture_end")!=request.capture_end or

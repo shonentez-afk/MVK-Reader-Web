@@ -51,7 +51,8 @@ from ..core.original_spectrum_view_binding import (
 from ..core.original_visible_spectrum_pair import compare_visible_original_spectrum_pair
 from ..core.original_visible_pixel_compare import compare_current_original_pixel_view
 from ..core.original_spectrum_vertical_view import source_spectrum_vertical_view
-from ..core.envelope_idr_candidate import EnvelopeProfile,ENVELOPE_RATES
+from ..core.envelope_idr_candidate import (EnvelopeProfile,ENVELOPE_RATES,
+    envelope_plan,process_original_envelope_candidate)
 from ..core.original_envelope_shared_menu import (
     source_original_envelope_menu,source_original_envelope_selection,
     source_original_envelope_rebind,source_original_envelope_caption)
@@ -3118,7 +3119,12 @@ class MainWindow(QMainWindow):
             req=window.request
             if req.adc!=self._ch():
                 return
-            if req.h_tag in (-1,-2):
+            if req.h_tag==-3:
+                if (req.original_h_tag!=self._wave_hscale_tag or
+                        req.envelope_code!=int(
+                            self.wave_envelope_code.currentData() or 0)):
+                    return
+            elif req.h_tag in (-1,-2):
                 if req.h_tag==-1:
                     if (req.samples!=int(self.spec_n.currentData()) or
                             self.spec_envelope_button.isChecked()):
@@ -3130,7 +3136,7 @@ class MainWindow(QMainWindow):
                             req.original_bspec_lines!=int(
                                 self.spec_n.currentData())):
                         return
-            elif req.h_tag!=self._wave_hscale_tag:
+            elif req.h_tag!=-3 and req.h_tag!=self._wave_hscale_tag:
                 return
             decision=gate_live_preview(
                 self._native_live_status,window.preview,
@@ -3221,6 +3227,84 @@ class MainWindow(QMainWindow):
         self._sync_spectrum_summary_primary()
         self.statusBar().showMessage('Предварительные графики скрыты, RAW Native не изменён')
 
+    def _render_source_live_filtered_wave(self,ch,tag,code):
+        """Original-IDP FIR/IQ candidate, SHA-bound Go ring and real HTag.
+
+        Source: _Unit115:007D0C30/007D1158/007D1C48/007D1E70.
+        Reversed output, no second gain; Delphi x87 1:1 NOT verified.
+        """
+        status=self._native_live_status or {}
+        profile=self.envelope_profile
+        window=self._live_long_window
+        if (self._source_live_view_frozen or
+                status.get("phase")!="RECORDING" or
+                status.get("snapshot_stale") is not False or
+                status.get("source_original_storage_verified") is not True or
+                status.get("source_rate_transition_during_live") is True):
+            raise ValueError(
+                "Фильтрованный GetSignal: источник/Fs/Freeze не подтверждены")
+        if (profile is None or
+                profile.provenance!="USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED"):
+            raise ValueError(
+                f"Огибающая Code{code}: LOCAL_ORIGINAL_FIR_PROFILE_REQUIRED. "
+                "Обычный сигнал не подменяет огибающую; "
+                "нужен локальный оригинальный IDP")
+        if (window is None or window.request.h_tag!=-3 or
+                window.request.adc!=ch or
+                window.request.original_h_tag!=tag or
+                window.request.envelope_code!=code or
+                window.request.session_id!=status.get("session_id")):
+            raise ValueError(
+                f"Огибающая Code{code}: ожидание SHA-проверенного полного "
+                "pre-FIR HTag-окна Go; обычный сигнал не подменяет огибающую")
+        request=window.request
+        selected=request.sample_rate_hz*ADC_HORIZONTAL_MS[tag]//1000
+        plan=envelope_plan(selected,request.sample_rate_hz,code)
+        samples=window.preview.channels[ch].samples
+        if (request.samples!=plan["adjusted_input_length"] or
+                len(samples)!=request.samples):
+            raise ValueError("Original GetSignal: неверная FIR история")
+        # Large FIR must not block Qt's paint/event loop. The source
+        # window stays validated; a separate DSP worker is still needed.
+        if len(samples)>262144:
+            raise ValueError(
+                f"FIR HTag: полная история {len(samples)} отсчётов; "
+                "для длинного окна требуется отдельный DSP worker")
+        key=(request.request_id,self.wave_mode.currentIndex(),code,"SOURCE_FIR")
+        if self._live_long_rendered_key==key:
+            return
+        d=process_original_envelope_candidate(
+            samples,request.sample_rate_hz,code,profile,f_range=1.0)
+        values=np.asarray(d["getsignal_buffer"],dtype=np.float32)
+        if (len(values)==0 or len(values)>len(samples) or
+                not np.all(np.isfinite(values)) or
+                not np.array_equal(values,d["chronological"][::-1])):
+            raise ValueError("Source GetSignal: неверный обратный FIR буфер")
+        time_ms=np.arange(len(values),dtype=float)*1000./d["output_sample_rate_hz"]
+        self.wave_plot.clear_source_tqgr_series()
+        self.wave_plot.clear()
+        self.wave_line=None
+        self._wave_hover_window=None
+        self.wave_plot.getViewBox().invertX(True)
+        self.wave_plot.setLabel(
+            "bottom","Время до текущего отсчёта, мс · FIR кандидат")
+        self.wave_plot.setLabel("left","Огибающая, м/с² · не Delphi 1:1")
+        self.wave_plot.plot(time_ms,values,pen=pg.mkPen("#176c92"))
+        self.wave_plot.setXRange(
+            0.,max(0.1,float(ADC_HORIZONTAL_MS[tag])),padding=0.)
+        self.wave_mean_primary.setText(
+            f"LIVE АЦП{ch} · FIR Code{code} · "
+            f"СКЗ-кандидат {d['rms_m_s2']:.5g} м/с²\n"
+            "Оригинальный Delphi/x87 GetSignal ещё не принят")
+        self.wave_hint.setText(
+            f"Источник Go 2²¹ SHA={window.preview.channels[ch].sha256[:12]} · "
+            f"HTag={tag} {ADC_HORIZONTAL_MS[tag]}мс · "
+            f"pre-FIR {len(samples)} → post-FIR {len(values)} · "
+            f"Fs={d['output_sample_rate_hz']} Гц · FRange=1 · "
+            "обратный буфер GetSignal; FIR/IQ кандидат, "
+            "Win32 и курсор 1:1 не проверены")
+        self._live_long_rendered_key=key
+
     def _render_live_wave(self):
         if (not self._live_active or
                 (self._live_preview is None and self._live_long_window is None)):
@@ -3228,34 +3312,13 @@ class MainWindow(QMainWindow):
         try:
             ch=self._ch()
             tag=self._wave_hscale_tag
-            # Original _Unit115 GetSignal 007D0C30: EnvelopeCode>0
-            # changes the actual sample processing (NoDC -> optional
-            # decimation -> I/Q FIR -> |I+jQ|), not just its plot label.
-            # This live client does not yet possess a source-audited
-            # full FIR return window. Never replace that with unfiltered
-            # GetSignal just because Go has a normal 2M ring snapshot.
+            # Original GetSignal 007D0C30: NoDC -> FIR/decimation ->
+            # I/Q envelope -> reversed output. Never render plain TCP
+            # preview as a filtered original source signal.
             fir_code=int(self.wave_envelope_code.currentData() or 0)
             if fir_code:
-                status=self._native_live_status or {}
-                rows=(status.get("source_original_storage") or {}).get("channels") or []
-                row=rows[ch-1] if len(rows)>=ch else {}
-                seen=self._live_preview.channels.get(ch) if self._live_preview else None
-                fs=(row.get("last_sample_rate_hz")
-                    if status.get("source_original_storage_verified") is True
-                    else seen.rate_hz if seen is not None else None)
-                proof=active_live_envelope_gate(
-                    kind="GetSignal",code=fir_code,n_fft=0,
-                    sample_rate_hz=fs,
-                    profile_available=self.envelope_profile is not None,
-                    source_ring_verified=(
-                        status.get("source_original_storage_verified") is True),
-                    available_elements=row.get("available_elements",0))
-                raise ValueError(
-                    f"Огибающая Code{fir_code} не рассчитана в LIVE: "
-                    f"FIR/IQ GetSignal требует отдельного проверенного "
-                    f"окна и обратного порядка выходного массива "
-                    f"({proof['reason_code']}). Обычный сигнал не "
-                    "подменяет огибающую; выберите «Без фильтра».")
+                self._render_source_live_filtered_wave(ch,tag,fir_code)
+                return
             channels=(self._native_live_status or {}).get('channels') or []
             if (len(channels)<=ch-1 or
                     type(channels[ch-1].get('samples')) is not int):

@@ -24,7 +24,8 @@ from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview, MAX_SAMPLES
 from ..core.original_source_long_window import (
     submit_source_long_window,submit_source_fft_window,
-    submit_source_envelope_window,load_source_long_window,
+    submit_source_envelope_window,submit_source_getsignal_envelope_window,
+    load_source_long_window,
 )
 from ..core.source_frame_mark_protocol import submit_native_frame_mark
 from ..core.original_mode2_source_rate_input import source_setrate_stdin_line
@@ -399,23 +400,26 @@ class NativeCaptureDialog(QDialog):
         page=tabs.tabData(idx) if idx>=0 else None
         if page not in ("PageAdc","PageSpectrum"):
             return
-        # Source _Unit115: GetSignal/GetSpectrum with envelope_code>0
-        # requires DIFFERENT pre-FIR history, not bAdcHScale or ordinary
-        # bSpecLines raw input. Until the original filter/position/Win32
-        # numeric parity is proven, do not request an unfiltered FFT and
-        # silently display it as an envelope. No Go socket is changed.
-        if (page=="PageAdc" and
-                int(parent.wave_envelope_code.currentData() or 0)>0):
-            # Live source-filtered GetSignal requires separate H-scale
-            # and source chronological cursor acceptance. Still blocked.
-            return
+        # Both pages read the SAME rate/Freeze-gated original Go ring.
+        # Filtered PageAdc needs exact extra pre-FIR history; it can
+        # never use the unfiltered bAdcHScale preview as an envelope.
         adc=parent._ch()
         envelope_code=0
+        source_h_tag=0
         if page=="PageAdc":
-            tag=getattr(parent,"_wave_hscale_tag",None)
+            source_h_tag=getattr(parent,"_wave_hscale_tag",None)
             fft_n=None
-            if type(tag) is not int:
+            if type(source_h_tag) is not int:
                 return
+            envelope_code=int(parent.wave_envelope_code.currentData() or 0)
+            if envelope_code:
+                profile=getattr(parent,"envelope_profile",None)
+                if (profile is None or getattr(profile,"provenance",None)!=
+                        "USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED"):
+                    return
+                tag=-3  # local GetSignal FIR request, never instrument TCP
+            else:
+                tag=source_h_tag
         else:
             try:
                 fft_n=int(parent.spec_n.currentData())
@@ -428,10 +432,11 @@ class NativeCaptureDialog(QDialog):
                         getattr(profile,"provenance",None)!=
                         "USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED"):
                     return
-                tag=-2  # local Go IPC: SOURCE PRE-FIR window, never TCP
+                tag=-2  # local spectrum FIR request, never TCP
             else:
-                tag=-1  # strictly LOCAL IPC, not a Delphi HTag
-        key=(snapshot.get("session_id"),adc,tag,fft_n,envelope_code)
+                tag=-1
+        key=(snapshot.get("session_id"),adc,tag,fft_n,
+             envelope_code,source_h_tag)
         if self._source_long_selector!=key:
             self._source_long_selector=key
             self._source_long_request=None
@@ -458,8 +463,10 @@ class NativeCaptureDialog(QDialog):
                     len(rows)>=adc and
                     rows[adc-1]["rx_pos_64"]<=self._source_long_last_capture_end):
                 return
-            request=(submit_source_envelope_window(
-                self._capture_root,snapshot,adc,fft_n,envelope_code)
+            request=(submit_source_getsignal_envelope_window(
+                self._capture_root,snapshot,adc,source_h_tag,envelope_code)
+                if tag==-3 else submit_source_envelope_window(
+                    self._capture_root,snapshot,adc,fft_n,envelope_code)
                 if tag==-2 else submit_source_fft_window(
                     self._capture_root,snapshot,adc,fft_n)
                 if tag==-1 else submit_source_long_window(
