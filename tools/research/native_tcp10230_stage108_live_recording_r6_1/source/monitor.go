@@ -447,7 +447,11 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 			// Original mRate1Click permits rate changes. Keep every subsequent
 			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
 			// corrupt TCP. Existing single-rate BIN cannot certify this session.
-			if m.sourceTask2TX!=nil && len(c.rates)>1 && !m.sourceRateTransitionDetected {
+			// A wire Fs not selected by MvkSampleRate is ignored by the
+            // original channel store. Only a SECOND accepted rate proves
+            // an actual SetRate transition; wrong-Fs RAW alone does not.
+            if m.sourceTask2TX!=nil && sourceStoreAllowed &&
+               len(c.rates)>1 && !m.sourceRateTransitionDetected {
 				m.sourceRateTransitionDetected=true
 				m.summary.SourceRateTransition=true
 				m.warn("Original SetRate changed ADC Fs during capture: RAW retained, single-rate BIN export unavailable")

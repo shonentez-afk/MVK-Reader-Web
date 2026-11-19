@@ -185,8 +185,10 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     if m==nil || !m.liveProgressEnabled || m.sourceOriginalStorage==nil {
         return nil
     }
+    // The source ring is not an output of LiveBinSpool: a valid
+    // 2^21 original FRange1 ring remains readable without BIN export.
     if m.captureOnly || m.summary.SourceTCPMultiSocket ||
-       m.sourceRateTransitionDetected || m.liveBin==nil {
+       m.sourceRateTransitionDetected {
         return nil
     }
     path:=filepath.Join(m.dir,sourceLongWindowRequestName)
@@ -269,9 +271,12 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     }
     if !channel.seen || channel.domain!=sourceStorageOriginalLiveADC ||
        channel.sampleRate!=req.SampleRateHz ||
-       channel.rxPos!=allowedCount ||
-       summary.SequenceDiscontinuities>0 || summary.NonFiniteSamples>0 ||
-       len(summary.rates)!=1 {
+       channel.rxPos!=allowedCount {
+        // Do NOT use the all-TCP rates/sequence/nonfinite counters here.
+        // They include discarded Fs != MvkSampleRate packets, while
+        // GetSignal reads ONLY the original gated ring. Ring.validPos
+        // and ring.window reject gaps/nonfinite/overwritten history.
+
         return errors.New("source long window not confirmed original live FRange1 ADC")
     }
     if req.CaptureEnd<uint64(req.Samples) ||
