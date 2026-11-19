@@ -604,6 +604,18 @@ def _build_menu(win):
         action("Вид", name,
                lambda checked=False, index=i: win.views.setCurrentIndex(index))
     menus["Вид"].addSeparator()
+    dock_action = action(
+        "Вид", "Показать параметры графика",
+        lambda checked=False: _set_inspector_visible(win, checked),
+        key="inspector_toggle", shortcut="Ctrl+Alt+P")
+    dock_action.setCheckable(True)
+    dock_action.setChecked(True)
+    popup_action = action(
+        "Вид", "Плавающая панель параметров",
+        lambda checked=False: _set_inspector_floating(win, checked),
+        key="inspector_float")
+    popup_action.setCheckable(True)
+    menus["Вид"].addSeparator()
     action("Вид", "Автомасштаб спектра", lambda: win._reset_spectrum_axis())
     action("Вид", "Измерительные курсоры спектра",
            lambda: _focus_inspector(win, "spectrum"))
@@ -621,30 +633,97 @@ def _build_menu(win):
         "Дополнительные методы APP_DERIVED; это не автоматически поставленный диагноз."))
 
 
+def _inspector_page_has_settings(win):
+    return win.views.currentWidget() in (
+        win.overview_page, win.spectrum_page, win.wave_page)
+
+
+def _update_inspector_buttons(win):
+    """Mirror actual visibility; never create duplicate processing state."""
+    dock = win._modern_inspector_dock
+    showing = _inspector_page_has_settings(win) and not dock.isHidden()
+    for widget in (
+        win._modern_inspector_button,
+        win._modern_actions.get("inspector_toggle"),
+    ):
+        if widget is not None:
+            with QtCore.QSignalBlocker(widget):
+                widget.setChecked(showing)
+    popup = win._modern_actions.get("inspector_float")
+    if popup is not None:
+        with QtCore.QSignalBlocker(popup):
+            popup.setChecked(dock.isFloating())
+
+
 def _sync_inspector_for_tab(win):
-    """Always label the settings by their owning tab/physical domain."""
+    """Tab changes do not undo an operator's manual close of the inspector."""
     active = win.views.currentWidget()
     mapping = (
-        (win.overview_page, 2, "Обзор · быстрые настройки"),
+        (win.overview_page, 2, "Обзор · масштабы графиков"),
         (win.spectrum_page, 0, "Спектр · настройки частотного графика"),
         (win.wave_page, 1, "Временной сигнал · настройки осциллограммы"),
     )
-    for page, index, title in mapping:
-        if active is page:
-            win._modern_inspector.setCurrentIndex(index)
-            win._modern_inspector_dock.setWindowTitle(title)
-            win._modern_inspector_dock.show()
-            return
-    # The calculated-data page has no active FFT/time processing controls.
-    win._modern_inspector_dock.hide()
+    dock = win._modern_inspector_dock
+    win._modern_inspector_syncing = True
+    try:
+        for page, index, title in mapping:
+            if active is page:
+                win._modern_inspector.setCurrentIndex(index)
+                dock.setWindowTitle(title)
+                with QtCore.QSignalBlocker(dock):
+                    dock.setVisible(bool(win._modern_inspector_wanted))
+                break
+        else:
+            # Calculation tables have no active plot options, but returning
+            # to Overview restores only what the operator wanted visible.
+            with QtCore.QSignalBlocker(dock):
+                dock.hide()
+    finally:
+        win._modern_inspector_syncing = False
+    _update_inspector_buttons(win)
+
+
+def _inspector_visibility_changed(win, visible):
+    # QDockWidget's titlebar X is a real user close. Hiding it via another
+    # main tab is programmatic and must not overwrite that preference.
+    if getattr(win, "_modern_inspector_syncing", False):
+        return
+    if _inspector_page_has_settings(win) and win.isVisible():
+        win._modern_inspector_wanted = bool(visible)
+    _update_inspector_buttons(win)
+
+
+def _set_inspector_visible(win, visible):
+    win._modern_inspector_wanted = bool(visible)
+    if visible and not _inspector_page_has_settings(win):
+        win.views.setCurrentWidget(win.overview_page)
+    _sync_inspector_for_tab(win)
+    if visible:
+        win._modern_inspector_dock.raise_()
+        if win._modern_inspector_dock.isFloating():
+            win._modern_inspector_dock.activateWindow()
+
+
+def _set_inspector_floating(win, floating):
+    if not _inspector_page_has_settings(win):
+        win.views.setCurrentWidget(win.overview_page)
+    dock = win._modern_inspector_dock
+    win._modern_inspector_syncing = True
+    try:
+        dock.setFloating(bool(floating))
+        if floating:
+            dock.resize(380, 650)
+    finally:
+        win._modern_inspector_syncing = False
+    # Both menu and toolbar selection are explicit OPEN requests.
+    _set_inspector_visible(win, True)
 
 
 def _focus_inspector(win, kind):
     target = win.spectrum_page if kind == "spectrum" else win.wave_page
     if win.views.currentWidget() is not target:
         win.views.setCurrentWidget(target)
-    _sync_inspector_for_tab(win)
-    win._modern_inspector_dock.raise_()
+    _set_inspector_visible(win, True)
 
 
 def _refresh_status(win):
@@ -744,6 +823,29 @@ def install_modern_shell(win, main, panel, review, storage):
     line.addWidget(QtWidgets.QLabel("АЦП"))
     line.addWidget(win.adc)
     win.adc.show()
+
+    # Always-visible recovery for an intentionally closed inspector.
+    # Its arrow opens a mode menu: docked right or floating non-modal panel.
+    win._modern_inspector_button = QtWidgets.QToolButton(tools)
+    win._modern_inspector_button.setText("Параметры")
+    win._modern_inspector_button.setToolTip(
+        "Показать/скрыть свойства текущего графика · Ctrl+Alt+P. "
+        "Стрелка справа открывает выбор плавающего окна.")
+    win._modern_inspector_button.setCheckable(True)
+    win._modern_inspector_button.setChecked(True)
+    win._modern_inspector_button.setPopupMode(
+        QtWidgets.QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+    inspector_modes = QtWidgets.QMenu(win._modern_inspector_button)
+    win._modern_inspector_popup_action = inspector_modes.addAction(
+        "Открыть параметры отдельным окном")
+    win._modern_inspector_popup_action.triggered.connect(
+        lambda checked=False: _set_inspector_floating(win, True))
+    win._modern_inspector_dock_action = inspector_modes.addAction(
+        "Закрепить параметры справа")
+    win._modern_inspector_dock_action.triggered.connect(
+        lambda checked=False: _set_inspector_floating(win, False))
+    win._modern_inspector_button.setMenu(inspector_modes)
+    line.addWidget(win._modern_inspector_button)
     win._modern_windows_button = QtWidgets.QPushButton("Открытые окна…")
     win._modern_windows_button.setMinimumWidth(110)
     win._modern_windows_button.clicked.connect(lambda: _open_windows_dialog(win))
@@ -1104,6 +1206,17 @@ def install_modern_shell(win, main, panel, review, storage):
     dock.setMinimumWidth(246)
     win.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
     win._modern_inspector_dock = dock
+    win._modern_inspector_wanted = True
+    win._modern_inspector_syncing = False
+    dock.setFeatures(
+        QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
+        | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable
+        | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+    dock.visibilityChanged.connect(
+        lambda visible: _inspector_visibility_changed(win, visible))
+    dock.topLevelChanged.connect(lambda _: _update_inspector_buttons(win))
+    win._modern_inspector_button.toggled.connect(
+        lambda checked: _set_inspector_visible(win, checked))
     win.resizeDocks([dock], [318], QtCore.Qt.Horizontal)
 
     # Clicking a plot switches the inspector. The main tab navigation

@@ -465,3 +465,153 @@ def test_overview_scale_mirror_is_rebuilt_after_mode_and_fft_changes(widget):
     assert w.time_y_width.currentData()==2.
     w.time_y_width.setCurrentIndex(w.time_y_width.findData(20.))
     assert w._overview_time_y_width.currentData()==20.
+
+
+def test_inspector_titlebar_close_can_be_restored_by_toolbar_menu_and_popup(widget):
+    """The titlebar X must not permanently strand operator controls."""
+    from PySide6 import QtWidgets
+    w,app=widget
+    w.show()
+    app.processEvents()
+    dock=w._modern_inspector_dock
+    button=w._modern_inspector_button
+    toggle=w._modern_actions["inspector_toggle"]
+    floating=w._modern_actions["inspector_float"]
+    assert dock.isVisible() and button.isChecked() and toggle.isChecked()
+    assert button.menu() is not None
+    assert len(button.menu().actions())==2
+
+    # The actual QDockWidget titlebar close behaves like a user close.
+    dock.close()
+    app.processEvents()
+    assert dock.isHidden()
+    assert not button.isChecked() and not toggle.isChecked()
+    w.views.setCurrentWidget(w.wave_page)
+    assert dock.isHidden()  # tab changes do NOT undo the user's close
+    w.views.setCurrentWidget(w.overview_page)
+    assert dock.isHidden()
+
+    # Persistent top-bar affordance opens current context, no stale page.
+    button.click()
+    app.processEvents()
+    assert dock.isVisible() and button.isChecked() and toggle.isChecked()
+    assert w._modern_inspector.currentIndex()==2
+    toggle.trigger()
+    app.processEvents()
+    assert dock.isHidden() and not button.isChecked()
+    toggle.trigger()
+    app.processEvents()
+    assert dock.isVisible() and toggle.isChecked()
+
+    # Floating, nonmodal is optional, closing it must remain recoverable.
+    w._modern_inspector_popup_action.trigger()
+    app.processEvents()
+    assert dock.isFloating() and dock.isVisible()
+    assert floating.isChecked()
+    dock.close()
+    app.processEvents()
+    assert not button.isChecked()
+    w._modern_inspector_dock_action.trigger()
+    app.processEvents()
+    assert not dock.isFloating()
+    assert dock.isVisible()
+    assert not floating.isChecked()
+    w.views.setCurrentWidget(w.calculated_page)
+    assert dock.isHidden()
+    button.click()  # from a plot-free tab, go back to Overview
+    app.processEvents()
+    assert w.views.currentWidget() is w.overview_page
+    assert dock.isVisible()
+    w.hide()
+
+
+def test_overview_blank_adc_rescales_both_time_axes_without_inventing_data(widget):
+    w,_=widget
+    assert w._gui_ring.channel(1) is None
+    w._overview_timebase.setCurrentIndex(
+        w._overview_timebase.findData(.05))
+    w._overview_time_y_width.setCurrentIndex(
+        w._overview_time_y_width.findData(5.))
+    for plot in (w.wave,w.overview_wave):
+        assert plot.viewRange()[0]==pytest.approx([-.05,0.],abs=1e-5)
+        assert plot.viewRange()[1]==pytest.approx([-5.,5.],abs=1e-5)
+    assert len(w.overview_wave_curve.getData()[0])==0
+    assert len(w.wave_curve.getData()[0])==0
+    assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+def test_overview_all_controls_update_real_verified_graphs_and_physical_units(widget):
+    """Integration: real test-ring Float32, signal reanalysis, scaling, redraw."""
+    from mvk_live_standalone.vibration import vibration_plot_values
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    def wait_for_fft(kind):
+        # A pending, superseded worker can finish before its replacement.
+        for _ in range(6):
+            if w._future is None:
+                w._last_fft_submit=0.0
+                w._schedule_fft()
+            assert w._future is not None
+            w._future.result(timeout=25)
+            w._collect_analysis()
+            if w._spectrum is not None and w._spectrum.kind==kind:
+                return w._spectrum
+        pytest.fail(f"No verified app-derived FFT for {kind}")
+
+    modes={
+        "linear_vu": ("acceleration","м/с²"),
+        "linear_vs": ("velocity","мм/с"),
+        "linear_vp": ("displacement","мкм"),
+        "log_vu": ("acceleration","дБ"),
+    }
+    results={}
+    for key,(kind,unit) in modes.items():
+        quick=w._overview_spectrum_view
+        quick.setCurrentIndex(quick.findData(key))
+        view=wait_for_fft(kind)
+        results[key]=float(view.rms[
+            np.argmin(abs(view.hz-100.))])
+        assert view.kind==kind and view.mode=="fft"
+        ox,oy=w.overview_spec_curve.getData()
+        sx,sy=w.spec_curve.getData()
+        np.testing.assert_allclose(ox,sx)
+        np.testing.assert_allclose(oy,sy)
+        assert len(ox)>10
+        assert unit in w.overview_spec.getPlotItem().getAxis(
+            "left").label.toPlainText()
+        assert unit in w._overview_y_height.itemText(1)
+
+    # Independent physical transformations: acceleration->velocity (×1/ω),
+    # acceleration->displacement (×1/ω²), not just a renamed y-axis.
+    ratio_velocity=1000/(2*math.pi*100)
+    ratio_displacement=1e6/(2*math.pi*100)**2
+    assert results["linear_vs"]==pytest.approx(
+        results["linear_vu"]*ratio_velocity,rel=.06)
+    assert results["linear_vp"]==pytest.approx(
+        results["linear_vu"]*ratio_displacement,rel=.06)
+
+    w._overview_frequency_limit.setCurrentIndex(
+        w._overview_frequency_limit.findData(200))
+    assert w.spec.viewRange()[0]==pytest.approx([0,200],abs=1e-4)
+    assert w.overview_spec.viewRange()[0]==pytest.approx([0,200],abs=1e-4)
+    w._overview_y_height.setCurrentIndex(
+        w._overview_y_height.findData(40.))
+    assert w.spec.viewRange()[1][1]-w.spec.viewRange()[1][0]==pytest.approx(40.)
+    assert w.overview_spec.viewRange()[1]==pytest.approx(
+        w.spec.viewRange()[1],abs=1e-4)
+    assert "дБ" in w._overview_y_height.currentText()
+
+    w._overview_timebase.setCurrentIndex(
+        w._overview_timebase.findData(.02))
+    wx,wy=w.overview_wave_curve.getData()
+    tx,ty=w.wave_curve.getData()
+    np.testing.assert_allclose(wx,tx)
+    np.testing.assert_allclose(wy,ty)
+    assert len(wx)>2
+    assert float(wx[0])>=-.03
+    w._overview_time_y_width.setCurrentIndex(
+        w._overview_time_y_width.findData(2.))
+    assert w.wave.viewRange()[1]==pytest.approx([-2,2],abs=1e-5)
+    assert w.overview_wave.viewRange()[1]==pytest.approx([-2,2],abs=1e-5)
+    assert w._native.state()==w._native.ProcessState.NotRunning

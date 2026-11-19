@@ -1721,6 +1721,20 @@ class LiveWindow(QtWidgets.QMainWindow):
         if view is not None:
             view.setTitle(text)
 
+    def _empty_wave_axes(self, seconds: float):
+        """Match overview and detailed axes without showing fake ADC data.
+
+        A missing ADC cannot yield RMS or auto amplitude. Until real samples
+        arrive, a neutral blank ±1 m/s² range is used for Auto; a manual
+        vertical scale is reflected on both plots immediately.
+        """
+        selected=self.time_y_width.currentData()
+        height=float(selected) if selected is not None else 1.0
+        for plot in (self.wave,getattr(self,"overview_wave",None)):
+            if plot is not None:
+                plot.setXRange(-seconds,0.0,padding=0)
+                plot.setYRange(-height,height,padding=0)
+
     def _render_wave(self,*_):
         requested=float(self.timebase.currentData())
         if self.freeze.isChecked() and self._freeze_samples is not None:
@@ -1729,6 +1743,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self._clear_overview_plot("time")
                 self.wave_stats.setText(
                     "В замороженном сигнале выбран другой канал АЦП")
+                self._empty_wave_axes(requested)
                 return
             fs=self._freeze_rate
             offset=int(round(self.history.value()*fs))
@@ -1741,7 +1756,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self._clear_overview_plot("time")
                 self.wave_stats.setText(
                     "Временной сигнал: ожидание подтверждённых АЦП Float32")
-                self.wave.setXRange(-requested,0,padding=0)
+                self._empty_wave_axes(requested)
                 return
             fs=ch.rate_hz
             data=ch.latest(min(ch.available,262144))
@@ -1749,6 +1764,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.wave_curve.setData([],[])
             self._clear_overview_plot("time")
             self.wave_stats.setText("Нет допустимых отсчётов выбранного АЦП")
+            self._empty_wave_axes(requested)
             return
         # Only genuine ring samples: do not extend a 4-s packet to a
         # requested 30-s scope or assume a missing sample rate.
@@ -1761,6 +1777,7 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.wave_curve.setData([],[])
                 self._clear_overview_plot("time")
                 self.wave_stats.setText("Выберите полосу из меню MVKView")
+                self._empty_wave_axes(requested)
                 return
             filter_mode,filter_center=selected
         else:
@@ -1776,6 +1793,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.wave_curve.setData([],[])
             self._clear_overview_plot("time")
             self.wave_stats.setText(f"Временной сигнал / фильтр: {exc}")
+            self._empty_wave_axes(requested)
             return
         # Cursor measurements read the COMPLETE locally filtered physical window.
         # Screen min/max decimation below never changes cursor amplitudes/intervals.
