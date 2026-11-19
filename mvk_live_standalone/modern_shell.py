@@ -1054,6 +1054,9 @@ def install_modern_shell(win, main, panel, review, storage):
         kind = win.kind.currentData()
         ymode = win.yscale.currentData()
         envelope_row.setVisible(mode == "envelope")
+        # The widget itself must also be hidden, not merely its parent
+        # row; otherwise reused Qt controls retain a stale isHidden=False.
+        win.envelope_band.setVisible(mode == "envelope")
         db_row.setVisible(ymode == "db")
         amplitude_row.setVisible(mode == "fft")
         win.y_height_choice.setEnabled(mode == "fft")
