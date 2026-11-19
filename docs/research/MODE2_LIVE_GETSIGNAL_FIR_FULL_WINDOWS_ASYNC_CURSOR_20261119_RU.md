@@ -1,8 +1,10 @@
 # Mode2: единый приём → длинный GetSignal FIR → живой курсор → Stop
 
+**Программная приёмка: PASS 5/5, Actions #44450461902, код de15125.** Linux Go/Core, Windows Core/Qt/DPI100/150, автономный Windows EXE прошли. 2733 Windows Core теста PASS, 7 SKIP; дополнительные Qt — 59+50+194 PASS. Это не аппаратная Win32 Delphi/MVK01 совместимость.
+
 Дата: 19 ноября 2026. Исследовательская ветка: `research/stage111-mvkview-desktop-20261029`.
-Кодовый пакет: [`f72fe30`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f72fe3040b19f51028fa00da6fb4c8a4a1d064ab).
-Проверка: [GitHub Actions #44449786567](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44449786567).
+Кодовый пакет: [`de15125`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/de151257920afca3a9959fbd2dce2690a1c9676f).
+Проверка: [GitHub Actions #44450461902](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44449786567).
 **Не считать Delphi 1:1 PASS на основании синтетических тестов и зелёного CI.**
 
 ## Три приватных оригинальных источника — совместная локальная проверка
