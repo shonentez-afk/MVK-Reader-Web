@@ -107,13 +107,18 @@ def envelope_plan(signal_length:int,sample_rate:int,code:int)->dict:
             8:offset*8+177,10:offset*16+353,
             20:offset*2+45,40:offset*4+89,
             80:offset*8+177,160:offset*16+353}[ratio]
-    adjusted=signal_length+offset+FIR_TAPS[stage]*FIR_DECIM[stage]
+    # _Unit115.pas:007D1215/007D1225: the multiplicand is the
+    # original Fs/target ratio (EDX), NOT FIR_DECIM[stage]. The old
+    # shortcut mis-sized the original GetSpectrum/GetSignal history.
+    adjusted=signal_length+offset+FIR_TAPS[stage]*ratio
     if adjusted>2_000_000:
         raise ValueError("Adjusted envelope length exceeds configured offline bound")
     return {'code':code,'sample_rate_hz':sample_rate,'target_rate':target,
             'ratio':ratio,'stage':stage,'pre_stage':pre_stage,
             'second_stage':second_stage,'adjusted_input_length':adjusted,
             'history_padding':adjusted-signal_length,
+            'original_history_factor_ratio':ratio,
+            'source_getadjusted_address':'_Unit115.pas:007D1158-007D1230',
             'reported_output_rate_hz':target//FIR_DECIM[stage],
             'source':'APP_DERIVED_ENVELOPE_LENGTH_IDR_CANDIDATE'}
 

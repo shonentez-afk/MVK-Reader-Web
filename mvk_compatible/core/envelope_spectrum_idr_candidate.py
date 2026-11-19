@@ -54,6 +54,103 @@ def required_original_history(n_fft:int, sample_rate:int, code:int)->dict:
             'original_window_selection_verified':False}
 
 
+def source_selected_envelope_fft_plan(selected_bspec_lines_n:int,
+                                      sample_rate:int,code:int)->dict:
+    """Delphi 007D1462: bSpecLines is PRE-FIR length, not final FFT N.
+
+    Calls source GetAdjustedEnvelopeLength(Params.Count,EnvelopeCode);
+    007D1C48 decimates in place; 007D1E70 runs analytic I/Q FIR
+    and mutates Params.Count. 007D1FE8 THEN FFTs Params.Count.
+    All source-derived control lengths: not original Win32 sample parity.
+    """
+    selected=check_n(selected_bspec_lines_n)
+    if selected<1024:
+        raise ValueError("Original bSpecLines selector starts at 1024")
+    info=envelope_plan(selected,sample_rate,code)
+    stages=tuple(x for x in (
+        info["pre_stage"],info["second_stage"],info["stage"]) if x)
+    source_count=info["adjusted_input_length"]
+    count=source_count
+    states=[]
+    for stage in stages:
+        taps=FIR_TAPS[stage]
+        decim=FIR_DECIM[stage]
+        if count<taps+decim:
+            raise ValueError("Original GetSpectrum lacks full FIR input")
+        next_count=(count-taps)//decim
+        states.append({"stage":stage,"input_count":count,"taps":taps,
+                       "decimation":decim,"output_count":next_count})
+        count=next_count
+    if count<2 or count>262144 or count&(count-1):
+        raise ValueError("Original source FIR produced unsupported radix-2 FFT count")
+    reverse=count
+    for stage in reversed(stages):
+        reverse=reverse*FIR_DECIM[stage]+FIR_TAPS[stage]
+    if reverse!=source_count:
+        # For the original real source-rate set 512..65536, q=1/2/4/8.
+        # Never pretend an exotic q=10/20/40/80/160 that changes a
+        # fractional tail matches the exact inverse history.
+        raise ValueError("Source GetAdjustedLength and FIR inverse disagree")
+    fs_out=info["reported_output_rate_hz"]
+    if fs_out*selected!=sample_rate*count:
+        raise ValueError("Source FIR output Fs/N is not original frequency grid")
+    return {
+        "original_bSpecLines_pre_fir_n":selected,
+        "source_getadjusted_length_samples":source_count,
+        "source_fir_stage_lengths":tuple(states),
+        "original_params_count_after_fir":count,
+        "post_fir_fft_n":count,
+        "post_fir_sample_rate_hz":fs_out,
+        "post_fir_df_hz":fs_out/count,
+        "input_rate_hz":sample_rate,
+        "envelope_code":code,
+        "output_power_bins":count//2,
+        "source_params_count_proven_by_pascal":True,
+        "original_runtime_post_fir_float32_verified":False,
+        "original_x87_hann_fft_power_parity_verified":False,
+        "source":"_Unit115.pas:007D1158-007D1230/007D1462-007D1546",
+    }
+
+
+def source_selected_envelope_spectrum_candidate(
+        source_ring_samples:np.ndarray,sample_rate:int,code:int,
+        profile:EnvelopeProfile,*,selected_bspec_lines_n:int,
+        mode:int=1,backend:str="idr_float32",
+        f_range:float=1.0,
+        input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
+    """Compute FIR/IQ candidate from exact real PRE-FIR source-ring window.
+
+    Selected bSpecLines is BEFORE FIR, while n_fft is AFTER FIR.
+    Refuses any missing/padded history and does not mutate the RAW/BIN.
+    """
+    plan=source_selected_envelope_fft_plan(
+        selected_bspec_lines_n,sample_rate,code)
+    source=np.asarray(source_ring_samples,dtype=np.float32)
+    if (source.ndim!=1 or len(source)!=plan["source_getadjusted_length_samples"]
+            or not np.isfinite(source).all()):
+        raise ValueError("Exact source GetAdjustedEnvelopeLength window required")
+    if plan["post_fir_fft_n"]<1024:
+        # The existing full-band summary model is validated for >=1024.
+        # Until short-power and summary Win32 references are checked,
+        # do not display a nominally matched but unvalidated small FFT.
+        raise ValueError("Source post-FIR FFT N below accepted local summary range")
+    outcome=envelope_spectrum_idr_candidate(
+        source,sample_rate,code,profile,
+        n_fft=plan["post_fir_fft_n"],mode=mode,
+        backend=backend,f_range=f_range,input_domain=input_domain)
+    if (outcome["source_history_samples"]!=len(source) or
+            outcome["n_fft"]!=plan["post_fir_fft_n"] or
+            outcome["output_samples"]!=plan["post_fir_fft_n"]):
+        raise ValueError("Source GetSpectrum FIR output and FFT window mismatch")
+    return {**outcome,
+            "source":"SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE",
+            "source_bSpecLines_pre_fir_n":selected_bspec_lines_n,
+            "original_source_fft_plan":plan,
+            "calibrated_go_ring_input":input_domain==DOMAIN_CALIBRATED_BIN,
+            "source_verified_go_ring_required":True,
+            "original_delphi_numerical_parity_verified":False}
+
+
 def _delphi_integration_power(power:np.ndarray, n:int, fs_out:int,
                               repetitions:int)->np.ndarray:
     """007D2164: each integration multiplies P[k] by (159.15494/f[k])**2.

@@ -24,7 +24,7 @@ from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview, MAX_SAMPLES
 from ..core.original_source_long_window import (
     submit_source_long_window,submit_source_fft_window,
-    load_source_long_window,
+    submit_source_envelope_window,load_source_long_window,
 )
 from ..core.source_frame_mark_protocol import submit_native_frame_mark
 from ..core.original_mode2_source_rate_input import source_setrate_stdin_line
@@ -406,23 +406,32 @@ class NativeCaptureDialog(QDialog):
         # silently display it as an envelope. No Go socket is changed.
         if (page=="PageAdc" and
                 int(parent.wave_envelope_code.currentData() or 0)>0):
-            return
-        if (page=="PageSpectrum" and
-                parent.spec_envelope_button.isChecked()):
+            # Live source-filtered GetSignal requires separate H-scale
+            # and source chronological cursor acceptance. Still blocked.
             return
         adc=parent._ch()
+        envelope_code=0
         if page=="PageAdc":
             tag=getattr(parent,"_wave_hscale_tag",None)
             fft_n=None
             if type(tag) is not int:
                 return
         else:
-            tag=-1  # strictly LOCAL IPC, not an original Delphi HTag
             try:
                 fft_n=int(parent.spec_n.currentData())
             except (ValueError,TypeError,AttributeError):
                 return
-        key=(snapshot.get("session_id"),adc,tag,fft_n)
+            if parent.spec_envelope_button.isChecked():
+                envelope_code=int(parent.spec_envelope_code.currentData() or 0)
+                profile=getattr(parent,"envelope_profile",None)
+                if (envelope_code<1 or profile is None or
+                        getattr(profile,"provenance",None)!=
+                        "USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED"):
+                    return
+                tag=-2  # local Go IPC: SOURCE PRE-FIR window, never TCP
+            else:
+                tag=-1  # strictly LOCAL IPC, not a Delphi HTag
+        key=(snapshot.get("session_id"),adc,tag,fft_n,envelope_code)
         if self._source_long_selector!=key:
             self._source_long_selector=key
             self._source_long_request=None
@@ -449,8 +458,10 @@ class NativeCaptureDialog(QDialog):
                     len(rows)>=adc and
                     rows[adc-1]["rx_pos_64"]<=self._source_long_last_capture_end):
                 return
-            request=(submit_source_fft_window(
-                self._capture_root,snapshot,adc,fft_n)
+            request=(submit_source_envelope_window(
+                self._capture_root,snapshot,adc,fft_n,envelope_code)
+                if tag==-2 else submit_source_fft_window(
+                    self._capture_root,snapshot,adc,fft_n)
                 if tag==-1 else submit_source_long_window(
                     self._capture_root,snapshot,adc,tag))
             if request is None:

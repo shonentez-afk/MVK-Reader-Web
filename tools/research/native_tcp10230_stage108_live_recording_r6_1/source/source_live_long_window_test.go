@@ -288,3 +288,86 @@ func TestSourceShortGetSignalAfterFreezeUsesAcceptedRingNotTCPPreview(t *testing
         }
     }
 }
+
+func TestSourceEnvelopeWindowUsesPreFIRParamsCountNotPostFFTCount(t *testing.T) {
+    // PRIVATE _Unit115:007D1158/007D1462/007D1E70 proves bSpecLines
+    // N is BEFORE decimation/IQ, and GetAdjusted uses taps*Fs/target.
+    for _,tc:=range []struct{code int;selected uint32;want uint32}{
+        {1,4096,4193},{2,4096,4225},{5,4096,4399},
+        {20,4096,4147},{21,4096,4243},{26,4096,4145},
+    }{
+        n,e:=sourceFIREnvelopeWindowLength(65536,tc.code,tc.selected)
+        if e!=nil || n!=tc.want{
+            t.Fatalf("source FIR code=%d N=%d: got %d (want %d), %v",
+                tc.code,tc.selected,n,tc.want,e)
+        }
+    }
+    for _,tc:=range []struct{hz uint32;code int;n uint32}{
+        {65536,0,4096},{65536,32,4096},
+        {65536,20,2048},{65536,20,1234},
+        {65536,24,4096}, // q=16: original Invalid sample rate
+        {512,20,4096},{8192,21,4096},
+    }{
+        if _,e:=sourceFIREnvelopeWindowLength(tc.hz,tc.code,tc.n);e==nil{
+            t.Fatalf("invalid source FIR history silently admitted %+v",tc)
+        }
+    }
+}
+
+func TestSourceEnvelopeGoRingExactPreFIRLengthAndRawSHA(t *testing.T){
+    m:=sourceLongTestMonitor(t,512) // 131072 actual admitted source words
+    c:=m.sourceOriginalStorage.channels[0]
+    n,e:=sourceFIREnvelopeWindowLength(c.sampleRate,20,4096)
+    if e!=nil || n!=4147{t.Fatalf("source GetAdjusted: %d %v",n,e)}
+    req:=sourceLongWindowRequest{
+        Schema:sourceLongWindowRequestSchema,
+        SessionID:filepath.Base(m.dir),
+        RequestID:"f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0",
+        ADC:1,HTag:-2,Samples:n,CaptureEnd:c.rxPos,
+        SampleRateHz:c.sampleRate,DeviceEnd:c.nextDeviceIndex,
+        EnvelopeCode:20,OriginalBSpecLines:4096,
+    }
+    raw,_:=json.Marshal(req)
+    if e:=os.WriteFile(filepath.Join(m.dir,sourceLongWindowRequestName),raw,0600);e!=nil{
+        t.Fatal(e)
+    }
+    if e:=m.handleSourceLongWindowRequest(time.Now());e!=nil{t.Fatal(e)}
+    z,e:=zip.OpenReader(filepath.Join(m.dir,sourceLongWindowResultName))
+    if e!=nil{t.Fatal(e)}
+    defer z.Close()
+    var receipt sourceLongWindowResult
+    var payload []byte
+    for _,f:=range z.File{
+        fp,e:=f.Open();if e!=nil{t.Fatal(e)}
+        v,e:=io.ReadAll(fp);fp.Close();if e!=nil{t.Fatal(e)}
+        if f.Name=="MANIFEST.json"{
+            if e:=json.Unmarshal(v,&receipt);e!=nil{t.Fatal(e)}
+        }else if f.Name=="ADC1.f32"{payload=v}
+    }
+    if receipt.HTag!=-2 || receipt.EnvelopeCode!=20 ||
+       receipt.OriginalBSpecLines!=4096 || receipt.Samples!=4147 ||
+       len(payload)!=int(n)*4 || receipt.CaptureEnd!=c.rxPos ||
+       receipt.InputDomain!=sourceStorageCalibratedADC{
+        t.Fatalf("wrong original source FIR receipt: %+v bytes=%d",receipt,len(payload))
+    }
+    expected,e:=m.sourceOriginalStorage.window(0,c.rxPos-uint64(n),uint64(n))
+    if e!=nil || !bytes.Equal(payload,expected){
+        t.Fatal("Go used TCP Preview or invented samples instead of real original ring")
+    }
+    sum:=sha256.Sum256(expected)
+    if receipt.SHA256!=hex.EncodeToString(sum[:]){
+        t.Fatal("Source pre-FIR SHA mismatch")
+    }
+    if !m.summary.ReadOnly || m.summary.SourceSetRateBytes!=0{
+        t.Fatal("FIR local read must not issue physical MVK01 commands")
+    }
+    req.RequestID="f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+    req.Samples=4198 // previous WRONG local algorithm
+    invalid,_:=json.Marshal(req)
+    if e:=os.WriteFile(filepath.Join(m.dir,sourceLongWindowRequestName),invalid,0600);e!=nil{
+        t.Fatal(e)
+    }
+    if e:=m.handleSourceLongWindowRequest(time.Now());e==nil{
+        t.Fatal("outdated 4198-word FIR history accepted")
+    }
+}

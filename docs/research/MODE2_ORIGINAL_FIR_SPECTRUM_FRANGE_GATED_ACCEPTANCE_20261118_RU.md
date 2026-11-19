@@ -1,3 +1,5 @@
+> **19.11.2026 — уточнение исходного Pascal, прежние числа 4198/2073 ниже НЕВЕРНЫ.** При Fs65536, bSpecLines4096, Code20 исходное GetAdjustedEnvelopeLength запрашивает **4147** Float32, а последняя I/Q-децимация даёт **2048** отсчётов FFT. Источник: _Unit115.pas 007D1215–007D1228 и 007D1462–007D1546; сверено с mvkview.idp + mvk_idr(1).sqlite. Исправленная математическая и живая цепочка описана в [MODE2_ORIGINAL_FIR_SOURCE_COUNT_LIVE_GO_RING_20261119_RU.md](MODE2_ORIGINAL_FIR_SOURCE_COUNT_LIVE_GO_RING_20261119_RU.md). Дальнейшие оригинальные x87/Delphi численные пары по-прежнему не приняты.
+
 # Приём МВК01 → GetSignal/GetSpectrum → исходный FIR/IQ и FRange → Stop
 
 Дата: 18.11.2026. Ветка: `research/stage111-mvkview-desktop-20261029`. Это один связанный пакет проверки **алгоритма и поведения UI**, а не отдельный исследовательский прототип.

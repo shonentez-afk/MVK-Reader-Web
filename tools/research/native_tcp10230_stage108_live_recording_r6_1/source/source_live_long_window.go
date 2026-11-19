@@ -44,6 +44,8 @@ type sourceLongWindowRequest struct {
     CaptureEnd uint64 `json:"capture_end"`
     SampleRateHz uint32 `json:"sample_rate_hz"`
     DeviceEnd uint32 `json:"device_end_index"`
+    EnvelopeCode int `json:"envelope_code,omitempty"`
+    OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
 }
 type sourceLongWindowResult struct {
     Schema string `json:"schema"`
@@ -65,6 +67,8 @@ type sourceLongWindowResult struct {
     RawBytes uint64 `json:"raw_bytes"`
     FramesDecoded uint64 `json:"frames_decoded"`
     SHA256 string `json:"sha256"`
+    EnvelopeCode int `json:"envelope_code,omitempty"`
+    OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
 }
 
 func sourceLongWindowLength(rate uint32,tag int) (uint32,error) {
@@ -93,6 +97,70 @@ func sourceFFTWindowLength(n uint32)(uint32,error){
     default:
         return 0,errors.New("unsupported original bSpecLines FFT length")
     }
+}
+
+// PRIVATE _Unit115.pas:007D1158 source GetAdjustedEnvelopeLength.
+// The original user-facing bSpecLines N is PRE-FIR; filter stages mutate
+// Params.Count before 007D1FE8 FFT. Only source-controlled arithmetic is
+// embedded, NOT proprietary FIR coefficients or original Pascal/IDP.
+var sourceFIREnvelopeRates=[32]uint32{
+    1,65536,65536,65536,65536,32768,32768,32768,
+    16384,16384,16384,8192,8192,8192,4096,4096,
+    4096,2048,2048,2048,65536,32768,16384,8192,
+    4096,2048,65536,32768,16384,8192,4096,2048,
+}
+var sourceFIREnvelopeStages=[32]int{
+    0,1,2,3,4,2,3,4,2,3,4,2,3,4,2,3,4,2,3,4,
+    5,5,5,5,5,5,6,6,6,6,6,6,
+}
+var sourceFIRTaps=[11]uint32{0,97,129,161,193,51,49,45,89,177,353}
+var sourceFIRDecim=[11]uint32{0,4,4,4,8,2,1,2,4,8,16}
+
+func sourceFIREnvelopeWindowLength(rate uint32,code int,selected uint32)(uint32,error){
+    if !acceptedRates[rate] || code<1 || code>31{
+        return 0,errors.New("source FIR invalid ADC rate or EnvelopeCode")
+    }
+    if _,e:=sourceFFTWindowLength(selected);e!=nil{return 0,e}
+    target:=sourceFIREnvelopeRates[code]
+    if target==0 || rate<target || rate%target!=0{
+        return 0,errors.New("source FIR target rate not supported by ADC")
+    }
+    ratio:=rate/target
+    // The native Go receiver accepts exactly the original known five
+    // MVK01 sample rates. Their valid source FIR ratios are 1/2/4/8;
+    // 16/32 are INVALID original Delphi ratios and must not be guessed.
+    var prefix uint32
+    switch ratio{
+    case 1:prefix=0
+    case 2:prefix=45
+    case 4:prefix=89
+    case 8:prefix=177
+    default:return 0,errors.New("original source FIR Invalid sample rate")
+    }
+    stage:=sourceFIREnvelopeStages[code]
+    count:=uint64(selected)+uint64(prefix)+uint64(sourceFIRTaps[stage])*uint64(ratio)
+    if count==0 || count>sourceOriginalStorageSamples{
+        return 0,errors.New("source FIR request exceeds original 2M ring")
+    }
+    n:=uint32(count)
+    if ratio>1{
+        var pre int
+        switch ratio{case 2:pre=7;case 4:pre=8;case 8:pre=9}
+        if n<sourceFIRTaps[pre]+sourceFIRDecim[pre]{
+            return 0,errors.New("source FIR pre-decimator lacks history")
+        }
+        n=(n-sourceFIRTaps[pre])/sourceFIRDecim[pre]
+    }
+    if n<sourceFIRTaps[stage]+sourceFIRDecim[stage]{
+        return 0,errors.New("source FIR I/Q lacks history")
+    }
+    n=(n-sourceFIRTaps[stage])/sourceFIRDecim[stage]
+    fsout:=target/sourceFIRDecim[stage]
+    if n<2 || (n&(n-1))!=0 || n>262144 ||
+       uint64(fsout)*uint64(selected)!=uint64(rate)*uint64(n){
+        return 0,errors.New("source FIR Params.Count/FFT frequency grid mismatch")
+    }
+    return uint32(count),nil
 }
 
 func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
@@ -132,17 +200,27 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     // re-read/re-written on each 750ms status publication.
     if m.sourceLongWindowLastID==req.RequestID {return nil}
     m.sourceLongWindowLastID=req.RequestID
-    // HTag>=0 => exact original ADC horizontal time window.
-    // HTag=-1 => exact original FFT length, independent of H scale.
-    // Never shorten an FFT to the GUI preview's 262144 limit.
+    // HTag>=0: original ADC time window. -1: plain bSpecLines FFT.
+    // -2: original EnvelopeCode/GetAdjustedEnvelopeLength PRE-FIR window.
+    // The negative selector is LOCAL IPC ONLY and never reaches MVK01.
     var n uint32
-    if req.HTag==-1 {
+    switch req.HTag {
+    case -2:
+        n,e=sourceFIREnvelopeWindowLength(
+            req.SampleRateHz,req.EnvelopeCode,req.OriginalBSpecLines)
+    case -1:
+        if req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0{
+            return errors.New("plain FFT must not contain FIR metadata")
+        }
         n,e=sourceFFTWindowLength(req.Samples)
-    } else {
+    default:
+        if req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0{
+            return errors.New("plain ADC HTag must not contain FIR metadata")
+        }
         n,e=sourceLongWindowLength(req.SampleRateHz,req.HTag)
     }
     if e!=nil || req.Samples!=n || !acceptedRates[req.SampleRateHz] {
-        return errors.New("source HTag/FFT length mismatches actual Fs")
+        return errors.New("source HTag/FFT/FIR length mismatches actual Fs")
     }
     idx:=req.ADC-1
     channel:=&m.sourceOriginalStorage.channels[idx]
@@ -198,6 +276,8 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         CalibrationAlreadyApplied:true,Provisional:true,
         RawBytes:m.summary.RawBytes,FramesDecoded:m.summary.TotalFrames,
         SHA256:hex.EncodeToString(sum[:]),
+        EnvelopeCode:req.EnvelopeCode,
+        OriginalBSpecLines:req.OriginalBSpecLines,
     }
     return writeSourceLongWindowAtomic(m.dir,entry,data,receipt)
 }

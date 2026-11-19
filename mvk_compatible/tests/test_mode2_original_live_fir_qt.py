@@ -52,8 +52,9 @@ def test_live_source_fir_code_does_not_render_plain_getsignal_or_getspectrum(
         assert not win.spec_plot.listDataItems()
         assert "Огибающая Code20" in win.spec_hint.text()
         assert "не подменяет огибающую" in win.spec_hint.text()
-        assert "SOURCE_GO_RING_NOT_VERIFIED" in win.spec_hint.text() or (
-            "CURRENT_ADC_SOURCE_RATE_MISSING" in win.spec_hint.text())
+        # This synthetic Qt profile must not masquerade as the
+        # SHA-verified original IDP that can authorize a local candidate.
+        assert "LOCAL_ORIGINAL_FIR_PROFILE_REQUIRED" in win.spec_hint.text()
         assert win._full_spectrum is None
         assert win._spectrum_summary is None
         assert not win.spec_copy_button.isEnabled()

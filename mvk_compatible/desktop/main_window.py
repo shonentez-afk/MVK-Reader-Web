@@ -37,6 +37,9 @@ from ..core.original_measurement_mode import (
 )
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
 from ..core.original_live_envelope_provenance import active_live_envelope_gate
+from ..core.envelope_spectrum_idr_candidate import (
+    source_selected_envelope_spectrum_candidate,
+)
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from ..core.original_view_time_source import (
@@ -811,7 +814,7 @@ class MainWindow(QMainWindow):
             # LIVE/reference availability; neither action nor visible
             # radio can trigger a new filter in a frozen source view.
             usable=(entry['qt_selectable_without_fabricated_fir'] and
-                not self._live_active and self._spectrum_reference is None)
+                self._spectrum_reference is None)
             action.setEnabled(usable)
             radio.setEnabled(usable)
             radio.setToolTip(action.toolTip())
@@ -868,10 +871,25 @@ class MainWindow(QMainWindow):
         original popup, unlike the legacy checkbox, *activates* the
         chosen filter when the user explicitly selects Tag1..31.
         """
-        if self._live_active or self._spectrum_reference is not None:
+        if self._spectrum_reference is not None:
             self.statusBar().showMessage(
-                'Исходная огибающая недоступна в LIVE или режиме эталона')
+                'Исходная огибающая недоступна в режиме эталона')
             return
+        if self._live_active and tag!=0:
+            status=self._native_live_status or {}
+            rows=(status.get("source_original_storage") or {}).get("channels") or []
+            ch=self._ch()
+            profile=self.envelope_profile
+            if (status.get("source_original_storage_verified") is not True
+                    or len(rows)<ch or
+                    rows[ch-1].get("last_sample_rate_hz",0)<=0 or
+                    profile is None or profile.provenance!=
+                    "USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED"):
+                self.statusBar().showMessage(
+                    "LIVE FIR требует проверенного кольца АЦП и "
+                    "локального оригинального IDP")
+                return
+            self._source_envelope_menu_fs=rows[ch-1]["last_sample_rate_hz"]
         previous=int(self.wave_envelope_code.currentData() or 0)
         try:
             receipt=source_original_envelope_selection(
@@ -899,7 +917,17 @@ class MainWindow(QMainWindow):
         finally:
             self.spec_envelope_button.blockSignals(blocked)
         self._sync_wave_primary_labels()
-        if self.session is not None:
+        if self._live_active:
+            # Switching the source code invalidates the last verified
+            # Go ring request. Never reuse old unfiltered/filtered curves.
+            self._live_long_window=None
+            self._live_fft_window=None
+            self._source_large_fft_key=None
+            self._source_large_fft_at=0.
+            self.spec_compare_button.setEnabled(False)
+            self._render_live_wave()  # GetSignal FIR still fail-closed
+            self._render_live_spectrum()  # local source FIR candidate
+        elif self.session is not None:
             self.refresh_wave(quiet=True)
             # Exact same selected ADC/BIN, source Tag and original FIR history
             # are independently validated before both real Core calculations.
@@ -2966,6 +2994,20 @@ class MainWindow(QMainWindow):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
+        # The shared original popEnvelopeType menu is rate-gated by the
+        # actual selected ADC, not the TCP packet rate of another ADC.
+        # A new Fs invalidates an incompatible FIR Tag like Delphi
+        # 0084BB2E; it never launches a second socket or sends SetRate.
+        rows=(snapshot.get("source_original_storage") or {}).get("channels") or []
+        adc=self._ch()
+        new_fs=(rows[adc-1].get("last_sample_rate_hz")
+                if snapshot.get("source_original_storage_verified") is True
+                and len(rows)>=adc else None)
+        if (type(new_fs) is int and new_fs>0 and
+                self._source_envelope_menu_fs!=new_fs):
+            self._source_envelope_menu_fs=new_fs
+            self._rebind_original_envelope_for_selected_channel()
+            self._sync_original_envelope_menu_ui()
         # Display only validated, bounded Source 2M storage accounting
         # on the already-existing PageStatus QWidget: no research controls,
         # no extra TCP owner, and no invented ADC/TACH bytes for the view.
@@ -3076,9 +3118,18 @@ class MainWindow(QMainWindow):
             req=window.request
             if req.adc!=self._ch():
                 return
-            if req.h_tag==-1:
-                if req.samples!=int(self.spec_n.currentData()):
-                    return
+            if req.h_tag in (-1,-2):
+                if req.h_tag==-1:
+                    if (req.samples!=int(self.spec_n.currentData()) or
+                            self.spec_envelope_button.isChecked()):
+                        return
+                else:
+                    if (not self.spec_envelope_button.isChecked() or
+                            req.envelope_code!=int(
+                                self.spec_envelope_code.currentData() or 0) or
+                            req.original_bspec_lines!=int(
+                                self.spec_n.currentData())):
+                        return
             elif req.h_tag!=self._wave_hscale_tag:
                 return
             decision=gate_live_preview(
@@ -3086,14 +3137,14 @@ class MainWindow(QMainWindow):
                 stop_requested=self._measurement_exit_requested)
             if not decision.allowed:
                 raise ValueError(decision.reason)
-            if req.h_tag==-1:
+            if req.h_tag in (-1,-2):
                 self._live_fft_window=window
                 self._render_live_spectrum()
             else:
                 self._live_long_window=window
                 self._render_live_wave()
         except (ValueError,KeyError,AttributeError,TypeError) as exc:
-            if window.request.h_tag==-1:
+            if window.request.h_tag in (-1,-2):
                 self._live_fft_window=None
                 self.spec_hint.setText(
                     'Исходное GetSpectrum из кольца отклонено: '+str(exc))
@@ -3328,49 +3379,55 @@ class MainWindow(QMainWindow):
             selected_n=int(self.spec_n.currentData())
             status=self._native_live_status or {}
             ring_selected=status.get("source_original_storage_verified") is True
-            # Source _Unit115:007D14B3..007D1546 invokes the ORIGINAL
-            # pre-FFT decimation and I/Q envelope when EnvelopeCode>0.
-            # The SHA-verified unfiltered FFT window from Go is not a
-            # filtered envelope spectrum. It is unsafe to show it with
-            # popEnvelopeType Tag1..31 active, even if a local IDP exists.
-            if self.spec_envelope_button.isChecked():
-                code=int(self.spec_envelope_code.currentData() or 0)
+            # Original _Unit115:007D1462..007D1546:
+            # bSpecLines selected N is the PRE-FIR request length,
+            # not necessarily the FFT N after source decimation/I/Q.
+            # A real SHA-verified input is the only permitted source.
+            filtered=bool(self.spec_envelope_button.isChecked())
+            code=int(self.spec_envelope_code.currentData() or 0) if filtered else 0
+            proof=None
+            if filtered:
                 if not code:
                     raise ValueError(
                         "Огибающая включена без выбранного кода фильтра")
                 rows=(status.get("source_original_storage") or {}).get("channels") or []
                 row=rows[ch-1] if len(rows)>=ch else {}
-                seen=self._live_preview.channels.get(ch) if self._live_preview else None
-                fs=(row.get("last_sample_rate_hz")
-                    if ring_selected else
-                    seen.rate_hz if seen is not None else None)
+                seen=(self._live_preview.channels.get(ch)
+                      if self._live_preview else None)
+                fs=(row.get("last_sample_rate_hz") if ring_selected
+                    else seen.rate_hz if seen is not None else None)
+                profile=self.envelope_profile
+                original_idp=(profile is not None and
+                    profile.provenance=="USER_SUPPLIED_LOCAL_IDP_SHA256_VERIFIED")
                 proof=active_live_envelope_gate(
                     kind="GetSpectrum",code=code,n_fft=selected_n,
-                    sample_rate_hz=fs,
-                    profile_available=self.envelope_profile is not None,
+                    sample_rate_hz=fs,profile_available=original_idp,
                     source_ring_verified=ring_selected,
                     available_elements=row.get("available_elements",0))
-                required=proof.get("research_inverse_exact_fft_n_history_samples")
-                requested=proof.get("source_get_adjusted_envelope_length_samples")
-                lengths=(f"Исходный GetAdjustedEnvelopeLength={requested}, "
-                         f"отдельная исследовательская FIR-история={required} "
-                         f"отсчётов. " if requested is not None else "")
-                raise ValueError(
-                    f"Огибающая Code{code} не рассчитана в LIVE: "
-                    +lengths + proof["reason_code"]
-                    + ". Обычная FFT не подменяет огибающую; "
-                    "выберите «Без фильтра».")
-            
+                if not proof.get("local_fir_candidate_can_compute"):
+                    raise ValueError(
+                        f"Огибающая Code{code} не рассчитана в LIVE: "
+                        +proof["reason_code"]
+                        + "; нужен исходный полный ring/локальный IDP. "
+                        "Обычная FFT не подменяет огибающую; "
+                        "выберите «Без фильтра».")
             if ring_selected:
                 source_window=self._live_fft_window
+                need=(proof["source_get_adjusted_envelope_length_samples"]
+                      if filtered else selected_n)
+                source_tag=-2 if filtered else -1
                 if (source_window is None or
-                        source_window.request.h_tag!=-1 or
+                        source_window.request.h_tag!=source_tag or
                         source_window.request.adc!=ch or
-                        source_window.request.samples!=selected_n or
+                        source_window.request.samples!=need or
+                        source_window.request.envelope_code!=code or
+                        (filtered and
+                         source_window.request.original_bspec_lines!=selected_n) or
                         source_window.request.session_id!=status.get("session_id")):
                     raise ValueError(
-                        f"Ожидание {selected_n} исходных отсчётов FFT "
-                        "из кольца Go 2M; TCP Preview может включать Freeze")
+                        f"Ожидание {need} реальных исходных "
+                        f"{'до-FIR' if filtered else 'FFT'} отсчётов "
+                        "из кольца Go 2M; TCP Preview не подменяет оригинал")
                 source_preview=source_window.preview
                 request_id=source_window.request.request_id
             else:
@@ -3381,27 +3438,48 @@ class MainWindow(QMainWindow):
                 raise ValueError("Нет проверенного окна выбранного АЦП")
             self._sync_spec_lines_presentation(channel.rate_hz)
             clock=time.monotonic()
-            key=(source_preview.session_id,ch,selected_n,
+            key=(source_preview.session_id,ch,selected_n,code,
                  self.spec_mode.currentIndex(),request_id)
             if selected_n < 131072:
                 self._source_large_fft_key=None
             elif (key==self._source_large_fft_key
                     and clock-self._source_large_fft_at < 2.5):
                 return
-            d=provisional_spectrum(
-                source_preview,ch,mode=self.spec_mode.currentIndex(),
-                n_fft=selected_n)
+            if filtered:
+                # This is an executed LOCAL IDP FIR/IQ candidate, never
+                # accepted as bit-identical Delphi/x87. No second gain.
+                d=source_selected_envelope_spectrum_candidate(
+                    channel.samples,channel.rate_hz,code,profile,
+                    selected_bspec_lines_n=selected_n,
+                    mode=self.spec_mode.currentIndex(),
+                    backend="idr_float32",f_range=1.0,
+                    input_domain="calibrated_bin")
+                d["source_ring_sha256"]=channel.sha256
+            else:
+                d=provisional_spectrum(
+                    source_preview,ch,mode=self.spec_mode.currentIndex(),
+                    n_fft=selected_n)
             d["source_ring_verified_input"]=ring_selected
             if selected_n>=131072:
                 self._source_large_fft_key=key
                 self._source_large_fft_at=clock
             xs=np.asarray(d['frequency_hz'],dtype=float)
             ys=np.asarray(d['amplitude'],dtype=float)
+            if filtered and len(xs)>5000:
+                # Only draw-time peak preservation; FULL post-FIR FFT
+                # bins, summary and SHA stay untouched in local result.
+                step=max(1,(len(xs)+4999)//5000)
+                picked=[i+int(np.argmax(ys[i:i+step]))
+                        for i in range(0,len(xs),step)]
+                xs=xs[picked]
+                ys=ys[picked]
             self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
             # Preserve four existing mode selectors, but keep this DATA
             # separate from all original TQGrapher pointer/cursor acceptance.
-            self.spec_plot.setLabel('bottom','Частота, Гц · Live FFT кандидат')
+            self.spec_plot.setLabel(
+                'bottom','Частота, Гц · LIVE FIR/IQ кандидат'
+                if filtered else 'Частота, Гц · Live FFT кандидат')
             self.spec_plot.setLabel('left',d['unit'])
             self.spec_plot.plot(xs,ys,pen=pg.mkPen('#000000'))
             self.spec_plot.getViewBox().setLimits(xMin=0,xMax=d['df_hz']*d['n_fft']/2)
@@ -3412,19 +3490,36 @@ class MainWindow(QMainWindow):
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)
             self.spec_canvas_geometry_button.setEnabled(False)
-            self.spec_mean.setText(
-                f'LIVE ADC{ch} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
-                + ('Источник: кольцо Go 2M; ' if ring_selected
-                   else 'Источник: Preview (не оригинальное кольцо); ')
-                + 'FFT локальный, не Delphi/x87 1:1')
-            self.spec_mean_primary.setText('LIVE PREVIEW · численный паритет не подтверждён')
-            self.spec_hint.setText(
-                ('SHA исходного окна Go 2M · '
-                 if ring_selected else 'Непроверенный исходный Preview · ')
-                + f'{d["source"]} · Native Go BIN уже калиброван; '
-                'в локальной FFT FRange=1; FRange повторно НЕ применялся; '
-                'оригинальный коэффициент не установлен · '
-                'результат не для оригинального Copy/Save')
+            if filtered:
+                self.spec_mean.setText(
+                    f'LIVE АЦП{ch} · FIR Code{code} · bSpecLines '
+                    f'{selected_n} → FFT {d["n_fft"]}; '
+                    f'шаг {d["df_hz"]:.6g} Гц\n'
+                    'Реальные SHA-отсчёты Go + локальный исходный IDP; '
+                    'численный Delphi/x87 паритет не подтверждён')
+                self.spec_mean_primary.setText(
+                    'LIVE ОГИБАЮЩАЯ · локальный FIR/IQ расчёт, НЕ Delphi 1:1')
+                self.spec_hint.setText(
+                    f'Кольцо 2M SHA={channel.sha256[:12]}… · '
+                    f'история {proof["source_get_adjusted_envelope_length_samples"]} '
+                    f'Float32 · post-IQ FFT N={d["n_fft"]} · '
+                    'FRange=1; повторный коэффициент не применялся; '
+                    'Copy/Save как оригинальный результат запрещён')
+            else:
+                self.spec_mean.setText(
+                    f'LIVE ADC{ch} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
+                    + ('Источник: кольцо Go 2M; ' if ring_selected
+                       else 'Источник: Preview (не оригинальное кольцо); ')
+                    + 'FFT локальный, не Delphi/x87 1:1')
+                self.spec_mean_primary.setText(
+                    'LIVE PREVIEW · численный паритет не подтверждён')
+                self.spec_hint.setText(
+                    ('SHA исходного окна Go 2M · '
+                     if ring_selected else 'Непроверенный исходный Preview · ')
+                    + f'{d["source"]} · Native Go BIN уже калиброван; '
+                    'в локальной FFT FRange=1; FRange повторно НЕ применялся; '
+                    'оригинальный коэффициент не установлен · '
+                    'результат не для оригинального Copy/Save')
             self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
         except (ValueError,OSError,KeyError) as exc:
             self._source_large_fft_key=None

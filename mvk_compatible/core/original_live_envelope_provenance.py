@@ -5,19 +5,19 @@ Private evidence cross-checked in all three sources (not embedded):
   Projects.7z/_Unit115.pas 007D1158, 007D1C48, 007D1D50, 007D1E70;
   mvk_idr(1).sqlite: function/call addresses and exact source lines.
 
-Critical: original GetAdjustedEnvelopeLength and a research inverse FIR
-recurrence are DIFFERENT calculations. A plain FFT of the source raw ring
-is NOT the original envelope spectrum. Never label it as one.
+Critical: original bSpecLines N is PRE-FIR. GetAdjustedEnvelopeLength
+and the inverse FIR recurrence agree only if the latter uses POST-FIR
+FFT N. A plain FFT of the source raw ring is NOT its envelope spectrum.
 
 This module is pure: no original IDP bytes, no network, hardware, Qt,
 private FIR coefficients, generated samples, files or side effects.
 """
 from __future__ import annotations
 
-from .envelope_idr_candidate import (
-    ENVELOPE_RATES, FIR_DECIM, FIR_TAPS, envelope_plan,
+from .envelope_idr_candidate import ENVELOPE_RATES
+from .envelope_spectrum_idr_candidate import (
+    required_original_history, source_selected_envelope_fft_plan,
 )
-from .envelope_spectrum_idr_candidate import required_original_history
 
 _ORIGINAL_FFT_LENGTHS=frozenset((1024,4096,8192,16384,32768,65536,131072,262144))
 _ORIGINAL_SAMPLE_RATES=frozenset((512,2048,8192,32768,65536))
@@ -49,27 +49,32 @@ def original_live_envelope_provenance(*, envelope_code:int,
     # The actual original menu cannot select a filter above Fs.
     if ENVELOPE_RATES[envelope_code]>sample_rate_hz:
         raise ValueError("Original FIR target rate exceeds the current ADC Fs")
-    source=envelope_plan(n_fft,sample_rate_hz,envelope_code)
-    inverse=required_original_history(n_fft,sample_rate_hz,envelope_code)
-    post=source["adjusted_input_length"]
-    for stage in (
-            source["pre_stage"],source["second_stage"],source["stage"]):
-        if stage:
-            if post < FIR_TAPS[stage]+FIR_DECIM[stage]:
-                raise ValueError("Original source FIR stage has no complete result")
-            post=(post-FIR_TAPS[stage])//FIR_DECIM[stage]
-    source_n=source["adjusted_input_length"]
-    candidate_n=inverse["input_samples"]
+    source=source_selected_envelope_fft_plan(
+        n_fft,sample_rate_hz,envelope_code)
+    post=source["post_fir_fft_n"]
+    source_n=source["source_getadjusted_length_samples"]
+    # The inverse must use the actual POST-FIR N, not the user's
+    # selected PRE-FIR bSpecLines. This is source-confirmed by the
+    # mutations of Params.Count at 007D1C48 and 007D1E70.
+    if post>=1024:
+        inverse=required_original_history(post,sample_rate_hz,envelope_code)
+        candidate_n=inverse["input_samples"]
+    else:
+        candidate_n=source_n  # same per-stage reverse already checked
+    if source_n!=candidate_n:
+        raise ValueError("Source original FIR window and inverse disagree")
     if not profile_available:
         reason="LOCAL_ORIGINAL_FIR_PROFILE_REQUIRED"
     elif not source_ring_verified:
         reason="SOURCE_GO_RING_NOT_VERIFIED"
-    elif max(source_n,candidate_n)>_ORIGINAL_RING_ELEMENTS:
+    elif source_n>_ORIGINAL_RING_ELEMENTS:
         reason="SOURCE_FIR_HISTORY_EXCEEDS_2M_RING"
-    elif available_elements<max(source_n,candidate_n):
+    elif available_elements<source_n:
         reason="SOURCE_FIR_HISTORY_INCOMPLETE"
+    elif post<1024:
+        reason="SOURCE_POST_FIR_FFT_BELOW_ACCEPTED_MODEL_N"
     else:
-        reason="ORIGINAL_FIR_POST_FILTER_SAME_WINDOW_UNVERIFIED"
+        reason="ORIGINAL_FIR_NUMERICAL_PARITY_UNVERIFIED"
     return {
         "source":SOURCE,
         "envelope_code":envelope_code,
@@ -78,14 +83,20 @@ def original_live_envelope_provenance(*, envelope_code:int,
         "requested_fft_n":n_fft,
         "source_get_adjusted_envelope_length_samples":source_n,
         "source_filtered_sample_count_candidate":post,
+        "source_post_fir_fft_n":post,
+        "source_post_fir_fft_df_hz":source["post_fir_df_hz"],
         "research_inverse_exact_fft_n_history_samples":candidate_n,
         "original_and_candidate_window_lengths_identical":source_n==candidate_n,
+        "source_original_params_count_proven":True,
+        "source_fir_stages":source["source_fir_stage_lengths"],
         "ring_available_elements":available_elements,
         "ring_capacity_elements":_ORIGINAL_RING_ELEMENTS,
         "full_local_profile_available":profile_available,
         "source_ring_verified":source_ring_verified,
         "reason_code":reason,
         "may_render_plain_fft_as_original_envelope":False,
+        "local_fir_candidate_can_compute":(
+            reason=="ORIGINAL_FIR_NUMERICAL_PARITY_UNVERIFIED"),
         "live_original_fir_result_verified":False,
         "original_x87_fir_fft_and_frange_parity_verified":False,
         "source_calibrated_bin_not_proven_original_f_range":True,

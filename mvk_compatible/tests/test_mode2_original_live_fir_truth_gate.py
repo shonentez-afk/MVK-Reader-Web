@@ -26,15 +26,18 @@ def _evidence(code=20,n_fft=4096,rate=65536,available=1<<21,
 
 
 def test_source_fir_length_vs_inverse_not_a_verified_identical_runtime():
-    # _Unit115.pas:007D1158 returns N+FIR_TAPS[stage]*decimation
-    # for ratio=1. A research inverse for exact N output is different.
-    # Do not silently substitute a normal N-point FFT for the filter.
+    # _Unit115.pas:007D1158 uses N + taps*Fs/target, NOT taps*decim.
+    # bSpecLines N=4096 is BEFORE FIR; after Code20 FFT N=2048.
+    # The independent inverse MUST use 2048, not input 4096.
     code20=_evidence()
-    assert code20["source_get_adjusted_envelope_length_samples"]==4198
-    assert code20["research_inverse_exact_fft_n_history_samples"]==8243
-    assert code20["source_filtered_sample_count_candidate"]==2073
-    assert not code20["original_and_candidate_window_lengths_identical"]
-    assert code20["reason_code"]=="ORIGINAL_FIR_POST_FILTER_SAME_WINDOW_UNVERIFIED"
+    assert code20["source_get_adjusted_envelope_length_samples"]==4147
+    assert code20["research_inverse_exact_fft_n_history_samples"]==4147
+    assert code20["source_filtered_sample_count_candidate"]==2048
+    assert code20["source_post_fir_fft_n"]==2048
+    assert code20["source_post_fir_fft_df_hz"]==16.
+    assert code20["original_and_candidate_window_lengths_identical"]
+    assert code20["reason_code"]=="ORIGINAL_FIR_NUMERICAL_PARITY_UNVERIFIED"
+    assert code20["local_fir_candidate_can_compute"]
     assert not code20["live_original_fir_result_verified"]
     assert not code20["may_render_plain_fft_as_original_envelope"]
     assert code20["device_command_sent"] is False
@@ -51,9 +54,9 @@ def test_source_fir_length_vs_inverse_not_a_verified_identical_runtime():
 def test_fir_gate_fails_closed_when_private_idp_or_source_ring_unavailable():
     assert _evidence(profile=False)["reason_code"]=="LOCAL_ORIGINAL_FIR_PROFILE_REQUIRED"
     assert _evidence(ring=False)["reason_code"]=="SOURCE_GO_RING_NOT_VERIFIED"
-    assert _evidence(available=4198)["reason_code"]=="SOURCE_FIR_HISTORY_INCOMPLETE"
-    assert _evidence(available=8243)["reason_code"]==(
-        "ORIGINAL_FIR_POST_FILTER_SAME_WINDOW_UNVERIFIED")
+    assert _evidence(available=4146)["reason_code"]=="SOURCE_FIR_HISTORY_INCOMPLETE"
+    assert _evidence(available=4147)["reason_code"]==(
+        "ORIGINAL_FIR_NUMERICAL_PARITY_UNVERIFIED")
     assert active_live_envelope_gate(
         kind="GetSpectrum",code=0,n_fft=4096,sample_rate_hz=None,
         profile_available=False,source_ring_verified=False) is None

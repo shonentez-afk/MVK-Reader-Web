@@ -67,7 +67,9 @@ def response_fixture(run,status,request,*,sha_override=None,
         input_domain="CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32",
         calibration_already_applied=True,provisional_not_audited=True,
         raw_bytes=status["raw_bytes"],frames_decoded=status["frames_decoded"],
-        sha256=sha_override or hashlib.sha256(data).hexdigest())
+        sha256=sha_override or hashlib.sha256(data).hexdigest(),
+        envelope_code=request.envelope_code,
+        original_bspec_lines=request.original_bspec_lines)
     if override is not None:
         override(manifest)
     with zipfile.ZipFile(run/RESULT_NAME,"w",compression=zipfile.ZIP_STORED) as z:
