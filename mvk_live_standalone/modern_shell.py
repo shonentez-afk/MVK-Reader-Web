@@ -481,6 +481,10 @@ def open_advanced_window(win, key):
         "cepstrum": ("W07 · Кепстр", win.extra_method_pages["cepstrum"]),
         "bearing": ("Подшипники · огибающая", win.diagnostics_page),
         "gears": ("Редукторы · GMF", win.gears_page),
+        "local_metrics": ("MVK Live · локальные APP_DERIVED показатели",
+                          win.derived_page),
+        "local_octaves": ("MVK Live · локальная сводка 1/1 октавы из AUX",
+                          win.local_octave_page),
     }
     if key not in pages:
         raise ValueError("Неизвестный метод анализа")
@@ -582,6 +586,10 @@ def _build_menu(win):
     action("Анализ", "АЧХ фильтра временного сигнала…",
            lambda: _filter_response_dialog(win, "time"))
     menus["Анализ"].addSeparator()
+    action("Анализ", "Локальные показатели MVK Live — отдельное окно",
+           lambda: open_advanced_window(win, "local_metrics"))
+    action("Анализ", "Сводка 1/1 октавы из AUX — локальный расчёт",
+           lambda: open_advanced_window(win, "local_octaves"))
     for name, key in (
         ("Fast Kurtogram", "kurtogram"), ("STFT", "stft"),
         ("CWT Morlet", "cwt"), ("Кепстр", "cepstrum"),

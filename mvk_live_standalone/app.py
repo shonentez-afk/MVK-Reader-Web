@@ -615,18 +615,20 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_adc.setCurrentIndex(self.adc.currentIndex())
         adc_row.addWidget(self.dsp_adc)
         self.dsp_source_hint=QtWidgets.QLabel(
-            "ORIGINAL AUX4700 отдельно от APP_DERIVED")
+            "ТОЛЬКО ПРИБОР МВК01 · AUX4700 · без расчётов MVK Live")
         adc_row.addWidget(self.dsp_source_hint,stretch=1)
         dsp_layout.addLayout(adc_row)
         self.dsp_pages=QtWidgets.QTabWidget(dsp_panel)
         dsp_rms_page=QtWidgets.QWidget()
         dsp_rms_layout=QtWidgets.QVBoxLayout(dsp_rms_page)
         bands_row=QtWidgets.QHBoxLayout()
-        bands_row.addWidget(QtWidgets.QLabel("Частотные полосы"))
-        self.dsp_band_mode=QtWidgets.QComboBox()
-        self.dsp_band_mode.addItem("1/3 октавы · оригинальные 43 СКЗ","third")
-        self.dsp_band_mode.addItem("1/1 октавы · сводка из 1/3 СКЗ","octave")
-        bands_row.addWidget(self.dsp_band_mode)
+        bands_row.addWidget(QtWidgets.QLabel(
+            "Приборные третьоктавные полосы · 43 значения СКЗ ВУ"))
+        # Keep a single-source mode for the original archive navigation
+        # contract. There is NO computed 1/1-octave alternative on this page.
+        self.dsp_band_mode=QtWidgets.QComboBox(dsp_rms_page)
+        self.dsp_band_mode.addItem("43 приборные 1/3 октавы","third")
+        self.dsp_band_mode.hide()
         bands_row.addStretch(1)
         dsp_rms_layout.addLayout(bands_row)
         self.dsp_plot=pg.PlotWidget(title="АUX4700 · переданные прибором 43 третьоктавных СКЗ ВУ")
@@ -653,13 +655,13 @@ class LiveWindow(QtWidgets.QMainWindow):
             self._open_dsp_band_trend)
         dsp_rms_layout.addWidget(self.dsp_band_trend_button)
         self.dsp_band_note=QtWidgets.QLabel(
-            "1/3: оригинальные 43 СКЗ AUX4700. "
-            "1/1: APP_DERIVED RSS трёх исходных 1/3 полос; "
-            "не самостоятельный оригинальный аппаратный фильтр.")
+            "43 исходные СКЗ ВУ от прибора · AUX4700. "
+            "Знак «—» означает отсутствие значения, не ноль. "
+            "График не соединяет линии через недоступные полосы.")
         self.dsp_band_note.setWordWrap(True)
         dsp_rms_layout.addWidget(self.dsp_band_note)
         self.dsp_band_mode.currentIndexChanged.connect(self._plot_dsp_bands)
-        self.dsp_pages.addTab(dsp_rms_page,"Октавные полосы 1/3 · 1/1")
+        self.dsp_pages.addTab(dsp_rms_page,"43 полосы · 1/3 октавы")
         dsp_extra_page=QtWidgets.QWidget()
         dsp_extra_layout=QtWidgets.QVBoxLayout(dsp_extra_page)
         dsp_controls=QtWidgets.QHBoxLayout()
@@ -697,7 +699,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             "пока не подтверждены оригинальной схемой. Данные показаны без пересчёта.")
         self.dsp24_note.setWordWrap(True)
         dsp_extra_layout.addWidget(self.dsp24_note)
-        self.dsp_pages.addTab(dsp_extra_page,"24 позиции · СКЗ / Пик / Размах")
+        self.dsp_pages.addTab(dsp_extra_page,"24 показателя · СКЗ / Пик / Пик-пик")
         dsp_layout.addWidget(self.dsp_pages,stretch=1)
         self._dsp_last=None
         self.dsp_info=QtWidgets.QLabel("Данные AUX4700 от прибора ещё не получены")
@@ -853,7 +855,35 @@ class LiveWindow(QtWidgets.QMainWindow):
             "в архив NPZ; Live-обновления не подменяют измерения.")
         self.local_trend_button.clicked.connect(self._open_local_metric_trend)
         self.derived_layout.insertWidget(4,self.local_trend_button)
-        self.dsp_pages.addTab(self.derived_page,"Показатели MVK Live")
+        # APP_DERIVED is intentionally NOT a page of "Расчётные данные":
+        # that main workspace shows only instrument-calculated AUX4700.
+        # Local metrics remain available through Analysis -> separate window.
+        self.local_octave_page=QtWidgets.QWidget()
+        local_octave_layout=QtWidgets.QVBoxLayout(self.local_octave_page)
+        local_octave_layout.addWidget(QtWidgets.QLabel(
+            "APP_DERIVED · сводные 1/1-октавные СКЗ из 43 переданных "
+            "прибором 1/3-октавных полос. Это НЕ результат отдельного "
+            "аппаратного фильтра МВК01."))
+        self.local_octave_plot=pg.PlotWidget(
+            title="Локальная RSS-сводка 1/1 октавы · из исходных AUX4700")
+        self.local_octave_plot.setLabel("bottom","Центр сводной полосы",units="Гц")
+        self.local_octave_plot.setLabel("left","ВУ СКЗ · APP_DERIVED",units="м/с²")
+        self.local_octave_plot.showGrid(x=True,y=True,alpha=.2)
+        self.local_octave_curve=self.local_octave_plot.plot(
+            pen=pg.mkPen("#c08b42",width=1.5),symbol="o",symbolSize=5)
+        local_octave_layout.addWidget(self.local_octave_plot,stretch=2)
+        self.local_octave_table=QtWidgets.QTableWidget(0,2)
+        self.local_octave_table.setHorizontalHeaderLabels(
+            ["Центр 1/1 октавы, Гц","Локальная RSS СКЗ, м/с²"])
+        self.local_octave_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.local_octave_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        local_octave_layout.addWidget(self.local_octave_table,stretch=1)
+        self.local_octave_note=QtWidgets.QLabel(
+            "Нет подтверждённых исходных AUX4700 для сводного анализа.")
+        self.local_octave_note.setWordWrap(True)
+        local_octave_layout.addWidget(self.local_octave_note)
         self.bearing_diagnostics=QtWidgets.QLabel(
             "Подшипники: введите 1× и геометрию; локальное SNR, без эталонных измерений")
         self.diagnostics_page=QtWidgets.QWidget()
@@ -1425,12 +1455,6 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.history_ui._plot_trend()
 
     def _open_dsp_band_trend(self):
-        if self.dsp_band_mode.currentData()!="third":
-            self.dsp_band_note.setText(
-                "Сводная 1/1-октавная полоса не является исходной "
-                "приборной метрикой AUX4700, поэтому в приборный "
-                "исторический тренд не подставляется.")
-            return
         row=self.dsp_bands_table.currentRow()
         if row<0 or row>=43:
             self.dsp_band_note.setText("Выберите одну из 43 исходных полос")
@@ -1463,8 +1487,10 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         indices=np.arange(1,25,dtype=np.float64)
         available=np.isfinite(data)
-        self.dsp24_curve.setData(indices[available],data[available],
-                                 connect="finite")
+        # KEEP NaN slots in the original 24-position coordinate system.
+        # Compressing them previously drew a false line across missing DSP
+        # cells, suggesting a continuous instrument measurement.
+        self.dsp24_curve.setData(indices,data,connect="finite")
         self.dsp24_plot.setTitle(
             "ОРИГИНАЛЬНЫЙ AUX4700 · "+key+
             " · номер исходной позиции (частота не подтверждена)")
@@ -1472,34 +1498,53 @@ class LiveWindow(QtWidgets.QMainWindow):
             "left","Исходное значение прибора · единицы уточняются")
 
     def _plot_dsp_bands(self,*_):
+        """Only the 43 UNCHANGED device values can appear on this page."""
         packet=self._dsp_last
-        self.dsp_band_trend_button.setEnabled(
-            self.dsp_band_mode.currentData()=="third")
+        self.dsp_band_trend_button.setEnabled(packet is not None)
         if packet is None:
             self.dsp_curve.setData([],[])
             self.dsp_bands_table.setRowCount(0)
             return
-        if self.dsp_band_mode.currentData()=="octave":
-            freqs,values=octave_rss_from_thirds(
-                packet.frequency_hz,packet.acceleration_rms)
-            provenance="APP_DERIVED · сводные 1/1 из оригинальных 1/3 СКЗ"
-        else:
-            freqs,values=packet.frequency_hz,packet.acceleration_rms
-            provenance="ORIGINAL AUX4700 · 43 третьоктавных СКЗ"
-        mask=np.isfinite(values)
-        self.dsp_curve.setData(freqs[mask],values[mask])
-        self.dsp_plot.setTitle(provenance)
-        self.dsp_bands_table.setRowCount(len(freqs))
+        freqs,values=packet.frequency_hz,packet.acceleration_rms
+        # Do NOT drop missing cells and connect a false measured segment.
+        self.dsp_curve.setData(freqs,values,connect="finite")
+        self.dsp_plot.setTitle("ПРИБОР · AUX4700 · 43 третьоктавные СКЗ ВУ")
+        self.dsp_bands_table.setRowCount(43)
         for row,(hz,val) in enumerate(zip(freqs,values)):
             for col,s in enumerate((f"{hz:g}",
                            "—" if not np.isfinite(val) else f"{val:.8g}")):
                 item=QtWidgets.QTableWidgetItem(s)
-                if s=="—":item.setToolTip(
-                    "Недоступно: исходный NaN не подменяется нулём")
+                if s=="—":
+                    item.setToolTip("Прибор не передал конечное значение; НЕ ноль")
                 self.dsp_bands_table.setItem(row,col,item)
         self.dsp_band_note.setText(
-            provenance+" · м/с² · неполные исходные полосы сохраняют "
-            "недоступность локальных сводных значений.")
+            "ПРИБОР · исходные 43 значения AUX4700 в м/с²; "
+            "без RSS/FFT пересчёта и без подмены NaN нулём.")
+
+    def _render_local_octaves(self):
+        """Optional APP_DERIVED RSS window, never part of device DSP tab."""
+        packet=self._dsp_last
+        if packet is None:
+            self.local_octave_curve.setData([],[])
+            self.local_octave_table.setRowCount(0)
+            self.local_octave_note.setText(
+                "Нет проверенных исходных AUX4700; сводка 1/1 недоступна.")
+            return
+        freqs,values=octave_rss_from_thirds(
+            packet.frequency_hz,packet.acceleration_rms)
+        self.local_octave_curve.setData(freqs,values,connect="finite")
+        self.local_octave_table.setRowCount(len(freqs))
+        for row,(hz,val) in enumerate(zip(freqs,values)):
+            for col,text in enumerate((f"{hz:g}",
+                    "—" if not np.isfinite(val) else f"{val:.8g}")):
+                item=QtWidgets.QTableWidgetItem(text)
+                if col==1 and text=="—":
+                    item.setToolTip("Недостаточно исходных 1/3 полос для RSS")
+                self.local_octave_table.setItem(row,col,item)
+        self.local_octave_note.setText(
+            f"APP_DERIVED · на основе принятого AUX4700 АЦП {packet.adc}, "
+            f"обновление {packet.update}; локальная RSS 1/1 октавы, "
+            "не отдельное измерение МВК01.")
 
     def _fill_local_values(self,features,velocity=None):
         fields=(
@@ -1532,6 +1577,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_bands_table.setRowCount(0)
         self.dsp24_curve.setData([],[])
         self.dsp24_table.clearContents()
+        self.dsp24_trend_button.setEnabled(False)
+        self._render_local_octaves()
         self.dsp_source_hint.setText(message)
         self.dsp_info.setText(message)
 
@@ -1550,8 +1597,11 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         self._dsp_last=band
         self._plot_dsp_bands()
+        self._render_local_octaves()
+        self.dsp24_trend_button.setEnabled(band.has_extended)
         self.dsp_source_hint.setText(
-            f"ORIGINAL AUX4700 · пакет {band.update} · "+
+            f"ПРИБОР МВК01 · AUX4700 · АЦП {band.adc} · "
+            f"пакет {band.update} · "+
             ("LIVE" if status.get("phase")=="RECORDING" else "НЕ Live"))
         if band.has_extended:
             # Register slots 1..24 are NOT the same as 43 third-octave
@@ -1578,7 +1628,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_info.setText(
             lifecycle+
             f"ИСТОЧНИК: MVK_DSP_ORIGINAL_AUX4700 · АЦП {band.adc} · "
-            f"пакет {band.update} · статус {band.status_hex}{pending} · "
+            f"пакет {band.update} · приём (ПК) {band.time_utc} · "
+            f"статус {band.status_hex}{pending} · "
             f"передано: {band.total_transmitted_cells} значений · "
             f"неконечных/недоступных: {band.nonfinite_fields}. "
             "43 третьоктавы — СКЗ ВУ по известным центрам; "

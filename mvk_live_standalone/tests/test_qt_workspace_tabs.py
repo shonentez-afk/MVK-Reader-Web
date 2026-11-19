@@ -56,15 +56,17 @@ def test_main_tabs_are_four_tasks_not_mixed_wide_graph_layout(gui):
     assert w.spec.parent() is not w.centralWidget()
     assert w.views.currentWidget()==w.overview_page
     assert [w.dsp_pages.tabText(i) for i in range(w.dsp_pages.count())]==[
-        "Октавные полосы 1/3 · 1/1",
-        "24 позиции · СКЗ / Пик / Размах",
-        "Показатели MVK Live",
+        "43 полосы · 1/3 октавы",
+        "24 показателя · СКЗ / Пик / Пик-пик",
     ]
     assert [w.extra_pages.tabText(i) for i in range(w.extra_pages.count())]==[
         "Водопад","Кюртограмма","Тренд СКЗ","STFT","CWT Morlet","Кепстр",
         "Подшипники","Редукторы",
     ]
-    assert w.dsp_pages.widget(0)!=w.dsp_pages.widget(2)
+    assert w.dsp_pages.widget(0)!=w.dsp_pages.widget(1)
+    assert w.dsp_pages.indexOf(w.derived_page)==-1
+    assert w.dsp_band_mode.count()==1
+    assert w.dsp_band_mode.currentData()=="third"
     assert "APP_DERIVED" in w.derived_layout.itemAt(0).widget().text()
     assert "DSP" in w.dsp_info.text() and "ожидание" in w.dsp_info.text()
 
