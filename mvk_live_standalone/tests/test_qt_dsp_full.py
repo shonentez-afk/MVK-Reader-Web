@@ -219,3 +219,22 @@ def test_advanced_local_metrics_windows_keep_both_original_views_untouched(windo
     assert open_advanced_window(w,"local_metrics") is a
     assert [w.dsp_pages.tabText(i) for i in range(w.dsp_pages.count())]==before
     assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+
+def test_detached_local_metrics_never_leaks_old_adc_into_new_source(window):
+    from PySide6.QtWidgets import QTableWidgetItem
+    from mvk_live_standalone.modern_shell import open_advanced_window
+    w=window
+    local=open_advanced_window(w,"local_metrics")
+    assert local.centralWidget() is w.derived_page
+    w.local_values_table.setItem(0,0,QTableWidgetItem("ВУ СКЗ"))
+    w.local_values_table.setItem(0,1,QTableWidgetItem("123"))
+    w.features_label.setText("APP_DERIVED · АЦП 1 · 123")
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    assert w.local_values_table.item(0,1) is None
+    assert "АЦП 2" in w.features_label.text()
+    assert "123" not in w.features_label.text()
+    assert "АЦП 2" in w.metrics.text()
+    assert w.dsp_pages.count()==2
+    assert "ТОЛЬКО ПРИБОР" in w.dsp_source_hint.text()

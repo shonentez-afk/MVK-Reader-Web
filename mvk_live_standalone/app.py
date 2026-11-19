@@ -1579,7 +1579,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp24_table.clearContents()
         self.dsp24_trend_button.setEnabled(False)
         self._render_local_octaves()
-        self.dsp_source_hint.setText(message)
+        self.dsp_source_hint.setText(
+            "ТОЛЬКО ПРИБОР МВК01 · AUX4700 · "+message)
         self.dsp_info.setText(message)
 
     def _render_dsp(self):
@@ -1684,6 +1685,17 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._redraw_short_trend()
 
     def _advanced_adc_changed(self,*_):
+        # Separate Analysis -> local metrics is not pinned. A selected ADC
+        # change must NEVER present the previous channel's APP_DERIVED
+        # table as a current measurement while its fresh FFT is pending.
+        self._last_result=None
+        self.local_values_table.clearContents()
+        self.features_label.setText(
+            f"APP_DERIVED · АЦП {self.adc.currentData()} · "
+            "ожидание новых проверенных отсчётов")
+        self.metrics.setText(
+            f"Локальный расчёт · АЦП {self.adc.currentData()} · "
+            "ожидание FFT по этому каналу")
         # A previous ADC spectrum must never remain a measured cursor source
         # while the newly selected ADC has no validated current window.
         self._spectrum=None
@@ -2249,6 +2261,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             if cursors is not None:
                 cursors.refresh_bearing()
         self._last_result=None
+        self.local_values_table.clearContents()
         self.trend_line.setData([],[])
         self.waterfall_img.clear()
         self.extra_line.setData([],[])
