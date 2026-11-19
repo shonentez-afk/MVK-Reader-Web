@@ -1,3 +1,17 @@
+## Итоговая приёмка пакета — 19.11.2026
+
+**Проверенный код SHA:** `cfeeba987397fce6419b9e3da58d40f85b74526f`.
+**[GitHub Actions #44493773084](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44493773084) — 5/5 SUCCESS**, все работы полностью завершены:
+
+- Linux Go original RX/export — PASS.
+- Linux Python Core — **2537 passed / 142 skipped / 30 subtests PASS**.
+- Windows Core — **2782 passed / 7 skipped / 30 subtests PASS**.
+- Windows Qt/изображения/масштабирование — **59 + 50 + 194 passed**.
+- Windows Native QPA/font — PASS; PyInstaller автономная EXE — PASS.
+- [Готовый Windows ZIP **MVKViewCompatible_Stage111_Windows_Preview** (69 479 205 байт)](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44493773084/artifacts/14514736756).
+
+Это **программная/синтетическая приёмка исходного каркаса**, НЕ Win32 Delphi 1:1 на реальном МВК01; флаг `original_delphi_compatibility_verified=false` остаётся.
+
 # MVKView 1.0.47 — восстановление LIVE bWriteTable, структура TABLE и независимость от WriteValues
 
 **19 ноября 2026.** Ветка `research/stage111-mvkview-desktop-20261029`. **Последний кодовый SHA:** `cfeeba987397fce6419b9e3da58d40f85b74526f`. [GitHub Actions #44493773084](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/44493773084) — зафиксировать завершённый результат отдельно, не считать PASS до конца. Предыдущий 15-mode пакет: #44489702966 — 5/5 PASS.
