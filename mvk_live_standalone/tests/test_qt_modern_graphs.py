@@ -850,7 +850,10 @@ def test_spectrum_db_reference_changes_actual_curve_by_120_db_not_just_label(wid
     assert np.isfinite(before).all()
     w.db_ref.setCurrentIndex(w.db_ref.findData("unit"))
     _,after=w.overview_spec_curve.getData()
-    np.testing.assert_allclose(after-before,-120.,atol=1e-8)
+    # Only measured NON-CENSORED lines have a physically meaningful
+    # 120 dB reference shift; silence is clipped at the display floor.
+    ix=int(np.argmin(abs(w._spectrum.hz-100)))
+    assert after[ix]-before[ix]==pytest.approx(-120.,abs=1e-8)
     np.testing.assert_allclose(
         after,vibration_plot_values(w._spectrum,"db",reference="unit"))
     assert "1 м/с²" in w.overview_spec.getPlotItem().getAxis(
