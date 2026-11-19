@@ -135,6 +135,40 @@ def test_local_pair_exact_files_float32_and_source_stream_but_not_delphi_parity(
     assert different["pairs"][1]["byte_identical"]
 
 
+def test_large_raw_uses_streaming_sha_without_pair_file_memory_limit(
+    tmp_path,monkeypatch
+):
+    from mvk_compatible.core import original_mode2_paired_acceptance as paired
+    reference=tmp_path/"original";candidate=tmp_path/"candidate"
+    reference.mkdir();candidate.mkdir()
+    # Tiny chunks force >50 separate comparisons without a 2-GiB fixture.
+    monkeypatch.setattr(paired,"RAW_CHUNK_BYTES",3)
+    raw=(bytes(range(64))*7)+b"END"
+    (reference/"incoming.raw").write_bytes(raw)
+    (candidate/"incoming.raw").write_bytes(raw)
+    numeric=np.arange(16,dtype="<f4").tobytes()
+    (reference/"data.bin").write_bytes(numeric)
+    (candidate/"data.bin").write_bytes(numeric)
+    entry=[dict(kind="ADC_BIN_F32",
+                reference_name="data.bin",candidate_name="data.bin")]
+    outcome=paired.compare_original_mode2_pair(
+        reference,candidate,session_id="LOCAL_RAW_STREAM",
+        files=entry,reference_raw_name="incoming.raw",
+        candidate_raw_name="incoming.raw")
+    assert outcome["raw_proof"]["comparison_method"]==(
+        "BOUNDED_STREAMING_SHA256_AND_BYTE_EQUALITY")
+    assert outcome["raw_proof"]["reference_raw_bytes"]==len(raw)
+    assert outcome["all_pairs_byte_identical"]
+    # Mutating a middle chunk is checked, not just the first/last part.
+    mutated=bytearray(raw);mutated[119]^=0x10
+    (candidate/"incoming.raw").write_bytes(mutated)
+    with pytest.raises(ValueError,match="different RAW"):
+        paired.compare_original_mode2_pair(
+            reference,candidate,session_id="LOCAL_RAW_STREAM",
+            files=entry,reference_raw_name="incoming.raw",
+            candidate_raw_name="incoming.raw")
+
+
 def test_local_pair_requires_same_tcp_source_and_never_follows_symlink(tmp_path):
     ref=tmp_path/"original";new=tmp_path/"candidate"
     ref.mkdir();new.mkdir()
