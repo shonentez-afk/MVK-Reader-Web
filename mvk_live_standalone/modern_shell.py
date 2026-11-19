@@ -974,10 +974,10 @@ def install_modern_shell(win, main, panel, review, storage):
     ss.addWidget(_title("2. Отображение и шкалы"))
     axes_fields = QtWidgets.QVBoxLayout()
     axes_fields.setSpacing(8)
-    _field(axes_fields, "Амплитуда · линейно / дБ", win.yscale)
+    _field(axes_fields, "Представление уровня", win.yscale)
     db_row = _field(
-        axes_fields, "Опорный уровень в дБ", win.db_ref)
-    _field(axes_fields, "Частота · линейно / логарифмически",
+        axes_fields, "Опорное значение для дБ", win.db_ref)
+    _field(axes_fields, "Шкала частоты",
            win.xscale)
     _field(axes_fields, "Частотный диапазон до, Гц",
            win.x_limit_choice)
@@ -988,11 +988,14 @@ def install_modern_shell(win, main, panel, review, storage):
     scale_note = _hint("")
     ss.addWidget(scale_note)
     win.xscale.setToolTip(
-        "Линейная либо логарифмическая ОСЬ ЧАСТОТЫ в Гц. "
-        "Не меняет амплитуду в децибелах.")
+        "Равномерная шкала: равным расстояниям соответствуют равные Гц. "
+        "Логарифмическая: равным расстояниям соответствуют равные "
+        "отношения частот (например, 10–100–1000 Гц); 0 Гц не показывается. "
+        "Исходные частоты и разрешение FFT не меняются.")
     win.yscale.setToolTip(
-        "Линейные физические значения либо дБ относительно заданного "
-        "опорного уровня. Это НЕ второе логарифмирование оси Y.")
+        "Физические единицы (м/с², мм/с, мкм) либо уровень в дБ "
+        "относительно выбранного опорного значения. Это выбор "
+        "представления амплитуды, не масштаба частот.")
 
     ss.addWidget(_title("3. Фильтрация до расчёта"))
     ss.addWidget(_hint(
@@ -1361,8 +1364,9 @@ def install_modern_shell(win, main, panel, review, storage):
         win.spectrum_view, spec_column, "Вид спектра",
         force_select=win._select_primary_spectrum)
     win._overview_spectrum_view.setToolTip(
-        "Логарифмический вид = виброускорение в дБ; частотная ось "
-        "остаётся отдельной настройкой на вкладке «Спектр».")
+        "ВУ в дБ = логарифмический УРОВЕНЬ относительно опоры. "
+        "Логарифмическая ШКАЛА ЧАСТОТ — независимая настройка "
+        "на вкладке «Спектр».")
     win._overview_frequency_limit = _mirror_control(
         win.x_limit_choice, spec_column, "Показывать частоты до")
     win._overview_y_height = _mirror_control(

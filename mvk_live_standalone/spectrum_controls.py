@@ -8,12 +8,12 @@ from __future__ import annotations
 import math
 from .octave_filters import FAMILIES, FAMILY_LABELS, nominal_centres, preset_band, preset_description
 
-# Logarithmic = acceleration FFT in dB (explicit reference), not log X.
+# Four quick views refer to physical quantities/units, not the frequency axis.
 VIEW_MODES = (
-    ("Логарифмическая (ВУ, дБ)", "log_vu", "acceleration", "db"),
-    ("Линейный ВУ", "linear_vu", "acceleration", "linear"),
-    ("Линейный ВС", "linear_vs", "velocity", "linear"),
-    ("Линейный ВП", "linear_vp", "displacement", "linear"),
+    ("ВУ · уровень в дБ", "log_vu", "acceleration", "db"),
+    ("ВУ · м/с²", "linear_vu", "acceleration", "linear"),
+    ("ВС · мм/с", "linear_vs", "velocity", "linear"),
+    ("ВП · мкм", "linear_vp", "displacement", "linear"),
 )
 X_LIMITS_HZ=(50,100,200,500,1000,2000,4000,8000,10000,12800,16000,25600)
 # Amplitude span for each of the four operator modes. These are real

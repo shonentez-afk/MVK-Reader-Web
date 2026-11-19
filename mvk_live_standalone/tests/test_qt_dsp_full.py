@@ -238,3 +238,75 @@ def test_detached_local_metrics_never_leaks_old_adc_into_new_source(window):
     assert "АЦП 2" in w.metrics.text()
     assert w.dsp_pages.count()==2
     assert "ТОЛЬКО ПРИБОР" in w.dsp_source_hint.text()
+
+
+def test_calculated_grouped_views_preserve_all_original_registers_and_trends(window):
+    """Visual groups do not alter indexes, source arrays, units or trends."""
+    from PySide6 import QtCore
+    from mvk_live_standalone.original_dsp import _THIRD_HZ
+    w=window
+    assert w.dsp_band_groups.topLevelItemCount()==4
+    assert [w.dsp_band_groups.topLevelItem(i).childCount()
+            for i in range(4)]==[13,10,10,10]
+    assert w.dsp24_groups.topLevelItemCount()==3
+    assert [w.dsp24_groups.topLevelItem(i).childCount()
+            for i in range(3)]==[8,8,8]
+    assert w.dsp_bands_table.isHidden()
+    assert w.dsp24_table.isHidden()
+    w._last_status=_payload()
+    w.adc.setCurrentIndex(w.adc.findData(3))
+    w._render_dsp()
+    assert "43/43" in w.dsp_band_summary.text()
+    assert "71/72" in w.dsp24_summary.text()
+    assert "единицы" in w.dsp24_note.text()
+    assert sum(item.childCount()
+               for item in (w.dsp_band_groups.topLevelItem(j)
+                            for j in range(4)))==43
+    # Use original centre/value, never RSS sums from two groups.
+    for i,child in enumerate(w.dsp_band_group_leaves):
+        assert float(child.text(0))==pytest.approx(float(_THIRD_HZ[i]))
+        assert float(child.text(1))==pytest.approx(.01*i)
+        assert child.data(0,QtCore.Qt.ItemDataRole.UserRole)==i
+    assert w.dsp24_group_leaves[7].text(3)=="—"
+    assert w.dsp24_group_leaves[5].text(1)=="0.5"
+    assert w.dsp24_group_leaves[5].text(2)=="1"
+    assert w.dsp24_group_leaves[5].text(3)=="2"
+    # Click/keyboard selection maps back to the unchanged archive index.
+    w.dsp_band_groups.setCurrentItem(w.dsp_band_group_leaves[32])
+    assert w.dsp_bands_table.currentRow()==32
+    w.dsp_band_trend_button.click()
+    assert w.history_ui.trend_group.currentData()=="third_octave"
+    assert w.history_ui.trend_position.currentData()==32
+    w.dsp24_groups.setCurrentItem(w.dsp24_group_leaves[5],2)
+    assert w.dsp24_table.currentRow()==5
+    assert w.dsp24_mode.currentData()=="band_peak_equiv"
+    w.dsp24_trend_button.click()
+    assert w.history_ui.trend_group.currentData()=="band_peak_equiv"
+    assert w.history_ui.trend_position.currentData()==5
+    # Full raw tables are still accessible on demand.
+    w.dsp_band_details.setChecked(True)
+    w.dsp24_details.setChecked(True)
+    assert not w.dsp_bands_table.isHidden()
+    assert not w.dsp24_table.isHidden()
+
+
+def test_calculated_grouped_views_clear_on_adc_without_oem_payload(window):
+    """No old band/position values may survive a channel switch."""
+    w=window
+    w._last_status=_payload()
+    w.adc.setCurrentIndex(w.adc.findData(3))
+    w._render_dsp()
+    assert w.dsp_band_group_leaves[10].text(1)!="—"
+    assert w.dsp24_group_leaves[10].text(1)!="—"
+    w.adc.setCurrentIndex(w.adc.findData(2))
+    w._render_dsp()
+    assert w._dsp_last is None
+    assert "ожидание" in w.dsp_band_summary.text()
+    assert "ожидание" in w.dsp24_summary.text()
+    assert all(child.text(1)=="—" for child in w.dsp_band_group_leaves)
+    assert all(child.text(i)=="—"
+               for child in w.dsp24_group_leaves for i in (1,2,3))
+    assert not w.dsp_band_trend_button.isEnabled()
+    assert not w.dsp24_trend_button.isEnabled()
+    assert w.dsp24_table.rowCount()==24
+    assert w.dsp_bands_table.rowCount()==0

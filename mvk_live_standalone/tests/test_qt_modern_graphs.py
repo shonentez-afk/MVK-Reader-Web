@@ -66,8 +66,8 @@ def test_operator_labels_describe_real_quantities_not_x_y(widget):
     inspector_labels = [item.text() for item in
                         w._modern_inspector.findChildren(QtWidgets.QLabel)]
     for required in (
-        "Амплитуда · линейно / дБ",
-        "Частота · линейно / логарифмически",
+        "Представление уровня",
+        "Шкала частоты",
         "Частотный диапазон до, Гц", "Развёртка времени",
         "Масштаб виброускорения", "Тип фильтра",
     ):
@@ -75,9 +75,9 @@ def test_operator_labels_describe_real_quantities_not_x_y(widget):
     assert not any(re.search(r"(?<![A-Za-zА-Яа-я])[XY](?![A-Za-zА-Яа-я])", label)
                    for label in inspector_labels)
     assert [w.xscale.itemText(i) for i in range(w.xscale.count())] == [
-        "Линейная", "Логарифмическая"]
+        "Равномерная · Гц", "Логарифмическая · Гц"]
     assert [w.yscale.itemText(i) for i in range(w.yscale.count())] == [
-        "Линейная", "В децибелах (дБ)"]
+        "Физические единицы", "Уровень в дБ"]
     assert "время в мс/с" in w.wave_info.text()
     assert "X" not in w.operator_info.text()
 

@@ -35,8 +35,8 @@ def test_primary_controls_match_user_screenshots_without_advanced_clutter(gui):
     w, _ = gui
     assert w.spectrum_view.count() == 4
     assert [w.spectrum_view.itemText(i) for i in range(4)] == [
-        "Логарифмическая (ВУ, дБ)", "Линейный ВУ",
-        "Линейный ВС", "Линейный ВП",
+        "ВУ · уровень в дБ", "ВУ · м/с²",
+        "ВС · мм/с", "ВП · мкм",
     ]
     assert w.spectrum_view.currentData() == "log_vu"
     assert w.yscale.currentData() == "db"

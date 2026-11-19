@@ -30,7 +30,7 @@ from .spectrum import (
 )
 from .live_ring import VerifiedLiveRing
 from .live_ipc import discover_local_ipc, IPCNotReady, IPCPreview, IPCChannel, DOMAIN
-from .original_dsp import read_original_dsp_bands
+from .original_dsp import read_original_dsp_bands, _THIRD_HZ
 from .frange import original_applied_frange
 from .octave_filters import (FAMILIES, nominal_centres, preset_band,
                              preset_description, octave_rss_from_thirds,
@@ -218,13 +218,13 @@ class LiveWindow(QtWidgets.QMainWindow):
         ]:
             self.analysis.addItem(name,key)
         self.yscale = QtWidgets.QComboBox()
-        for txt,key in [("Линейная","linear"),("В децибелах (дБ)","db")]:
+        for txt,key in [("Физические единицы","linear"),("Уровень в дБ","db")]:
             self.yscale.addItem(txt,key)
         self.db_ref = QtWidgets.QComboBox()
         self.db_ref.addItem("ISO 1683 · 10⁻⁶ выбранной единицы", "iso")
         self.db_ref.addItem("Относительно 1 выбранной единицы", "unit")
         self.xscale = QtWidgets.QComboBox()
-        for txt,key in [("Линейная","linear"),("Логарифмическая","log")]:
+        for txt,key in [("Равномерная · Гц","linear"),("Логарифмическая · Гц","log")]:
             self.xscale.addItem(txt,key)
         self.nfft = QtWidgets.QComboBox()
         for n in FFT_SIZES:
@@ -616,6 +616,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         adc_row.addWidget(self.dsp_adc)
         self.dsp_source_hint=QtWidgets.QLabel(
             "ТОЛЬКО ПРИБОР МВК01 · AUX4700 · без расчётов MVK Live")
+        self.dsp_source_hint.setWordWrap(True)
         adc_row.addWidget(self.dsp_source_hint,stretch=1)
         dsp_layout.addLayout(adc_row)
         self.dsp_pages=QtWidgets.QTabWidget(dsp_panel)
@@ -637,7 +638,51 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_plot.showGrid(x=True,y=True,alpha=.2)
         self.dsp_curve=self.dsp_plot.plot(pen=pg.mkPen("#6b8cbd",width=1.5),
                                           symbol="o",symbolSize=4)
-        dsp_rms_layout.addWidget(self.dsp_plot,stretch=2)
+        # Third-octave centres are logarithmically spaced (Hz remain real).
+        self.dsp_plot.getPlotItem().setLogMode(x=True,y=False)
+        self.dsp_band_summary=QtWidgets.QLabel(
+            "43 исходные полосы · ожидание данных МВК01",dsp_rms_page)
+        self.dsp_band_summary.setWordWrap(True)
+        dsp_rms_layout.addWidget(self.dsp_band_summary)
+        self.dsp_band_groups=QtWidgets.QTreeWidget(dsp_rms_page)
+        self.dsp_band_groups.setHeaderLabels(
+            ["Центр полосы, Гц","СКЗ ВУ, м/с²"])
+        self.dsp_band_groups.setAlternatingRowColors(True)
+        self.dsp_band_groups.setRootIsDecorated(True)
+        self.dsp_band_groups.setMinimumWidth(280)
+        self.dsp_band_groups.header().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.dsp_band_group_leaves=[None]*43
+        self.dsp_band_group_specs=[]
+        # Frequency ranges are display groups, NOT locally calculated sums.
+        for start,stop,title in (
+            (0,13,"0,63–10 Гц"),
+            (13,23,"12,5–100 Гц"),
+            (23,33,"125–1000 Гц"),
+            (33,43,"1250–10 000 Гц"),
+        ):
+            root=QtWidgets.QTreeWidgetItem(self.dsp_band_groups,
+                                          [title,"нет данных"])
+            root.setFlags(root.flags() & ~QtCore.Qt.ItemFlag.ItemIsSelectable)
+            self.dsp_band_group_specs.append((start,stop,root))
+            for position in range(start,stop):
+                child=QtWidgets.QTreeWidgetItem(
+                    root,[f"{_THIRD_HZ[position]:g}","—"])
+                child.setData(0,QtCore.Qt.ItemDataRole.UserRole,position)
+                child.setToolTip(0,
+                    "Исходный центр третьоктавной полосы МВК01")
+                self.dsp_band_group_leaves[position]=child
+            root.setExpanded(start==0)
+        self.dsp_band_groups.currentItemChanged.connect(
+            self._select_dsp_band_group)
+        self.dsp_band_splitter=QtWidgets.QSplitter(
+            QtCore.Qt.Orientation.Horizontal,dsp_rms_page)
+        self.dsp_band_splitter.addWidget(self.dsp_plot)
+        self.dsp_band_splitter.addWidget(self.dsp_band_groups)
+        self.dsp_band_splitter.setStretchFactor(0,3)
+        self.dsp_band_splitter.setStretchFactor(1,2)
+        self.dsp_band_splitter.setSizes([650,420])
+        dsp_rms_layout.addWidget(self.dsp_band_splitter,stretch=1)
         self.dsp_bands_table=QtWidgets.QTableWidget(0,2)
         self.dsp_bands_table.setHorizontalHeaderLabels(
             ["Центр полосы, Гц","ВУ СКЗ, м/с²"])
@@ -645,7 +690,18 @@ class LiveWindow(QtWidgets.QMainWindow):
             QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.dsp_bands_table.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.dsp_bands_table.setAlternatingRowColors(True)
+        self.dsp_band_details=QtWidgets.QToolButton(dsp_rms_page)
+        self.dsp_band_details.setText(
+            "Исходная таблица всех 43 полос")
+        self.dsp_band_details.setCheckable(True)
+        self.dsp_band_details.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+        self.dsp_band_details.toggled.connect(
+            lambda checked: self._toggle_dsp_details(
+                self.dsp_bands_table,self.dsp_band_details,checked))
+        dsp_rms_layout.addWidget(self.dsp_band_details)
         dsp_rms_layout.addWidget(self.dsp_bands_table,stretch=1)
+        self.dsp_bands_table.hide()
         self.dsp_band_trend_button=QtWidgets.QPushButton(
             "Тренд выделенной оригинальной 1/3-октавной полосы")
         self.dsp_band_trend_button.setToolTip(
@@ -667,9 +723,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         dsp_controls=QtWidgets.QHBoxLayout()
         dsp_controls.addWidget(QtWidgets.QLabel("Исходный параметр"))
         self.dsp24_mode=QtWidgets.QComboBox()
-        self.dsp24_mode.addItem("СКЗ · band_rms","band_rms")
-        self.dsp24_mode.addItem("Пик · band_peak_equiv","band_peak_equiv")
-        self.dsp24_mode.addItem("Размах / пик-пик · band_span_equiv","band_span_equiv")
+        self.dsp24_mode.addItem("СКЗ · прибор","band_rms")
+        self.dsp24_mode.addItem("Пик · прибор","band_peak_equiv")
+        self.dsp24_mode.addItem("Пик-пик · прибор","band_span_equiv")
         self.dsp24_mode.currentIndexChanged.connect(self._plot_dsp_24)
         dsp_controls.addWidget(self.dsp24_mode)
         dsp_controls.addStretch(1)
@@ -680,7 +736,53 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp24_plot.showGrid(x=True,y=True,alpha=.2)
         self.dsp24_curve=self.dsp24_plot.plot(pen=pg.mkPen("#a070b5",width=1.3),
                                              symbol="o",symbolSize=4)
-        dsp_extra_layout.addWidget(self.dsp24_plot,stretch=2)
+        self.dsp24_summary=QtWidgets.QLabel(
+            "24 исходные позиции × 3 показателя · ожидание данных МВК01",
+            dsp_extra_page)
+        self.dsp24_summary.setWordWrap(True)
+        dsp_extra_layout.addWidget(self.dsp24_summary)
+        self.dsp24_groups=QtWidgets.QTreeWidget(dsp_extra_page)
+        self.dsp24_groups.setHeaderLabels(
+            ["Позиция","СКЗ","Пик","Пик-пик"])
+        self.dsp24_groups.setAlternatingRowColors(True)
+        self.dsp24_groups.setRootIsDecorated(True)
+        self.dsp24_groups.setMinimumWidth(340)
+        self.dsp24_groups.header().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.dsp24_group_leaves=[None]*24
+        self.dsp24_group_specs=[]
+        # 8-slot chunks are purely visual; no OEM frequency/category map
+        # for the 24 positions is established by the original sources.
+        for start in (0,8,16):
+            stop=start+8
+            root=QtWidgets.QTreeWidgetItem(
+                self.dsp24_groups,
+                [f"Позиции {start+1:02d}–{stop:02d}","нет данных","",""])
+            root.setFlags(root.flags() & ~QtCore.Qt.ItemFlag.ItemIsSelectable)
+            self.dsp24_group_specs.append((start,stop,root))
+            for position in range(start,stop):
+                child=QtWidgets.QTreeWidgetItem(
+                    root,[f"{position+1:02d}","—","—","—"])
+                child.setData(0,QtCore.Qt.ItemDataRole.UserRole,position)
+                child.setToolTip(0,
+                    f"Приборные регистры СКЗ 0x{0x60+2*position:02X}, "
+                    f"Пик 0x{0xA0+2*position:02X}, "
+                    f"Пик-пик 0x{0xE0+2*position:02X}; "
+                    "частоты и единицы пока не подтверждены.")
+                self.dsp24_group_leaves[position]=child
+            root.setExpanded(start==0)
+        self.dsp24_groups.currentItemChanged.connect(
+            self._select_dsp_24_group)
+        self.dsp24_groups.itemClicked.connect(
+            self._select_dsp_24_group)
+        self.dsp24_splitter=QtWidgets.QSplitter(
+            QtCore.Qt.Orientation.Horizontal,dsp_extra_page)
+        self.dsp24_splitter.addWidget(self.dsp24_plot)
+        self.dsp24_splitter.addWidget(self.dsp24_groups)
+        self.dsp24_splitter.setStretchFactor(0,3)
+        self.dsp24_splitter.setStretchFactor(1,2)
+        self.dsp24_splitter.setSizes([600,470])
+        dsp_extra_layout.addWidget(self.dsp24_splitter,stretch=1)
         self.dsp24_table=QtWidgets.QTableWidget(24,4)
         self.dsp24_table.setHorizontalHeaderLabels([
             "Позиция (1–24)", "СКЗ / band_rms",
@@ -689,14 +791,26 @@ class LiveWindow(QtWidgets.QMainWindow):
             QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.dsp24_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.dsp24_table.setAlternatingRowColors(True)
-        dsp_extra_layout.addWidget(self.dsp24_table,stretch=2)
+        self.dsp24_details=QtWidgets.QToolButton(dsp_extra_page)
+        self.dsp24_details.setText(
+            "Исходная таблица 24 позиций и адресов регистров")
+        self.dsp24_details.setCheckable(True)
+        self.dsp24_details.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+        self.dsp24_details.toggled.connect(
+            lambda checked: self._toggle_dsp_details(
+                self.dsp24_table,self.dsp24_details,checked))
+        dsp_extra_layout.addWidget(self.dsp24_details)
+        dsp_extra_layout.addWidget(self.dsp24_table,stretch=1)
+        self.dsp24_table.hide()
         self.dsp24_trend_button=QtWidgets.QPushButton(
             "Тренд выбранной позиции и параметра из AUX4700")
         self.dsp24_trend_button.clicked.connect(self._open_dsp_24_trend)
         dsp_extra_layout.addWidget(self.dsp24_trend_button)
         self.dsp24_note=QtWidgets.QLabel(
-            "Частоты, физические единицы и точная трактовка peak/span для этих 24 позиций "
-            "пока не подтверждены оригинальной схемой. Данные показаны без пересчёта.")
+            "Группы 01–08 / 09–16 / 17–24 — только навигация, а не "
+            "классификация параметров. Частоты, единицы и трактовка "
+            "peak/span не подтверждены оригинальной схемой. "
+            "Все значения отображаются без пересчёта.")
         self.dsp24_note.setWordWrap(True)
         dsp_extra_layout.addWidget(self.dsp24_note)
         self.dsp_pages.addTab(dsp_extra_page,"24 показателя · СКЗ / Пик / Пик-пик")
@@ -1454,6 +1568,91 @@ class LiveWindow(QtWidgets.QMainWindow):
             self.history_ui.trend_position.setCurrentIndex(ix)
         self.history_ui._plot_trend()
 
+    @staticmethod
+    def _toggle_dsp_details(table,button,checked):
+        """Keep raw device tables available without occupying chart space."""
+        table.setVisible(checked)
+        button.setArrowType(
+            QtCore.Qt.ArrowType.DownArrow if checked
+            else QtCore.Qt.ArrowType.RightArrow)
+
+    def _select_dsp_band_group(self,item,*_):
+        """Grouped row points to the SAME original band trend identifier."""
+        if item is None:
+            return
+        position=item.data(0,QtCore.Qt.ItemDataRole.UserRole)
+        if type(position) is int and 0<=position<43:
+            self.dsp_bands_table.setCurrentCell(position,0)
+
+    def _select_dsp_24_group(self,item,*_):
+        """A selected cell chooses one OEM slot and its registered metric."""
+        if item is None:
+            return
+        position=item.data(0,QtCore.Qt.ItemDataRole.UserRole)
+        if type(position) is not int or not 0<=position<24:
+            return
+        column=self.dsp24_groups.currentColumn()
+        if column in (1,2,3):
+            self.dsp24_mode.setCurrentIndex(column-1)
+        self.dsp24_table.setCurrentCell(
+            position,column if column in (1,2,3) else 1)
+
+    def _refresh_dsp_band_groups(self,packet):
+        """Show all 43 original frequency centres without synthesized cells."""
+        received=0
+        for index,child in enumerate(self.dsp_band_group_leaves):
+            value=(packet.acceleration_rms[index]
+                   if packet is not None else np.nan)
+            finite=bool(np.isfinite(value))
+            received+=int(finite)
+            child.setText(1,f"{value:.8g}" if finite else "—")
+            child.setToolTip(1,
+                "Приборная СКЗ ВУ, м/с²; не локальный FFT"
+                if finite else
+                "Приборного значения нет (NaN/не получено), не ноль")
+        for start,stop,root in self.dsp_band_group_specs:
+            if packet is None:
+                root.setText(1,"нет данных")
+            else:
+                count=int(np.count_nonzero(np.isfinite(
+                    packet.acceleration_rms[start:stop])))
+                root.setText(1,f"{count}/{stop-start} получено")
+        self.dsp_band_summary.setText(
+            f"Прибор МВК01 · АЦП {packet.adc} · "
+            f"доступно {received}/43 третьоктавных СКЗ"
+            if packet is not None
+            else "43 третьоктавных СКЗ · ожидание данных прибора")
+
+    def _refresh_dsp_24_groups(self,packet):
+        """All 72 unmodified values, with three purely visual row chunks."""
+        arrays=(
+            (packet.band_rms,packet.band_peak_equiv,
+             packet.band_span_equiv)
+            if packet is not None and packet.has_extended else None)
+        received=0
+        for index,child in enumerate(self.dsp24_group_leaves):
+            for column in range(1,4):
+                value=arrays[column-1][index] if arrays is not None else np.nan
+                finite=bool(np.isfinite(value))
+                received+=int(finite)
+                child.setText(column,f"{value:.8g}" if finite else "—")
+                child.setToolTip(column,
+                    "Исходное значение AUX4700; единицы не установлены"
+                    if finite else
+                    "Приборного значения нет (NaN/не получено), не ноль")
+        for start,stop,root in self.dsp24_group_specs:
+            if arrays is None:
+                root.setText(1,"нет данных")
+            else:
+                count=sum(int(np.count_nonzero(np.isfinite(v[start:stop])))
+                          for v in arrays)
+                root.setText(1,f"{count}/{3*(stop-start)} получено")
+        self.dsp24_summary.setText(
+            f"Прибор МВК01 · АЦП {packet.adc} · "
+            f"доступно {received}/72 значений (24 × СКЗ / Пик / Пик-пик)"
+            if arrays is not None else
+            "24 исходные позиции × 3 значения · ожидание данных прибора")
+
     def _open_dsp_band_trend(self):
         row=self.dsp_bands_table.currentRow()
         if row<0 or row>=43:
@@ -1492,8 +1691,8 @@ class LiveWindow(QtWidgets.QMainWindow):
         # cells, suggesting a continuous instrument measurement.
         self.dsp24_curve.setData(indices,data,connect="finite")
         self.dsp24_plot.setTitle(
-            "ОРИГИНАЛЬНЫЙ AUX4700 · "+key+
-            " · номер исходной позиции (частота не подтверждена)")
+            "ПРИБОР · AUX4700 · "+self.dsp24_mode.currentText()+
+            " · номер позиции (не частота)")
         self.dsp24_plot.setLabel(
             "left","Исходное значение прибора · единицы уточняются")
 
@@ -1504,8 +1703,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         if packet is None:
             self.dsp_curve.setData([],[])
             self.dsp_bands_table.setRowCount(0)
+            self._refresh_dsp_band_groups(None)
             return
         freqs,values=packet.frequency_hz,packet.acceleration_rms
+        self._refresh_dsp_band_groups(packet)
         # Do NOT drop missing cells and connect a false measured segment.
         self.dsp_curve.setData(freqs,values,connect="finite")
         self.dsp_plot.setTitle("ПРИБОР · AUX4700 · 43 третьоктавные СКЗ ВУ")
@@ -1577,7 +1778,10 @@ class LiveWindow(QtWidgets.QMainWindow):
         self.dsp_bands_table.setRowCount(0)
         self.dsp24_curve.setData([],[])
         self.dsp24_table.clearContents()
+        self.dsp_band_trend_button.setEnabled(False)
         self.dsp24_trend_button.setEnabled(False)
+        self._refresh_dsp_band_groups(None)
+        self._refresh_dsp_24_groups(None)
         self._render_local_octaves()
         self.dsp_source_hint.setText(
             "ТОЛЬКО ПРИБОР МВК01 · AUX4700 · "+message)
@@ -1598,6 +1802,7 @@ class LiveWindow(QtWidgets.QMainWindow):
             return
         self._dsp_last=band
         self._plot_dsp_bands()
+        self._refresh_dsp_24_groups(band)
         self._render_local_octaves()
         self.dsp24_trend_button.setEnabled(band.has_extended)
         self.dsp_source_hint.setText(
