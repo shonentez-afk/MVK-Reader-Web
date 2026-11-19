@@ -1,15 +1,19 @@
 package main
 
-// Original _Unit125:008066F0, source-ordered WriteValues ROW at EXACT
-// accepted PARAM 0x3100. This does not attempt proprietary vendor
-// GetValueText. Every selected cell is linked to the original register
-// address when proven from _Unit125:00804DEC/00805040/008053B8, or is
-// explicitly UNMAPPED (never filled using unrelated band or ADC data).
+// Source _Unit128:008443CF..0084441A proves the original list owners:
+// 1064=Spec43 via _Unit125:00805040 (0x2002+2*i)
+// 1044=Result6 via _Unit125:00804A30
+// 10C0=Band24 via _Unit125:00804DEC, first of three band types
+// 10AC=TACH6 via _Unit125:008053B8.
 //
-// The two TACH source cells at +0xFE may contain an older snapshot.
-// They are admitted ONLY when both words are in the CURRENT PARAM.
-// No second TCP, no device TX, no recovery of unsupported private text.
-
+// _Unit128:0084E9BA..0084EA88 copies 43 SPEC, 6 RESULT, 24 BAND,
+// 6 TACH flags; original cbFileValues has THIRTY-SIX, not 73.
+// The compatible archive UI currently retains 73 historical flags;
+// bits [36..72] are explicitly counted but never treated as original
+// WriteValues fields, pending the LIVE checkbox UI migration.
+//
+// The original byte stream and PARAM 0x3100 JSONL event remain unchanged.
+// This local RAW-order line is NOT a Delphi GetValueText/ANSI CSV oracle.
 import (
     "crypto/sha256"
     "encoding/hex"
@@ -37,15 +41,12 @@ type sourceValuesRawTick struct {
     RawRowSHA256 string `json:"source_raw_layout_line_sha256"`
     ValidDWORDs int `json:"source_known_full_register_dwords"`
     UnknownSelected int `json:"unknown_or_unmapped_selected_cells"`
+    ExtraLegacyFlagsIgnored int `json:"non_original_legacy_73_flag_bits_ignored"`
     OriginalGetValueTextParityVerified bool `json:"original_get_value_text_parity_verified"`
     OriginalLocalTimeParityVerified bool `json:"original_delphi_local_time_parity_verified"`
     OriginalCSVByteParityVerified bool `json:"original_delphi_values_csv_byte_parity_verified"`
 }
-
 func sourceRawWordsIncludedInCurrentParam(blocks []RegBlock, addr int) bool {
-    // Do not grant original "ResultTachoImpulse" +FE freshness based
-    // on a previous packet's full register image. Both words must
-    // actually arrive in THIS accepted PARAM.
     first,second:=false,false
     for _,b:=range blocks{
         start:=int(b.Addr)
@@ -54,6 +55,20 @@ func sourceRawWordsIncludedInCurrentParam(blocks []RegBlock, addr int) bool {
         if addr+1>=start && addr+1<end {second=true}
     }
     return first&&second
+}
+func sourceResultAdcSixAddress(base,index int) (int,string) {
+    // 00804A82..00804BA4 adds exactly 6 GetValueText slots:
+    // ResultOverload (bits0..0), ResultBuffers (bits3..6),
+    // ResultSensorState (bits2..11), all from 0x120;
+    // AlarmBandCell1 (0x00), AlarmBandCell48 (0x5E),
+    // AlarmBandCell47 (0x5C).
+    switch index {
+    case 0,1,2:return base+0x120,"U32_ADVANCED_UNFORMATTED"
+    case 3:return base+0x00,"F32_CANDIDATE"
+    case 4:return base+0x5E,"F32_CANDIDATE"
+    case 5:return base+0x5C,"F32_CANDIDATE"
+    }
+    return -1,"UNMAPPED"
 }
 
 func(m *Monitor) sourceValuesOrderedRawTick(
@@ -65,7 +80,7 @@ func(m *Monitor) sourceValuesOrderedRawTick(
     tick:=sourceValuesRawTick{
         Schema:sourceValuesRawLayoutSchema,
         LocalTime:at.Format("15:04:05.000"),
-        OrderedFields:make([]sourceSelectedRawValue,0,892),
+        OrderedFields:make([]sourceSelectedRawValue,0,8*(43+6+24)+2*6),
     }
     var line strings.Builder
     line.WriteString(tick.LocalTime)
@@ -94,24 +109,26 @@ func(m *Monitor) sourceValuesOrderedRawTick(
         }
         tick.OrderedFields=append(tick.OrderedFields,field)
     }
+    // Source WriteValues loops channel first, then 0/1/2 lists, then
+    // tach. Each cell's index uses its OWN original mask address.
     for ch:=0;ch<8;ch++ {
         if !w.Channels[ch]{continue}
         base:=0x2000+ch*0x200
-        // 00806768..0080680B: EXACT original three group order,
-        // then selected mask bits by index. Original SpecCellList
-        // address is NOT proven: never mislabel 43 BAND cells as SPEC.
         for i:=0;i<43;i++{
-            if w.Spec[i]{appendField(ch+1,"SPEC",i,-1,"UNMAPPED",false)}
-        }
-        for i:=0;i<24;i++{
-            if w.Values[i]{
-                appendField(ch+1,"RESULT",i,base+0x60+2*i,
+            if w.Spec[i]{
+                appendField(ch+1,"SPEC",i,base+2+2*i,
                     "F32_CANDIDATE",true)
             }
         }
-        for i:=0;i<43;i++{
-            if w.Values[24+i]{
-                appendField(ch+1,"BAND",i,base+2+2*i,
+        for i:=0;i<6;i++{
+            if w.Values[i]{
+                addr,kind:=sourceResultAdcSixAddress(base,i)
+                appendField(ch+1,"RESULT",i,addr,kind,true)
+            }
+        }
+        for i:=0;i<24;i++{
+            if w.Values[6+i]{
+                appendField(ch+1,"BAND",i,base+0x60+2*i,
                     "F32_CANDIDATE",true)
             }
         }
@@ -120,13 +137,22 @@ func(m *Monitor) sourceValuesOrderedRawTick(
         if !w.Channels[8+tach]{continue}
         base:=0x3000+tach*0x100
         for i,offset:=range [...]int{0,2,4,6,8,0xFE} {
-            if !w.Values[67+i]{continue}
+            if !w.Values[30+i]{continue}
             addr:=base+offset
+            // Unlike an old full snapshot, 0xFE needs independent
+            // freshness evidence from THIS same accepted PARAM.
             fresh:=i<5 || sourceRawWordsIncludedInCurrentParam(blocks,addr)
             kind:="U32_CANDIDATE"
             if i<2 {kind="F32_CANDIDATE"}
             appendField(9+tach,"TACH",i,addr,kind,fresh)
         }
+    }
+    for i:=36;i<len(w.Values);i++{
+        if w.Values[i]{tick.ExtraLegacyFlagsIgnored++}
+    }
+    if len(tick.OrderedFields)==0 {
+        return sourceValuesRawTick{},nil,errors.New(
+            "source WriteValues no originally selected 43 SPEC or 36 VALUES cells")
     }
     line.WriteString("\r\n")
     raw:=[]byte(line.String())
@@ -135,8 +161,5 @@ func(m *Monitor) sourceValuesOrderedRawTick(
     }
     h:=sha256.Sum256(raw)
     tick.RawRowSHA256=hex.EncodeToString(h[:])
-    // Source original calls Now(), Unicode->ANSI, then its private
-    // TFileStream, which may round/format differently. This is an
-    // explicitly non-Delphi, source-indexed, ASCII diagnostic line.
     return tick,raw,nil
 }

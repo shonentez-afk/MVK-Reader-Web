@@ -21,6 +21,7 @@ type sourceLiveADCResultBank struct {
     Peak24 []*string `json:"peak_24_raw_f32_le"`
     PeakPeak24 []*string `json:"peak_peak_24_raw_f32_le"`
     SensorStatus *string `json:"sensor_status_raw_u32_le"`
+    ResultADC6 []*string `json:"result_adc_six_raw_dwords_le"`
     AlarmValues []*string `json:"control_8_values_raw_f32_le"`
     AlarmStatus []*string `json:"control_8_status_raw_u32_le"`
 }
@@ -64,6 +65,7 @@ func(m *Monitor) snapshotSourceLivePageStatusBanks() sourceLivePageStatusBanks {
             RMS24:make([]*string,24),
             Peak24:make([]*string,24),
             PeakPeak24:make([]*string,24),
+            ResultADC6:make([]*string,6),
             AlarmValues:make([]*string,8),
             AlarmStatus:make([]*string,8),
         }
@@ -74,6 +76,10 @@ func(m *Monitor) snapshotSourceLivePageStatusBanks() sourceLivePageStatusBanks {
             row.PeakPeak24[i]=m.sourceLiveRawDWORD(base+0xE0+2*i)
         }
         row.SensorStatus=m.sourceLiveRawDWORD(base+0x120)
+        for i:=0;i<6;i++{
+            addr,_:=sourceResultAdcSixAddress(base,i)
+            row.ResultADC6[i]=m.sourceLiveRawDWORD(addr)
+        }
         for j:=0;j<8;j++{
             row.AlarmValues[j]=m.sourceLiveRawDWORD(base+0x130+8*j)
             row.AlarmStatus[j]=m.sourceLiveRawDWORD(base+0x132+8*j)
