@@ -1112,8 +1112,13 @@ def test_time_scope_timebase_change_under_freeze_never_resubmits_fft(widget):
     old_future=w._future
     old_spec_settings=w._read_settings()
     w.timebase.setCurrentIndex(w.timebase.findData(.1))
-    assert w.wave.viewRange()[0]==pytest.approx([-.1,0.],abs=1e-5)
-    assert w.overview_wave.viewRange()[0]==pytest.approx([-.1,0.],abs=1e-5)
+    # A 0.1 s request at Fs=8192 contains round(819.2)=819
+    # COMPLETE samples. The physical plotted extent is 819/Fs,
+    # not an invented fractional sample at exactly 0.100000 seconds.
+    actual=len(w._cursor_time_samples)/8192
+    assert abs(actual-.1)<=.5/8192
+    assert w.wave.viewRange()[0]==pytest.approx([-actual,0.],abs=1e-6)
+    assert w.overview_wave.viewRange()[0]==pytest.approx([-actual,0.],abs=1e-6)
     assert w._generation==old_generation
     assert w._processing_revision==old_revision
     assert w._last_submitted_key==old_key
