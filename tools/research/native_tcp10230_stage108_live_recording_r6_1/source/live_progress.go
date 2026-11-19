@@ -53,6 +53,7 @@ type LiveStatus struct {
     SourceRXDenials         uint64              `json:"source_rx_denied_responses"`
     SourceStatusCells      []LiveSourceStatusCell `json:"source_status_cells_14"`
     SourcePageStatusFields []LiveSourcePageStatusField `json:"source_page_status_fields_15"`
+    SourceLivePageStatusBanks sourceLivePageStatusBanks `json:"source_live_page_status_banks"`
     SourceMode2TxEvidence LiveOriginalTask2TxEvidence `json:"source_mode2_tx_evidence"`
     SourceRateTransition bool `json:"source_rate_transition_during_live"`
     SourceOriginalStorage *sourceOriginalStorageReceipt `json:"source_original_storage,omitempty"`
@@ -142,6 +143,7 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SourceRXACKObserved: report.ACK, SourceRXDenials: report.Denials,
         SourceStatusCells: m.snapshotSourceStatusCells(),
         SourcePageStatusFields: m.snapshotSourcePageStatusFields(),
+        SourceLivePageStatusBanks:m.snapshotSourceLivePageStatusBanks(),
         SourceMode2TxEvidence: m.snapshotOriginalTask2TxEvidence(),
         SourceRateTransition: m.sourceRateTransitionDetected,
         SourceOriginalStorage:originalStorage,
