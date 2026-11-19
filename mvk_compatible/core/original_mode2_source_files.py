@@ -21,7 +21,10 @@ import re
 _ALLOWED_RATES=frozenset((512,2048,8192,32768,65536))
 _SOURCE_NAME_TSFORMAT="%Y-%m-%d--%H-%M-%S"
 _XML_ENCODING="windows-1251"
-_SAFE_PATH=re.compile(r"[A-Za-z0-9_\-.]{1,180}\Z")
+# Original sub_007B1FA4 admits Cyrillic U+0410..U+044F and safe
+# punctuation, not only ASCII. Do not confuse valid Russian device labels
+# with unsafe directory traversal.
+_SAFE_PATH=re.compile(r"[A-Za-z0-9_\-. #$()А-Яа-я]{1,240}\Z")
 # _Unit114.pas:007B1FA4; last branch admits Cyrillic U+0410..U+044F.
 _ALLOWED_OLD_PUNCT=frozenset(" #$()-")
 
@@ -118,6 +121,7 @@ def build_original_tsxml_compatible(
         raise ValueError("Source TSXML channel must be ADC1..8 or TACH1..2")
     if (not isinstance(binary_basename,str) or
             not _SAFE_PATH.fullmatch(binary_basename) or
+            binary_basename.startswith(".") or ".." in binary_basename or
             not binary_basename.endswith(".bin")):
         raise ValueError("Source TSXML must reference an existing local BIN")
     if type(size_bytes) is not int or size_bytes<0 or size_bytes>2**32:

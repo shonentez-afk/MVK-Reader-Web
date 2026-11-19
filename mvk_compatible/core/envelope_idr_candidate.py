@@ -150,6 +150,27 @@ def _fir_step(data:np.ndarray,stage:int,profile:EnvelopeProfile,*,
     return i
 
 
+
+def _source_getsignal_rms_stepwise(values:np.ndarray, f_range:float)->float:
+    """Model original 007D0D9F: a stored Float64 sum after every Single².
+
+    NumPy mean uses a different reduction tree. This source-ordered
+    accumulator narrows the discrepancy, but Win32 x87 sqrt parity still
+    requires an ORIGINAL runtime snapshot; never label it verified.
+    """
+    a=np.asarray(values,dtype=np.float32)
+    if a.ndim!=1 or not a.size or not np.isfinite(a).all():
+        raise ValueError("Source GetSignal RMS needs finite original Float32")
+    range32=np.float32(f_range)
+    if not np.isfinite(range32) or range32<=0:
+        raise ValueError("Source GetSignal FRange not representable as Single")
+    squares=np.square(a.astype(np.float64),dtype=np.float64)
+    total=float(np.add.accumulate(squares,dtype=np.float64)[-1])
+    result=np.float32(math.sqrt(total/len(a))*float(range32))
+    if not np.isfinite(result):
+        raise ValueError("Source GetSignal RMS exceeds Single")
+    return float(result)
+
 def process_original_envelope_candidate(
     samples:np.ndarray,sample_rate:int,code:int,profile:EnvelopeProfile,
     *,f_range:float=1.0,cancelled=None
@@ -181,10 +202,15 @@ def process_original_envelope_candidate(
                      cancelled=cancelled)
     if cancelled is not None and cancelled():
         raise InterruptedError("Original GetSignal FIR interrupted")
-    output=np.asarray(result.astype(np.float64)*f_range,dtype=np.float32)
-    rms=float(np.float32(np.sqrt(np.mean(result.astype(np.float64)**2))*f_range))
+    range32=np.float32(f_range)
+    if not np.isfinite(range32) or range32<=0:
+        raise ValueError("Source original FRange not representable as Single")
+    output=np.asarray(result.astype(np.float64)*float(range32),dtype=np.float32)
+    rms=_source_getsignal_rms_stepwise(result,float(range32))
     return {'chronological':output,'getsignal_buffer':output[::-1].copy(),
-            'rms_m_s2':rms,'removed_mean_m_s2':removed_mean,
+            'rms_m_s2':rms,
+            'rms_accumulation_source':'DELPHI_STEPWISE_F64_SUM_F32_FINAL',
+            'removed_mean_m_s2':removed_mean,
             'output_samples':len(output),
             'output_sample_rate_hz':plan['reported_output_rate_hz'],
             'stages_used':tuple(x for x in (plan['pre_stage'],plan['second_stage'],plan['stage']) if x),

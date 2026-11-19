@@ -165,11 +165,20 @@ def _delphi_integration_power(power:np.ndarray, n:int, fs_out:int,
     p=np.asarray(power,dtype=np.float32).copy()
     if p.ndim!=1 or len(p)!=n//2 or fs_out<=0 or repetitions not in (1,2):
         raise ValueError('Invalid original integration configuration')
-    freq=np.arange(len(p),dtype=np.float64)*(float(fs_out)/n)
-    factor=np.zeros(len(p),dtype=np.float64)
-    factor[1:]=(_INTEGRATION_CONSTANT/freq[1:])**2
+    # 007D16A7/007D1731 passes a stored Single(N/Fs) into 007D2164.
+    # In each bin: (ExtendedConstant/k * storedSingleInverseDf)^2,
+    # multiplying power and FSTP Single-storing after EACH pass.
+    inverse_df=np.float32(float(n)/float(fs_out))
+    if not np.isfinite(inverse_df) or inverse_df<=0:
+        raise ValueError("Original integration reciprocal df invalid")
+    bins=np.arange(1,len(p),dtype=np.float64)
+    factors=np.zeros(len(p),dtype=np.float64)
+    factors[1:]=((_INTEGRATION_CONSTANT/bins)*float(inverse_df))**2
     for _ in range(repetitions):
-        p=np.asarray(p.astype(np.float64)*factor,dtype=np.float32)
+        with np.errstate(over='ignore',invalid='ignore'):
+            p=np.asarray(p.astype(np.float64)*factors,dtype=np.float32)
+        if not np.isfinite(p).all():
+            raise ValueError("Original spectrum integration overflows Float32")
     return p
 
 
