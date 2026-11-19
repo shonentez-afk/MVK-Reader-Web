@@ -80,45 +80,65 @@ def _cell(word,kind):
 
 
 def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
-    """Return source-shaped pipe rows, not the unverified Delphi text bytes."""
+    """Original _Unit128:0084E020 has TWO independent sections.
+
+    1. ADC header (checked of 8), 24 ResultAdcCells + 43
+       ResultAdcBandCells; each data row ends in source GetUnits.
+    2. EMPTY line; separate TACH header (checked of 2), then exactly 6
+       ResultTachCellList rows; also with a final source GetUnits.
+    Original TLanguage labels, units and GetValueText remain unverified;
+    we do NOT mix ADC and TACH columns into a fabricated 10-wide grid.
+    """
     if not live_table_snapshot_ready(status):
         raise ValueError("Source TABLE: no fresh, source-validated PARAM bank")
     bank=status["source_live_page_status_banks"]
     selected_indices=_check_channels(selected)
+    adcs=tuple(i for i in selected_indices if i<8)
+    tachs=tuple(i-8 for i in selected_indices if i>=8)
     if len(bank["adc"])!=8 or len(bank["tach"])!=2:
         raise ValueError("Source TABLE: wrong register bank counts")
-    # Source first header is xParamName|xChannelN.., with only checked
-    # channels. We explicitly use RAW suffix to avoid claimed TLanguage
-    # localization parity.
-    header=("Параметр (RAW)",)+tuple(
-        f"АЦП {i+1}" if i<8 else f"Тахометр {i-7}"
-        for i in selected_indices)
-    rows=[header]
-    def adc_cell(i,key,n):
-        return _cell(bank["adc"][i][key][n],"Float32") if i<8 else UNAVAILABLE
+    # A trailing empty cell for xParamName|xChannelN| mirrors the source
+    # WriteLn header (which has no unit label). On data rows the final
+    # cell is original GetUnits, left unknown without original metadata.
+    adc_header=("Параметр (RAW)",)+tuple(
+        f"АЦП {i+1}" for i in adcs)+("",)
+    rows=[adc_header]
     for n in range(24):
-        row=(f"ResultAdcCells {n+1} · RMS +0x{0x60+2*n:03X}",)+tuple(
-            adc_cell(i,"rms_24_raw_f32_le",n)
-            for i in selected_indices)
-        rows.append(row)
+        rows.append((
+            f"ResultAdcCells {n+1} · RMS +0x{0x60+2*n:03X}",
+            *(_cell(bank["adc"][i]["rms_24_raw_f32_le"][n],"Float32")
+              for i in adcs),
+            UNAVAILABLE,  # GetUnits from the original TMvkCellList
+        ))
     for n in range(43):
-        row=(f"ResultAdcBandCells {n+1} · 43-band +0x{2+2*n:03X}",)+tuple(
-            adc_cell(i,"bands_43_raw_f32_le",n)
-            for i in selected_indices)
-        rows.append(row)
-    offsets=(0,2,4,6,8,0xFE)
-    for n,offset in enumerate(offsets):
-        row=(f"ResultTachCellList {n+1} · +0x{offset:02X}",)+tuple(
-            (_cell(
-                bank["tach"][i-8]["source_field_0_2_4_6_8_fe_raw_le"][n],
-                "Float32" if n<2 else "UInt32")
-             if i>=8 else UNAVAILABLE)
-            for i in selected_indices)
-        rows.append(row)
-    if len(rows)!=1+MAX_TABLE_ROWS or any(
-            len(r)!=1+len(selected_indices) for r in rows):
-        raise ValueError("Source TABLE incomplete rows/columns")
-    if all(all(v==UNAVAILABLE for v in row[1:]) for row in rows[1:]):
+        rows.append((
+            f"ResultAdcBandCells {n+1} · 43-band +0x{2+2*n:03X}",
+            *(_cell(bank["adc"][i]["bands_43_raw_f32_le"][n],"Float32")
+              for i in adcs),
+            UNAVAILABLE,
+        ))
+    rows.append(())  # original 0084E478..0084E48A writes a blank line
+    tach_header=("Параметр (RAW)",)+tuple(
+        f"Тахометр {i+1}" for i in tachs)+("",)
+    rows.append(tach_header)
+    for n,offset in enumerate((0,2,4,6,8,0xFE)):
+        rows.append((
+            f"ResultTachCellList {n+1} · +0x{offset:02X}",
+            *(_cell(
+                bank["tach"][i]["source_field_0_2_4_6_8_fe_raw_le"][n],
+                "Float32" if n<2 else "UInt32") for i in tachs),
+            UNAVAILABLE,
+        ))
+    if len(rows)!=MAX_TABLE_ROWS+3:
+        raise ValueError("Source TABLE original 2-section count mismatch")
+    if any(len(row)!=(2+len(adcs)) for row in rows[:68]):
+        raise ValueError("Source TABLE original ADC row column count mismatch")
+    if rows[68]!=() or any(
+            len(row)!=(2+len(tachs)) for row in rows[69:]):
+        raise ValueError("Source TABLE original TACH row column count mismatch")
+    actual_data=tuple(rows[1:68])+tuple(rows[70:])
+    if not any(
+        v!=UNAVAILABLE for row in actual_data for v in row[1:-1]):
         raise ValueError("Source TABLE selected channels contain no known PARAM values")
     return tuple(rows)
 
@@ -144,8 +164,9 @@ def export_live_table_snapshot(status:dict,selected,filename,
         raise ValueError("Source TABLE: filename must use original TABLE-time naming")
     # Go artifacts may not be overwritten, even if a malicious caller
     # selects a misleading .csv name inside a capture run.
-    data="sep=|\r\n"+"|".join(rows[0])+"|\r\n"+ "".join(
-        "|".join(row)+"|\r\n" for row in rows[1:])
+    # Two original table sections: checked ADC columns, blank row,
+    # checked TACH columns. The final cell on data rows is GetUnits.
+    data="sep=|\r\n"+"".join("|".join(row)+"\r\n" for row in rows)
     raw=data.encode(FORMAT)
     if not 0<len(raw)<=MAX_TABLE_BYTES:
         raise ValueError("Source TABLE exceeds safe local snapshot limit")
@@ -158,17 +179,23 @@ def export_live_table_snapshot(status:dict,selected,filename,
         readback=target.read_bytes()
         if readback!=raw:
             raise ValueError("Source TABLE local byte readback differs")
-        # All 74 lines, not just the SHA or first row.
-        assert len(rows)==74
+        # Both source headers, 67 ADC rows, separator and 6 TACH
+        # rows must reopen exactly, not merely pass a SHA comparison.
+        assert len(rows)==MAX_TABLE_ROWS+3
         checks=(readback.decode(FORMAT).splitlines())
         if (len(checks)!=len(rows)+1 or checks[0]!="sep=|" or
-                tuple(checks[1:])!=tuple("|".join(x)+"|" for x in rows)):
+                tuple(checks[1:])!=tuple("|".join(x) for x in rows)):
             raise ValueError("Source TABLE roundtrip row/column mismatch")
         return {
             "source":TABLE_SOURCE,
             "table_saved":True,
             "original_table_layout_sep_pipe_verified":True,
-            "source_table_row_count":len(rows)-1,
+            "source_table_row_count":MAX_TABLE_ROWS,
+            "source_table_section_count":2,
+            "source_adc_data_rows":67,
+            "source_tach_data_rows":6,
+            "source_adcs_in_first_section":[i+1 for i in _check_channels(selected) if i<8],
+            "source_tachs_in_second_section":[i-7 for i in _check_channels(selected) if i>=8],
             "source_table_selected_channels":[i+1 for i in _check_channels(selected)],
             "source_param_frames":status["source_live_page_status_banks"][
                 "accepted_param_frames"],
