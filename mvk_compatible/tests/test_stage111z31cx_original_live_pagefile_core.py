@@ -6,15 +6,17 @@ from ..core.original_live_pagefile import (
 )
 
 
-def test_original_live_pagefile_has_10_43_73_source_checkbox_flags():
+def test_original_live_pagefile_has_10_43_36_source_checkbox_flags():
     plan=OriginalLiveFilePlan()
     receipt=plan.receipt()
     assert receipt["source_channel_flag_count"]==10
     assert receipt["source_spec_flag_count"]==43
-    assert receipt["source_value_flag_count"]==73
+    assert receipt["source_value_flag_count"]==36
+    assert receipt["go_legacy_frame_mark_value_flag_count"]==73
+    assert receipt["non_original_legacy_bits_disabled"]
     assert plan.selected("channels")==tuple(range(8))
     assert plan.selected("spec")==tuple(range(43))
-    assert plan.selected("values")==tuple(range(67))
+    assert plan.selected("values")==tuple(range(30))
     assert not receipt["selection_controls_native_r6_raw_capture"]
     assert not receipt["original_thread_write_data_flag_modified"]
     assert not receipt["device_commands_sent"]
@@ -26,11 +28,11 @@ def test_10_channel_spec_and_values_checklists_are_independent():
     selected=original.set_checked("channels",0,False)
     selected=selected.set_checked("channels",9,True)
     selected=selected.set_checked("spec",42,False)
-    selected=selected.set_checked("values",66,False)
+    selected=selected.set_checked("values",29,False)
     assert original.channels[0] and not original.channels[9]
     assert not selected.channels[0] and selected.channels[9]
-    assert not selected.spec[42] and not selected.values[66]
-    assert selected.values[65] and selected.spec[41]
+    assert not selected.spec[42] and not selected.values[29]
+    assert selected.values[28] and selected.spec[41]
     assert selected.receipt()["selected_tach_indices"]==[2]
 
 
@@ -48,6 +50,9 @@ def test_source_checkbox_counts_and_types_fail_closed(group,length):
             base.set_checked(group,bad,True)
     with pytest.raises(ValueError):
         base.set_checked(group,0,1)
+    if group=="values":
+        with pytest.raises(ValueError):base.set_checked("values",36,True)
+        with pytest.raises(ValueError):OriginalLiveFilePlan(values=(True,)*73)
 
 
 def test_live_session_cannot_inherit_prior_recording_masks():
@@ -103,7 +108,8 @@ def test_selected_native_archive_reuses_sha_checked_offline_flow(tmp_path):
     assert accepted.channels[1] is True
     assert accepted.channels[8:] == (False,False)
     assert accepted.spec[8] is False
-    assert accepted.values[0] is False
+    assert accepted.values[0] is True  # Source BAND0 maps to offline RMS0
+    assert report["unsupported_original_advanced_result_indices"]==list(range(2,7))
     assert report["unsupported_original_tach_channels"]==[2]
     assert not report["hardware_write_commands_sent"]
 

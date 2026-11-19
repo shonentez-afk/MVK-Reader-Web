@@ -1,4 +1,4 @@
-"""Source Mode2 PageFile 10+43+73 -> Native live -> accepted ZIP; no I/O."""
+"""Source Mode2 PageFile 10+43+36 -> Go legacy 73 mark -> ZIP."""
 from __future__ import annotations
 import pytest
 pytest.importorskip("PySide6")
@@ -26,11 +26,11 @@ def _assert_live_lists(shell):
     assert shell.file_capture_panel.height()==207
     assert shell.file_channels.count()==10
     assert shell.file_spec.count()==43
-    assert shell.file_values.count()==73
+    assert shell.file_values.count()==36
     receipt=shell.file_page.property("sourceLiveFilePlanReceipt")
     assert receipt["source_channel_flag_count"]==10
     assert receipt["source_spec_flag_count"]==43
-    assert receipt["source_value_flag_count"]==73
+    assert receipt["source_value_flag_count"]==36
     assert not receipt["device_commands_sent"]
     assert not receipt["selection_controls_native_r6_raw_capture"]
 
@@ -88,10 +88,10 @@ def test_mode2_pagefile_checkboxes_survive_live_and_filter_only_verified_export(
         assert selected.channels[1] is True
         assert selected.channels[8:] == (False,False)
         assert selected.spec[8] is False
-        assert selected.values[0] is False
+        assert selected.values[0] is True  # Source BAND0 is archive RMS0
         assert shell.file_channels.item(0).checkState()==Qt.Unchecked
         assert shell.file_spec.item(8).checkState()==Qt.Unchecked
-        assert shell.file_values.item(0).checkState()==Qt.Unchecked
+        assert shell.file_values.item(0).checkState()==Qt.Checked
         accepted=shell.file_page.property("sourceAppliedLiveFilePlanReceipt")
         assert accepted["verified_source_bin_rechecked"]
         assert accepted["unsupported_original_tach_channels"]==[2]

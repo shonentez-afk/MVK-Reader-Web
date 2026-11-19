@@ -1,7 +1,8 @@
 """Original Mode2 PageFile selection, independent of the Native TCP owner.
 
 Source: private _Unit128.pas 0084E914 / 0084E988, mvkform.dfm PageFile.
-The original collects 10 channel + 43 SPEC + (24+43+6) VALUES flags.
+The original collects 10 channel + 43 SPEC + (6+24+6) VALUES flags.
+Go legacy JSON frame marks retain 73 flags; trailing 37 are always disabled.
 In compatible Mode2 these are an explicit LOCAL-EXPORT selection only.
 Native R6.1 writes its complete RAW stream independently; nothing here
 queues TMVKThread.SetRate, WriteData or WriteValues to any instrument.
@@ -22,6 +23,11 @@ SOURCE="IDP_0084E914_0084E988_ORIGINAL_MODE2_LOCAL_FILE_SELECTION"
 UNKNOWN="—"
 assert (CHANNEL_COUNT,SPEC_COUNT,VALUE_COUNT)==(10,43,73)
 assert ADC_VALUE_COUNT+BAND_VALUE_COUNT+TACH_RESULT_COUNT==VALUE_COUNT
+SOURCE_RESULT_VALUE_COUNT=6
+SOURCE_BAND_VALUE_COUNT=24
+SOURCE_TACH_VALUE_COUNT=6
+SOURCE_VALUE_COUNT=SOURCE_RESULT_VALUE_COUNT+SOURCE_BAND_VALUE_COUNT+SOURCE_TACH_VALUE_COUNT
+assert SOURCE_VALUE_COUNT==36 and VALUE_COUNT==73
 
 
 def _flags(value,length,label):
@@ -39,15 +45,16 @@ class OriginalLiveFilePlan:
     """User's local export preferences; never modifies Native's raw writer."""
     channels:tuple[bool,...]=(True,)*8+(False,False)
     spec:tuple[bool,...]=(True,)*SPEC_COUNT
-    values:tuple[bool,...]=(
-        (True,)*(ADC_VALUE_COUNT+BAND_VALUE_COUNT)
-        +(False,)*TACH_RESULT_COUNT)
+    # 36 original flags padded to legacy 73 for existing Go IPC.
+    values:tuple[bool,...]=(True,)*30+(False,)*(VALUE_COUNT-30)
     session_id:str|None=None
 
     def __post_init__(self):
         _flags(self.channels,CHANNEL_COUNT,"cbFileChannels")
         _flags(self.spec,SPEC_COUNT,"cbFileSpec")
         _flags(self.values,VALUE_COUNT,"cbFileValues")
+        if any(self.values[SOURCE_VALUE_COUNT:]):
+            raise ValueError("Non-original source VALUES flags 36..72 cannot be enabled")
         if self.session_id is not None and (
                 not isinstance(self.session_id,str) or
                 not 1<=len(self.session_id)<=160 or
@@ -60,7 +67,7 @@ class OriginalLiveFilePlan:
         if type(index) is not int or type(checked) is not bool:
             raise ValueError("Source checkbox index and state must be strict")
         source=getattr(self,group)
-        if not 0<=index<len(source):
+        if not 0<=index<(SOURCE_VALUE_COUNT if group=="values" else len(source)):
             raise ValueError("Source PageFile checkbox index out of range")
         result=list(source)
         result[index]=checked
@@ -86,7 +93,9 @@ class OriginalLiveFilePlan:
     def selected(self,group):
         if group not in ("channels","spec","values"):
             raise ValueError("Original PageFile selection group missing")
-        return tuple(i for i,v in enumerate(getattr(self,group)) if v)
+        flags=getattr(self,group)
+        if group=="values":flags=flags[:SOURCE_VALUE_COUNT]
+        return tuple(i for i,v in enumerate(flags) if v)
 
     def receipt(self):
         return {
@@ -95,7 +104,9 @@ class OriginalLiveFilePlan:
             "source_adc_count":8,
             "source_tach_count":2,
             "source_spec_flag_count":43,
-            "source_value_flag_count":73,
+            "source_value_flag_count":SOURCE_VALUE_COUNT,
+            "go_legacy_frame_mark_value_flag_count":VALUE_COUNT,
+            "non_original_legacy_bits_disabled":not any(self.values[SOURCE_VALUE_COUNT:]),
             "selected_adc_indices":[i+1 for i in self.selected("channels") if i<8],
             "selected_tach_indices":[i-7 for i in self.selected("channels") if i>=8],
             "selected_spec_indices":list(self.selected("spec")),
@@ -126,9 +137,12 @@ class OriginalLiveFilePlan:
             spec=tuple(
                 requested and present for requested,present in zip(
                     self.spec,available.spec)),
+            # Source 6 advanced ResultADC cells are not the offline 24 RMS.
+            # Original source 24 BAND maps only to offline 24 VALUES.
             values=tuple(
-                requested and present for requested,present in zip(
-                    self.values,available.values)),
+                self.values[SOURCE_RESULT_VALUE_COUNT+i] and available.values[i]
+                for i in range(ADC_VALUE_COUNT)
+            )+(False,)*(VALUE_COUNT-ADC_VALUE_COUNT),
         ).validate(flow)
         unavailable_adc=tuple(
             i+1 for i in range(8)
@@ -136,10 +150,8 @@ class OriginalLiveFilePlan:
         unsupported_tach=tuple(
             i-7 for i in range(8,10)
             if self.channels[i] and not available.channels[i])
-        unavailable_tach_values=tuple(
-            i-(ADC_VALUE_COUNT+BAND_VALUE_COUNT)+1
-            for i in range(ADC_VALUE_COUNT+BAND_VALUE_COUNT,VALUE_COUNT)
-            if self.values[i])
+        unsupported_advanced=tuple(i+1 for i in range(6) if self.values[i])
+        unavailable_tach_values=tuple(i+1 for i in range(6) if self.values[30+i])
         return selected,{
             "source":SOURCE,
             "verified_source_bin_rechecked":True,
@@ -148,6 +160,8 @@ class OriginalLiveFilePlan:
             "unavailable_adc":list(unavailable_adc),
             "unsupported_original_tach_channels":list(unsupported_tach),
             "unsupported_tach_value_indices":list(unavailable_tach_values),
+            "unsupported_original_advanced_result_indices":list(unsupported_advanced),
+            "source_live_to_offline_mapping":"ORIGINAL_BAND24_TO_OFFLINE_RMS24_ONLY",
             "native_full_raw_preserved":True,
             "hardware_write_commands_sent":False,
             "same_run_byte_parity_verified":False,

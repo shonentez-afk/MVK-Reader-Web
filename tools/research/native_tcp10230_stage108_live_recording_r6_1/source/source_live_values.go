@@ -136,8 +136,19 @@ func(w *sourceLiveValuesWriter)applyFrameMarks(m *Monitor)error{
     return nil
 }
 func anySourceValuesSelected(m frameMarkReceipt)bool{
-    for _,b:=range m.Spec{if b{return true}}
-    for _,b:=range m.Values{if b{return true}}
+    adcSelected,tachSelected:=false,false
+    for i,b:=range m.Channels{
+        if i<8 && b{adcSelected=true}
+        if i>=8 && b{tachSelected=true}
+    }
+    if adcSelected{
+        for _,b:=range m.Spec{if b{return true}}
+        for _,b:=range m.Values[:30]{if b{return true}}
+    }
+    if tachSelected{
+        for _,b:=range m.Values[30:36]{if b{return true}}
+    }
+    // Never arm for historical non-original bits 36..72.
     return false
 }
 func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time)error{

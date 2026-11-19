@@ -1099,10 +1099,11 @@ class OriginalRootShell:
         flags=writer.receipt() if writer is not None else {}
         data_active=bool(flags.get("write_data_requested"))
         values_active=bool(flags.get("write_values_requested"))
+        from ..core.original_live_pagefile import SOURCE_VALUE_COUNT
         for group,widget,count in (
             ("channels",self.file_channels,CHANNEL_COUNT),
             ("spec",self.file_spec,SPEC_COUNT),
-            ("values",self.file_values,VALUE_COUNT),
+            ("values",self.file_values,SOURCE_VALUE_COUNT),
         ):
             blocked=widget.blockSignals(True)
             try:
@@ -1112,12 +1113,12 @@ class OriginalRootShell:
                         title=labels[i]
                     elif group=="spec":
                         title=f"SPEC {i+1} · приборное значение ожидается"
-                    elif i<ADC_VALUE_COUNT:
-                        title=f"VALUE ADC {i+1} · проверенный результат ожидается"
-                    elif i<ADC_VALUE_COUNT+BAND_VALUE_COUNT:
-                        title=f"BAND {i-ADC_VALUE_COUNT+1} · результат ожидается"
+                    elif i<6:
+                        title=f"RESULT {i+1} · исходный тип/состояние"
+                    elif i<30:
+                        title=f"BAND {i-5} · 24 исходных RMS"
                     else:
-                        title=f"TACH VALUE {i-ADC_VALUE_COUNT-BAND_VALUE_COUNT+1} · не восстановлено"
+                        title=f"TACH VALUE {i-29} · исходное значение"
                     editable=(not data_active if group=="channels"
                               else not values_active)
                     item=self._checked_item(
@@ -1134,8 +1135,8 @@ class OriginalRootShell:
             "Измерение · исходные 10 каналов (8 АЦП + 2 TACH). "
             "Native R6.1 записывает RAW независимо от выбора этих флагов.")
         self.file_source_evidence.setText(
-            "LIVE · выбранные флаги применяются только к последующему "
-            "проверенному локальному экспорту; приборные команды не отправлены.")
+            "LIVE: 10 каналов, 43 SPEC, 36 VALUES (6+24+6), "
+            "Go RAW и исходные тики; аппаратные команды не отправлены.")
         self.file_selection_status.setText(self._file_selection_status())
         for button in self.file_action_buttons.values():
             button.setEnabled(False)

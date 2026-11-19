@@ -48,7 +48,7 @@ def test_mode2_all_five_original_tabs_one_source_before_during_after_stop(
         assert not window.original_root_tabs.isTabVisible(6)  # FactoryMode=0
         assert window.original_shell.file_channels.count()==10
         assert window.original_shell.file_spec.count()==43
-        assert window.original_shell.file_values.count()==73
+        assert window.original_shell.file_values.count()==36
         assert window.original_shell.status_tabs.count()==15
         assert window.original_shell.status_table.rowCount()==15
         assert not window.original_shell.status_page.property(
@@ -92,7 +92,7 @@ def test_mode2_all_five_original_tabs_one_source_before_during_after_stop(
             "sourceLiveFilePlanReceipt")
         assert receipt is not None
         assert window.original_shell.file_channels.count()==10
-        assert window.original_shell.file_values.count()==73
+        assert window.original_shell.file_values.count()==36
         assert window.original_shell.file_spec.count()==43
         # Revisit graphs: the same preview/run, never mixed archive history.
         assert window.session is None

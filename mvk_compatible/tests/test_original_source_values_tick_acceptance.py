@@ -84,7 +84,7 @@ def test_independent_files_sha_per_tick_and_no_raw_paths_in_report(tmp_path):
     lambda x:x.update(param_address="0x2000"),
     lambda x:x.update(param_payload_sha256="0"*64),
     lambda x:x["source_ordered_raw_tick"].update(
-        original_delphi_csv_byte_parity_verified=True),
+        original_delphi_values_csv_byte_parity_verified=True),
     lambda x:x["source_ordered_raw_tick"]["original_selected_cell_order"][1].
         update(source_word_address=0x3002),
     lambda x:x["source_ordered_raw_tick"]["original_selected_cell_order"][0].
