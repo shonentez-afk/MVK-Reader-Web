@@ -260,7 +260,10 @@ def test_source_getspectrum_uses_exact_source_ring_n_and_sha(tmp_path):
     assert spectrum["input_domain"]=="original_float_storage"
     assert spectrum["source_history_uses_original_live_f_range1_float32"]
     assert not spectrum["source_history_uses_exact_calibrated_float32"]
-    assert spectrum["original_storage_read_divided_by_range"] is False
+    assert spectrum["original_storage_read_divided_by_range"] is True
+    # Source original GetSpectrum 007D2228 divides copied ring by the
+    # stored Single FRange. With live FRange=1 this is numerically
+    # an identity, but the original branch MUST still be exercised.
     assert spectrum["source_fft_full_power_bins"]==32768
     # Mis-tagged ZIP, wrong channel, and a made-up N must fail closed.
     response_fixture(root,status,req,override=lambda m:m.update(source_h_tag=5))

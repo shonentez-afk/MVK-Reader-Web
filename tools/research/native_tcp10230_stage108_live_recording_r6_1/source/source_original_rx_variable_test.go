@@ -104,14 +104,14 @@ func TestOriginalEmptySourcePacketDoesNotCreateFakeSamples(t *testing.T) {
   }
 }
 
-func TestOriginalVariableCalibratedADCSpoolMatchesPreviewAndRing(t *testing.T) {
+func TestOriginalVariableCalibratedADCSpoolMatchesPreviewButNotSourceRing(t *testing.T) {
   dir:=t.TempDir()
   f,e:=os.Create(filepath.Join(dir,"real.f32"))
   if e!=nil {t.Fatal(e)}
   defer f.Close()
   ring:=newSourceOriginalStorageRing()
   preview:=newLivePreviewBuffer()
-  spool:=&LiveBinSpool{begun:true,sourceOriginalStorage:ring,preview:preview}
+  spool:=&LiveBinSpool{begun:true,preview:preview}
   spool.files[0]=f
   spool.digest[0]=sha256.New()
   spool.gain[0]=2.0
@@ -122,12 +122,21 @@ func TestOriginalVariableCalibratedADCSpoolMatchesPreviewAndRing(t *testing.T) {
   if e:=spool.adcFrame(Frame{Type:typeADC,Raw:payload},h);e!=nil {t.Fatal(e)}
   if e=f.Sync();e!=nil {t.Fatal(e)}
   disk,e:=os.ReadFile(f.Name());if e!=nil {t.Fatal(e)}
+  // A forensic gain is not permitted to advance the source ring.
+  if ring.receipt().Channels[0].RxPos!=0 {
+    t.Fatal("forensic spool modified original live FRxPos")
+  }
+  if e=ring.appendFrame(h,payload[28:],sourceStorageOriginalLiveADC);e!=nil{
+    t.Fatal(e)
+  }
   memory,e:=ring.window(0,0,7);if e!=nil {t.Fatal(e)}
   view,n,_:=preview.channelBytes(0)
-  if n!=7 || !bytes.Equal(memory,disk) || !bytes.Equal(view,disk) {
-    t.Fatal("variable source ADC was changed while writing to spool/preview/ring")
+  if n!=7 || !bytes.Equal(view,disk) || bytes.Equal(memory,disk) ||
+     !bytes.Equal(memory,payload[28:]){
+    t.Fatal("reconstructed preview and original FRange1 ring not independent")
   }
-  if math.Float32frombits(binary.LittleEndian.Uint32(disk))!=2.5 {
-    t.Fatal("gain applied a wrong number of times")
+  if math.Float32frombits(binary.LittleEndian.Uint32(disk))!=2.5 ||
+     math.Float32frombits(binary.LittleEndian.Uint32(memory))!=1.25 {
+    t.Fatal("source Float32 or separate forensic gain incorrect")
   }
 }
