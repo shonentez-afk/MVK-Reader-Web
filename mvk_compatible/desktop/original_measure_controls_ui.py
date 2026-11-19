@@ -86,8 +86,9 @@ class OriginalMeasureControls:
             lambda:self._save_verified_table(filtered=False))
         self.buttons["bWriteTable"].setToolTip(
             "Исходный _Unit128:0084E020: TABLE-yyyy-mm-dd--hh-nn-ss.csv. "
-            "Записать проверенный офлайн VALUES текущего тика, не "
-            "заменяя аппаратную TABLE и не вычисляя вымышленные DSP.")
+            "Для LIVE — сохранить одноразовый RAW-снимок принятых PARAM "
+            "по исходному каркасу sep=|, только в новый локальный CSV. "
+            "GetValueText, ANSI/время и байтовый паритет Delphi ещё не подтверждены.")
         self.buttons["bWriteAdc"].clicked.connect(
             self._export_checked_adcs)
         self.buttons["bWriteAdc"].setToolTip(
@@ -222,6 +223,8 @@ class OriginalMeasureControls:
     def _save_verified_table(self,*,filtered):
         if filtered and self.state.mode=="live" and self.window._live_active:
             return self._toggle_live_write("values")
+        if not filtered and self.state.mode=="live" and self.window._live_active:
+            return self._save_source_live_table()
         if (self.state.mode!="offline" or
                 self.window.session is None or self.window._live_active):
             return
@@ -251,6 +254,58 @@ class OriginalMeasureControls:
             f"· {len(report['channels'])} АЦП · не TMVKThread")
         self.window.statusBar().showMessage(
             "PageFile TABLE: проверенный локальный CSV, прибор не менялся")
+        return report
+
+    def _save_source_live_table(self):
+        """Original bWriteTable is a one-shot snapshot, never WriteValues."""
+        from ..core.original_live_table_snapshot import (
+            live_table_snapshot_ready, export_live_table_snapshot)
+        status=self.window._native_live_status
+        plan=getattr(self.window.original_shell,"live_file_plan",None)
+        if (not self.window._live_active or self.window._measurement_exit_requested
+                or status is None or plan is None or
+                self.window._source_mode2_runtime.status_cells.system_error_latched
+                or not live_table_snapshot_ready(status)):
+            self.window.statusBar().showMessage(
+                "TABLE не сохранена: нет подтверждённых актуальных PARAM")
+            return None
+        selection=tuple(plan.channels)
+        if not any(selection):
+            self.window.statusBar().showMessage("TABLE: не выбраны каналы")
+            return None
+        run_id=status.get("session_id")
+        proposed=TABLE_PREFIX+datetime.now().strftime(
+            "%Y-%m-%d--%H-%M-%S")+".csv"
+        dest,_=QFileDialog.getSaveFileName(
+            self.panel,
+            "Сохранить локальный LIVE снимок TABLE (RAW, не оригинальный Delphi CSV)",
+            proposed,"CSV (*.csv)")
+        if not dest:
+            return None
+        # A file dialog can spin the Qt event loop. Never persist a
+        # different run after the operator's decision.
+        current=self.window._native_live_status
+        if (current is None or current.get("session_id")!=run_id or
+                not live_table_snapshot_ready(current) or
+                self.window._measurement_exit_requested or
+                self.window._source_mode2_runtime.status_cells.system_error_latched):
+            self.window.statusBar().showMessage(
+                "TABLE отменена: изменился или закончился источник PARAM")
+            return None
+        try:
+            report=export_live_table_snapshot(
+                current,selection,dest,expected_session_id=run_id)
+        except (OSError,ValueError,UnicodeError,KeyError) as exc:
+            self.window.original_window_man.spawn_error(
+                "LIVE TABLE не сохранена: "+str(exc))
+            return None
+        self.panel.setProperty("sourceOriginalLiveTableSnapshotReceipt",report)
+        self.status.setText(
+            f"TABLE RAW · {report['source_table_row_count']} строк · "
+            f"{len(report['source_table_selected_channels'])} каналов")
+        self.window.statusBar().showMessage(
+            "LIVE TABLE: локальный источник PARAM; "
+            "GetValueText и Win32 CSV ещё не 1:1")
         return report
 
     def render(self):
@@ -346,8 +401,21 @@ class OriginalMeasureControls:
             "sourceOriginalRateMenuProvenance",source_initial_rate_provenance())
         self.rate_menu.setProperty("sourceObservedNativeHz",hz)
         self.rate_menu.setProperty("sourceSelectedOriginalRateTag",selected)
+        # LIVE snapshot is independent from source WriteData/WriteValues.
+        # It is allowed only with a trusted current single-socket Go
+        # PARAM bank. The original hardware Table button never sends TX.
+        from ..core.original_live_table_snapshot import (
+            live_table_snapshot_ready)
+        live_table_ready=bool(live and self.window._live_active
+            and not self.window._measurement_exit_requested
+            and not self.window._source_mode2_runtime.status_cells.system_error_latched
+            and live_table_snapshot_ready(self.window._native_live_status)
+            and getattr(self.window.original_shell,"live_file_plan",None)
+            and any(self.window.original_shell.live_file_plan.channels))
         self.buttons["bWriteTable"].setEnabled(
-            policy.local_table_enabled)
+            policy.local_table_enabled or live_table_ready)
+        self.buttons["bWriteTable"].setProperty(
+            "sourceOriginalLiveTableSnapshotReady",live_table_ready)
         # Original Delphi start/stop buttons are now linked to the
         # actual read-only Native session's verified counters. In a
         # synthetic preview without trusted transport, keep DISABLED
