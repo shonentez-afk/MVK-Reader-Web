@@ -98,13 +98,17 @@ def _conversion(frequencies: np.ndarray, kind: str) -> np.ndarray:
 
 def _welch_acceleration(x: np.ndarray, fs: int, nfft: int):
     # Density is acceleration²/Hz; integrate PSD*df for true broadband RMS².
-    nseg=len(x)//nfft
+    # scipy.signal.welch uses 50% overlap. A 1.5-N window produces TWO
+    # segments, not one; floor(len(x)/N)*2-1 misreported such buffers.
+    overlap=nfft//2
+    hop=nfft-overlap
+    segments=1+(len(x)-nfft)//hop
     f,p=signal.welch(x,fs=fs,window="hann",
-                     nperseg=nfft,noverlap=nfft//2,detrend="constant",
+                     nperseg=nfft,noverlap=overlap,detrend="constant",
                      scaling="density",return_onesided=True)
     p=np.maximum(np.asarray(p,dtype=np.float64),0)
     p[0]=0
-    return f,p,max(1,2*nseg-1)
+    return f,p,segments
 
 
 def _precondition(x: np.ndarray,fs: int,kind: str,band: tuple[float,float|None]) -> tuple[np.ndarray,float]:

@@ -133,3 +133,21 @@ def test_asd_is_sqrt_psd_and_uses_amplitude_not_power_db():
         vibration_plot_values(psd,"db",reference="unit"),
         atol=1e-8,
     )
+
+
+
+def test_welch_reports_actual_number_of_half_overlapped_segments():
+    import numpy as np
+    import pytest
+    from mvk_live_standalone.vibration import analyze_vibration
+    fs=8192
+    n=8192
+    for length,expected in ((8192,1),(12288,2),(16384,3),
+                            (20480,4),(24576,5)):
+        t=np.arange(length,dtype=np.float64)/fs
+        x=np.sqrt(2)*np.sin(2*np.pi*128*t)
+        result=analyze_vibration(x,fs,mode="welch",nfft=n)
+        assert result.segments==expected
+        assert result.resolution_hz==pytest.approx(1.0)
+        assert np.sqrt(np.sum(result.rms)*result.resolution_hz)==pytest.approx(
+            1.0,rel=.015)

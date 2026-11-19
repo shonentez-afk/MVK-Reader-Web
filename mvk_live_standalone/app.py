@@ -99,6 +99,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._last_submitted_key = None
         self._last_status = None
         self._spectrum: VibrationView | None = None
+        self._last_completed_spectrum_settings = None
         self._bearing_spectrum: VibrationView | None = None  # independent pinned source
         self._last_fft_submit=0.0
         self._waterfall_rows=[]
@@ -1003,8 +1004,9 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._show_envelope_if_needed()
 
     def _show_envelope_if_needed(self):
-        show=(self.advanced_toggle.isChecked() and
-              self.analysis.currentData()=="envelope")
+        show=(self.analysis.currentData()=="envelope" and
+              (self.advanced_toggle.isChecked() or
+               getattr(self,"_modern_installed",False)))
         self.envelope_label.setVisible(show)
         self.envelope_band.setVisible(show)
 
@@ -1245,6 +1247,13 @@ class LiveWindow(QtWidgets.QMainWindow):
                 self.analysis.currentData(),self.envelope_band.currentData(),self.notch.currentData())
 
     def _on_control_change(self,*_):
+        # Envelope demodulation is physically defined for acceleration.
+        # A velocity/displacement choice would silently fail in the worker.
+        if (self.analysis.currentData()=="envelope" and
+                self.kind.currentData()!="acceleration"):
+            self.kind.setCurrentIndex(
+                self.kind.findData("acceleration"))
+            return
         self._manual_spec_axes = None
         self._show_envelope_if_needed()
         self._last_fft_submit=0.0
@@ -1264,13 +1273,29 @@ class LiveWindow(QtWidgets.QMainWindow):
         # The physical Y unit must update IMMEDIATELY on the operator's
         # choice, even while the next verified FFT is still calculating.
         self._apply_axes()
-        if self._spectrum is not None and (
-                self._spectrum.kind != self.kind.currentData() or
-                self._spectrum.mode != self.analysis.currentData()):
-            self._spectrum = None
+        try:
+            current_settings=self._read_settings()
+        except (ValueError,TypeError) as exc:
+            self._spectrum=None
+            self._last_completed_spectrum_settings=None
             self.spec_curve.setData([],[])
             self._clear_overview_plot("spectrum")
-            self.metrics.setText("Пересчёт выбранного физического спектра")
+            self.metrics.setText(f"Параметры спектра недопустимы: {exc}")
+            self._apply_operator_ranges()
+            return
+        stale = (self._spectrum is not None and (
+            self._spectrum.kind != self.kind.currentData() or
+            self._spectrum.mode != self.analysis.currentData() or
+            (self._last_completed_spectrum_settings is not None and
+             current_settings != self._last_completed_spectrum_settings)))
+        if stale:
+            # A new filter/NFFT/smoothing MUST NOT present the OLD curve as
+            # if it already used the operator's new signal processing setup.
+            self._spectrum = None
+            self._last_completed_spectrum_settings = None
+            self.spec_curve.setData([],[])
+            self._clear_overview_plot("spectrum")
+            self.metrics.setText("Пересчёт спектра с выбранными параметрами")
         self._render_wave()
         if self._spectrum is None:self._apply_operator_ranges()
         self._schedule_fft()
@@ -1876,10 +1901,19 @@ class LiveWindow(QtWidgets.QMainWindow):
         if self._preview is None or (
                 self._future is not None and not self._future.done()):
             return
-        s=self._read_settings()
+        try:
+            s=self._read_settings()
+        except (ValueError,TypeError) as exc:
+            self._spectrum=None
+            self._last_completed_spectrum_settings=None
+            self.spec_curve.setData([],[])
+            self._clear_overview_plot("spectrum")
+            self.metrics.setText(f"Параметры спектра недопустимы: {exc}")
+            return
         ch=self._gui_ring.channel(s[0])
         if ch is None or ch.available<s[2]:
             self._spectrum=None
+            self._last_completed_spectrum_settings=None
             self.spec_curve.setData([],[])
             self._clear_overview_plot("spectrum")
             self.metrics.setText(f"Ожидание {s[2]} подтверждённых отсчётов АЦП {s[0]}")
@@ -1919,15 +1953,23 @@ class LiveWindow(QtWidgets.QMainWindow):
         try:
             result=self._future.result()
         except (ValueError,RuntimeError,FloatingPointError) as exc:
-            self.metrics.setText(f"APP_DERIVED: {exc}")
+            self.metrics.setText(f"APP_DERIVED · спектр недоступен: {exc}")
             self.spec_curve.setData([],[])
             self._spectrum=None
+            self._last_completed_spectrum_settings=None
+            self._clear_overview_plot("spectrum")
         else:
-            if (job and job[2]==self._read_settings() and
+            try:
+                settings_match=(job is not None and
+                                job[2]==self._read_settings())
+            except (ValueError,TypeError):
+                settings_match=False
+            if (settings_match and job[0]==self._generation and
                     self._preview is not None and
                     (job[3][0][0]=="FROZEN")==self.freeze.isChecked()):
                 self._last_result=result
                 self._spectrum=result.view
+                self._last_completed_spectrum_settings=job[2]
                 self._render_spectrum()
                 if not self.freeze.isChecked():
                     self._update_waterfall(job[3])
@@ -2089,6 +2131,7 @@ class LiveWindow(QtWidgets.QMainWindow):
         self._waterfall_rows=[]
         self._waterfall_key=None
         self._spectrum=None
+        self._last_completed_spectrum_settings=None
         self._last_stamp=None
         self._generation+=1
         self.spec_curve.setData([],[])
@@ -2145,6 +2188,9 @@ class LiveWindow(QtWidgets.QMainWindow):
                     f"{s.mode.upper()} · АЦП {self.adc.currentData()} · "
                     f"Fs {s.rate_hz} Гц · Δf {s.resolution_hz:.3g} Гц")
         self._apply_operator_ranges()
+        refresh=getattr(self,"_modern_refresh_spectrum_setup",None)
+        if refresh is not None:
+            refresh()
         self._cursor_text()
         label=({"fft":"FFT","welch":"Welch PSD",
                "asd":"ASD Уэлча","third_octave":"1/3 октавы","envelope":"Hilbert огибающая"}[s.mode])

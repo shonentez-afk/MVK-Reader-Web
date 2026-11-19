@@ -940,108 +940,193 @@ def install_modern_shell(win, main, panel, review, storage):
                                  QtWidgets.QSizePolicy.Policy.Preferred)
     ss = QtWidgets.QVBoxLayout(spectrum_panel)
     ss.setContentsMargins(12, 12, 12, 12)
-    ss.setSpacing(9)
-    ss.addWidget(_title("СПЕКТР · частотная область"))
+    ss.setSpacing(8)
+    ss.addWidget(_title("СПЕКТР · параметры анализа"))
     ss.addWidget(_hint(
-        "Эти настройки управляют FFT / PSD / ASD выбранного АЦП и верхним "
-        "графиком обзора. Временной сигнал имеет собственные параметры."))
-    ss.addWidget(_title("Отображение спектра"))
-    basic = QtWidgets.QVBoxLayout()
-    basic.setSpacing(9)
-    for label, widget in (
-        ("Вибрационная величина", win.kind),
-        ("Метод спектрального анализа", win.analysis),
-        ("Амплитуда · линейно или дБ", win.yscale),
-        ("Частота · линейно или логарифмически", win.xscale),
-        ("Предел частоты, Гц", win.x_limit_choice),
-        ("Масштаб амплитуды", win.y_height_choice),
-    ):
-        _field(basic, label, widget)
-    win.xscale.setToolTip(
-        "Только ось частот, Гц. Не меняет амплитуду в децибелах.")
-    win.yscale.setToolTip(
-        "Линейные физические единицы или дБ с опорным уровнем. "
-        "Не меняет шкалу частоты.")
-    ss.addLayout(basic)
+        "Действует на спектр выбранного АЦП и верхний график «Обзора». "
+        "Исходный Native RAW и временная осциллограмма не изменяются."))
 
-    ss.addWidget(_title("Обработка · только спектр"))
-    ss.addWidget(_hint(
-        "Фильтр применяется локально к спектральному анализу, "
-        "не изменяет временную осциллограмму, Native RAW и AUX4700."))
-    filter_form = QtWidgets.QVBoxLayout()
-    filter_form.setSpacing(8)
-    _field(filter_form, "Тип фильтра", win.filter_choice)
-    centre = _field(filter_form, "Центральная частота полосы", win.filter_center)
-    centre_label = centre.findChild(QtWidgets.QLabel)
-    ss.addLayout(filter_form)
-    ss.addWidget(win.filter_button)
-    win.filter_button.setText("Задать границы фильтра…")
-    spectrum_filter_note = _hint("")
-    ss.addWidget(spectrum_filter_note)
-    notes = {
-        "none": "Обработка отключена: спектр по всему доступному диапазону.",
-        "highpass": "ФВЧ: задайте нижнюю границу в герцах.",
-        "lowpass": "ФНЧ: задайте верхнюю границу в герцах.",
-        "bandpass": "Полосовой фильтр: задайте обе границы в герцах.",
-        "notch50": "Режектор 50 Гц включается только вручную.",
-        "notch60": "Режектор 60 Гц включается только вручную.",
-        "octave": "1/1 октавы: полосовой фильтр до расчёта FFT.",
-        "third_octave": "1/3 октавы: фильтр входного сигнала, не приборные третьоктавы.",
-        "double_octave": "2 октавы: полосовой фильтр до расчёта FFT.",
-        "original_preset": "Совместимость с 32 названиями MVKView; это не аппаратный FIR.",
-    }
-    def spectrum_filter_visibility(*_):
-        mode = win.filter_choice.currentData()
-        centre.setVisible(mode in (
-            "original_preset", "octave", "third_octave", "double_octave"))
-        centre_label.setText(
-            "Полоса из меню MVKView" if mode == "original_preset"
-            else "Центральная частота полосы")
-        win.filter_button.setVisible(mode in (
-            "highpass", "lowpass", "bandpass"))
-        spectrum_filter_note.setText(notes.get(mode, ""))
-    win.filter_choice.currentIndexChanged.connect(spectrum_filter_visibility)
-    spectrum_filter_visibility()
+    # As in DewesoftX, OROS and Adash, distinguish RESULT from processing
+    # parameters and from axes. Reuse real original widgets; no fake controls.
+    ss.addWidget(_title("1. Результат и разрешение"))
+    result_fields = QtWidgets.QVBoxLayout()
+    result_fields.setSpacing(8)
+    _field(result_fields, "Физическая величина", win.kind)
+    _field(result_fields, "Метод расчёта", win.analysis)
+    _field(result_fields, "Отсчётов в FFT · N", win.nfft)
+    ss.addLayout(result_fields)
+    envelope_row = _field(
+        result_fields, "Полоса резонанса огибающей, Гц",
+        win.envelope_band)
+    win._modern_spectrum_envelope_row = envelope_row
+    calc_info = _hint("")
+    win._modern_spectrum_setup_info = calc_info
+    ss.addWidget(calc_info)
 
-    spectrum_detail = QtWidgets.QToolButton()
-    spectrum_detail.setText("Точные параметры FFT и графика")
-    spectrum_detail.setCheckable(True)
-    spectrum_detail.setArrowType(QtCore.Qt.ArrowType.RightArrow)
-    spectrum_detail.setToolButtonStyle(
-        QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-    ss.addWidget(spectrum_detail)
-    advanced_frame = QtWidgets.QWidget()
-    advanced_column = QtWidgets.QVBoxLayout(advanced_frame)
-    advanced_column.setContentsMargins(0, 0, 0, 0)
-    advanced_column.setSpacing(9)
-    _field(advanced_column, "Число реальных отсчётов FFT · N", win.nfft)
+    ss.addWidget(_title("2. Отображение и шкалы"))
+    axes_fields = QtWidgets.QVBoxLayout()
+    axes_fields.setSpacing(8)
+    _field(axes_fields, "Амплитуда · линейно / дБ", win.yscale)
     db_row = _field(
-        advanced_column, "Опорный уровень амплитуды в дБ", win.db_ref)
-    _field(advanced_column, "Сглаживание спектральных линий", win.smooth)
-    advanced_column.addWidget(win.axis_button)
-    auto = QtWidgets.QPushButton("Вернуть автомасштаб")
+        axes_fields, "Опорный уровень в дБ", win.db_ref)
+    _field(axes_fields, "Частота · линейно / логарифмически",
+           win.xscale)
+    _field(axes_fields, "Частотный диапазон до, Гц",
+           win.x_limit_choice)
+    amplitude_row = _field(
+        axes_fields, "Вертикальный масштаб в единицах результата",
+        win.y_height_choice)
+    ss.addLayout(axes_fields)
+    scale_note = _hint("")
+    ss.addWidget(scale_note)
+    win.xscale.setToolTip(
+        "Линейная либо логарифмическая ОСЬ ЧАСТОТЫ в Гц. "
+        "Не меняет амплитуду в децибелах.")
+    win.yscale.setToolTip(
+        "Линейные физические значения либо дБ относительно заданного "
+        "опорного уровня. Это НЕ второе логарифмирование оси Y.")
+
+    ss.addWidget(_title("3. Фильтрация до расчёта"))
+    ss.addWidget(_hint(
+        "Отдельный локальный фильтр спектра: обработка настоящего "
+        "калиброванного АЦП, не аппаратный FIR и не фильтр осциллограммы."))
+    filter_fields = QtWidgets.QVBoxLayout()
+    filter_fields.setSpacing(8)
+    _field(filter_fields, "Фильтр", win.filter_choice)
+    centre = _field(filter_fields, "Частота фильтра, Гц",
+                    win.filter_center)
+    centre_label = centre.findChild(QtWidgets.QLabel)
+    ss.addLayout(filter_fields)
+    ss.addWidget(win.filter_button)
+    win.filter_button.setText("Установить границы фильтра…")
+    filter_note = _hint("")
+    win._modern_spectrum_filter_note = filter_note
+    ss.addWidget(filter_note)
+
+    details = QtWidgets.QToolButton()
+    details.setText("Дополнительно · АЧХ, сглаживание и масштаб")
+    details.setCheckable(True)
+    details.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+    details.setToolButtonStyle(
+        QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    ss.addWidget(details)
+    advanced_frame = QtWidgets.QWidget()
+    advanced = QtWidgets.QVBoxLayout(advanced_frame)
+    advanced.setContentsMargins(0, 0, 0, 0)
+    advanced.setSpacing(8)
+    smoothing_row = _field(
+        advanced, "Сглаживание мощности FFT, число линий", win.smooth)
+    win._modern_spectrum_smoothing_row = smoothing_row
+    advanced.addWidget(win.axis_button)
+    auto = QtWidgets.QPushButton("Сбросить масштаб и увеличить автоматически")
     auto.clicked.connect(win._reset_spectrum_axis)
-    advanced_column.addWidget(auto)
-    response = QtWidgets.QPushButton("Посмотреть АЧХ фильтра спектра…")
+    advanced.addWidget(auto)
+    response = QtWidgets.QPushButton("АЧХ выбранного локального фильтра…")
     response.clicked.connect(lambda: _filter_response_dialog(win, "spectrum"))
-    advanced_column.addWidget(response)
+    advanced.addWidget(response)
     win.operator_info.setWordWrap(True)
     win.operator_info.setProperty("helpText", True)
-    advanced_column.addWidget(win.operator_info)
+    advanced.addWidget(win.operator_info)
     ss.addWidget(advanced_frame)
     advanced_frame.hide()
-    def toggle_spectrum_detail(checked):
+    def toggle_details(checked):
         advanced_frame.setVisible(checked)
-        spectrum_detail.setArrowType(
+        details.setArrowType(
             QtCore.Qt.ArrowType.DownArrow if checked
             else QtCore.Qt.ArrowType.RightArrow)
-    spectrum_detail.toggled.connect(toggle_spectrum_detail)
-    win._modern_spectrum_detail = spectrum_detail
-    def db_visibility(*_):
-        db_row.setVisible(win.yscale.currentData() == "db")
-    win.yscale.currentIndexChanged.connect(db_visibility)
-    win.spectrum_view.currentIndexChanged.connect(db_visibility)
-    db_visibility()
+    details.toggled.connect(toggle_details)
+    win._modern_spectrum_detail = details
+
+    filter_notes = {
+        "none": "Без дополнительного локального фильтра.",
+        "highpass": "ФВЧ: оставляет частоты выше нижней границы.",
+        "lowpass": "ФНЧ: оставляет частоты ниже верхней границы.",
+        "bandpass": "Полосовой: нижняя и верхняя границы.",
+        "notch50": "Режектор 50 Гц · Q=35. Не включается автоматически.",
+        "notch60": "Режектор 60 Гц · Q=35. Не включается автоматически.",
+        "octave": "1/1 октавы — входной фильтр, не расчёт октавного спектра.",
+        "third_octave": "1/3 октавы — входной фильтр, не AUX4700.",
+        "double_octave": "2 октавы — входной полосовой фильтр.",
+        "original_preset": "Названия 32 полос MVKView, локальная реализация, не OEM FIR.",
+    }
+    def refresh_setup(*_):
+        mode = win.analysis.currentData()
+        kind = win.kind.currentData()
+        ymode = win.yscale.currentData()
+        envelope_row.setVisible(mode == "envelope")
+        db_row.setVisible(ymode == "db")
+        amplitude_row.setVisible(mode == "fft")
+        win.y_height_choice.setEnabled(mode == "fft")
+        smoothing_row.setVisible(mode == "fft")
+        win.smooth.setEnabled(mode == "fft")
+        scale_note.setText(
+            "Плотность мощности PSD, амплитудная плотность ASD и "
+            "СКЗ третьоктавных полос имеют собственные единицы; "
+            "используется автомасштаб."
+            if mode != "fft" else
+            "Амплитуда спектральных линий — СКЗ; масштаб задаётся "
+            "в выбранной физической единице или дБ.")
+        ch = win._gui_ring.channel(win.adc.currentData())
+        current = getattr(win, "_spectrum", None)
+        fs = (
+            int(current.rate_hz)
+            if current is not None and
+            current.kind == kind and current.mode == mode
+            else int(ch.rate_hz) if ch is not None else None
+        )
+        nfft = int(win.nfft.currentData())
+        if fs is not None and fs > 0:
+            timing = (
+                f"Fs {fs:g} Гц · Δf {fs/nfft:.5g} Гц · "
+                f"длительность окна {nfft/fs:.5g} с · "
+                f"Nyquist {fs/2:g} Гц")
+        else:
+            timing = "Fs неизвестна: Δf и длительность пока не подтверждены"
+        processing = {
+            "fft": "FFT: окно Хэнна (фиксировано), амплитуда линий СКЗ.",
+            "welch": "PSD Welch: окно Хэнна, перекрытие 50%, мощность/Гц.",
+            "asd": "ASD Welch: окно Хэнна, перекрытие 50%, √PSD.",
+            "third_octave": "1/3 октавы: интеграл PSD Welch по реальным полосам.",
+            "envelope": "Огибающая: полосовой фильтр + Hilbert, только ВУ.",
+        }.get(mode, "")
+        if mode in ("welch", "asd", "third_octave") and kind != "acceleration":
+            processing += (
+                " ВС/ВП: локальный ФВЧ ≥2 Гц для подавления дрейфа.")
+        if current is not None and current.kind == kind and current.mode == mode:
+            if mode in ("welch", "asd", "third_octave"):
+                processing += f" Принято {current.segments} сегм. Welch."
+        calc_info.setText(f"{timing}. {processing}")
+        filter_mode = win.filter_choice.currentData()
+        centre.setVisible(filter_mode in (
+            "original_preset", "octave", "third_octave", "double_octave"))
+        centre_label.setText(
+            "Полоса меню MVKView" if filter_mode == "original_preset"
+            else "Центральная частота, Гц")
+        win.filter_button.setVisible(filter_mode in (
+            "highpass", "lowpass", "bandpass"))
+        filter_text = filter_notes.get(filter_mode, "Неизвестный фильтр.")
+        if fs is not None and fs > 0:
+            try:
+                settings = win._read_settings()
+                low, high = settings[3]
+                if low >= fs/2 or (high is not None and high >= fs/2):
+                    filter_text += (
+                        f" НЕДОПУСТИМО для Fs={fs} Гц: "
+                        f"граница должна быть ниже {fs/2:g} Гц (Nyquist).")
+                if settings[7] is not None and settings[7] >= fs/2:
+                    filter_text += (
+                        f" Режектор {settings[7]:g} Гц недопустим "
+                        f"для Nyquist {fs/2:g} Гц.")
+            except (ValueError, TypeError) as exc:
+                filter_text += f" Проверьте полосу: {exc}."
+        filter_note.setText(filter_text)
+
+    win._modern_refresh_spectrum_setup = refresh_setup
+    for control in (
+        win.nfft, win.analysis, win.kind, win.yscale, win.db_ref,
+        win.adc, win.filter_choice, win.filter_center):
+        control.currentIndexChanged.connect(refresh_setup)
+    refresh_setup()
     ss.addStretch(1)
     inspector.addWidget(spectrum_panel)
 

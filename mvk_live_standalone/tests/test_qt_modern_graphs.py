@@ -657,3 +657,141 @@ def test_overview_db_to_linear_vu_redraws_immediately_without_new_fft(widget):
     _,y_back=w.overview_spec_curve.getData()
     np.testing.assert_allclose(y_back,y_db,rtol=1e-12,atol=1e-10)
     assert w._native.state()==w._native.ProcessState.NotRunning
+
+
+
+def test_spectrum_panel_physical_modes_and_controls_are_honest(widget):
+    """Professional spectrum setup: quantity/method/N/axes/filter are distinct."""
+    from PySide6 import QtWidgets
+    w,_=widget
+    panel=w._modern_inspector.widget(0)
+    assert all(panel.isAncestorOf(control) for control in (
+        w.kind,w.analysis,w.nfft,w.yscale,w.db_ref,w.xscale,
+        w.x_limit_choice,w.y_height_choice,w.filter_choice,
+        w.filter_center,w.envelope_band,w.smooth))
+    assert w._modern_spectrum_setup_info.text()
+    assert "Fs неизвестна" in w._modern_spectrum_setup_info.text()
+    assert "Хэнна" in w._modern_spectrum_setup_info.text()
+    assert "Отсчётов в FFT" in " ".join(
+        a.text() for a in panel.findChildren(QtWidgets.QLabel))
+    assert not w._modern_spectrum_envelope_row.isVisible()
+    w.analysis.setCurrentIndex(w.analysis.findData("welch"))
+    assert "50%" in w._modern_spectrum_setup_info.text()
+    assert not w._modern_spectrum_smoothing_row.isVisible()
+    assert not w.smooth.isEnabled()
+    assert not w.y_height_choice.isEnabled()
+    assert "автомасштаб" in " ".join(
+        a.text().lower() for a in panel.findChildren(QtWidgets.QLabel))
+    w.analysis.setCurrentIndex(w.analysis.findData("asd"))
+    assert "ASD Welch" in w._modern_spectrum_setup_info.text()
+    w.analysis.setCurrentIndex(w.analysis.findData("fft"))
+    assert w.smooth.isEnabled()
+    assert "Хэнна" in w._modern_spectrum_setup_info.text()
+    assert w.y_height_choice.isEnabled()
+    w.analysis.setCurrentIndex(w.analysis.findData("envelope"))
+    assert w.kind.currentData()=="acceleration"
+    assert w._modern_spectrum_envelope_row.isVisible()
+    assert not w._modern_spectrum_smoothing_row.isVisible()
+    w.kind.setCurrentIndex(w.kind.findData("velocity"))
+    assert w.kind.currentData()=="acceleration"
+
+
+def test_spectrum_real_fft_resolution_and_stale_filter_are_not_misleading(widget):
+    from mvk_live_standalone.vibration import vibration_plot_values
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    def calculate():
+        for _ in range(5):
+            if w._future is None:
+                w._last_fft_submit=0.0
+                w._schedule_fft()
+            assert w._future is not None
+            w._future.result(timeout=20)
+            w._collect_analysis()
+            if (w._spectrum is not None and
+                    w._last_completed_spectrum_settings == w._read_settings()):
+                return w._spectrum
+        pytest.fail("No current verified FFT")
+    raw=calculate()
+    assert raw.resolution_hz==pytest.approx(1.0)
+    assert "Δf 1 Гц" in w._modern_spectrum_setup_info.text()
+    assert "длительность окна 1 с" in w._modern_spectrum_setup_info.text()
+    peak=float(raw.rms[np.argmin(abs(raw.hz-100))])
+    assert peak>0.9
+    w.filter_choice.setCurrentIndex(w.filter_choice.findData("highpass"))
+    w.custom_low.setValue(200.)
+    assert w._spectrum is None
+    assert w._last_completed_spectrum_settings is None
+    assert len(w.overview_spec_curve.getData()[0])==0
+    assert "Пересчёт" in w.metrics.text()
+    filtered=calculate()
+    attenuation=filtered.rms[np.argmin(abs(filtered.hz-100))]
+    assert attenuation < .1 * peak
+    assert "ФВЧ" in w._modern_spectrum_filter_note.text()
+    w.nfft.setCurrentIndex(w.nfft.findData(16384))
+    assert w._spectrum is None
+    longer=calculate()
+    assert longer.nfft==16384
+    assert longer.resolution_hz==pytest.approx(.5)
+    assert "Δf 0.5 Гц" in w._modern_spectrum_setup_info.text()
+    assert "длительность окна 2 с" in w._modern_spectrum_setup_info.text()
+
+
+def test_spectrum_welch_density_and_asd_square_root_with_real_source(widget):
+    from mvk_live_standalone.vibration import vibration_plot_values
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    w.analysis.setCurrentIndex(w.analysis.findData("welch"))
+    def calculate(kind):
+        for _ in range(5):
+            if w._future is None:
+                w._last_fft_submit=0.0
+                w._schedule_fft()
+            assert w._future is not None
+            w._future.result(timeout=20)
+            w._collect_analysis()
+            if (w._spectrum is not None and
+                    w._spectrum.mode==kind and
+                    w._last_completed_spectrum_settings==w._read_settings()):
+                return w._spectrum
+        pytest.fail(kind)
+    power=calculate("welch")
+    i=int(np.argmin(abs(power.hz-100)))
+    p=float(power.rms[i])
+    assert p>0
+    assert "(м/с²)²/Гц" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
+    assert not w.smooth.isEnabled()
+    assert "50%" in w._modern_spectrum_setup_info.text()
+    assert "сегм." in w._modern_spectrum_setup_info.text()
+    assert vibration_plot_values(power,"db")[i] == pytest.approx(
+        10*math.log10(p/(1e-6**2)),abs=1e-5)
+    w.analysis.setCurrentIndex(w.analysis.findData("asd"))
+    assert w._spectrum is None
+    amplitude=calculate("asd")
+    assert amplitude.rms[i]**2==pytest.approx(p,rel=1e-7)
+    assert vibration_plot_values(amplitude,"db")[i] == pytest.approx(
+        20*math.log10(float(amplitude.rms[i])/1e-6),abs=1e-5)
+    assert "м/с²/√Гц" in w.spec.getPlotItem().getAxis("left").label.toPlainText()
+    assert not w.y_height_choice.isEnabled()
+
+
+def test_spectrum_out_of_nyquist_filter_never_uses_stale_curve(widget):
+    w,_=widget
+    _feed(w,fs=8192,n=32768)
+    w.nfft.setCurrentIndex(w.nfft.findData(8192))
+    w.filter_choice.setCurrentIndex(
+        w.filter_choice.findData("third_octave"))
+    w.filter_center.setCurrentIndex(
+        w.filter_center.findData(25000.))
+    assert "НЕДОПУСТИМО" in w._modern_spectrum_filter_note.text()
+    w._last_fft_submit=0.0
+    w._schedule_fft()
+    assert w._future is not None
+    w._future.result(timeout=20)
+    w._collect_analysis()
+    assert w._spectrum is None
+    assert "спектр недоступен" in w.metrics.text()
+    assert len(w.overview_spec_curve.getData()[0])==0
+    assert w._native.state()==w._native.ProcessState.NotRunning
