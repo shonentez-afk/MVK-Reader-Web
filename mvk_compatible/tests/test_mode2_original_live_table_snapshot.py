@@ -44,11 +44,11 @@ def test_one_shot_live_table_uses_only_selected_valid_param_and_pipe_layout(
     assert rows[31]==()
     assert rows[32]==("Параметр (RAW)","Тахометр 1","")
     assert rows[1][1]=="0x00000051 (RAW)"
-    assert rows[1][2]=="—"   # original ADC GetUnits is not yet verified
+    assert rows[1][2]==""    # original Advanced GetUnits is empty
     assert rows[7][1]=="1.5 (RAW)"
-    assert rows[7][2]=="—"
+    assert rows[7][2]=="м/с2"
     assert rows[-6][1]=="50.5 (RAW)"
-    assert rows[-6][2]=="—"  # original TACH GetUnits unknown
+    assert rows[-6][2]=="Гц"  # exact original TACH GetUnits
     assert rows[-1][1]=="—"  # no stale +FE TACH pseudo-impulse
 
     filename=_name(tmp_path)

@@ -15,31 +15,53 @@ import (
     "encoding/binary"
     "encoding/hex"
     "errors"
+    "fmt"
     "math"
     "strconv"
     "strings"
 )
 
-const sourceValuesTextCandidateFormatterVersion="MVK_SOURCE_WRITEVALUES_SOURCE_TEXT_CANDIDATE_V1"
+const sourceValuesTextCandidateFormatterVersion="MVK_SOURCE_WRITEVALUES_SOURCE_TEXT_CANDIDATE_V2"
 
 // Approximate _Unit114:007B2090 FormatSpec=4 (from
 // _Unit115:007CF3A8). It uses a source Float32 value, 4 significant
 // digits and trailing-zero cleanup; differences near decimal rounding
 // boundaries are explicitly NOT certified against Win32 FormatFloat.
 func sourceFloat32FourSignificantCandidate(data []byte)string{
-    f:=float64(math.Float32frombits(binary.LittleEndian.Uint32(data)))
-    if math.IsNaN(f){return "NAN"} // _Unit114:007B1CC0/007B20BB
+    f32:=math.Float32frombits(binary.LittleEndian.Uint32(data))
+    f:=float64(f32)
+    if math.IsNaN(f){return "NAN"}
     if math.IsInf(f,0){return "UNKNOWN_NONFINITE"}
     if f==0{return "0"}
-    places:=3-int(math.Floor(math.Log10(math.Abs(f))))
-    if places<0{places=0}
-    if places>64{places=64}
+    a:=f32
+    if a<0 {a=-a}
+    // _Unit114:007B20F3..007B2151: multiply Float32 by 10 until
+    // abs>=10^(FormatSpec-1), appending one fractional zero each time.
+    // The common GetValueText overload uses FormatSpec=4.
+    places:=0
+    for a<float32(1000) {
+        a*=float32(10)
+        places++
+        if places>64 {return "UNKNOWN_FLOAT32_FORMAT"}
+    }
+    // Go rounding is a candidate, NOT certified Win32/x87 FormatFloat.
     s:=strconv.FormatFloat(f,'f',places,32)
     if strings.Contains(s,"."){
         s=strings.TrimRight(s,"0")
         s=strings.TrimRight(s,".")
     }
+    if s=="-0"{return "0"}
     return s
+}
+func sourceAdvancedIsOriginalSelectorValue(field sourceSelectedRawValue)bool{
+    if field.AdvancedSelectedID==nil||field.Group!="RESULT"{return false}
+    id:=*field.AdvancedSelectedID
+    switch field.CellIndex {
+    case 0:return id<=1
+    case 1:return id==0||id==1||id==3||id==7
+    case 2:return id<=3
+    }
+    return false
 }
 
 func sourceValuesTextCandidateRow(tick sourceValuesRawTick)([]byte,error){
@@ -76,8 +98,16 @@ func sourceValuesTextCandidateRow(tick sourceValuesRawTick)([]byte,error){
                 return nil,errors.New("source Advanced cell missing original ID evidence")
             }
             // This is NOT the original localized GetTitleByID.
-            row.WriteString("UNRESOLVED_ADVANCED_ID_")
-            row.WriteString(strconv.FormatUint(uint64(*field.AdvancedSelectedID),10))
+            if sourceAdvancedIsOriginalSelectorValue(field){
+                row.WriteString("UNRESOLVED_ADVANCED_ID_")
+                row.WriteString(strconv.FormatUint(uint64(*field.AdvancedSelectedID),10))
+            } else if field.Group=="RESULT" && field.CellIndex>=0 &&
+                       field.CellIndex<3 {
+                // _Unit115:007D0845: unknown GetTitleByID is (0xXXXXXXXX).
+                row.WriteString(fmt.Sprintf("(0x%08X)",*field.AdvancedSelectedID))
+            } else {
+                return nil,errors.New("source Advanced list index invalid")
+            }
         default:
             return nil,errors.New("source text candidate unknown original cell kind")
         }

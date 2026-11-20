@@ -27,6 +27,7 @@ from .original_live_result_registers import (
     SCHEMA, _raw_f32, _raw_u32, _f32_text, _u32_text,
 )
 from .original_pagestatus_source import UNAVAILABLE
+from .original_get_value_text_30 import live_get_units
 
 TABLE_SOURCE="MVK_MODE2_SOURCE_LAYOUT_LIVE_RAW_TABLE_V1"
 TABLE_PREFIX="TABLE-"
@@ -114,7 +115,7 @@ def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
             values.append(_cell(word,"UInt32" if n<3 else "Float32"))
         rows.append((
             f"ResultAdcCells {n+1} · +0x{addr:03X}",
-            *values,UNAVAILABLE))
+            *values,live_get_units("RESULT",n)))
     # The original writes the first (RMS) of THREE parallel
     # 24-cell ResultAdcBandCellList slices; not the 43 SPEC bank.
     for n in range(24):
@@ -122,7 +123,7 @@ def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
             f"ResultAdcBandCells {n+1} · +0x{0x60+2*n:03X}",
             *(_cell(bank["adc"][i]["rms_24_raw_f32_le"][n],"Float32")
               for i in adcs),
-            UNAVAILABLE,
+            live_get_units("BAND",n),
         ))
     rows.append(())
     rows.append(("Параметр (RAW)",)+tuple(
@@ -133,7 +134,7 @@ def build_live_table_rows(status:dict, selected)->tuple[tuple[str,...],...]:
             *(_cell(
                 bank["tach"][i]["source_field_0_2_4_6_8_fe_raw_le"][n],
                 "Float32" if n<2 else "UInt32") for i in tachs),
-            UNAVAILABLE,
+            live_get_units("TACH",n),
         ))
     if len(rows)!=MAX_TABLE_ROWS+3:
         raise ValueError("Source TABLE original 2-section count mismatch")

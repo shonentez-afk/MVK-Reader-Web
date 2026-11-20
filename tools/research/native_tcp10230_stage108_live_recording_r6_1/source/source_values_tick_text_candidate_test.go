@@ -45,3 +45,24 @@ func TestSourceValuesTextCandidateKnownNumericPrimitivesAndNonfinite(t *testing.
         }
     }
 }
+
+func TestSourceWriteValuesUnknownAdvancedIDUsesSourceHexFallback(t *testing.T){
+    raw:="51000000"
+    id:=uint32(5)
+    tick:=sourceValuesRawTick{
+        Schema:sourceValuesRawLayoutSchema,LocalTime:"16:24:12.173",
+        OrderedFields:[]sourceSelectedRawValue{{
+            Group:"RESULT",CellIndex:1,ValueKind:"U32_ADVANCED_UNFORMATTED",
+            SourceCellType:10,AdvancedSelectedID:&id,RawLE:&raw,
+        }},
+    }
+    text,e:=sourceValuesTextCandidateRow(tick)
+    if e!=nil{t.Fatal(e)}
+    if string(text)!="16:24:12.173|(0x00000005)\r\n"{
+        t.Fatalf("unknown Advanced fallback: %q",text)
+    }
+    tick.OrderedFields[0].CellIndex=3
+    if _,e:=sourceValuesTextCandidateRow(tick);e==nil{
+        t.Fatal("Advanced unexpectedly allowed outside first three Result slots")
+    }
+}
