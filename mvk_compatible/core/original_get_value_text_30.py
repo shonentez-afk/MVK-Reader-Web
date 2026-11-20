@@ -187,6 +187,7 @@ def get_value_text_30(
     windows_ansi_code_page: str | None = None,
     advanced_kind: str | None = None,
     local_advanced_translations: Mapping[str,str] | None = None,
+    source_locale: str | None = None,
     advanced_source_bits: int | None = None,
     advanced_source_bit_start: int = 0,
     advanced_source_composite: bool = False,
@@ -203,6 +204,30 @@ def get_value_text_30(
         raise ValueError("Source numeric formatter spec must be 1..16")
     if type(data_pointer_known_absent) is not bool:
         raise ValueError("Data pointer proof must be Boolean")
+    if advanced_kind is not None and (
+            source_type!=10 or advanced_kind not in SOURCE_SELECTOR_IDS):
+        raise ValueError("Only source type 10 has a supported Advanced list")
+    if source_locale is not None and (
+            source_type!=10 or advanced_kind is None):
+        raise ValueError("Source RU locale can only render an Advanced type-10 cell")
+    if source_locale is not None and source_locale!="ru-ru":
+        raise ValueError("Only the source-extracted ru-ru Advanced locale is available")
+    if source_locale is not None and local_advanced_translations is not None:
+        raise ValueError("Specify source locale OR external translations, never both")
+    if source_locale=="ru-ru":
+        from .original_ru_advanced_catalog import original_ru_advanced_translations
+        local_advanced_translations=original_ru_advanced_translations(advanced_kind)
+    if advanced_kind in ADVANCED and (advanced_source_bits is not None or
+                                     advanced_source_bit_start!=0 or
+                                     advanced_source_composite):
+        raise ValueError("Known source Result Advanced fields fix Bits/Start and are not composite")
+    if advanced_kind is None and (
+            advanced_source_bits is not None or advanced_source_bit_start!=0 or
+            advanced_source_composite):
+        raise ValueError("Non-Advanced cell cannot set source Advanced bit metadata")
+    if advanced_kind is not None and advanced_kind not in ADVANCED and (
+            advanced_source_bits is None):
+        raise ValueError("Other source Advanced lists require explicit Bits/Start")
     case=TYPE_TO_CASE[source_type]
     size=SOURCE_BYTES_PER_TYPE[source_type]
     def result(text:str, available:bool=True)->SourceTextCandidate30:
@@ -216,14 +241,6 @@ def get_value_text_30(
         return result("UNKNOWN",False)
     if type(raw) is not bytes or len(raw)!=size:
         raise ValueError("Source cell requires the exact original type width")
-    if advanced_kind is not None and (
-            source_type!=10 or advanced_kind not in SOURCE_SELECTOR_IDS):
-        raise ValueError("Only source type 10 has a supported Advanced list")
-    if advanced_kind in ADVANCED and advanced_source_bits is not None:
-        raise ValueError("Known source Result Advanced fields fix their own Bits/Start")
-    if advanced_kind is not None and advanced_kind not in ADVANCED and (
-            advanced_source_bits is None):
-        raise ValueError("Other source Advanced lists require explicit Bits/Start")
     value=struct.unpack("<I",raw[:4])[0]
     if case==1:
         return result(_float32(raw[:4],format_spec))
@@ -288,6 +305,8 @@ def source_getvalue_30_provenance() -> dict:
         "source_type_widths_verified_from_idp":True,
         "source_get_units_from_list_metadata":True,
         "advanced_local_resource_required_for_original_titles":True,
+        "original_ru_advanced_labels_from_extracted_resource":41,
+        "original_ru_advanced_selector_lists":10,
         "original_delphi_compatibility_verified":False,
         "original_win32_formatfloat_verified":False,
         "original_ansi_csv_byte_parity_verified":False,

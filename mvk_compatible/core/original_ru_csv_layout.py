@@ -10,7 +10,7 @@ paired against the same register-image inputs of original MVKView.
 """
 from __future__ import annotations
 
-from .original_get_value_text_30 import get_value_text_30, source_advanced_id
+from .original_get_value_text_30 import get_value_text_30
 from .original_get_value_text_30 import live_get_units
 
 PROFILE="MVK_ORIGINAL_RU_CP1251_VALUES_TABLE_LAYOUT_V1"
@@ -34,13 +34,6 @@ TACH_TITLES=(
     "Частота вращения","Среднее приращение ЧВ на один оборот",
     "Ошибка датчика оборотов","Последняя метка времени",
     "Текущее значение на входе","Наличие импульсов на входе",
-)
-ORIGINAL_ADVANCED_RU=(
-    {0:"ОК",1:"Перегрузка"},
-    {0:"ОК",1:"Идет заполнение (32 с)",
-     3:"Идет заполнение (4, 32 с)",
-     7:"Идет заполнение (1, 4, 32 с)"},
-    {0:"ОК",1:"Обрыв",2:"КЗ линии",3:"Неисправность"},
 )
 ADVANCED_KINDS=("result_overload","result_buffers","result_sensor_state")
 assert len(RESULT_TITLES)==6 and len(TACH_TITLES)==6
@@ -111,8 +104,13 @@ def source_ru_advanced_title(index:int,raw_uint32:int)->str:
         raise ValueError("Source Advanced belongs only to first three RESULT")
     if type(raw_uint32) is not int or not 0<=raw_uint32<1<<32:
         raise ValueError("Source Advanced requires complete DWORD")
-    ident=source_advanced_id(raw_uint32,ADVANCED_KINDS[index])
-    return ORIGINAL_ADVANCED_RU[index].get(ident,f"(0x{ident:08X})")
+    # Call the exact same type-10 source dispatcher used by the
+    # independent GetValueText acceptance code. The RU lookup is taken
+    # from the extracted original EXTLOCALIZATION resource (41 IDs),
+    # not maintained as a second copy of three alarm dictionaries.
+    return get_value_text_30(
+        10,raw_uint32.to_bytes(4,"little"),advanced_kind=ADVANCED_KINDS[index],
+        source_locale="ru-ru").text
 
 
 def source_ru_typed_text(group:str,index:int,raw_le_hex:str|None)->str:

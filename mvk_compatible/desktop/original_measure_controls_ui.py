@@ -100,10 +100,13 @@ class OriginalMeasureControls:
         self.buttons["bWriteValues"].clicked.connect(
             lambda:self._save_verified_table(filtered=True))
         self.buttons["bWriteValues"].setToolTip(
-            "Оригинал: _Unit128:0084E988 -> WriteValues -> 43/24/43/6 "
-            "маски. При LIVE эта кнопка фиксирует границы реально "
-            "подтверждённых AUX-тиков; после принятия Native ZIP создаётся "
-            "локальный проверенный CSV, а не исходный Delphi WriteValues.")
+            "Оригинал: _Unit128:0084E988 -> WriteValues; для каждого АЦП "
+            "43 спектральные полосы, 6 RESULT, 24 BAND, затем 6 TACH. "
+            "В LIVE запись начинается по кнопке и строки создаются только "
+            "после реального PARAM 0x3100 (НЕ AUX 0x4700). "
+            "Сохраняются исходный пакет, RAW, текстовый и русский "
+            "CP1251-кандидат. Точное Delphi/Win32 форматирование "
+            "на живом МВК01 ещё проверяется.")
         self.status=QLabel("Без подтверждённого источника",self.panel)
         self.status.setObjectName("lbStatus")
         self.status.setWordWrap(True)
