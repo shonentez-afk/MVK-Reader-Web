@@ -40,8 +40,17 @@ def test_all_41_original_dynamic_ru_keys_are_present_exactly_once():
         assert set(translations)=={f"{prefix}Cell{x}" for x in ids}
         assert all(translations[f"{prefix}Cell{x}"] for x in ids)
         for id_value in ids:
+            # Advanced source numeric IDs are not raw DWORDs for
+            # ResultBuffers and ResultSensorState: _Unit125:00804A30
+            # describes Bits/BitStart 3/4 and 2/10 respectively.
+            source_bit_start={
+                "result_overload":0,
+                "result_buffers":4,
+                "result_sensor_state":10,
+            }.get(kind,0)
+            raw_word=id_value<<source_bit_start
             translated=get_value_text_30(
-                10,_u32(id_value),**_metadata(kind,id_value))
+                10,_u32(raw_word),**_metadata(kind,id_value))
             assert translated.text==translations[f"{prefix}Cell{id_value}"]
             assert translated.source_route_verified
             assert not translated.original_tlanguage_verified
