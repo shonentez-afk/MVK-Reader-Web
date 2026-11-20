@@ -56,11 +56,18 @@ type sourceLiveValuesWindow struct {
     SourceTextCandidateRows uint64 `json:"source_text_candidate_rows"`
     SourceTextCandidateBytes uint64 `json:"source_text_candidate_bytes"`
     SourceTextCandidateSHA256 string `json:"source_text_candidate_sha256"`
+    SourceRUProfileCandidateName string `json:"source_ru_profile_candidate_name"`
+    SourceRUProfileCandidateRows uint64 `json:"source_ru_profile_candidate_rows"`
+    SourceRUProfileCandidateBytes uint64 `json:"source_ru_profile_candidate_bytes"`
+    SourceRUProfileCandidateSHA256 string `json:"source_ru_profile_candidate_sha256"`
+    OriginalRUProfileCSVByteParityVerified bool `json:"original_ru_profile_csv_byte_parity_verified"`
     OriginalDelphiCSVParityVerified bool `json:"original_delphi_values_csv_byte_parity_verified"`
     layoutFile *os.File
     layoutDigest hash.Hash
     textFile *os.File
     textDigest hash.Hash
+    ruProfileFile *os.File
+    ruProfileDigest hash.Hash
     Outcome string `json:"outcome"`
     file *os.File
     digest hash.Hash
@@ -125,6 +132,38 @@ func(w *sourceLiveValuesWriter)applyFrameMarks(m *Monitor)error{
                 _=os.Remove(filepath.Join(w.dir,name))
                 return e
             }
+            profileName:=fmt.Sprintf("SOURCE_W%02d_VALUES_3100_RU_PROFILE_CANDIDATE.csv",n)
+            profileHeader,e:=sourceRUValuesCandidateHeader(&sourceLiveValuesWindow{
+                Channels:mark.Channels,Spec:mark.Spec,Values:mark.Values,
+            })
+            if e!=nil{
+                _=textFile.Close();_=layout.Close();_=f.Close()
+                _=os.Remove(filepath.Join(w.dir,textName))
+                _=os.Remove(filepath.Join(w.dir,rawLayoutName))
+                _=os.Remove(filepath.Join(w.dir,name))
+                return e
+            }
+            ruProfile,e:=os.OpenFile(filepath.Join(w.dir,profileName),
+                os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
+            if e!=nil{
+                _=textFile.Close();_=layout.Close();_=f.Close()
+                _=os.Remove(filepath.Join(w.dir,textName))
+                _=os.Remove(filepath.Join(w.dir,rawLayoutName))
+                _=os.Remove(filepath.Join(w.dir,name))
+                return e
+            }
+            headerWritten,e:=ruProfile.Write(profileHeader)
+            if e!=nil || headerWritten!=len(profileHeader){
+                _=ruProfile.Close()
+                _=textFile.Close();_=layout.Close();_=f.Close()
+                _=os.Remove(filepath.Join(w.dir,profileName))
+                _=os.Remove(filepath.Join(w.dir,textName))
+                _=os.Remove(filepath.Join(w.dir,rawLayoutName))
+                _=os.Remove(filepath.Join(w.dir,name))
+                return errors.New("source RU-profile candidate short original header write")
+            }
+            ruDigest:=sha256.New()
+            _,_=ruDigest.Write(profileHeader)
             current:=&sourceLiveValuesWindow{
                 Window:n,BeginOperatorSequence:mark.Sequence,
                 BeginTick:m.summary.ValuesTicks,
@@ -135,13 +174,17 @@ func(w *sourceLiveValuesWriter)applyFrameMarks(m *Monitor)error{
                 layoutFile:layout,layoutDigest:sha256.New(),
                 SourceTextCandidateName:textName,
                 textFile:textFile,textDigest:sha256.New(),
+                SourceRUProfileCandidateName:profileName,
+                SourceRUProfileCandidateBytes:uint64(len(profileHeader)),
+                ruProfileFile:ruProfile,ruProfileDigest:ruDigest,
             }
             w.windows=append(w.windows,current)
             w.active=current
-            m.filenames=append(m.filenames,name,rawLayoutName,textName)
+            m.filenames=append(m.filenames,name,rawLayoutName,textName,profileName)
             m.summary.Files[name]=name
             m.summary.Files[rawLayoutName]=rawLayoutName
             m.summary.Files[textName]=textName
+            m.summary.Files[profileName]=profileName
         case "values_end":
             if w.active==nil{return errors.New("source live WriteValues end without begin")}
             w.active.EndOperatorSequence=mark.Sequence
@@ -191,6 +234,11 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
     textDigest:=sha256.Sum256(textCandidate)
     snapshot.TextCandidateRowSHA256=hex.EncodeToString(textDigest[:])
     snapshot.TextCandidateFormatterVersion=sourceValuesTextCandidateFormatterVersion
+    ruProfileCandidate,e:=sourceRUValuesCandidateRow(snapshot)
+    if e!=nil{return e}
+    profileRowDigest:=sha256.Sum256(ruProfileCandidate)
+    snapshot.RUProfileCandidateRowSHA256=hex.EncodeToString(profileRowDigest[:])
+    snapshot.RUProfileCandidateFormatterVersion=sourceValuesRUCSVProfileVersion
     digest:=sha256.Sum256(trigger.Payload)
     value:=sourceLiveValuesEvent{
         FrameIndex:m.summary.TotalFrames,TickIndex:m.summary.ValuesTicks-1,
@@ -219,6 +267,14 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
         return errors.New("source WriteValues short text-candidate record write")
     }
     _,_=w.active.textDigest.Write(textCandidate)
+    profileWritten,e:=w.active.ruProfileFile.Write(ruProfileCandidate)
+    if e!=nil{return e}
+    if profileWritten!=len(ruProfileCandidate){
+        return errors.New("source RU-profile candidate short streaming record write")
+    }
+    _,_=w.active.ruProfileDigest.Write(ruProfileCandidate)
+    w.active.SourceRUProfileCandidateRows++
+    w.active.SourceRUProfileCandidateBytes+=uint64(profileWritten)
     w.active.SourceTextCandidateRows++
     w.active.SourceTextCandidateBytes+=uint64(textWritten)
     w.active.SourceRawLayoutRows++
@@ -246,6 +302,12 @@ func(w *sourceLiveValuesWriter)closeWindow(m *Monitor,outcome string)error{
         if e:=current.textFile.Close();e!=nil{return e}
         current.textFile=nil
     }
+    if current.ruProfileFile!=nil{
+        if e:=current.ruProfileFile.Close();e!=nil{return e}
+        current.ruProfileFile=nil
+    }
+    current.SourceRUProfileCandidateSHA256=hex.EncodeToString(
+        current.ruProfileDigest.Sum(nil))
     current.SourceTextCandidateSHA256=hex.EncodeToString(
         current.textDigest.Sum(nil))
     current.SourceRawLayoutSHA256=hex.EncodeToString(
@@ -294,5 +356,6 @@ func(w *sourceLiveValuesWriter)cleanup(){
         if win.file!=nil{_ = win.file.Close();win.file=nil}
         if win.layoutFile!=nil{_ = win.layoutFile.Close();win.layoutFile=nil}
         if win.textFile!=nil{_ = win.textFile.Close();win.textFile=nil}
+        if win.ruProfileFile!=nil{_ = win.ruProfileFile.Close();win.ruProfileFile=nil}
     }
 }

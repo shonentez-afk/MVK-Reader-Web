@@ -43,6 +43,8 @@ type sourceValuesRawTick struct {
     RawRowSHA256 string `json:"source_raw_layout_line_sha256"`
     TextCandidateRowSHA256 string `json:"source_text_candidate_line_sha256,omitempty"`
     TextCandidateFormatterVersion string `json:"source_text_candidate_formatter_version,omitempty"`
+    RUProfileCandidateRowSHA256 string `json:"source_ru_profile_candidate_line_sha256,omitempty"`
+    RUProfileCandidateFormatterVersion string `json:"source_ru_profile_candidate_formatter_version,omitempty"`
     ValidDWORDs int `json:"source_known_full_register_dwords"`
     UnknownSelected int `json:"unknown_or_unmapped_selected_cells"`
     ExtraLegacyFlagsIgnored int `json:"non_original_legacy_73_flag_bits_ignored"`

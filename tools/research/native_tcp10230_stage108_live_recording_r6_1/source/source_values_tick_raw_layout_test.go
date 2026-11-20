@@ -127,6 +127,25 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
        ev.TextCandidateFormatterVersion!=sourceValuesTextCandidateFormatterVersion{
         t.Fatalf("source candidate evidence/bit extraction incorrect: %+v",ev)
     }
+    profilePath:=filepath.Join(m.dir,"SOURCE_W01_VALUES_3100_RU_PROFILE_CANDIDATE.csv")
+    profile,e:=os.ReadFile(profilePath);if e!=nil{t.Fatal(e)}
+    profileHeader,e:=sourceRUValuesCandidateHeader(win)
+    if e!=nil{t.Fatal(e)}
+    profileRow,e:=sourceRUValuesCandidateRow(*ev)
+    if e!=nil{t.Fatal(e)}
+    if !bytes.Equal(profile,append(profileHeader,profileRow...)){
+        t.Fatal("source RU profile candidate must have real original headings and one accepted row")
+    }
+    profileSum:=sha256.Sum256(profile)
+    rowSum:=sha256.Sum256(profileRow)
+    if ev.RUProfileCandidateRowSHA256!=hex.EncodeToString(rowSum[:]) ||
+       ev.RUProfileCandidateFormatterVersion!=sourceValuesRUCSVProfileVersion ||
+       win.SourceRUProfileCandidateRows!=1 ||
+       win.SourceRUProfileCandidateBytes!=uint64(len(profile)) ||
+       win.SourceRUProfileCandidateSHA256!=hex.EncodeToString(profileSum[:]) ||
+       win.OriginalRUProfileCSVByteParityVerified{
+        t.Fatal("source 3100 RU candidate audit or parity gate mismatched")
+    }
     sum:=sha256.Sum256(text)
     if ev.RawRowSHA256!=hex.EncodeToString(sum[:]) ||
        win.SourceRawLayoutSHA256!=hex.EncodeToString(sum[:]) ||
