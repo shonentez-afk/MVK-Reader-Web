@@ -261,7 +261,7 @@ class OriginalMeasureControls:
     def _save_source_live_table(self):
         """Original bWriteTable is a one-shot snapshot, never WriteValues."""
         from ..core.original_live_table_snapshot import (
-            live_table_snapshot_ready, export_live_table_snapshot)
+            live_table_snapshot_ready, export_live_ru_table_candidate)
         status=self.window._native_live_status
         plan=getattr(self.window.original_shell,"live_file_plan",None)
         if (not self.window._live_active or self.window._measurement_exit_requested
@@ -280,7 +280,7 @@ class OriginalMeasureControls:
             "%Y-%m-%d--%H-%M-%S")+".csv"
         dest,_=QFileDialog.getSaveFileName(
             self.panel,
-            "Сохранить локальный LIVE снимок TABLE (RAW, не оригинальный Delphi CSV)",
+            "Сохранить LIVE TABLE: оригинальные русские поля (кандидат Win32)",
             proposed,"CSV (*.csv)")
         if not dest:
             return None
@@ -295,7 +295,7 @@ class OriginalMeasureControls:
                 "TABLE отменена: изменился или закончился источник PARAM")
             return None
         try:
-            report=export_live_table_snapshot(
+            report=export_live_ru_table_candidate(
                 current,selection,dest,expected_session_id=run_id)
         except (OSError,ValueError,UnicodeError,KeyError) as exc:
             self.window.original_window_man.spawn_error(
@@ -303,11 +303,11 @@ class OriginalMeasureControls:
             return None
         self.panel.setProperty("sourceOriginalLiveTableSnapshotReceipt",report)
         self.status.setText(
-            f"TABLE RAW · {report['source_table_row_count']} строк · "
+            f"TABLE RU/CP1251 · {report['source_table_row_count']} строк · "
             f"{len(report['source_table_selected_channels'])} каналов")
         self.window.statusBar().showMessage(
-            "LIVE TABLE: локальный источник PARAM; "
-            "GetValueText и Win32 CSV ещё не 1:1")
+            "LIVE TABLE: сохранён оригинальный RU/CP1251 формат, "
+            "но побайтовый Delphi GetValueText ещё не подтверждён")
         return report
 
     def render(self):

@@ -198,18 +198,77 @@ def compare_original_values_table(values_file, table_file) -> dict:
     }
 
 
+
+def verify_full_table_byte_rebuild(values_file,table_file)->dict:
+    """Reconstruct TABLE entirely from a unique original VALUES snapshot.
+
+    This is stronger than matching 90 cells: includes section headers,
+    source cell titles, units, CRLF and CP1251. It DOES NOT claim that
+    guessed register raw input reproduces an original Delphi Float32.
+    When TACH is selected, source VALUES/TABLE may not share the same
+    snapshots; this reconstruction intentionally requires no TACH columns.
+    """
+    from .original_ru_csv_layout import (
+        source_ru_table_rows,source_ru_encode_csv,PROFILE,
+    )
+    paired=compare_original_values_table(values_file,table_file)
+    ok=paired["classification"]=="verified_same_snapshot"
+    result={
+        "schema":"MVK_SOURCE_ORIGINAL_TABLE_FULL_BYTE_REBUILD_V1",
+        "source_layout_profile":PROFILE,
+        "original_values_table_unique_snapshot_verified":ok,
+        "full_table_bytes_equal":False,
+        "full_table_length":None,
+        "full_table_sha256":None,
+        "original_delphi_input_register_parity_verified":False,
+        "original_delphi_formatfloat_all_inputs_verified":False,
+        "private_original_values_embedded":False,
+        "instrument_commands_sent":False,
+    }
+    if not ok:
+        return result
+    vr,_=_read_csv(values_file)
+    tr,_=_read_csv(table_file)
+    # Original TACH section with unselected TACH has an empty header
+    # and 6 'label|units' lines. A selected TACH cannot be guessed.
+    if tr[33]!=["Наименование параметра",""] or any(
+            len(row)!=2 for row in tr[34:]):
+        return result
+    clock=paired["unique_matching_tick"]
+    matches=[row for row in vr[3:] if row[0]==clock]
+    if len(matches)!=1:return result
+    matched=matches[0]
+    channels=[int(ch.rsplit(" ",1)[1]) for ch in paired["values_channels"]]
+    per_adc=[
+        [matched[1+i*ADC_CELLS+SPEC_CELLS+j] for j in range(30)]
+        for i in range(len(channels))]
+    reconstructed=source_ru_encode_csv(source_ru_table_rows(
+        channels,[],per_adc,[]))
+    # Read only in memory and do not return measured values in report.
+    original=Path(table_file).read_bytes()
+    result["full_table_bytes_equal"]=reconstructed==original
+    result["full_table_length"]=len(reconstructed)
+    result["full_table_sha256"]=sha256(reconstructed).hexdigest()
+    return result
+
+
 def main(argv=None) -> int:
     """CLI: python -m mvk_compatible.core.original_values_table_pair_qa VALUES TABLE."""
     import argparse
     import json
     parser=argparse.ArgumentParser(
         description="Strict source VALUES/TABLE pairing without leaking CSV rows")
+    parser.add_argument("--full-table-parity",action="store_true",
+                        help="Verify all TABLE bytes from the unique VALUES snapshot")
     parser.add_argument("values")
     parser.add_argument("table")
     args=parser.parse_args(argv)
-    result=compare_original_values_table(args.values,args.table)
+    result=(verify_full_table_byte_rebuild(args.values,args.table)
+            if args.full_table_parity else
+            compare_original_values_table(args.values,args.table))
     print(json.dumps(result,ensure_ascii=False,indent=2))
-    return 0 if result["classification"]=="verified_same_snapshot" else 2
+    return 0 if (result.get("classification")=="verified_same_snapshot" or
+                 result.get("full_table_bytes_equal") is True) else 2
 
 
 if __name__=="__main__":

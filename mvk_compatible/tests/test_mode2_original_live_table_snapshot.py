@@ -151,3 +151,58 @@ def test_live_table_refuses_symlink_and_nonexistent_folder(tmp_path):
         export_live_table_snapshot(
             status,(True,)*10,tmp_path/"missing"/target.name)
     assert target.read_bytes()==b"EXISTING_DATA"
+
+
+
+def test_source_ru_table_uses_original_name_units_and_cp1251_with_no_false_parity(tmp_path):
+    from ..core.original_live_table_snapshot import (
+        RU_TABLE_CANDIDATE_SOURCE,build_live_ru_table_candidate_rows,
+        export_live_ru_table_candidate,
+    )
+    status=status_with_real_source_banks()
+    selected=(True,)+(False,)*7+(True,False)
+    rows=build_live_ru_table_candidate_rows(status,selected)
+    assert len(rows)==39
+    assert rows[0]==("Наименование параметра","АЦП 1","")
+    assert rows[1][0]=="Индикатор перегрузки"
+    assert rows[1][1]=="Перегрузка" # original +0x120=0x51, Bits 0
+    assert rows[2][1]=="(0x00000005)" # not in source Buffers list
+    assert rows[3][1]=="ОК"        # SensorState bits10..11==0
+    assert rows[7][0]=="Виброускорение, 10..3000 Гц"
+    assert rows[7][1]=="1,5"
+    assert rows[7][2]=="м/с2"
+    assert rows[31]==()
+    assert rows[32]==("Наименование параметра","Тахометр 1","")
+    assert rows[33][1]=="50,5"
+    assert rows[33][2]=="Гц"
+    assert rows[-1][1]=="UNKNOWN" # stale +0xFE is not valid live evidence
+    p=tmp_path/"TABLE-2026-11-19--16-02-15.csv"
+    out=export_live_ru_table_candidate(
+        status,selected,p,expected_session_id=status["session_id"])
+    payload=p.read_bytes()
+    assert out["source"]==RU_TABLE_CANDIDATE_SOURCE
+    assert out["csv_encoding_kind"]=="CP1251_CRLF_PIPE_ORIGINAL_LAYOUT_CANDIDATE"
+    assert payload.startswith(b"sep=|\r\n")
+    assert not payload.startswith(b"\xef\xbb\xbf")
+    assert payload.count(b"\r\n")==40
+    assert "Перегрузка" in payload.decode("cp1251")
+    assert "UNKNOWN" in payload.decode("cp1251")
+    assert out["source_table_row_count"]==36
+    assert out["readback_all_rows_verified"]
+    assert not out["original_delphi_table_byte_parity_verified"]
+    assert not out["instrument_commands_sent"]
+    import hashlib
+    assert out["csv_sha256"]==hashlib.sha256(payload).hexdigest()
+    with pytest.raises(ValueError,match="NEW"):
+        export_live_ru_table_candidate(status,selected,p)
+
+
+def test_source_ru_table_rejects_selected_unreceived_adc(tmp_path):
+    from ..core.original_live_table_snapshot import export_live_ru_table_candidate
+    status=status_with_real_source_banks()
+    # In fixture only ADC 1 has accepted complete result words.
+    selected=(False,True)+(False,)*8
+    p=tmp_path/"TABLE-2026-11-19--16-02-15.csv"
+    with pytest.raises(ValueError,match="no received DWORDs"):
+        export_live_ru_table_candidate(status,selected,p)
+    assert not p.exists()

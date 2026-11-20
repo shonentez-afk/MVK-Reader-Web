@@ -223,3 +223,140 @@ def export_live_table_snapshot(status:dict,selected,filename,
         if created:
             target.unlink(missing_ok=True)
         raise
+
+
+# Recovered from the user's original 2026-10-28 VALUES/TABLE pair:
+# CP1251 without BOM, Russian original cells, decimal comma, strict
+# TABLE 30+6 sections and GetUnits. Kept separate from RAW so that all
+# existing evidence and diagnostics remain available for comparison.
+RU_TABLE_CANDIDATE_SOURCE="MVK_MODE2_SOURCE_RU_CP1251_TABLE_CANDIDATE_V1"
+
+
+def build_live_ru_table_candidate_rows(status:dict, selected):
+    """One-shot source-shaped text from the single validated PARAM bank.
+
+    Missing DWORD is UNKNOWN, never a fabricated 0 or Delphi Data=nil ####.
+    Uses original GetValueText route 0 Float32, route 2 UInt32, and
+    route 10 Advanced bit slice (with labels from original ru-ru resource).
+    Not a proof of 1:1 Delphi FormatFloat/x87 byte parity.
+    """
+    from .original_ru_csv_layout import (
+        source_ru_table_rows, source_ru_typed_text,
+    )
+    if not live_table_snapshot_ready(status):
+        raise ValueError("Source RU TABLE has no fresh, verified PARAM bank")
+    selected_indices=_check_channels(selected)
+    adc_indices=[i for i in selected_indices if i<8]
+    tach_indices=[i-8 for i in selected_indices if i>=8]
+    bank=status["source_live_page_status_banks"]
+    if len(bank["adc"])!=8 or len(bank["tach"])!=2:
+        raise ValueError("Source RU TABLE requires original 8 ADC+2 TACH banks")
+    adc_data=[]
+    tach_data=[]
+    received=0
+    for i in adc_indices:
+        adc=bank["adc"][i]
+        six=adc.get("result_adc_six_raw_dwords_le") or (None,)*6
+        if len(six)!=6:
+            raise ValueError("Source RU TABLE original 6 Result fields invalid")
+        result=[]
+        for cell in range(6):
+            raw=six[cell]
+            if cell<3 and raw is None:
+                raw=adc.get("sensor_status_raw_u32_le")
+            if raw is not None: received+=1
+            result.append(source_ru_typed_text("RESULT",cell,raw))
+        raw_bands=adc["rms_24_raw_f32_le"]
+        if len(raw_bands)!=24:
+            raise ValueError("Source RU TABLE original 24 BAND fields invalid")
+        for cell,raw in enumerate(raw_bands):
+            if raw is not None:received+=1
+            result.append(source_ru_typed_text("BAND",cell,raw))
+        adc_data.append(result)
+    for i in tach_indices:
+        raw_tach=bank["tach"][i]["source_field_0_2_4_6_8_fe_raw_le"]
+        if len(raw_tach)!=6:
+            raise ValueError("Source RU TABLE original 6 TACH fields invalid")
+        vals=[]
+        for cell,raw in enumerate(raw_tach):
+            # Source status parser deliberately discards +0xFE if there is
+            # no proof this pulse came with the current PARAM tick.
+            if raw is not None:received+=1
+            vals.append(source_ru_typed_text("TACH",cell,raw))
+        tach_data.append(vals)
+    if not received:
+        raise ValueError("Source RU TABLE selected channels contain no received DWORDs")
+    return source_ru_table_rows([i+1 for i in adc_indices],
+                                [i+1 for i in tach_indices],
+                                adc_data,tach_data)
+
+
+def export_live_ru_table_candidate(status:dict, selected, filename,
+                                   *,expected_session_id:str|None=None)->dict:
+    """Connected Qt TABLE: actual RU/CP1251 source layout, no false parity.
+
+    This read-only local export is explicitly a vendor-format CANDIDATE.
+    The source RAW/binary receiver, evidence files and hardware are untouched.
+    """
+    from .original_ru_csv_layout import source_ru_encode_csv, PROFILE
+    if expected_session_id is not None and (
+            not isinstance(expected_session_id,str) or
+            status.get("session_id")!=expected_session_id):
+        raise ValueError("Source RU TABLE selected foreign run")
+    rows=build_live_ru_table_candidate_rows(status,selected)
+    target=Path(filename).absolute()
+    if (target.suffix.lower()!=".csv" or target.is_symlink()
+        or target.exists() or not target.parent.is_dir()
+        or target.parent.is_symlink()):
+        raise ValueError("Source RU TABLE requires a NEW local CSV file")
+    if not _ALLOWED_BASENAME.fullmatch(target.name):
+        raise ValueError("Source RU TABLE requires original TABLE timestamp name")
+    raw=source_ru_encode_csv(rows)
+    if not 0<len(raw)<=MAX_TABLE_BYTES:
+        raise ValueError("Source RU TABLE candidate size exceeds guard")
+    created=False
+    try:
+        with target.open("xb") as f:
+            created=True
+            written=f.write(raw)
+            if written!=len(raw):
+                raise ValueError("Source RU TABLE short local write")
+            f.flush()
+        after=target.read_bytes()
+        if after!=raw or not after.startswith(b"sep=|\r\n") or (
+                after.count(b"\r\n")!=len(rows)+1):
+            raise ValueError("Source RU TABLE CP1251 readback/rows mismatch")
+        decoded=after.decode("cp1251")
+        if tuple(decoded.splitlines()[1:])!=tuple(
+                "|".join(row) for row in rows):
+            raise ValueError("Source RU TABLE independent row readback mismatch")
+        return {
+            "source":RU_TABLE_CANDIDATE_SOURCE,
+            "source_original_layout_profile":PROFILE,
+            "table_saved":True,
+            "source_table_row_count":MAX_TABLE_ROWS,
+            "source_table_section_count":2,
+            "source_adc_data_rows":30,
+            "source_tach_data_rows":6,
+            "source_table_selected_channels":[i+1 for i in _check_channels(selected)],
+            "source_adcs_in_first_section":[i+1 for i in _check_channels(selected) if i<8],
+            "source_tachs_in_second_section":[i-7 for i in _check_channels(selected) if i>=8],
+            "source_param_frames":status["source_live_page_status_banks"]["accepted_param_frames"],
+            "source_tcp_connection_count":status["source_tcp_connection_count"],
+            "source_capture_frames":status["frames_decoded"],
+            "source_capture_raw_bytes":status["raw_bytes"],
+            "readback_all_rows_verified":True,
+            "source_uses_original_ru_titles_units":True,
+            "csv_encoding_kind":"CP1251_CRLF_PIPE_ORIGINAL_LAYOUT_CANDIDATE",
+            "csv_sha256":sha256(raw).hexdigest(),
+            "original_delphi_table_byte_parity_verified":False,
+            "original_get_value_text_parity_verified":False,
+            "source_register_image_was_not_modified":True,
+            "instrument_commands_sent":False,
+            "original_tmvkthread_write_table_executed":False,
+            "contains_operator_file_path":False,
+        }
+    except Exception:
+        if created:
+            target.unlink(missing_ok=True)
+        raise

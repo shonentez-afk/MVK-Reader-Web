@@ -46,10 +46,17 @@ def test_live_bwrite_table_one_shot_without_writevalues_device_tx(
         before=writer["write_values_requested"]
         controls.buttons["bWriteTable"].click()
         assert dest.is_file()
-        assert dest.read_bytes().startswith(b"\xef\xbb\xbfsep=|\r\n")
+        payload=dest.read_bytes()
+        assert payload.startswith(b"sep=|\r\n")
+        assert not payload.startswith(b"\xef\xbb\xbf")
+        assert "Наименование параметра" in payload.decode("cp1251")
+        assert "Параметр (RAW)" not in payload.decode("cp1251")
         receipt=controls.panel.property("sourceOriginalLiveTableSnapshotReceipt")
         assert receipt is not None
         assert receipt["source_table_row_count"]==36
+        assert receipt["csv_encoding_kind"]=="CP1251_CRLF_PIPE_ORIGINAL_LAYOUT_CANDIDATE"
+        assert receipt["source_uses_original_ru_titles_units"] is True
+        assert receipt["original_delphi_table_byte_parity_verified"] is False
         assert receipt["source_table_selected_channels"]==list(range(1,9))
         assert receipt["instrument_commands_sent"] is False
         assert win._source_live_writer.receipt()["write_values_requested"]==before
