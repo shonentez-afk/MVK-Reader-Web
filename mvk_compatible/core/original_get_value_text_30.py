@@ -18,6 +18,7 @@ from typing import Mapping
 
 from .original_config_idp_tables import (
     SOURCE_BYTES_PER_TYPE, source_type_description,
+    SOURCE_SELECTOR_IDS, SOURCE_SELECTOR_PREFIXES,
 )
 
 SCHEMA = "MVK_SOURCE_GETVALUETEXT_30_FORMATTER_CANDIDATE_V1"
@@ -93,22 +94,56 @@ def source_advanced_title_candidate(
     A local map may contain keys produced by source 0080250C; its values
     remain unverified until its authentic RCDATA provenance is established.
     """
-    ident=source_advanced_id(raw_uint32,kind)
-    prefix,ids,_,_=ADVANCED[kind]
-    if ident not in ids:  # _Unit115:007D0845 -> '(' + hex32 + ')'
-        return f"(0x{ident:08X})"
-    key=f"{prefix}Cell{ident}"
-    if translations is not None:
-        if not isinstance(translations,Mapping):
-            raise ValueError("Invalid source-language resource map")
-        label=translations.get(key)
-        if label is not None:
-            if (not isinstance(label,str) or not label or
-                    len(label)>2048 or any(ch in label for ch in "\r\n|")):
-                raise ValueError("Invalid local TLanguage candidate value")
-            return label
-    return f"UNRESOLVED_ADVANCED_ID_{ident}"
+    _,_,start,width=ADVANCED[kind]
+    return source_advanced_title_by_source_list(
+        raw_uint32,kind,bits=width,bit_start=start,
+        composite=False,translations=translations)
 
+
+
+
+def source_advanced_title_by_source_list(
+    raw_uint32: int, selector_kind: str, *, bits: int,
+    bit_start: int, composite: bool = False,
+    translations: Mapping[str,str] | None = None,
+) -> str:
+    """Source TMvkAdvancedCell.GetTitleByID for ALL known original lists.
+
+    _Unit115:007CF4F6 extracts source Bits/BitStart. _Unit115:007D0808
+    handles simple lookup or UseCompositeTitle: match each ID when
+    (ID & requested)==ID, join with '; ', return '---' if none.
+    This is a structural candidate until the authentic RCDATA is present.
+    """
+    if type(raw_uint32) is not int or not 0<=raw_uint32<=0xffffffff:
+        raise ValueError("Advanced source requires UInt32")
+    if selector_kind not in SOURCE_SELECTOR_IDS:
+        raise ValueError("Unknown original Advanced selector list")
+    if (type(bits) is not int or type(bit_start) is not int
+            or not 0<=bits<=32 or not 0<=bit_start<=31
+            or (bits>0 and bits+bit_start>32)):
+        raise ValueError("Advanced source bit field outside DWORD")
+    if type(composite) is not bool:
+        raise ValueError("Advanced composite flag must be Boolean")
+    if translations is not None and not isinstance(translations,Mapping):
+        raise ValueError("Untrusted local Advanced translations must be mapping")
+    selected=((raw_uint32>>bit_start)&((1<<bits)-1)) if bits else raw_uint32
+    prefix=SOURCE_SELECTOR_PREFIXES[selector_kind]
+    ids=SOURCE_SELECTOR_IDS[selector_kind]
+    def title(ident:int)->str:
+        key=f"{prefix}Cell{ident}"
+        label=translations.get(key) if translations is not None else None
+        if label is None:
+            return f"UNRESOLVED_ADVANCED_ID_{ident}"
+        if (not isinstance(label,str) or not label or
+                len(label)>2048 or any(ch in label for ch in "\r\n|")):
+            raise ValueError("Unsafe local TLanguage title")
+        return label
+    if composite:
+        parts=[title(ident) for ident in ids if (ident&selected)==ident]
+        return "; ".join(parts) if parts else "---"
+    if selected not in ids:
+        return f"(0x{selected:08X})"
+    return title(selected)
 
 def _float32(raw: bytes, digits: int) -> str:
     """Delphi 007B2090 source *algorithm*, not certified FormatFloat.
@@ -152,6 +187,9 @@ def get_value_text_30(
     windows_ansi_code_page: str | None = None,
     advanced_kind: str | None = None,
     local_advanced_translations: Mapping[str,str] | None = None,
+    advanced_source_bits: int | None = None,
+    advanced_source_bit_start: int = 0,
+    advanced_source_composite: bool = False,
 ) -> SourceTextCandidate30:
     """All 30 original type-to-formatter routes, source-sized and safe.
 
@@ -178,9 +216,14 @@ def get_value_text_30(
         return result("UNKNOWN",False)
     if type(raw) is not bytes or len(raw)!=size:
         raise ValueError("Source cell requires the exact original type width")
-    if advanced_kind is not None and (source_type!=10 or
-                                      advanced_kind not in ADVANCED):
-        raise ValueError("Only source type 10 has supported Advanced list")
+    if advanced_kind is not None and (
+            source_type!=10 or advanced_kind not in SOURCE_SELECTOR_IDS):
+        raise ValueError("Only source type 10 has a supported Advanced list")
+    if advanced_kind in ADVANCED and advanced_source_bits is not None:
+        raise ValueError("Known source Result Advanced fields fix their own Bits/Start")
+    if advanced_kind is not None and advanced_kind not in ADVANCED and (
+            advanced_source_bits is None):
+        raise ValueError("Other source Advanced lists require explicit Bits/Start")
     value=struct.unpack("<I",raw[:4])[0]
     if case==1:
         return result(_float32(raw[:4],format_spec))
@@ -214,9 +257,15 @@ def get_value_text_30(
             return result(data.decode(windows_ansi_code_page))
         return result(data.decode("ascii"))
     if case==10:
-        if advanced_kind is not None:
+        if advanced_kind in ADVANCED:
             return result(source_advanced_title_candidate(
                 value,advanced_kind,local_advanced_translations))
+        if advanced_kind is not None:
+            return result(source_advanced_title_by_source_list(
+                value,advanced_kind,bits=advanced_source_bits,
+                bit_start=advanced_source_bit_start,
+                composite=advanced_source_composite,
+                translations=local_advanced_translations))
         return result(f"0x{value:08X}")
     if case==11:
         return result(f"0x{value&0xffff:04X}")

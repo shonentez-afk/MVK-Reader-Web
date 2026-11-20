@@ -11,6 +11,7 @@ from ..core.original_config_idp_tables import SOURCE_BYTES_PER_TYPE
 from ..core.original_get_value_text_30 import (
     TYPE_TO_CASE, ADVANCED, SCHEMA, get_value_text_30,
     live_get_units, source_advanced_id, source_advanced_title_candidate,
+    source_advanced_title_by_source_list,
     source_getvalue_30_provenance,
 )
 
@@ -144,3 +145,37 @@ def test_actual_source_advanced_selector_can_use_local_tlanguage_resource():
     assert got.text=="Перегрузка подтверждена локально"
     assert not got.original_tlanguage_verified
     assert not language.imported_local_resource_verified_as_original
+
+def test_original_generic_advanced_source_metadata_and_composite_titles():
+    # _Unit125:00802664 constructs AlarmAlert UseCompositeTitle=True
+    # with source option IDs (1,2,4,8).
+    assert source_advanced_title_by_source_list(
+        5,"alarm_alert",bits=4,bit_start=0,composite=True
+    )=="UNRESOLVED_ADVANCED_ID_1; UNRESOLVED_ADVANCED_ID_4"
+    assert source_advanced_title_by_source_list(
+        5,"alarm_alert",bits=4,bit_start=0,composite=True,
+        translations={"AlarmAlertCell1":"Вход","AlarmAlertCell4":"Выход"}
+    )=="Вход; Выход"
+    assert source_advanced_title_by_source_list(
+        0,"alarm_alert",bits=4,bit_start=0,composite=True)=="---"
+    # Source GetTitleByID unknown ID goes to (0xXXXXXXXX).
+    assert source_advanced_title_by_source_list(
+        2,"tacho_function",bits=2,bit_start=0)=="(0x00000002)"
+    assert get_value_text_30(
+        10,raw_for_type(10,5),advanced_kind="alarm_alert",
+        advanced_source_bits=4,advanced_source_bit_start=0,
+        advanced_source_composite=True,
+        local_advanced_translations={"AlarmAlertCell1":"A","AlarmAlertCell4":"B"}
+    ).text=="A; B"
+    assert not get_value_text_30(
+        10,raw_for_type(10,5),advanced_kind="alarm_alert",
+        advanced_source_bits=4,advanced_source_bit_start=0,
+        advanced_source_composite=True,
+    ).original_tlanguage_verified
+    for bits,bitstart in [(-1,0),(33,0),(2,31),(2,-1)]:
+        with pytest.raises(ValueError):
+            source_advanced_title_by_source_list(
+                1,"alarm_alert",bits=bits,bit_start=bitstart)
+    with pytest.raises(ValueError,match="explicit"):
+        get_value_text_30(
+            10,raw_for_type(10,5),advanced_kind="alarm_alert")
