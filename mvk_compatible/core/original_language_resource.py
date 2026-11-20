@@ -17,6 +17,16 @@ import json
 from pathlib import Path
 
 from .original_language_source import SOURCE_KEY_SET, source_localize
+from .original_config_idp_tables import SOURCE_SELECTOR_IDS, SOURCE_SELECTOR_PREFIXES
+
+# _Unit125:0080250C dynamically concatenates Prefix+"Cell"+ID before
+# TLanguage.localize, so these strings cannot be discovered by the
+# static immediate-string inventory alone. Source IDs are IDP-checked.
+SOURCE_DYNAMIC_ADVANCED_KEYS=frozenset(
+    SOURCE_SELECTOR_PREFIXES[kind]+"Cell"+str(value)
+    for kind,ids in SOURCE_SELECTOR_IDS.items() for value in ids
+)
+SOURCE_LOOKUP_KEY_SET=SOURCE_KEY_SET|SOURCE_DYNAMIC_ADVANCED_KEYS
 
 SOURCE = "IDR_TLanguage_TResourceStream_UTF8_JSON_ARRAY_STAGE111Z31BG"
 # _Unit128:0084411D..00844152 and _Unit115:007C8D23..007C8D37.
@@ -40,14 +50,18 @@ class LocalLanguageInspection:
     original_runtime_parity_verified: bool = False
 
     def lookup(self, key: str) -> str | None:
-        if not isinstance(key, str) or key not in SOURCE_KEY_SET:
+        if not isinstance(key, str) or key not in SOURCE_LOOKUP_KEY_SET:
             raise KeyError("Unknown source TLanguage callsite key")
         return dict(self.translations).get(key)
 
     def display(self, key: str) -> str:
         # Local resource is optional: never manufacture an "original" string.
         original = self.lookup(key)
-        return original if original is not None else source_localize(key).display
+        if original is not None:
+            return original
+        if key in SOURCE_DYNAMIC_ADVANCED_KEYS:
+            return key  # source symbolic key, NOT a vendor translation
+        return source_localize(key).display
 
     def report(self) -> dict:
         return {
@@ -55,7 +69,8 @@ class LocalLanguageInspection:
             "local_resource_sha256": self.file_sha256,
             "language": self.language_id,
             "source_keys_present": len(self.translations),
-            "source_keys_expected": len(SOURCE_KEY_SET),
+            "source_keys_expected": len(SOURCE_LOOKUP_KEY_SET),
+            "source_advanced_dynamic_key_count": len(SOURCE_DYNAMIC_ADVANCED_KEYS),
             "imported_local_resource_verified_as_original":
                 self.imported_local_resource_verified_as_original,
             "original_runtime_parity_verified":
@@ -97,7 +112,7 @@ def inspect_local_language_bytes(raw: bytes, language_id: str) -> LocalLanguageI
                 if (not isinstance(key, str) or len(key) > 128
                         or not isinstance(phrase, str) or len(phrase) > 2048):
                     raise ValueError("Unsupported source locale field")
-                if key in SOURCE_KEY_SET:
+                if key in SOURCE_LOOKUP_KEY_SET:
                     # Source localize loop overwrites on later matching item.
                     parsed[key] = phrase
     return LocalLanguageInspection(

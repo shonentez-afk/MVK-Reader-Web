@@ -131,3 +131,16 @@ def test_missing_network_word_is_not_nil_source_pointer_and_invalid_inputs():
             get_value_text_30(0,None,format_spec=wrong)
     with pytest.raises(ValueError):
         get_value_text_30(2,raw_for_type(2),advanced_kind="result_overload")
+
+def test_actual_source_advanced_selector_can_use_local_tlanguage_resource():
+    import json
+    from ..core.original_language_resource import inspect_local_language_bytes
+    language=inspect_local_language_bytes(json.dumps([
+        {"ru-ru":[{"OverloadCell1":"Перегрузка подтверждена локально"}]}
+    ],ensure_ascii=False).encode("utf-8"),"ru-ru")
+    got=get_value_text_30(
+        10,raw_for_type(10,0x51),advanced_kind="result_overload",
+        local_advanced_translations=dict(language.translations))
+    assert got.text=="Перегрузка подтверждена локально"
+    assert not got.original_tlanguage_verified
+    assert not language.imported_local_resource_verified_as_original

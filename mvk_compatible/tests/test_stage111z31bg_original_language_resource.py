@@ -75,3 +75,27 @@ def test_invalid_bytes_unsafe_name_and_no_imported_authentication(tmp_path):
         pytest.skip("Symlink unavailable")
     with pytest.raises(ValueError):
         inspect_local_language_file(symlink,"ru")
+
+def test_source_tlanguage_dynamic_advanced_keys_loaded_from_local_resource():
+    from mvk_compatible.core.original_language_resource import (
+        SOURCE_DYNAMIC_ADVANCED_KEYS, SOURCE_LOOKUP_KEY_SET,
+    )
+    assert "OverloadCell0" in SOURCE_DYNAMIC_ADVANCED_KEYS
+    assert "OverloadCell1" in SOURCE_DYNAMIC_ADVANCED_KEYS
+    assert "BuffersCell7" in SOURCE_DYNAMIC_ADVANCED_KEYS
+    assert "SensorStateCell3" in SOURCE_DYNAMIC_ADVANCED_KEYS
+    assert SOURCE_DYNAMIC_ADVANCED_KEYS.issubset(SOURCE_LOOKUP_KEY_SET)
+    raw=pack([
+        {"ru-ru":[{"OverloadCell1":"Первый локальный заголовок"}]},
+        {"ru-ru":[{"OverloadCell1":"Второй локальный заголовок",
+                    "BuffersCell7":"Семь буферов",
+                    "inventedSourceKey":"НЕ ИСПОЛЬЗОВАТЬ"}]},
+    ])
+    found=inspect_local_language_bytes(raw,"ru-ru")
+    assert found.lookup("OverloadCell1")=="Второй локальный заголовок"
+    assert found.lookup("BuffersCell7")=="Семь буферов"
+    assert found.display("SensorStateCell0")=="SensorStateCell0"
+    assert found.report()["source_advanced_dynamic_key_count"]==len(SOURCE_DYNAMIC_ADVANCED_KEYS)
+    assert not found.report()["imported_local_resource_verified_as_original"]
+    with pytest.raises(KeyError):
+        found.lookup("inventedSourceKey")
