@@ -854,7 +854,11 @@ class OriginalRootShell:
                 if (live_banks is not None and health.connection_verified
                         and not health.data_integrity_alert and
                         not source_fault):
-                    result=source_live_status_projection(index,live_banks)
+                    # Source 007CF4A4 GetValueText for each validated DWORD;
+                    # verified ru-ru EXTLOCALIZATION, no guessed missing
+                    # registers. Keep separate RAW validation receipt.
+                    result=source_live_status_projection(
+                        index,live_banks,source_ru_text=True)
                 else:
                     result=source_status_projection(index,None)
             else:

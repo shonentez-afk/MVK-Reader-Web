@@ -48,9 +48,16 @@ def test_qt_mode2_source_live_four_grid_modes_and_stale_stop_gate(qt_app):
             receipt=w.original_shell.status_page.property(
                 "sourceLivePageStatusParamEvidence")
             assert receipt is not None and receipt["mode"]==index
+        w.original_status_mode.setCurrentIndex(1)
+        w.original_shell.refresh_status()
+        assert w.original_shell.status_table.item(0,1).text()=="4,5"
+        # +0x132: state = low 8 bits, alert = bits 8..15.
+        assert w.original_shell.status_table.item(1,1).text()==(
+            "Красная зона (квитировано) (Устар. ПО)")
+        assert w.original_shell.status_table.item(2,1).text()=="---"
         w.original_status_mode.setCurrentIndex(2)
         w.original_shell.refresh_status()
-        assert w.original_shell.status_table.item(0,1).text()=="1.5 (RAW)"
+        assert w.original_shell.status_table.item(0,1).text()=="1,5"
         w.original_status_mode.setCurrentIndex(5)
         w.original_shell.refresh_status()
         assert w.original_shell.status_plot.isVisible()

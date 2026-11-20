@@ -175,11 +175,46 @@ def _u32_text(word):
     return f"0x{value:08X} (RAW)" if value is not None else UNAVAILABLE
 
 
-def source_live_status_projection(mode:int,banks:dict)->OriginalStatusProjection:
+
+def _source_ru_text(raw_le: str | None, kind: str, *,
+                    advanced_kind: str | None = None,
+                    bit_start: int = 0, composite: bool = False) -> str:
+    """Source 007CE6E4 candidate on a VALID complete live PARAM DWORD.
+
+    _Unit125:00805241/00805293 states AlarmState is Bits=8 Start=0;
+    AlarmAlert is Bits=8 Start=8, UseCompositeTitle=1. Both use the
+    same +0x132 register. This function does not infer state from AUX
+    or from unseen data. All output remains Win32 Delphi CANDIDATE.
+    """
+    from .original_get_value_text_30 import get_value_text_30
+    if raw_le is None:
+        return UNAVAILABLE
+    raw=bytes.fromhex(_word(raw_le,"source RU GetValueText"))
+    if kind=="Float32":
+        if _raw_f32(raw_le) is None:
+            return UNAVAILABLE
+        result=get_value_text_30(0,raw)
+        return (result.text.replace(".",",") if result.available
+                else UNAVAILABLE)
+    if kind=="UInt32":
+        result=get_value_text_30(2,raw)
+        return result.text if result.available else UNAVAILABLE
+    if kind=="Advanced" and advanced_kind in ("alarm_state","alarm_alert"):
+        result=get_value_text_30(
+            10,raw,source_locale="ru-ru",advanced_kind=advanced_kind,
+            advanced_source_bits=8,advanced_source_bit_start=bit_start,
+            advanced_source_composite=composite)
+        return result.text if result.available else UNAVAILABLE
+    raise ValueError("Source RU formatter has no proven cell type")
+
+
+def source_live_status_projection(mode:int,banks:dict,*,source_ru_text:bool=False)->OriginalStatusProjection:
     """Strictly raw, validated source REGISTER values, NOT computed FFT.
 
     Mode0 uses the existing independent 15-system-register adapter.
     """
+    if type(source_ru_text) is not bool:
+        raise ValueError("Source live Russian text selection must be Boolean")
     if type(mode) is not int or not 1<=mode<=14:
         raise ValueError("Source LIVE result projection expects tcStatus 1..14")
     if not isinstance(banks,dict) or banks.get("schema")!=SCHEMA:
@@ -187,33 +222,65 @@ def source_live_status_projection(mode:int,banks:dict)->OriginalStatusProjection
     adcs=banks["adc"]
     tachs=banks["tach"]
     count=banks["known_complete_dwords"]
-    header_note=(
-        "LIVE · реальные PARAM DWORD из Go RegisterImage, проверен каждый "
-        f"DWORD из двух принятых 16-битных слов; {count} валидных полей. "
-        "Сырые Float32 и UInt32, НЕ исходный TMvkCellList.GetValueText. "
-        "Порог/тревога/об/мин не интерпретируются. "
-        "Исходный Win32/x87 паритет не подтверждён.")
+    if source_ru_text:
+        header_note=(
+            "LIVE · реальные полные PARAM DWORD из Go RegisterImage, "
+            f"{count} валидных полей. Текст: исходные маршруты GetValueText "
+            "и подтверждённые русские метки EXTLOCALIZATION. "
+            "Это КАНДИДАТ исходного Delphi/Win32, НЕ byte parity; "
+            "незавершённые/устаревшие регистры остаются «—». "
+            "Порог тревоги и RPM не вычисляются.")
+    else:
+        header_note=(
+            "LIVE · реальные PARAM DWORD из Go RegisterImage, проверен каждый "
+            f"DWORD из двух принятых 16-битных слов; {count} валидных полей. "
+            "Сырые Float32 и UInt32, НЕ исходный TMvkCellList.GetValueText. "
+            "Порог/тревога/об/мин не интерпретируются. "
+            "Исходный Win32/x87 паритет не подтверждён.")
     chart=None
     if mode==1:
         headers=("Контрольный регистр",*(f"АЦП{i}" for i in range(1,9)))
         rows=[]
         for j in range(8):
             addr=0x130+8*j
-            rows.append((
-                f"Контроль {j+1} · value +0x{addr:03X}",
-                *(_f32_text(a["control_8_values_raw_f32_le"][j]) for a in adcs)))
-            raw_status=tuple(
-                _u32_text(a["control_8_status_raw_u32_le"][j]) for a in adcs)
-            rows.append((f"Контроль {j+1} · state +0x{addr+2:03X}",*raw_status))
-            rows.append((f"Контроль {j+1} · alert +0x{addr+2:03X}",*raw_status))
-        note=header_note+" AlarmState и AlarmAlert делят один исходный DWORD."
+            if source_ru_text:
+                rows.append((
+                    f"Контроль {j+1} · Значение +0x{addr:03X}",
+                    *(_source_ru_text(a["control_8_values_raw_f32_le"][j],
+                                      "Float32") for a in adcs)))
+                rows.append((
+                    f"Контроль {j+1} · Состояние +0x{addr+2:03X}",
+                    *(_source_ru_text(a["control_8_status_raw_u32_le"][j],
+                                      "Advanced",advanced_kind="alarm_state",
+                                      bit_start=0) for a in adcs)))
+                rows.append((
+                    f"Контроль {j+1} · Событие +0x{addr+2:03X}",
+                    *(_source_ru_text(a["control_8_status_raw_u32_le"][j],
+                                      "Advanced",advanced_kind="alarm_alert",
+                                      bit_start=8,composite=True) for a in adcs)))
+            else:
+                rows.append((
+                    f"Контроль {j+1} · value +0x{addr:03X}",
+                    *(_f32_text(a["control_8_values_raw_f32_le"][j]) for a in adcs)))
+                raw_status=tuple(
+                    _u32_text(a["control_8_status_raw_u32_le"][j]) for a in adcs)
+                rows.append((f"Контроль {j+1} · state +0x{addr+2:03X}",*raw_status))
+                rows.append((f"Контроль {j+1} · alert +0x{addr+2:03X}",*raw_status))
+        note=header_note+(" AlarmState: bits 0..7; AlarmAlert: bits 8..15,"
+                          " составной текст через '; '. Оба читают один"
+                          " полный +0x132 DWORD.")
     elif mode in (2,3,4):
         key=("rms_24_raw_f32_le","peak_24_raw_f32_le",
              "peak_peak_24_raw_f32_le")[mode-2]
         offset=(0x60,0xA0,0xE0)[mode-2]
+        if source_ru_text:
+            from .original_ru_csv_layout import source_ru_cell_title
         rows=tuple((
-            f"Измеренная полоса {i+1} · +0x{offset+2*i:03X}",
-            *(_f32_text(a[key][i]) for a in adcs)
+            (f"{source_ru_cell_title('BAND',i)} · +0x{offset+2*i:03X}"
+             if source_ru_text else
+             f"Измеренная полоса {i+1} · +0x{offset+2*i:03X}"),
+            *((_source_ru_text(a[key][i],"Float32") if source_ru_text
+               else _f32_text(a[key][i])) for a in adcs)
         ) for i in range(24))
         headers=("Исходное поле",*(f"АЦП{i}" for i in range(1,9)))
         note=header_note+" Названия 24 исходных полей не переведены; индекс/регистр точен."
@@ -221,9 +288,14 @@ def source_live_status_projection(mode:int,banks:dict)->OriginalStatusProjection
         adc=mode-5
         word_array=adcs[adc]["bands_43_raw_f32_le"]
         values=tuple(_raw_f32(x) for x in word_array)
+        if source_ru_text:
+            from .original_ru_csv_layout import source_ru_cell_title
         rows=tuple((
-            f"{float(SOURCE_FREQUENCIES[i]):.9g} Гц · +0x{2+2*i:03X}",
-            _f32_text(word_array[i])) for i in range(43))
+            (f"{source_ru_cell_title('SPEC',i)} · +0x{2+2*i:03X}"
+             if source_ru_text else
+             f"{float(SOURCE_FREQUENCIES[i]):.9g} Гц · +0x{2+2*i:03X}"),
+            (_source_ru_text(word_array[i],"Float32") if source_ru_text
+             else _f32_text(word_array[i]))) for i in range(43))
         headers=("Полоса третьоктавы","Исходное Float32")
         if all(v is not None for v in values):
             chart=tuple(values)
@@ -234,9 +306,14 @@ def source_live_status_projection(mode:int,banks:dict)->OriginalStatusProjection
         tach=mode-13
         raw=tachs[tach]["source_field_0_2_4_6_8_fe_raw_le"]
         offset=(0,2,4,6,8,0xFE)
+        if source_ru_text:
+            from .original_ru_csv_layout import source_ru_cell_title
         rows=tuple((
-            name, f"0x{0x3000+tach*0x100+offset[i]:04X}",
-            (_f32_text(raw[i]) if field_type=="Float32" else _u32_text(raw[i])),
+            (source_ru_cell_title("TACH",i) if source_ru_text else name),
+            f"0x{0x3000+tach*0x100+offset[i]:04X}",
+            (_source_ru_text(raw[i],field_type) if source_ru_text
+             else (_f32_text(raw[i]) if field_type=="Float32"
+                   else _u32_text(raw[i]))),
             field_type,
             unit or UNAVAILABLE,
         ) for i,(name,_original_offset,field_type,unit,_fresh) in enumerate(TACH_FIELDS))
@@ -247,5 +324,7 @@ def source_live_status_projection(mode:int,banks:dict)->OriginalStatusProjection
         chart,"SOURCE_ORIGINAL_LIVE_PARAM_REGISTER_WORDS_NOT_TEXT_PARITY")
     return OriginalStatusProjection(
         model,MODE_GRID[mode],chart is not None,None,None,None,
-        provenance="SOURCE_LIVE_8ADC_2TACH_RAW_PARAM_REGISTER_IMAGE",
+        provenance=("SOURCE_LIVE_8ADC_2TACH_RU_GETVALUETEXT_CANDIDATE"
+                    if source_ru_text else
+                    "SOURCE_LIVE_8ADC_2TACH_RAW_PARAM_REGISTER_IMAGE"),
     )
