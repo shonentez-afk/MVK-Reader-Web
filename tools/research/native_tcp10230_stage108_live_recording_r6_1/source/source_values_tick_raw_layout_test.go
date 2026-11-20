@@ -121,6 +121,10 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
 
 func TestOriginalWriteValuesStaleTachPulseOnlyFromCurrentParam(t *testing.T){
     m,_:=markFixture(t)
+    // The test reads the register image without calling Finalize.
+    // Close opened aux4700.jsonl, incoming.raw and event handles BEFORE
+    // Windows t.TempDir RemoveAll (otherwise the EXE packaging job fails).
+    t.Cleanup(func(){ if e:=m.CloseFiles();e!=nil{t.Errorf("close source test files: %v",e)} })
     var channels [10]bool;channels[8]=true
     var values [73]bool;values[35]=true
     w:=&sourceLiveValuesWindow{
