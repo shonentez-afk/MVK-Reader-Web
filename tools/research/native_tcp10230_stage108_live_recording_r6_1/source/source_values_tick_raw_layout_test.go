@@ -110,6 +110,23 @@ func TestOriginalWriteValuesSourceTickThreeGroupOrderAndTachFreshness(t *testing
        ev.OrderedFields[4].RawLE!=nil {
         t.Fatalf("wrong source mask/group/address map: %+v",ev.OrderedFields)
     }
+    candidateName:=filepath.Join(m.dir,"SOURCE_W01_VALUES_3100_TEXT_CANDIDATE.csv")
+    candidate,e:=os.ReadFile(candidateName);if e!=nil{t.Fatal(e)}
+    wantCandidate:="16:24:12.173|2.5|UNRESOLVED_ADVANCED_ID_1|1.5|6.5|UNKNOWN\r\n"
+    if string(candidate)!=wantCandidate{
+        t.Fatalf("source text candidate violates original order: %q",candidate)
+    }
+    candidateSum:=sha256.Sum256(candidate)
+    if ev.TextCandidateRowSHA256!=hex.EncodeToString(candidateSum[:]) ||
+       win.SourceTextCandidateSHA256!=hex.EncodeToString(candidateSum[:]) ||
+       win.SourceTextCandidateRows!=1 ||
+       win.SourceTextCandidateBytes!=uint64(len(candidate)) ||
+       ev.OrderedFields[1].SourceCellType!=10 ||
+       ev.OrderedFields[1].AdvancedSelectedID==nil ||
+       *ev.OrderedFields[1].AdvancedSelectedID!=1 ||
+       ev.TextCandidateFormatterVersion!=sourceValuesTextCandidateFormatterVersion{
+        t.Fatalf("source candidate evidence/bit extraction incorrect: %+v",ev)
+    }
     sum:=sha256.Sum256(text)
     if ev.RawRowSHA256!=hex.EncodeToString(sum[:]) ||
        win.SourceRawLayoutSHA256!=hex.EncodeToString(sum[:]) ||

@@ -52,9 +52,15 @@ type sourceLiveValuesWindow struct {
     SourceRawLayoutRows uint64 `json:"source_raw_layout_rows"`
     SourceRawLayoutBytes uint64 `json:"source_raw_layout_bytes"`
     SourceRawLayoutSHA256 string `json:"source_raw_layout_sha256"`
+    SourceTextCandidateName string `json:"source_text_candidate_name"`
+    SourceTextCandidateRows uint64 `json:"source_text_candidate_rows"`
+    SourceTextCandidateBytes uint64 `json:"source_text_candidate_bytes"`
+    SourceTextCandidateSHA256 string `json:"source_text_candidate_sha256"`
     OriginalDelphiCSVParityVerified bool `json:"original_delphi_values_csv_byte_parity_verified"`
     layoutFile *os.File
     layoutDigest hash.Hash
+    textFile *os.File
+    textDigest hash.Hash
     Outcome string `json:"outcome"`
     file *os.File
     digest hash.Hash
@@ -109,6 +115,16 @@ func(w *sourceLiveValuesWriter)applyFrameMarks(m *Monitor)error{
                 _=os.Remove(filepath.Join(w.dir,name))
                 return e
             }
+            textName:=fmt.Sprintf("SOURCE_W%02d_VALUES_3100_TEXT_CANDIDATE.csv",n)
+            textFile,e:=os.OpenFile(filepath.Join(w.dir,textName),
+                os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
+            if e!=nil{
+                _=layout.Close()
+                _=f.Close()
+                _=os.Remove(filepath.Join(w.dir,rawLayoutName))
+                _=os.Remove(filepath.Join(w.dir,name))
+                return e
+            }
             current:=&sourceLiveValuesWindow{
                 Window:n,BeginOperatorSequence:mark.Sequence,
                 BeginTick:m.summary.ValuesTicks,
@@ -117,12 +133,15 @@ func(w *sourceLiveValuesWriter)applyFrameMarks(m *Monitor)error{
                 Name:name,file:f,digest:sha256.New(),Outcome:"ACTIVE",
                 SourceRawLayoutName:rawLayoutName,
                 layoutFile:layout,layoutDigest:sha256.New(),
+                SourceTextCandidateName:textName,
+                textFile:textFile,textDigest:sha256.New(),
             }
             w.windows=append(w.windows,current)
             w.active=current
-            m.filenames=append(m.filenames,name,rawLayoutName)
+            m.filenames=append(m.filenames,name,rawLayoutName,textName)
             m.summary.Files[name]=name
             m.summary.Files[rawLayoutName]=rawLayoutName
+            m.summary.Files[textName]=textName
         case "values_end":
             if w.active==nil{return errors.New("source live WriteValues end without begin")}
             w.active.EndOperatorSequence=mark.Sequence
@@ -167,6 +186,11 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
     snapshot,rawLayout,e:=m.sourceValuesOrderedRawTick(
         w.active,blocks,at)
     if e!=nil{return e}
+    textCandidate,e:=sourceValuesTextCandidateRow(snapshot)
+    if e!=nil{return e}
+    textDigest:=sha256.Sum256(textCandidate)
+    snapshot.TextCandidateRowSHA256=hex.EncodeToString(textDigest[:])
+    snapshot.TextCandidateFormatterVersion=sourceValuesTextCandidateFormatterVersion
     digest:=sha256.Sum256(trigger.Payload)
     value:=sourceLiveValuesEvent{
         FrameIndex:m.summary.TotalFrames,TickIndex:m.summary.ValuesTicks-1,
@@ -189,6 +213,14 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
         return errors.New("source WriteValues short RAW layout record write")
     }
     _,_=w.active.layoutDigest.Write(rawLayout)
+    textWritten,e:=w.active.textFile.Write(textCandidate)
+    if e!=nil{return e}
+    if textWritten!=len(textCandidate){
+        return errors.New("source WriteValues short text-candidate record write")
+    }
+    _,_=w.active.textDigest.Write(textCandidate)
+    w.active.SourceTextCandidateRows++
+    w.active.SourceTextCandidateBytes+=uint64(textWritten)
     w.active.SourceRawLayoutRows++
     w.active.SourceRawLayoutBytes+=uint64(layoutWritten)
     w.active.Bytes+=uint64(n)
@@ -210,6 +242,12 @@ func(w *sourceLiveValuesWriter)closeWindow(m *Monitor,outcome string)error{
         if e:=current.layoutFile.Close();e!=nil{return e}
         current.layoutFile=nil
     }
+    if current.textFile!=nil{
+        if e:=current.textFile.Close();e!=nil{return e}
+        current.textFile=nil
+    }
+    current.SourceTextCandidateSHA256=hex.EncodeToString(
+        current.textDigest.Sum(nil))
     current.SourceRawLayoutSHA256=hex.EncodeToString(
         current.layoutDigest.Sum(nil))
     current.SHA256=hex.EncodeToString(current.digest.Sum(nil))
@@ -255,5 +293,6 @@ func(w *sourceLiveValuesWriter)cleanup(){
     for _,win:=range w.windows {
         if win.file!=nil{_ = win.file.Close();win.file=nil}
         if win.layoutFile!=nil{_ = win.layoutFile.Close();win.layoutFile=nil}
+        if win.textFile!=nil{_ = win.textFile.Close();win.textFile=nil}
     }
 }

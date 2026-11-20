@@ -33,12 +33,16 @@ type sourceSelectedRawValue struct {
     RawLE *string `json:"raw_dword_le_hex"`
     ValueKind string `json:"type_candidate"`
     SourceWordValid bool `json:"source_two_words_valid"`
+    SourceCellType int `json:"source_cell_type"`
+    AdvancedSelectedID *uint32 `json:"source_advanced_selected_id,omitempty"`
 }
 type sourceValuesRawTick struct {
     Schema string `json:"schema"`
     LocalTime string `json:"local_source_capture_hh_nn_ss_zzz"`
     OrderedFields []sourceSelectedRawValue `json:"original_selected_cell_order"`
     RawRowSHA256 string `json:"source_raw_layout_line_sha256"`
+    TextCandidateRowSHA256 string `json:"source_text_candidate_line_sha256,omitempty"`
+    TextCandidateFormatterVersion string `json:"source_text_candidate_formatter_version,omitempty"`
     ValidDWORDs int `json:"source_known_full_register_dwords"`
     UnknownSelected int `json:"unknown_or_unmapped_selected_cells"`
     ExtraLegacyFlagsIgnored int `json:"non_original_legacy_73_flag_bits_ignored"`
@@ -88,6 +92,7 @@ func(m *Monitor) sourceValuesOrderedRawTick(
         field:=sourceSelectedRawValue{
             Channel:channel,Group:group,CellIndex:index,
             ValueKind:kind,
+            SourceCellType:0,
         }
         var raw *string
         if addr>=0{
@@ -97,6 +102,21 @@ func(m *Monitor) sourceValuesOrderedRawTick(
         }
         field.RawLE=raw
         field.SourceWordValid=raw!=nil
+        // _Unit115:007CF4DC differentiates 0x0A Advanced from
+        // the source type-0 Float32 and type-2 Cardinal cases.
+        if kind=="U32_ADVANCED_UNFORMATTED" {
+            field.SourceCellType=10
+            if raw!=nil && group=="RESULT" && index<3 {
+                b,_:=hex.DecodeString(*raw)
+                u:=uint32(b[0])|uint32(b[1])<<8|uint32(b[2])<<16|uint32(b[3])<<24
+                starts:=[3]uint{0,4,10}
+                widths:=[3]uint{1,3,2}
+                selected:=(u>>starts[index])&((uint32(1)<<widths[index])-1)
+                field.AdvancedSelectedID=&selected
+            }
+        } else if kind=="U32_CANDIDATE" {
+            field.SourceCellType=2
+        }
         if raw==nil{
             tick.UnknownSelected++
             line.WriteString("|UNKNOWN")
