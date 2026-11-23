@@ -262,7 +262,7 @@ def test_qt_stage111f_spectrum_envelope_requires_private_profile(tmp_path,qt_app
     plan=window._full_spectrum['original_source_fft_plan']
     assert plan['post_fir_fft_n']==window._full_spectrum['n_fft']
     assert plan['post_fir_sample_rate_hz']==window._full_spectrum['output_sample_rate_hz']
-    assert len(window._full_spectrum['amplitude'])==512
+    assert len(window._full_spectrum['amplitude'])==plan['post_fir_fft_n']//2
     assert 'повторного DC нет' in window.spec_hint.text()
     assert not window.spec_compare_button.isEnabled()
     assert window.spec_copy_button.isEnabled()
