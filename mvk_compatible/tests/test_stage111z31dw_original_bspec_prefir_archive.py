@@ -130,3 +130,47 @@ def test_original_archive_spectrum_gui_binds_actual_post_fir_bins(qt_app,tmp_pat
     finally:
         w.close()
         qt_app.processEvents()
+
+
+@pytest.mark.parametrize("code,post_n,required",[
+    (20,512,1075),(1,256,1121),(4,128,1217),
+])
+def test_original_bspec_1024_pre_fir_has_short_real_fft_no_fake_4096(
+        tmp_path,code,post_n,required):
+    """Original 007CC198 FFT accepts post-FIR powers of 2 below 1024."""
+    session=OfflineSession.open(fixture_zip(tmp_path,sample_count=4096))
+    raw_sha=session.samples(1)[0].tobytes()
+    plan=source_selected_envelope_fft_plan(1024,65536,code)
+    assert plan["post_fir_fft_n"]==post_n
+    assert plan["source_getadjusted_length_samples"]==required
+    out=session.spectrum_envelope(
+        1,code,1024,fake_profile(i=1.,q=.4),
+        source_selected_bspec_lines=True,backend="numpy",mode=1)
+    assert out["source_bspec_lines_before_fir"]==1024
+    assert out["n_fft"]==post_n
+    assert len(out["amplitude"])==post_n//2
+    assert out["df_hz"]==pytest.approx(65536/1024)
+    assert out["source_history_samples"]==required
+    assert out["spectrum_summary"]["n_fft"]==post_n
+    assert np.isfinite(out["amplitude"]).all()
+    assert session.samples(1)[0].tobytes()==raw_sha
+    assert out["original_delphi_numerical_parity_verified"] is False
+
+
+@pytest.mark.parametrize("n,expected",[(8,3),(16,6),(512,200)])
+def test_post_fir_tqgrapher_pixel_series_handles_short_source_n(n,expected):
+    from ..core.tqgrapher_display_idr_candidate import spectrum_display_contract
+    from ..core.spectrum_display_source import source_derived_mode_display
+    from ..core.spectrum_metrics_idr_candidate import original_spectrum_summary
+    source=spectrum_display_contract(n,65536)
+    assert source["grapher_series_bins"]==expected
+    a=np.ones(n//2,dtype="<f4")
+    a[:2]=0
+    for mode in range(4):
+        y=source_derived_mode_display(a,n_fft=n,mode=mode,f_range=1.)
+        assert len(y)==n//2
+        assert np.isfinite(y).all()
+        summary=original_spectrum_summary(
+            a,n_fft=n,fs_out=65536,f_range=1.,spectrum_mode=mode)
+        assert summary["n_fft"]==n
+        assert summary["original_delphi_numerical_parity_verified"] is False
