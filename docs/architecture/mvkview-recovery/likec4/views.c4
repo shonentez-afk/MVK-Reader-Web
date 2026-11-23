@@ -1,0 +1,22 @@
+// Two complementary public architectural perspectives; no original IDR data.
+views {
+  view index {
+    title 'MVKView Compatible Stage111 — system boundary'
+    description 'Публичная обзорная схема. Соответствие оригинальному Win32/MVK01 не аттестовано.'
+    include stage111
+    include mvk01
+    include quality
+  }
+
+  view components of stage111 {
+    title 'MVKView Compatible — основные части'
+    description 'Qt desktop, Python Core, Go native и локальные файлы. Основание: публичные Stage111 исходники.'
+    include *
+  }
+
+  view python_core of stage111.core {
+    title 'Python Core — документированные подсистемы'
+    description 'Модель измерений, сигнал, экспорт и проверка same-RAW; не все внутренние реализации считаются активным production.'
+    include *
+  }
+}
