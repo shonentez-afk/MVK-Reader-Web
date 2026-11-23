@@ -89,10 +89,16 @@ def test_source_fir_refuses_missing_extra_samples_or_reinterpreting_bspec_lines(
     with pytest.raises(ValueError,match="Exact source"):
         source_selected_envelope_spectrum_candidate(
             signal,65536,20,profile,selected_bspec_lines_n=4096)
-    with pytest.raises(ValueError,match="small|below accepted"):
-        source_selected_envelope_spectrum_candidate(
-            np.ones(4289,dtype="<f4"),65536,4,profile,
-            selected_bspec_lines_n=4096)
+    # The original Delphi FFT accepts power-of-two N>=2 after FIR;
+    # Code4 bSpecLines4096 yields POST-FIR N512. Former research guard
+    # rejected this genuine result for an unrelated >=1024 constraint.
+    small=source_selected_envelope_spectrum_candidate(
+        np.ones(4289,dtype="<f4"),65536,4,profile,
+        selected_bspec_lines_n=4096)
+    assert small["n_fft"]==512
+    assert small["source_history_samples"]==4289
+    assert len(small["amplitude"])==256
+    assert small["original_delphi_numerical_parity_verified"] is False
     with pytest.raises(ValueError,match="Invalid sample rate"):
         source_selected_envelope_fft_plan(4096,65536,24)
     for bogus in (0,True,512,2048,1000,262145):
