@@ -8,6 +8,7 @@ import pytest
 from ..core.original_adc_view_controls import (
     ADC_HORIZONTAL_MS, ADC_VERTICAL_DIVISORS,
     original_adc_vertical_options, original_adc_vertical_physical_caption,
+    local_adc_vertical_peak_fit,
 )
 from ..core.original_envelope_shared_menu import SOURCE_ORIGINAL_FILTER_CAPTIONS
 from .test_desktop_qt import qt_app
@@ -33,6 +34,16 @@ def test_original_wave_popup_tables_and_1000_reference():
     with pytest.raises(ValueError):
         original_adc_vertical_physical_caption(0,0.)
     assert original_adc_vertical_physical_caption(2,200.)=="40 м/с2"
+    # A source FRange may lead to an original rounded baseline; a
+    # missing FRange never prints nine arbitrary decimals from raw peak.
+    assert local_adc_vertical_peak_fit(0)==pytest.approx(1e-12)
+    assert local_adc_vertical_peak_fit(.2133)==pytest.approx(.5)
+    assert local_adc_vertical_peak_fit(1.1)==pytest.approx(2.)
+    assert local_adc_vertical_peak_fit(23.)==pytest.approx(50.)
+    with pytest.raises(ValueError):
+        local_adc_vertical_peak_fit(float("nan"))
+    with pytest.raises(ValueError):
+        local_adc_vertical_peak_fit(-1.)
 
 
 def test_wave_qt_4_original_popup_menus_and_selection(qt_app,tmp_path):
@@ -64,6 +75,14 @@ def test_wave_qt_4_original_popup_menus_and_selection(qt_app,tmp_path):
         assert win.wave_vscale_button.text()=="1000 м/с2"
         assert [i for i,a in enumerate(win.wave_vscale_menu.actions())
                 if a.isChecked()]==[0]
+        # Vertical-only action must reframe the FULL source data, not
+        # call GetSignal or alter the cached waveform/FFT.
+        original_trace=win._source_wave_trace
+        original_fft=win._full_spectrum
+        win.wave_vscale_menu.actions()[1].trigger()
+        assert win._source_wave_trace is original_trace
+        assert win._full_spectrum is original_fft
+        assert win.wave_vscale_menu.actions()[1].isChecked()
         win.wave_type_menu.actions()[1].trigger()
         win.wave_hscale_menu.actions()[5].trigger()
         win.wave_vscale_menu.actions()[10].trigger()
@@ -101,5 +120,11 @@ def test_wave_no_frange_numeric_labels_disclose_local_fallback(qt_app,tmp_path):
         assert "калибровка не подтверждена" in (
             win.wave_vscale_button.toolTip())
         assert win._source_wave_scale_model["source_f_range_single"] is None
+        peak=win._source_wave_scale_model["window_peak_from_core"]
+        basis=win._source_wave_scale_model["axis_baseline_m_s2_nominal"]
+        assert basis==local_adc_vertical_peak_fit(peak)
+        assert basis>=peak
+        assert win.wave_vscale_menu.actions()[0].text()==(
+            original_adc_vertical_physical_caption(0,basis))
     finally:
         win.close()
