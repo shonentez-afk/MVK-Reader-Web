@@ -1845,11 +1845,18 @@ class MainWindow(QMainWindow):
         except (ValueError,KeyError,TypeError,OverflowError):
             self.spec_mean_primary.setText('Итоги не рассчитаны')
             return
+        # Original PageSpectrum plots Tag0 logarithmic Y in dB, but its
+        # GetSpectrum peak/mean triplet is a separate LINEAR physical
+        # summary (VU for Tag0), not the log plot value. Never label
+        # that triplet "дБ" or switch its units with the chart Y scale.
+        mode=self.spec_mode.currentIndex()
+        summary_unit=('м/с²','м/с²','мм/с','мкм')[mode]
         if isinstance(self.session,DirectBinSession):
-            unit='усл. ед.'
-            calibration='Калибровка НЕ подтверждена'
+            unit=summary_unit+' (условн.)'
+            calibration=(
+                'Калибровка НЕ подтверждена · единицы режима номинальные')
         else:
-            unit='расч. ед.'
+            unit=summary_unit+' (расч.)'
             calibration='Расчётный спектр · оригинал не аттестован'
         linked=self._source_spectrum_readout
         if linked is not None:
