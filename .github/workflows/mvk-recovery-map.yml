@@ -1,0 +1,49 @@
+name: MVK Stage111 public architecture index
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - research/stage111-mvkview-desktop-20261029
+    paths:
+      - 'tools/architecture/**'
+      - 'docs/architecture/mvkview-recovery/**'
+      - '.github/workflows/mvk-recovery-map.yml'
+  push:
+    paths:
+      - 'mvk_compatible/core/**'
+      - 'mvk_compatible/desktop/**'
+      - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/source/**'
+      - 'tools/architecture/**'
+jobs:
+  public-stage111-graph:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test graph extractor
+        run: python -m unittest discover -s tools/architecture -p 'test_*.py' -v
+      - name: Build safe Stage111 graph
+        run: >-
+          python tools/architecture/mvk_stage111_ast.py --repo . --sha "${{ github.sha }}"
+          --out docs/architecture/mvkview-recovery/stage111-public-graph.json
+      - name: Verify public-only graph
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('docs/architecture/mvkview-recovery/stage111-public-graph.json').read_text(encoding='utf-8'))
+          assert d['metadata']['scope']=='PUBLIC_STAGE111_ONLY'
+          assert d['counts']['files_scanned'] > 0
+          forbidden=('Projects.7z','mvkview.idp','mvk_idr')
+          assert all(not any(f in n['path'] for f in forbidden) for n in d['nodes'])
+          print(d['counts'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mvk-stage111-public-graph
+          path: docs/architecture/mvkview-recovery/stage111-public-graph.json
+          retention-days: 14
