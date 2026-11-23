@@ -3509,16 +3509,21 @@ class MainWindow(QMainWindow):
             self.wave_hint.setText('FIR результат: источник SHA/истории не совпал')
             return
         self._source_fir_trace=result
+        self._source_live_wave_cursor=None  # FIR buffer replaces plain GetSignal
+        self._source_live_cursor_last=None
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
+        self.wave_xor_crosshair=None
         self.wave_plot.getViewBox().invertX(True)
         self.wave_plot.setLabel(
-            'bottom','Время до текущего отсчёта, мс · FIR кандидат')
+            'bottom',result.get('source_cursor_axis_unit','мс'))
         self.wave_plot.setLabel('left','Огибающая, м/с² · не Delphi 1:1')
-        self.wave_plot.plot(result['plot_x_ms'],result['plot_y'],
-                            pen=pg.mkPen('#176c92'))
+        self.wave_plot.plot(
+            result.get('source_cursor_plot_x',result['plot_x_ms']),
+            result['plot_y'],pen=pg.mkPen('#176c92'))
         self.wave_plot.setXRange(
-            0.,float(result['original_selected_ms']),padding=0.)
+            0.,float(result.get('source_cursor_axis_max',
+                                result['original_selected_ms'])),padding=0.)
         self._live_wave_vertical_basis=dict(
             adc=result['adc'],session_id=result['source_session_id'],
             full_peak=float(np.max(np.abs(result['full_reversed_getsignal']))),
@@ -3526,9 +3531,12 @@ class MainWindow(QMainWindow):
             source_sha256=result['output_float32_sha256'])
         self._apply_live_wave_vscale()
         self.wave_line=pg.InfiniteLine(angle=90,movable=False,
-                                      pen=pg.mkPen('#ec9b20'))
+                                      pen=pg.mkPen(None))
         self.wave_line.setVisible(False)
         self.wave_plot.addItem(self.wave_line,ignoreBounds=True)
+        self.wave_xor_crosshair=QtSpectrumXorCursor(
+            self.wave_plot.getViewBox())
+        self.wave_plot.addItem(self.wave_xor_crosshair,ignoreBounds=True)
         self._wave_mouse_pixel=None
         self.wave_cursor_primary.setText('Курсор: —')
         self.wave_mean_primary.setText(
