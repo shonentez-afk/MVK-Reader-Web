@@ -111,3 +111,53 @@ def original_physical_y_caption(mode:int,visible_height:float)->str:
         raise ValueError("Physical source Y height must be positive finite")
     units={1:"м/с²",2:"мм/с",3:"мкм"}
     return f"{float(visible_height):.6g}".replace(".",",")+" "+units[int(mode)]
+
+
+# Stage111Z31CQ: extra screenshot-grounded LABEL and DATA-VIEW adaptation.
+# The four source modes are Tag0=dB, Tag1=acceleration, Tag2=velocity,
+# Tag3=displacement. Never infer an instrument sensor calibration here.
+SPECTRUM_Y_UNITS=("дБ","м/с²","мм/с","мкм")
+
+
+def source_spectrum_y_unit(mode:int)->str:
+    if type(mode) is not int or mode not in range(4):
+        raise ValueError("Original spectrum mode must be Tag0..3")
+    return SPECTRUM_Y_UNITS[mode]
+
+
+def research_spectrum_vscale_auto_basis(peak:float)->float:
+    """No FRange: LOCAL 1/2/5 peak-fit, source Tag3 = basis / 1000.
+
+    Original GraphDefaultVScale is computed from channel FRange and NOT
+    from the FFT peak. This explicitly local fallback must not be
+    mistaken for physical device calibration or original Win32 scale.
+    """
+    if (isinstance(peak,bool) or not isinstance(peak,numbers.Real)
+            or not math.isfinite(float(peak)) or float(peak)<0):
+        raise ValueError("Local spectrum peak must be finite and nonnegative")
+    target=max(float(peak),1e-12)*1000.*1.2
+    if not math.isfinite(target) or target<=0:
+        raise ValueError("Local Y fallback overflows")
+    decade=10.**math.floor(math.log10(target))
+    for step in (1.,2.,5.,10.):
+        value=decade*step
+        if value>=target*(1.-1e-12):
+            if not math.isfinite(value) or value<=0:
+                raise ValueError("Unrepresentable local Y fallback")
+            return value
+    raise ValueError("No finite local Y step")
+
+
+def source_spectrum_h_available(axis_end_hz:float)->tuple[bool,...]:
+    """All ten original Hz captions remain; only valid data widths enable.
+
+    For a source FFT after decimation / lower Fs, Qt must not pan into an
+    empty 25600 Hz band. This is explicitly an app data-viewport policy,
+    not a claim of exact original Delphi bSpecHScale behavior.
+    """
+    if (isinstance(axis_end_hz,bool) or
+            not isinstance(axis_end_hz,numbers.Real) or
+            not math.isfinite(float(axis_end_hz)) or axis_end_hz<=0):
+        raise ValueError("Spectrum plot needs a real positive X axis")
+    limit=min(float(HORIZONTAL_HZ[0]),float(axis_end_hz))
+    return tuple(float(hz)<=limit+1e-5 for hz in HORIZONTAL_HZ)
