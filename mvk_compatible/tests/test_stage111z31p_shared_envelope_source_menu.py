@@ -54,7 +54,7 @@ def test_spec_menu_tag_zero_returns_to_plain_fft_without_stale_fir(
         qt_app.processEvents()
         assert win.spec_envelope_button.isChecked()
         assert win._full_spectrum['source']==(
-            'APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE')
+            'SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE')
         assert win.spec_copy_button.isEnabled()
         win.spec_envelope_code.setCurrentIndex(0)
         qt_app.processEvents()
@@ -75,12 +75,15 @@ def test_insufficient_original_fir_history_rejects_and_shows_plain_fft(
         tmp_path, qt_app, monkeypatch):
     from mvk_compatible.desktop import main_window
     from mvk_compatible.desktop.main_window import MainWindow
-    original=main_window.required_original_history
+    # The original popup N is PRE-FIR. Mock the selected source history
+    # rather than the separate legacy research POST-FIR inverse API.
+    original=main_window.source_selected_envelope_fft_plan
 
     def fail_only_new_code(n_fft, fs, code):
+        result=original(n_fft,fs,code)
         if code==31:
-            return {'input_samples':10**12}
-        return original(n_fft,fs,code)
+            return {**result,"source_getadjusted_length_samples":10**12}
+        return result
 
     win=MainWindow()
     try:
@@ -92,8 +95,8 @@ def test_insufficient_original_fir_history_rejects_and_shows_plain_fft(
         win.spec_envelope_code.setCurrentIndex(20)
         win.spec_envelope_button.setChecked(True)
         assert win._full_spectrum['source']==(
-            'APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE')
-        monkeypatch.setattr(main_window,'required_original_history',fail_only_new_code)
+            'SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE')
+        monkeypatch.setattr(main_window,'source_selected_envelope_fft_plan',fail_only_new_code)
         win.spec_envelope_code.setCurrentIndex(31)
         qt_app.processEvents()
         assert win.wave_envelope_code.currentData()==31
