@@ -220,8 +220,11 @@ class OfflineMeasurementFlow:
                           *, end_s: float | None = None,
                           mode: int = 1, backend: str = "idr_float32",
                           f_range: float | None = None,
-                          input_domain: str = DOMAIN_CALIBRATED_BIN) -> dict:
+                          input_domain: str = DOMAIN_CALIBRATED_BIN,
+                          source_selected_bspec_lines: bool = False) -> dict:
+        """Original popup passes PRE-FIR bSpecLines; legacy API is POST-FIR."""
         return self.session.spectrum_envelope(
             self.channel, code, n_fft, profile,
             end_s=end_s, mode=mode, backend=backend, f_range=f_range,
-            input_domain=input_domain)
+            input_domain=input_domain,
+            source_selected_bspec_lines=source_selected_bspec_lines)
