@@ -41,8 +41,12 @@ def required_original_history(n_fft:int, sample_rate:int, code:int)->dict:
     requires MVKView comparison. Never use zero padding or truncate output.
     """
     n=check_n(n_fft)
-    if n<1024:
-        raise ValueError('Original visual spectrum minimum FFT N is 1024')
+    # bSpecLines is PRE-FIR. The source FFT executes on Params.Count
+    # AFTER FIR/decimation, which can legitimately fall below 1024.
+    # Original 007CC198 accepts powers of two >=2; our complete peak
+    # summary/visible series contract is bounded to >=8 (N/2>=4).
+    if n<8:
+        raise ValueError('Source post-FIR FFT requires at least 8 samples')
     dummy=envelope_plan(1,sample_rate,code)
     stages=tuple(t for t in
         (dummy['pre_stage'],dummy['second_stage'],dummy['stage']) if t)
@@ -138,11 +142,10 @@ def source_selected_envelope_spectrum_candidate(
     if (source.ndim!=1 or len(source)!=plan["source_getadjusted_length_samples"]
             or not np.isfinite(source).all()):
         raise ValueError("Exact source GetAdjustedEnvelopeLength window required")
-    if plan["post_fir_fft_n"]<1024:
-        # The existing full-band summary model is validated for >=1024.
-        # Until short-power and summary Win32 references are checked,
-        # do not display a nominally matched but unvalidated small FFT.
-        raise ValueError("Source post-FIR FFT N below accepted local summary range")
+    if plan["post_fir_fft_n"]<8:
+        # Source FFT accepts >=2, but full power summary requires
+        # an interval starting at bin2 and ending at Trunc(N/2.56).
+        raise ValueError("Post-FIR FFT too short for full PageSpectrum summary")
     outcome=envelope_spectrum_idr_candidate(
         source,sample_rate,code,profile,
         n_fft=plan["post_fir_fft_n"],mode=mode,
