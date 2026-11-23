@@ -174,3 +174,24 @@ def test_post_fir_tqgrapher_pixel_series_handles_short_source_n(n,expected):
             a,n_fft=n,fs_out=65536,f_range=1.,spectrum_mode=mode)
         assert summary["n_fft"]==n
         assert summary["original_delphi_numerical_parity_verified"] is False
+
+
+def test_live_original_bspec_short_fft_is_accepted_only_with_verified_ring():
+    from ..core.original_live_envelope_provenance import (
+        original_live_envelope_provenance)
+    result=original_live_envelope_provenance(
+        envelope_code=20,n_fft=1024,sample_rate_hz=65536,
+        profile_available=True,source_ring_verified=True,
+        available_elements=1075)
+    assert result["source_post_fir_fft_n"]==512
+    assert result["source_get_adjusted_envelope_length_samples"]==1075
+    assert result["original_and_candidate_window_lengths_identical"]
+    assert result["local_fir_candidate_can_compute"] is True
+    assert result["live_original_fir_result_verified"] is False
+    assert result["device_command_sent"] is False
+    insufficient=original_live_envelope_provenance(
+        envelope_code=20,n_fft=1024,sample_rate_hz=65536,
+        profile_available=True,source_ring_verified=True,
+        available_elements=1074)
+    assert insufficient["local_fir_candidate_can_compute"] is False
+    assert insufficient["reason_code"]=="SOURCE_FIR_HISTORY_INCOMPLETE"
