@@ -1,0 +1,83 @@
+// Public architecture only. Original MVKView 1.0.47 and its IDR/Pascal
+// evidence are private and are NOT represented in this public model.
+// Code snapshot: 1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc; no runtime or hardware parity claimed.
+specification {
+  element system
+  element component
+  element actor
+}
+
+model {
+  stage111 = system 'MVKView Compatible Stage111' {
+    description 'Восстанавливаемое Windows desktop-приложение. Структура из активных Python/Qt и Go исходников. Не MVK Live и не веб-ридер.'
+
+    entry = component 'Desktop/CLI entrypoint' {
+      description 'Запускает Qt desktop или локальную проверку архива по явному флагу CLI. Источник: mvk_compatible/__main__.py.'
+      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/__main__.py#L5
+      technology 'Python'
+    }
+
+    desktop = component 'Qt desktop and original shell' {
+      description 'MainWindow, вкладки, события измерения и интерфейсные представления. Выполняет вызовы Core и управляет локальным native helper.'
+      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/desktop/main_window.py#L148
+      technology 'PySide6'
+    }
+
+    core = component 'Python Core' {
+      description 'Проверка состояний, обработка выборок и файловые контракты. Содержит исследовательские и production варианты, не все гарантированно активны.'
+
+      measurement = component 'Measurement/Task2 source model' {
+        description 'Модель состояний original Mode2 и проверяемые события Task2. Не подменяет передачу команд реальному прибору.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/core/original_mode2_task2_exchange.py#L42
+        technology 'Python'
+      }
+
+      signal = component 'GetSignal and spectral processing' {
+        description 'Модули расчётов временного сигнала и спектра, в том числе FIR, FFT, режимы амплитуды. Некоторые части source-derived или кандидаты и не являются Win32 runtime oracle.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/core/original_getsignal_live_source.py#L23
+        technology 'Python/NumPy'
+      }
+
+      filecontracts = component 'TSXML and output contracts' {
+        description 'Формирование и проверка имен, структур TSXML и локальных экспортов по верифицированным данным.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/core/original_mode2_source_files.py#L109
+        technology 'Python'
+      }
+
+      parity = component 'Same-RAW evidence checks' {
+        description 'Сопоставляет переданные файлы и стадии расчётов; строгий file-gate не подтверждает физическую Win32/MVK01 сессию.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/core/original_mode2_paired_acceptance.py#L166
+        technology 'Python'
+      }
+    }
+
+    native = component 'Native R6.1 Go receiver' {
+      description 'Локальный TCP/10230 приёмник и Go экспорт с применением разрешённых оператором сетевых действий. Тесты и симуляции не доказывают реальную аппаратную совместимость.'
+      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/tools/research/native_tcp10230_stage108_live_recording_r6_1/source/main.go
+      technology 'Go'
+    }
+
+    localfiles = component 'Local RAW/BIN/TSXML/VALUES/TABLE' {
+      description 'Локальные артефакты записи и офлайн-анализа. Форматы и фактическая односеансная идентичность оригиналу требуют отдельной проверки.'
+    }
+
+    entry -> desktop 'Запускает реальную Qt-оболочку'
+    desktop -> core.measurement 'Вызывает модели состояния Mode2'
+    desktop -> core.signal 'Запрашивает обработку данных и представления графиков'
+    desktop -> native 'Управляет разрешённой локальной записью'
+    native -> localfiles 'Сохраняет измерительные и служебные данные'
+    core.filecontracts -> localfiles 'Формирует/проверяет локальные контракты'
+    core.parity -> localfiles 'Проверяет предоставленные локальные эталоны'
+  }
+
+  mvk01 = actor 'Физический МВК01' {
+    description 'Внешний измерительный прибор. Полная оригинальная сессия IP→Измерить→Task2→RX→Stop на одном потоке НЕ аттестована.'
+  }
+  quality = component 'CI and research tests' {
+    description 'Проверяет synthetic contracts, статические зависимости и десктопные тесты. Тестовые результаты не являются подтверждением original 1:1.'
+    link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/.github/workflows/mvk-recovery-map.yml
+  }
+
+  stage111.native -> mvk01 'TCP/10230; только с разрешения оператора'
+  quality -> stage111.core 'Автоматические синтетические проверки'
+}
