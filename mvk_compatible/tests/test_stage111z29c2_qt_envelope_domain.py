@@ -46,7 +46,7 @@ def test_qt_envelope_original_storage_f_range_selected_explicitly_no_false_alarm
     assert "ГИПОТЕЗА" in w.spec_hint.text()
     assert "после FIR повторного DC нет" in w.spec_hint.text()
     assert "ДО удаления DC" in w.spec_input_domain.toolTip()
-    assert "APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE" in w.spec_hint.text()
+    assert "SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE" in w.spec_hint.text()
     ix=int(np.argmax(before_values))
     assert before_values[ix]>0
     assert after["amplitude"][ix]==pytest.approx(before_values[ix],rel=.005)
