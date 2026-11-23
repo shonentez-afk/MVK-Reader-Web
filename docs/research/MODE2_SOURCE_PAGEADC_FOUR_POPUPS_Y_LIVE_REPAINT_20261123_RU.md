@@ -40,3 +40,12 @@
 - `main`, оригинальные приватные материалы и Go/Task2/WriteData/WriteValues/Stop **не изменялись** в этом пакете; выполнялись только UI/Core/тесты и документация.
 
 **Приоритет далее:** общая парная оригинальная Win32+Go/Qt проверка на одном приборном RAW: IP → Измерить → GetSignal (включая AC/AC+DC, H/V/FIR/курсор) → GetSpectrum → WriteData/WriteValues → Stop. Новые аппаратные команды отправлять только с разрешения оператора.
+
+## Окончательная приёмка CI и автономный EXE
+
+**Выполнено 23.11.2026.** Для последнего **КОДОВОГО SHA `5dfa7f6e1e75d940362a0f88a0cbe4b009bfe2c9`** полный workflow [#45129335953](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45129335953) завершился **5/5 SUCCESS**: Linux Core SUCCESS, Linux Go TMVKThread RX/export SUCCESS, Windows Core+Qt SUCCESS (**2910 основных тестов PASS**, 15 skipped, Qt 59 + 50 + 194 PASS), Windows native QPA/DPI SUCCESS, PyInstaller Windows EXE SUCCESS.
+
+- Windows ZIP `MVKViewCompatible_Stage111_Windows_Preview` — **69 535 240 байт**, [artifact 14797214167](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45129335953/artifacts/14797214167), `expires_at=2026-12-07T07:25:03Z`.
+- [Проверенные скриншоты Qt при DPI100/150 artifact 14796809748](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45129335953/artifacts/14796809748).
+- Два прошлых FAILED CI соответствовали устаревшим ожиданиям тестов (строки «1/5» и `axis_baseline_origin`); они исправлены и сохранены как регрессии на текущий UI, не отключены. Все проверки актуального кода зелёные.
+- Данная приёмка — offline/synthetic; не является приборной Win32 original same-RX/x87, физические единицы без калибровки номинальны. `main`, source Go, приватные файлы и реальные данные не изменялись.
