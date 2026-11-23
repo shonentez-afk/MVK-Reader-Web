@@ -17,7 +17,7 @@ def _make_pair(tmp_path: Path, *, full: bool, mismatch: bool = False):
     (reference / "raw.bin").write_bytes(raw)
     (candidate / "raw.bin").write_bytes(raw)
     kinds = [
-        "ADC_BIN_F32", "TSXML_CP1251", "VALUES_CSV", "TABLE_CSV",
+        "ADC_BIN_F32", "TSXML_CP1251", "VALUES_CSV", "TABLE_CSV",\n        "GETSIGNAL_F32",
         "GETSPECTRUM_PRE_HANN_F32", "GETSPECTRUM_WINDOWED_F32",
         "GETSPECTRUM_FFT_COMPLEX_F32", "GETSPECTRUM_POWER_F32",
     ] if full else ["GETSPECTRUM_Y_F32"]
@@ -86,3 +86,16 @@ def test_one_changed_mode_fails_closed(tmp_path, capsys):
                  "--candidate-dir", str(candidate), "--manifest", str(manifest_file),
                  "--require-complete-same-raw"]) == 3
     capsys.readouterr()
+
+def test_missing_getsignal_rejects_otherwise_complete_same_raw(tmp_path):
+    reference, candidate, manifest, _manifest_file = _make_pair(tmp_path, full=True)
+    without_signal = [x for x in manifest["files"]
+                      if x["kind"] != "GETSIGNAL_F32"]
+    result = compare_original_mode2_pair(reference, candidate,
+        files=without_signal, session_id=manifest["session_id"],
+        reference_raw_name="raw.bin", candidate_raw_name="raw.bin")
+    assert result["all_pairs_byte_identical"]
+    assert result["source_same_raw_four_mode_numeric_comparison_complete"]
+    assert result["source_write_data_values_output_families_supplied"]
+    assert not result["strict_getsignal_pair_supplied"]
+    assert not result["strict_same_raw_file_evidence_complete"]
