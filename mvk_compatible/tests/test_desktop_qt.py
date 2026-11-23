@@ -816,8 +816,15 @@ def test_stage111t_original_vertical_six_menu_and_scroll_position(tmp_path,qt_ap
     # synthetic ZIP has NO source FRange, so physical-unit captions MUST
     # disclose that this Y baseline was locally auto-fitted from the FFT.
     assert win.spec_vscale_button.popupMode()==QToolButton.InstantPopup
+    from mvk_compatible.core.mvk_original_scale_tables_idr_candidate import (
+        original_physical_y_caption)
+    basis=win._spec_vscroll_source_candidate['research_local_full_y_baseline']
+    assert basis>0
     assert [a.text() for a in win.spec_vscale_menu.actions()]==[
-        f'÷ {n} (лок.)' for n in PHYSICAL_Y_DIVISORS]
+        original_physical_y_caption(1,basis/n)
+        for n in PHYSICAL_Y_DIVISORS]
+    assert "локальный" in win.spec_vscale_button.toolTip()
+    assert "калибровка не подтверждена" in win.spec_vscale_button.toolTip()
     assert win._spec_vscroll_source_candidate['qt_y_baseline_from_local_spectrum'] is True
     assert not win._spec_vscroll_source_candidate['original_delphi_y_canvas_parity_verified']
     win.spec_mode.setCurrentIndex(0)
@@ -1158,8 +1165,8 @@ def test_stage111z18_direct_bin_copy_csv_keep_uncalibrated_warning(
     win.tabs.setCurrentIndex(2)
     qt_app.processEvents()
     assert "Калибровка НЕ подтверждена" in win.spec_mean_primary.text()
-    assert "усл. ед." in win.spec_mean_primary.text()
-    assert "м/с²" not in win.spec_mean_primary.text()
+    assert "м/с² (условн.)" in win.spec_mean_primary.text()
+    assert "единицы режима номинальные" in win.spec_mean_primary.text()
     clipboard=QApplication.clipboard()
     clipboard.setText("previous clipboard")
     questions=[]
