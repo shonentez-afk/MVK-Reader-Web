@@ -129,7 +129,7 @@ def test_original_popup_code20_code1_tag0_updates_both_visible_pages_core(
         assert win._source_wave_xaxes_model['kind']=='SOURCE_FIR'
         assert win._source_envelope_cursor.code==20
         assert win._full_spectrum['source']==(
-            'APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE')
+            'SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE')
         assert win._source_original_envelope_receipt['adc_tag']==20
         assert win._source_original_envelope_receipt['spectrum_tag']==20
         assert win._source_adc_spectrum_joint_receipt is not None
@@ -151,7 +151,7 @@ def test_original_popup_code20_code1_tag0_updates_both_visible_pages_core(
         assert menu.actions()[1].isChecked()
         assert sum(a.isChecked() for a in menu.actions())==1
         assert win._full_spectrum['source']==(
-            'APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE')
+            'SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE')
         assert _full_fft_sha(win)!=code20_fft
         # Selecting original Tag0 removes FIR from BOTH independent Core
         # pipelines and leaves no stale FIR-shaped Y curve or cursor.
