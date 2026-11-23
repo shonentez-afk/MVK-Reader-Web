@@ -980,7 +980,7 @@ def test_qt_imports_direct_bin_tsxml_and_displays_no_fabricated_dsp(
     from PySide6.QtCore import Qt
     assert win.spec_tools.horizontalScrollBarPolicy()==Qt.ScrollBarAlwaysOff
     assert win.spec_copy_button.text()=="Копировать"
-    assert win.spec_save_button.text()=="Сохранить CSV"
+    assert win.spec_save_button.text()=="Сохранить"
     # Source button captions must fit within the sidebar available width.
     available=win.spec_tools.viewport().width()
     assert available >= 155
@@ -1091,7 +1091,12 @@ def test_stage111z18_primary_spec_controls_and_research_dock(tmp_path, qt_app):
     assert win.spec_lines_button.text().endswith(" Гц/лин")
     if fs/n==.25:
         assert win.spec_lines_button.text()=="1/4 Гц/лин"
-    assert len(win.spec_lines_menu.actions())==win.spec_n.count()
+    # Original 2026-10-21 screenshot has SIX source bSpecLines Tag rows.
+    # The two 1024/4096 N options stay only in the research inspector.
+    assert len(win.spec_lines_menu.actions())==6
+    assert win.spec_n.count()==8
+    assert [a.data() for a in win.spec_lines_menu.actions()]==[
+        262144,131072,65536,32768,16384,8192]
     assert sum(a.isChecked() for a in win.spec_lines_menu.actions())==1
     assert "СКЗ спектра" in win.spec_mean_primary.text()
     assert "Пик спектра" in win.spec_mean_primary.text()
