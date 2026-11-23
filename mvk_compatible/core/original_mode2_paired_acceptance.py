@@ -282,7 +282,8 @@ def compare_original_mode2_pair(
     )
     return {
         "strict_same_raw_file_evidence_complete":strict_same_raw_files_complete,
-        "strict_getsignal_pair_supplied":"GETSIGNAL_F32" in found,\n        "strict_same_raw_is_physical_attestation":False,
+        "strict_getsignal_pair_supplied":"GETSIGNAL_F32" in found,
+        "strict_same_raw_is_physical_attestation":False,
         "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
         "session_id":session_id,
         "reference_origin":"OPERATOR_SUPPLIED_NOT_AUTHENTICATED_BY_THIS_TOOL",
