@@ -148,7 +148,7 @@ def test_qt_real_radio_click_updates_both_source_pages_and_full_fft(
         assert w._source_envelope_cursor.code==20
         assert w._source_wave_xaxes_model['kind']=='SOURCE_FIR'
         assert w._full_spectrum['source']==(
-            'APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE')
+            'SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE')
         assert _graph_digest(w)!=plain
         assert w._source_original_envelope_receipt[
             'source_filter_caption']=='1окт 16 кГц'
