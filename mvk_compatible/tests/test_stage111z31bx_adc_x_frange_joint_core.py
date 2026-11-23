@@ -80,7 +80,12 @@ def test_original_positive_current_tsxml_f_range_for_adc_v_no_fake_calibration(
     other=source_adc_vertical_view(
         flow5,d5,2,bound_source_sha256=flow5.source_record()["source_bin_sha256"])
     assert other["source_f_range_single"] is None
-    assert other["axis_baseline_origin"]=="LOCAL_UNCALIBRATED_FULL_SIGNAL_PEAK"
+    assert other["axis_baseline_origin"]=="LOCAL_UNCALIBRATED_FULL_SIGNAL_PEAK_125_HEADROOM"
+    # Unknown calibration is local full-signal 1/2/5 fit, not exact
+    # unrounded raw peak or inherited ADC4 FRange.
+    from ..core.original_adc_view_controls import local_adc_vertical_peak_fit
+    assert other["axis_baseline_m_s2_nominal"]==local_adc_vertical_peak_fit(
+        other["window_peak_from_core"])
     with pytest.raises(ValueError,match="Stale"):
         source_adc_vertical_view(flow5,trace,2,bound_source_sha256=current)
 
