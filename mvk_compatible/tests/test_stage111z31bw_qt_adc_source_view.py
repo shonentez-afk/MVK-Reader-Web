@@ -51,7 +51,12 @@ def test_source_adc_scale_menu_14_13_changes_real_core_wave_and_qt_y(
         assert bounds[0]==pytest.approx(bound["y_min"],rel=1e-5,abs=1e-6)
         assert bounds[1]==pytest.approx(bound["y_max"],rel=1e-5,abs=1e-6)
         assert window.wave_vscale_menu.actions()[2].isChecked()
-        assert "1/5" in window.wave_vscale_button.text()
+        from ..core.original_adc_view_controls import (
+            original_adc_vertical_physical_caption)
+        assert window.wave_vscale_button.text()==original_adc_vertical_physical_caption(
+            2,bound["axis_baseline_m_s2_nominal"])
+        assert "калибровка не подтверждена" in (
+            window.wave_vscale_button.toolTip())
         # Switching real ADC refreshes both Core provenance and Qt visible plot.
         window.adc.setCurrentIndex(1)
         qt_app.processEvents()
