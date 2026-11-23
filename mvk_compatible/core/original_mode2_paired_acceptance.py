@@ -272,8 +272,7 @@ def compare_original_mode2_pair(
         all(r["byte_identical"] for r in
             list(tagged_y.values())+[
                 tagged_post_power[2],tagged_post_power[3]]))
-    return {
-        "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
+    # This is a FILE-EVIDENCE gate only. It cannot authenticate the operator\n    # or certify an original Win32 physical measurement.\n    strict_same_raw_files_complete=bool(\n        raw_proof is not None and raw_proof["same_original_tcp_bytes"]\n        and explicit_four_mode_comparison and mode_comparison_equal\n        and writer_families.issubset(found) and equal\n    )\n    return {\n        "strict_same_raw_file_evidence_complete":strict_same_raw_files_complete,\n        "strict_same_raw_is_physical_attestation":False,\n        "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
         "session_id":session_id,
         "reference_origin":"OPERATOR_SUPPLIED_NOT_AUTHENTICATED_BY_THIS_TOOL",
         "same_input_tcp_raw_verified":raw_proof is not None,
@@ -315,7 +314,7 @@ def main(argv=None)->int:
     parser.add_argument("--candidate-dir",required=True)
     parser.add_argument("--manifest",required=True,
                         help="local JSON: session_id, files, optional two RAW basenames")
-    args=parser.parse_args(argv)
+    parser.add_argument("--require-complete-same-raw",action="store_true",\n                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, writer outputs and all compared file bytes match; does NOT attest physical Win32 runtime")\n    args=parser.parse_args(argv)
     manifest=Path(args.manifest)
     if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size>20000:
         parser.error("Manifest must be a small local regular JSON file")
@@ -330,7 +329,7 @@ def main(argv=None)->int:
         candidate_raw_name=data.get("candidate_raw_name"),
     )
     print(json.dumps(report,ensure_ascii=False,indent=2))
-    return 0 if report["all_pairs_byte_identical"] else 2
+    if args.require_complete_same_raw:\n        return 0 if report["strict_same_raw_file_evidence_complete"] else 3\n    return 0 if report["all_pairs_byte_identical"] else 2
 
 
 if __name__=="__main__":
