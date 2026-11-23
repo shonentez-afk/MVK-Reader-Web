@@ -28,3 +28,15 @@ python tools/architecture/mvk_stage111_ast.py --repo . --sha "$(git rev-parse HE
 Открытые проверки: IP → Измерить → Task2 → RX → GetSignal/GetSpectrum → FIR/Hann/FFT/четыре режима → WriteValues/WriteData → Stop; x87/FRange, интерфейс семи страниц и трёх форм, GDI/курсор. Это вопросы доказательств, **не автоматически найденные программные дефекты**.
 
 Документационный PR не меняет приложение, Go-приёмник, протокол MVK01 или `main`. Полные приватные данные нельзя выгружать в публичные GitHub Pages.
+
+## Дополнение: Go AST-граф вызовов
+
+В этой же документационной ветке добавлен `tools/architecture/mvk_stage111_go_ast.go`: **Go stdlib parser/ast** по производственным `.go` в native R6.1 (тестовые `_test.go` исключены). Он фиксирует прямые вызовы package-функций и методы, вызываемые через собственный receiver. Неоднозначные build-tag и непрозрачные selector-вызовы **не приписываются** произвольным целям. Это статический граф, не подтверждение runtime и не новая реализация Go RX.
+
+Локальный запуск:
+
+```bash
+go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "$(git rev-parse HEAD)"
+```
+
+GitHub Actions проверяет два графа — Python AST и Go AST — и загружает их в **один workflow artifact** для последующего локального, приватного слияния. Полная приватная карта не размещается в публичном GitHub.
