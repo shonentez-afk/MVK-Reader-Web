@@ -110,8 +110,11 @@ def _checked_spectrum(flow: OfflineMeasurementFlow,spectrum: dict) -> tuple[dict
     if not isinstance(spectrum,dict) or spectrum.get("channel")!=flow.channel:
         raise ValueError("Spectrum ADC does not match current source")
     n=spectrum.get("n_fft")
-    if type(n) is not int or n<1024 or n>262144 or n & (n-1):
-        raise ValueError("Original NFFT must be a bounded power of two")
+    # Source operator bSpecLines is PRE-FIR. The actual GetSpectrum FFT
+    # runs on the POST-FIR Params.Count, which can be as small as 8 for
+    # the accepted full-summary/cursor model (original FFT itself >=2).
+    if type(n) is not int or n<8 or n>262144 or n & (n-1):
+        raise ValueError("Actual post-FIR FFT must be power of two 8..262144")
     ys=spectrum.get("amplitude")
     xs=spectrum.get("frequency_hz")
     if (ys is None or xs is None or len(ys)!=n//2 or len(xs)!=n//2):
@@ -122,13 +125,29 @@ def _checked_spectrum(flow: OfflineMeasurementFlow,spectrum: dict) -> tuple[dict
     # Checking it against raw BIN Fs falsely rejects an existing, valid
     # envelope FFT and previously opened a modal error in the Qt form.
     # The result still belongs to the same source BIN/ADC/selected flow.
-    if spectrum.get("source")=="APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE":
+    fir_sources=(
+        "APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE",
+        "SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE",
+    )
+    if spectrum.get("source") in fir_sources:
         fs_fft=float(spectrum.get("output_sample_rate_hz",float("nan")))
         if (not math.isfinite(fs_fft) or fs_fft<=0
                 or fs_fft>fs
                 or spectrum.get("pre_fft_envelope_float32_sha256") is None
                 or not spectrum.get("full_fft_bins",False)):
             raise ValueError("FIR spectrum requires validated output Fs/history")
+        if spectrum.get("source")==fir_sources[1]:
+            selected=spectrum.get("source_bspec_lines_before_fir")
+            source_plan=spectrum.get("original_source_fft_plan")
+            if (type(selected) is not int
+                    or not isinstance(source_plan,dict)
+                    or source_plan.get("original_bSpecLines_pre_fir_n")!=selected
+                    or source_plan.get("post_fir_fft_n")!=n
+                    or source_plan.get("post_fir_sample_rate_hz")!=fs_fft
+                    or not math.isclose(fs_fft/n,fs/selected,
+                                         rel_tol=2e-6,abs_tol=1e-8)):
+                raise ValueError(
+                    "Original pre-FIR bSpecLines and actual post-FIR FFT mismatch")
     else:
         fs_fft=fs
     if not (math.isfinite(df) and df>0 and
