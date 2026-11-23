@@ -2117,7 +2117,8 @@ class MainWindow(QMainWindow):
         self.spec_vscale_button.setText(title)
         indicator=("дБ: исходный диапазон" if mode==0 else
                    "Y по FRange: численная модель источника" if source_bound else
-                   "Y: локальный некалиброванный авто-масштаб; "
+                   "Y: локальный автомасштаб; "
+                   "физическая калибровка не подтверждена; "
                    "исходный Tag3 подгоняется под полный FFT-пик")
         source_gain=self._source_spectrum_gain
         source_f_range_note=(
@@ -2284,6 +2285,13 @@ class MainWindow(QMainWindow):
         Qt prevents user selection of an entirely empty band.
         """
         if self._full_spectrum is None:return None
+        if self._spectrum_reference is not None:
+            # A true operator-supplied original x32dbg Power/Y snapshot
+            # deliberately has source bSpecHScale full=25600 even when
+            # TQGRSeries stops at 12800 Hz (Code20, Fs32768).
+            # Never override that source axis with our LOCAL low-Fs
+            # data-only visibility adaptation.
+            return float(HORIZONTAL_HZ[0])
         info=self._spec_display_contract
         if not isinstance(info,dict):return None
         maximum=info.get('grapher_axis_end_frequency_hz')

@@ -126,7 +126,7 @@ def test_original_physical_scale_menu_1_10_100_preserves_baseline_and_fft(
         qt_app.processEvents()
 
 
-def test_unknown_original_f_range_keeps_explicit_uncalibrated_divisors(
+def test_unknown_original_f_range_uses_nominal_auto_fit_labels_without_fake_calibration(
         qt_app,tmp_path):
     from ..desktop.main_window import MainWindow
     bin_file,_,_=_make_pair(tmp_path,adc=4,n=8192)
@@ -138,32 +138,38 @@ def test_unknown_original_f_range_keeps_explicit_uncalibrated_divisors(
         win.spec_mode.setCurrentIndex(1)
         qt_app.processEvents()
         assert win._source_spectrum_gain.frange_single is None
+        from ..core.mvk_original_scale_tables_idr_candidate import (
+            original_physical_y_caption,research_spectrum_vscale_auto_basis)
+        local_max=max(1e-12,abs(win._spec_data_ymin),
+                      abs(win._spec_data_ymax))
+        basis=research_spectrum_vscale_auto_basis(local_max)
         assert [a.text() for a in win.spec_vscale_menu.actions()]==[
-            "÷ 1 (лок.)","÷ 10 (лок.)","÷ 100 (лок.)",
-            "÷ 1000 (лок.)","÷ 10000 (лок.)","÷ 100000 (лок.)"]
+            original_physical_y_caption(1,basis/d)
+            for d in (1,10,100,1000,10000,100000)]
         assert not win._spec_y_source_bound
         assert "локальный" in win.spec_vscale_button.toolTip()
         # Without a proven FRange the source Tag3 initial geometry used
         # to show merely 1/1000 of the spectrum (nearly blank screen).
-        # Fit Tag3 locally to 120% of the complete real FFT peak, and
-        # keep this SAME baseline when switching 1/10/100 menu values.
-        local_max=max(1e-12,abs(win._spec_data_ymin),
-                      abs(win._spec_data_ymax))
+        # Fit Tag3 to the NEXT visually readable 1/2/5 scale above
+        # 120% of the measured peak, not an unsourced sensor FRange.
+        # Preserve one stable basis for all six original Tag positions.
         span=win.spec_plot.getViewBox().viewRange()[1]
         assert span[0]==pytest.approx(0.,abs=1e-6)
-        assert span[1]-span[0]==pytest.approx(1.2*local_max,rel=1e-4)
+        assert span[1]-span[0]==pytest.approx(basis/1000,rel=1e-4)
+        assert basis/1000>=1.2*local_max-1e-9
         auto=win._spec_vscroll_source_candidate
         assert auto["research_local_autofit_original_default_tag"]==3
         assert auto["research_local_float32_zero_anchor_corrected"]
         assert auto["research_local_full_y_baseline"]==pytest.approx(
-            1200*local_max,rel=1e-4)
+            basis,rel=1e-5)
         same_sha=_fft_digest(win)
         win.spec_vscale_menu.actions()[2].trigger()
         qt_app.processEvents()
-        assert win.spec_vscale_button.text()=="÷ 100 (лок.)"
+        assert win.spec_vscale_button.text()==original_physical_y_caption(
+            1,basis/100)
         extended=win.spec_plot.getViewBox().viewRange()[1]
         assert extended[1]-extended[0]==pytest.approx(
-            12*local_max,rel=1e-4)
+            basis/100,rel=1e-4)
         assert _fft_digest(win)==same_sha
         assert win._spec_vscroll_source_candidate[
             "qt_y_baseline_from_local_spectrum"]
