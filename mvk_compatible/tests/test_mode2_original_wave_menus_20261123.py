@@ -8,7 +8,7 @@ import pytest
 from ..core.original_adc_view_controls import (
     ADC_HORIZONTAL_MS, ADC_VERTICAL_DIVISORS,
     original_adc_vertical_options, original_adc_vertical_physical_caption,
-    local_adc_vertical_peak_fit,
+    local_adc_vertical_peak_fit,source_live_adc_vertical_view,
 )
 from ..core.original_envelope_shared_menu import SOURCE_ORIGINAL_FILTER_CAPTIONS
 from .test_desktop_qt import qt_app
@@ -128,3 +128,66 @@ def test_wave_no_frange_numeric_labels_disclose_local_fallback(qt_app,tmp_path):
             original_adc_vertical_physical_caption(0,basis))
     finally:
         win.close()
+
+
+def test_live_y_source_frange1_vs_local_preview_never_transmits():
+    """Provenance-bound Y only; no virtual instrument connection."""
+    local=source_live_adc_vertical_view(
+        full_peak=2.4,tag=2,source_frange1=False)
+    assert local["axis_baseline_m_s2_nominal"]==5.
+    assert local["local_half_height"]==pytest.approx(1.)
+    assert local["source_f_range1_verified"] is False
+    assert local["device_io_performed"] is False
+    assert local["wave_samples_recomputed_by_view"] is False
+
+    live=source_live_adc_vertical_view(
+        full_peak=2.4,tag=2,source_frange1=True)
+    assert live["source_f_range1_verified"] is True
+    assert live["axis_baseline_m_s2_nominal"]==pytest.approx(1.)
+    assert live["local_half_height"]==pytest.approx(.2)
+    assert live["physical_sensor_calibration_verified"] is False
+    assert live["original_delphi_canvas_parity_verified"] is False
+    for invalid in (float("nan"), float("inf"),-1.):
+        with pytest.raises(ValueError):
+            source_live_adc_vertical_view(
+                full_peak=invalid,tag=0,source_frange1=False)
+    with pytest.raises(ValueError):
+        source_live_adc_vertical_view(
+            full_peak=1.,tag=0,source_frange1=1)
+
+
+def test_qt_live_y_popup_reframes_cached_wave_only(qt_app):
+    """No TCP; a pre-validated snapshot is sufficient for Y-only action."""
+    pytest.importorskip("PySide6")
+    from ..desktop.main_window import MainWindow
+    w=MainWindow()
+    w.show()
+    try:
+        w._live_active=True
+        w._native_live_status={
+            "session_id":"SYNTHETIC-WAVE-Y-ONLY", "phase":"RECORDING",
+            "snapshot_stale":False}
+        w._live_wave_vertical_basis=dict(
+            adc=w._ch(),session_id="SYNTHETIC-WAVE-Y-ONLY",
+            full_peak=2.4,source_frange1=False,
+            source_sha256="synthetic-no-device-sha")
+        same=w._live_wave_vertical_basis
+        w.wave_vscale_menu.actions()[2].trigger()  # base 5 / 5 = 1
+        qt_app.processEvents()
+        assert w._live_wave_vertical_basis is same
+        assert w._live_wave_scale_model["device_io_performed"] is False
+        assert w._live_wave_scale_model["local_half_height"]==pytest.approx(1.)
+        assert w.wave_vscale_button.text()=="1 м/с2"
+        assert w.wave_vscale_menu.actions()[2].isChecked()
+        vr=w.wave_plot.getViewBox().viewRange()[1]
+        assert vr[0]==pytest.approx(-1.,abs=1e-5)
+        assert vr[1]==pytest.approx(1.,abs=1e-5)
+        # Change current session: stale bound values must not be reused.
+        w._native_live_status["session_id"]="OTHER-SYNTHETIC-SESSION"
+        w.wave_vscale_menu.actions()[3].trigger()
+        assert w._live_wave_scale_model is None
+        assert w.wave_vscale_button.text()=="100 м/с2"
+        assert "калибровка не подтверждена" in w.wave_vscale_button.toolTip()
+    finally:
+        w._live_active=False
+        w.close()
