@@ -324,7 +324,9 @@ def main(argv=None)->int:
     parser.add_argument("--candidate-dir",required=True)
     parser.add_argument("--manifest",required=True,
                         help="local JSON: session_id, files, optional two RAW basenames")
-    parser.add_argument("--require-complete-same-raw",action="store_true",\n                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, writer outputs and all compared file bytes match; does NOT attest physical Win32 runtime")\n    args=parser.parse_args(argv)
+    parser.add_argument("--require-complete-same-raw",action="store_true",
+                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, writer outputs and all compared file bytes match; does NOT attest physical Win32 runtime")
+    args=parser.parse_args(argv)
     manifest=Path(args.manifest)
     if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size>20000:
         parser.error("Manifest must be a small local regular JSON file")
@@ -339,7 +341,9 @@ def main(argv=None)->int:
         candidate_raw_name=data.get("candidate_raw_name"),
     )
     print(json.dumps(report,ensure_ascii=False,indent=2))
-    if args.require_complete_same_raw:\n        return 0 if report["strict_same_raw_file_evidence_complete"] else 3\n    return 0 if report["all_pairs_byte_identical"] else 2
+    if args.require_complete_same_raw:
+        return 0 if report["strict_same_raw_file_evidence_complete"] else 3
+    return 0 if report["all_pairs_byte_identical"] else 2
 
 
 if __name__=="__main__":
