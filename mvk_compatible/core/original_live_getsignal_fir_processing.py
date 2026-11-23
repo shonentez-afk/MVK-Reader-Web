@@ -119,6 +119,15 @@ def source_live_filtered_getsignal(
         output_float32_sha256=hashlib.sha256(full.tobytes()).hexdigest(),
         source_float32_sha256=digest,
         plot_x_ms=indices.astype(np.float64)*1000./fs_out,
+        # Source 0084B2F8 chooses seconds for H>=10 s and ms below.
+        # Existing plot_x_ms remains for backward-compatible core callers.
+        source_cursor_axis_unit=("с" if ADC_HORIZONTAL_MS[tag]>=10000 else "мс"),
+        source_cursor_axis_max=(ADC_HORIZONTAL_MS[tag]/1000.
+                                if ADC_HORIZONTAL_MS[tag]>=10000
+                                else float(ADC_HORIZONTAL_MS[tag])),
+        source_cursor_plot_x=(indices.astype(np.float64)/fs_out
+                              if ADC_HORIZONTAL_MS[tag]>=10000
+                              else indices.astype(np.float64)*1000./fs_out),
         plot_y=full[indices],
         plot_points=len(indices),
         rms_m_s2=dsp['rms_m_s2'],
@@ -134,21 +143,37 @@ def source_live_filtered_getsignal(
     return result
 
 
-def source_live_filtered_cursor(result:dict,x_ms:float)->dict|None:
-    """Map live graph X back to a full, SHA-bound reversed FIR buffer.
+def source_live_filtered_cursor(
+        result:dict,x_ms:float,*,adjacent_x_ms:float|None=None)->dict|None:
+    """Select from FULL reversed FIR, optionally using one logical pixel.
 
-    This is a research candidate for the original UpdateCursor geometry,
-    not a claim of matching GDI pixels or Delphi absolute timestamps.
+    The existing no-adjacent-X call retains its tested nearest-index
+    candidate. With adjacent_x_ms, source UpdateCursor 007CA9A5
+    prefers the signed Y peak of the current pixel column. Without
+    actual running Win32 PixelLeft/stoiM this remains a Qt candidate.
     """
-    if not isinstance(result,dict) or not isinstance(x_ms,(int,float)) or not math.isfinite(x_ms):
-        raise ValueError("Filtered cursor requires a valid full-data result and X")
-    values=result['full_reversed_getsignal']
-    fs=result['output_rate_hz']
-    if x_ms<0 or x_ms>result['original_selected_ms'] or len(values)==0:
+    if (not isinstance(result,dict) or isinstance(x_ms,bool)
+            or not isinstance(x_ms,(int,float)) or not math.isfinite(x_ms)):
+        raise ValueError("Filtered cursor requires valid full data and X")
+    values=result["full_reversed_getsignal"]
+    fs=result["output_rate_hz"]
+    if x_ms<0 or x_ms>result["original_selected_ms"] or len(values)==0:
         return None
-    index=math.floor(float(x_ms)*fs/1000.+0.5)
-    if not 0<=index<len(values):
+    first=math.floor(float(x_ms)*fs/1000.+.5)
+    if not 0<=first<len(values):
         return None
+    left=right=first
+    if adjacent_x_ms is not None:
+        if (isinstance(adjacent_x_ms,bool) or
+                not isinstance(adjacent_x_ms,(int,float))
+                or not math.isfinite(adjacent_x_ms)):
+            raise ValueError("Filtered next-pixel X must be finite")
+        second=math.floor(float(adjacent_x_ms)*fs/1000.+.5)
+        left=max(0,min(first,second))
+        right=min(len(values)-1,max(first,second))
+        if left>right:return None
+    index=(left+int(np.argmax(values[left:right+1]))
+           if right>left else left)
     return dict(
         output_index=index,
         plot_x_ms=index*1000./fs,
@@ -157,5 +182,8 @@ def source_live_filtered_cursor(result:dict,x_ms:float)->dict|None:
         source_float32_sha256=result['source_float32_sha256'],
         source_session_id=result['source_session_id'],
         source_request_id=result['source_request_id'],
+        source_pixel_signed_peak_candidate=adjacent_x_ms is not None,
+        column_first_index=left,column_last_index_inclusive=right,
         original_delphi_cursor_parity_verified=False,
+        original_win32_pixel_rounding_verified=False,
     )
