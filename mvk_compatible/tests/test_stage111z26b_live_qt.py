@@ -54,7 +54,12 @@ def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_
     assert not window.spec_save_button.isEnabled()
     assert window._spectrum_summary is None
     assert window._full_spectrum is None
-    assert window.wave_line is None
+    # Original PageAdc now has an invisible-until-MouseMove cursor bound
+    # to FULL reversed GetSignal, not a research-only curve without cursor.
+    assert window.wave_line is not None
+    assert not window.wave_line.isVisible()
+    assert window._source_live_wave_cursor is not None
+    assert window._source_live_wave_cursor.full_reversed_getsignal.size==65536
     assert window.session is None
     window.adc.setCurrentIndex(6)
     qt_app.processEvents()
@@ -160,8 +165,21 @@ def test_qt_live_wave_and_fft_survive_late_attach_absolute_source_index(
         assert len(win.wave_plot.listDataItems())==1
         assert len(win.spec_plot.listDataItems())==1
         assert "FFT N=65536" in win.spec_mean.text()
-        # Absolute device time is never mistaken for capture-local 0.
-        assert "Индекс отсчёта" in win.wave_plot.getAxis("bottom").labelText
+        # Original TQGrapher X is source-relative, not absolute device
+        # index. Absolute uint64 indices MUST instead be retained in
+        # the verified full cursor and never mislabel X as device UTC.
+        assert win.wave_plot.getAxis("bottom").labelText=="мс"
+        bound=win._source_live_wave_cursor
+        assert bound is not None
+        assert bound.first_absolute_sample_index >= offset
+        assert bound.end_absolute_sample_exclusive == (
+            offset+4096+actual_fixture_samples)
+        from ..core.original_live_adc_cursor import pick_source_live_wave_cursor
+        selected=pick_source_live_wave_cursor(bound,0.)
+        assert selected["original_uint64_adc_sample_index"] == (
+            bound.end_absolute_sample_exclusive-1)
+        assert selected["original_uint64_adc_sample_index"]>offset
+        assert selected["original_win32_pixel_rounding_parity_verified"] is False
     finally:
         if win._live_active:win._end_live_capture(False)
         win.close()
