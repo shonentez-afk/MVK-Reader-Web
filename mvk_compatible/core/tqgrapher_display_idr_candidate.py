@@ -27,8 +27,8 @@ SOURCE='APP_DERIVED_TQGRAPHER_DISPLAY_IDR_CANDIDATE'
 def spectrum_display_contract(n_fft:int,output_sample_rate_hz:float)->dict:
     """Source-derived max plotted series and original Single XScale."""
     if (not isinstance(n_fft,int) or isinstance(n_fft,bool)
-        or n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1)):
-        raise ValueError('Original spectrum N must be power of two 1024..262144')
+        or n_fft<8 or n_fft>262144 or n_fft&(n_fft-1)):
+        raise ValueError('Source post-FIR FFT N must be power of two 8..262144')
     if (not math.isfinite(output_sample_rate_hz)
         or output_sample_rate_hz<=0):
         raise ValueError('OutputSampleRate must be positive and finite')
