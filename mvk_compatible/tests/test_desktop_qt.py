@@ -1097,7 +1097,13 @@ def test_stage111z18_primary_spec_controls_and_research_dock(tmp_path, qt_app):
     assert win.spec_n.count()==8
     assert [a.data() for a in win.spec_lines_menu.actions()]==[
         262144,131072,65536,32768,16384,8192]
-    assert sum(a.isChecked() for a in win.spec_lines_menu.actions())==1
+    # This fixture may select a SHORT RESEARCH FFT size 1024/4096.
+    # Delphi's six Tag choices must then remain all unchecked rather
+    # than claim a source preset that was never actually selected.
+    selected_n=int(win.spec_n.currentData())
+    delphi_n={int(a.data()) for a in win.spec_lines_menu.actions()}
+    assert sum(a.isChecked() for a in win.spec_lines_menu.actions())==(
+        1 if selected_n in delphi_n else 0)
     assert "СКЗ спектра" in win.spec_mean_primary.text()
     assert "Пик спектра" in win.spec_mean_primary.text()
     assert not win.spec_inspector.isVisible()
