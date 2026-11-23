@@ -75,7 +75,7 @@ model {
   }
   quality = component 'CI and research tests' {
     description 'Проверяет synthetic contracts, статические зависимости и десктопные тесты. Тестовые результаты не являются подтверждением original 1:1.'
-    link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/.github/workflows/mvk-recovery-map.yml
+    link https://github.com/shonentez-afk/MVK-Reader-Web/blob/1ec074861ba5f4cc7bf11843b0f47a9f9a4dcbbc/mvk_compatible/tests/test_desktop_qt.py
   }
 
   stage111.native -> mvk01 'TCP/10230; только с разрешения оператора'
