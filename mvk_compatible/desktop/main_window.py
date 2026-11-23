@@ -3372,7 +3372,9 @@ class MainWindow(QMainWindow):
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
         self._source_live_wave_cursor=None
+        self._source_live_cursor_last=None
         self._sync_original_wave_vertical_popup()
+        self._invalidate_graph_cursor('adc')
         if self._live_preview is None and not had_source:
             return
         self._live_preview=None
@@ -3470,6 +3472,10 @@ class MainWindow(QMainWindow):
         self.wave_line=None
         self._wave_mouse_pixel=None
         self._source_fir_trace=None
+        self._source_live_wave_cursor=None
+        self._source_live_cursor_last=None
+        if self.wave_xor_crosshair is not None:
+            self.wave_xor_crosshair.clear_cursor()
         self.wave_mean_primary.setText(
             f"Огибающая Code{code}: обработка реальной истории "
             f"{window.request.samples} отсчётов")
@@ -3560,9 +3566,13 @@ class MainWindow(QMainWindow):
                 not self._live_active):
             return
         self._source_fir_trace=None
+        self._source_live_cursor_last=None
+        self._source_live_wave_cursor=None
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
         self.wave_line=None
+        if self.wave_xor_crosshair is not None:
+            self.wave_xor_crosshair.clear_cursor()
         self.wave_hint.setText(
             'Огибающая Code%d: FIR/IQ отклонён: %s' %
             (worker.code,reason[1]))
@@ -3926,6 +3936,10 @@ class MainWindow(QMainWindow):
             self._wave_hover_window=None
             self._live_wave_vertical_basis=None
             self._live_wave_scale_model=None
+            self._source_live_wave_cursor=None
+            self._source_live_cursor_last=None
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
             self._sync_original_wave_vertical_popup()
             self.wave_mean_primary.setText(
                 'LIVE GetSignal: ожидание реальных отсчётов')
@@ -4118,7 +4132,9 @@ class MainWindow(QMainWindow):
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
         self._source_live_wave_cursor=None
+        self._source_live_cursor_last=None
         self._sync_original_wave_vertical_popup()
+        self._invalidate_graph_cursor('adc')
         self._source_mode2_runtime.complete(accepted=bool(exported))
         self._sync_source_mode2_runtime()
         # Preserve ONLY completed windows, pinned to this real Native
