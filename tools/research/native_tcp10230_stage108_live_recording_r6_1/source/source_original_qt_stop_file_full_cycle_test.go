@@ -160,7 +160,9 @@ func TestOriginalQtStopFileEndsSameSocketAndClosesWriteDataWriteValues(t *testin
     if len(dataDoc.Windows)!=1 ||
         dataDoc.Windows[0].Outcome!="CLOSED_BY_SOURCE_THREAD" ||
         dataDoc.Windows[0].StageAtEnd!=1 {
-        t.Fatal("WriteData not closed with source Stage1 after Qt Stop")
+        t.Fatalf("WriteData unexpected close: reason=%s, outcome=%s, stage=%d",
+            summary.EndReason,dataDoc.Windows[0].Outcome,
+            dataDoc.Windows[0].StageAtEnd)
     }
     var valuesDoc sourceLiveValuesAudit
     valueBytes,err:=os.ReadFile(filepath.Join(run,sourceLiveValuesAuditName))

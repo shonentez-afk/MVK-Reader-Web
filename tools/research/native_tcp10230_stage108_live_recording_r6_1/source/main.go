@@ -205,6 +205,15 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 			}
 		}
 		if e != nil {
+			// A real Qt Stop-file cancels this capture context. The remote
+			// peer can close its half of TCP in the SAME scheduling window,
+			// returning io.EOF before the next loop checks ctx.Err().
+			// Preserve already processed RX bytes, but classify the final
+			// socket closure as operator Stop, not an interrupted writer.
+			// No extra TX, no synthetic packet or dropped accepted RAW.
+			if ctx.Err() != nil {
+				return "STOPPED_BY_USER", nil
+			}
 			if errors.Is(e, io.EOF) {
 				return "REMOTE_DISCONNECTED", nil
 			}
