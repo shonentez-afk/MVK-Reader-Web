@@ -13,6 +13,7 @@ Original runtime Canvas/FFT numeric parity is not proven by source constants.
 from __future__ import annotations
 import math
 import numbers
+from fractions import Fraction
 
 SOURCE='APP_DERIVED_ORIGINAL_MVKVIEW_SCALE_TABLES_IDR_VERIFIED'
 HORIZONTAL_HZ=(25600,12800,6400,3200,1600,800,400,200,100,50)
@@ -77,3 +78,36 @@ def validate_source_v_scale(mode:int,tag:int)->dict:
     if isinstance(tag,bool) or not isinstance(tag,numbers.Integral) or not 0<=int(tag)<len(options):
         raise ValueError('Not a valid original vertical scale menu tag')
     return dict(options[int(tag)])
+
+def original_fft_resolution_caption(n_fft:int,sample_rate_hz:int|float)->str:
+    """Source six-tag FFT menu: Hz per line at the selected sample rate."""
+    if (isinstance(n_fft,bool) or not isinstance(n_fft,numbers.Integral)
+            or int(n_fft) not in FFT_WINDOW_SAMPLES):
+        raise ValueError("Original bSpecLines supports six Delphi N only")
+    if (isinstance(sample_rate_hz,bool)
+            or not isinstance(sample_rate_hz,numbers.Real)
+            or not math.isfinite(float(sample_rate_hz))
+            or not 0<float(sample_rate_hz)<=10_000_000):
+        raise ValueError("Original FFT resolution requires finite source Fs")
+    step=float(sample_rate_hz)/int(n_fft)
+    ratio=Fraction(step).limit_denominator(10000)
+    if ratio.denominator<=64 and abs(float(ratio)-step)<1e-8:
+        value=(str(ratio.numerator) if ratio.denominator==1 else
+               f"{ratio.numerator}/{ratio.denominator}")
+    else:
+        value=f"{step:.6g}"
+    return value+" Гц/лин"
+
+
+def original_physical_y_caption(mode:int,visible_height:float)->str:
+    """Nominal source-mode units, not a hardware calibration attestation."""
+    if (isinstance(mode,bool) or not isinstance(mode,numbers.Integral)
+            or int(mode) not in (1,2,3)):
+        raise ValueError("Physical source Y captions require mode 1..3")
+    if (isinstance(visible_height,bool)
+            or not isinstance(visible_height,numbers.Real)
+            or not math.isfinite(float(visible_height))
+            or visible_height<=0):
+        raise ValueError("Physical source Y height must be positive finite")
+    units={1:"м/с²",2:"мм/с",3:"мкм"}
+    return f"{float(visible_height):.6g}".replace(".",",")+" "+units[int(mode)]

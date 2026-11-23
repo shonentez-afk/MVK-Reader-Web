@@ -80,7 +80,8 @@ from ..core.tqgrapher_spectrum_scroll_idr_candidate import (
 from ..core.original_offline_view_state import original_reference_axis_contract
 from ..core.mvk_original_scale_tables_idr_candidate import (
     HORIZONTAL_HZ, FFT_WINDOW_SAMPLES, original_h_scale_options,
-    original_v_scale_options,original_fft_size_options,validate_source_h_scale)
+    original_v_scale_options,original_fft_size_options,validate_source_h_scale,
+    original_fft_resolution_caption,original_physical_y_caption)
 from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
     RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
     source_vertical_selection,source_vertical_mode_transition,
@@ -1225,13 +1226,18 @@ class MainWindow(QMainWindow):
         self.spec_lines_button.setFixedHeight(37)
         self.spec_lines_menu=QMenu(self.spec_lines_button)
         self._spec_lines_actions=[]
-        for i in range(self.spec_n.count()):
-            n=int(self.spec_n.itemData(i))
-            a=self.spec_lines_menu.addAction(str(n))
+        # Original 2026-10-21 screenshot shows only SIX source Tag items.
+        # The 1024/4096 experimental choices remain in spec_n inspector.
+        for entry in original_fft_size_options():
+            n=int(entry['n_fft'])
+            index=self.spec_n.findData(n)
+            if index<0:
+                raise ValueError('Original bSpecLines Tag missing from FFT model')
+            a=self.spec_lines_menu.addAction('FFT '+str(n))
             a.setData(n)
             a.setCheckable(True)
             a.triggered.connect(
-                lambda checked=False,index=i:self.spec_n.setCurrentIndex(index))
+                lambda checked=False,index=index:self.spec_n.setCurrentIndex(index))
             self._spec_lines_actions.append(a)
         self.spec_lines_button.setMenu(self.spec_lines_menu)
         self.spec_lines_button.setToolTip(
@@ -1315,7 +1321,7 @@ class MainWindow(QMainWindow):
         self.spec_copy_button.clicked.connect(self._copy_spec_summary)
         stack.addWidget(self.spec_copy_button)
 
-        self.spec_save_button=QPushButton('Сохранить CSV')
+        self.spec_save_button=QPushButton('Сохранить')
         self.spec_save_button.setObjectName('bSpecSaveValue')
         self.spec_save_button.setFixedHeight(41)
         self.spec_save_button.setEnabled(False)
@@ -1810,17 +1816,20 @@ class MainWindow(QMainWindow):
             'FFT N='+str(n)+'; Δf='+(
                 f'{sample_rate/n:.10g} Гц' if sample_rate else 'неизвестно')
             +'. Спектр не дополняется нулями.')
+        if len(self._spec_lines_actions)!=len(FFT_WINDOW_SAMPLES):
+            raise ValueError('Six original bSpecLines Tag rows required')
         for index,action in enumerate(self._spec_lines_actions):
-            count=int(self.spec_n.itemData(index))
-            item=self.spec_n.model().item(index)
-            action.setEnabled(item.isEnabled() if item is not None else True)
+            count=int(FFT_WINDOW_SAMPLES[index])
+            if int(action.data())!=count:
+                raise ValueError('Original bSpecLines source order changed')
+            model_index=self.spec_n.findData(count)
+            item=self.spec_n.model().item(model_index) if model_index>=0 else None
+            action.setEnabled(item.isEnabled() if item is not None else False)
             action.setChecked(count==n)
-            if sample_rate:
-                action.setText(
-                    f'{sample_rate/count:.6g} Гц/лин · FFT {count}'
-                    + (' · исследование' if count in RESEARCH_FFT_SIZES else ''))
-            else:
-                action.setText('FFT '+str(count))
+            action.setToolTip(f'Оригинальный Tag{index}; NFFT={count}; Δf=Fs/N')
+            action.setText(
+                original_fft_resolution_caption(count,sample_rate)
+                if sample_rate is not None else 'FFT '+str(count))
 
     def _sync_spectrum_summary_primary(self):
         """Compact original-looking text with explicit calibration status."""
@@ -2077,9 +2086,9 @@ class MainWindow(QMainWindow):
                 absolute=float(np.float32(source_graph_default/divisor))
                 if not math.isfinite(absolute) or absolute<=0:
                     raise ValueError('Original physical Y caption overflows Single')
-                # Original uses GetDerivedUnits for this channel and mode;
-                # no physical unit is asserted for an uncalibrated BIN.
-                caption=f"{absolute:.6g} усл."
+                # Unit is selected by Source Tag (VU, VS, VP), not
+                # an assertion of verified physical calibration.
+                caption=original_physical_y_caption(mode,absolute)
             else:
                 caption=f"÷ {opt['physical_divisor']} (лок.)"
             action.setText(caption)
@@ -2087,7 +2096,8 @@ class MainWindow(QMainWindow):
                 f"Delphi Tag{current}, "
                 + (f"диапазон {opt['db_range']} дБ" if mode==0
                    else f"делитель {opt['physical_divisor']}, {source_kind}")
-                + "; источник не аттестован как физическая калибровка")
+                + "; единица выбрана по режиму, но исходная физическая "
+                  "калибровка не аттестована")
             action.setChecked(current==tag)
         self._spec_y_visible_range=(float(lower),float(upper))
         self._spec_y_source_bound=bool(source_bound or mode==0)

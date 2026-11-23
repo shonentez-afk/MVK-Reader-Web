@@ -51,9 +51,9 @@ def test_original_vscale_main_button_only_pops_menu_and_source_y_labels(
         for i,(item,value) in enumerate(zip(actions,expected)):
             label=item.text()
             assert label.startswith(f"{value:.6g} ")
-            assert "усл." in label
+            assert "м/с²" in label
             assert f"делитель {10**i}" in item.toolTip()
-        assert button.text()=="0.01 усл."
+        assert button.text()=="0,01 м/с²"
         assert "видимый Y" in button.toolTip()
         assert "кнопка" in button.toolTip().lower()
         original_sha=_fft_digest(win)
