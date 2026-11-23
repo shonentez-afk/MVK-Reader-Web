@@ -125,8 +125,13 @@ def test_original_archive_spectrum_gui_binds_actual_post_fir_bins(qt_app,tmp_pat
         assert w._spec_display_contract["grapher_series_bins"]<1024
         assert len(d["amplitude"])==1024
         assert w._source_spectrum_readout["n_fft"]==2048
-        assert "bSpecLines 4096" in w.spec_core_triplet.text()
-        assert "FFT 2048" in w.spec_core_triplet.text()
+        # The original lbSpecMeanPrimary is intentionally the four-line
+        # physical summary; the selected pre/post FFT N is shown in the
+        # detailed calculation widget, not appended to that source label.
+        assert "bSpecLines до FIR: 4096" in w.spec_mean.text()
+        assert "FFT после FIR: 2048" in w.spec_mean.text()
+        assert "bSpecLines 4096" in w.spec_n_provenance.text()
+        assert "FFT 2048" in w.spec_n_provenance.text()
     finally:
         w.close()
         qt_app.processEvents()
