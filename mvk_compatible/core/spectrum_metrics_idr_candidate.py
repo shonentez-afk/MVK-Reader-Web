@@ -20,8 +20,8 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
     before display conversion; no values taken from a decimated plotted line.
     """
     if (not isinstance(n_fft,(int,np.integer)) or isinstance(n_fft,bool)
-        or n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1)):
-        raise ValueError('Original spectrum requires power-of-two N=1024..262144')
+        or n_fft<8 or n_fft>262144 or n_fft&(n_fft-1)):
+        raise ValueError('Source FFT requires power-of-two N=8..262144 after FIR')
     if (not math.isfinite(fs_out) or fs_out<=0 or not math.isfinite(f_range)
         or f_range<=0 or spectrum_mode not in range(4)):
         raise ValueError('Invalid original GetSpectrum frequency, range or mode')
