@@ -32,6 +32,27 @@ class PublicGraphTests(unittest.TestCase):
                            "call-site"), edges)
             self.assertEqual(graph["counts"]["parse_errors"], 0)
 
+
+    def test_desktop_entrypoint_function_local_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp)
+            base=root/"mvk_compatible"
+            desktop=base/"desktop"
+            desktop.mkdir(parents=True)
+            (desktop/"main_window.py").write_text("def run():\n    return 0\n")
+            (base/"__main__.py").write_text(
+                "def main():\n"
+                "    from .desktop.main_window import run\n"
+                "    return run()\n")
+            d=analyze(root,"test-sha")
+            edges={(x["from"],x["to"],x["type"]) for x in d["edges"]}
+            self.assertIn(
+                ("function:mvk_compatible/__main__.py::main",
+                 "function:mvk_compatible/desktop/main_window.py::run",
+                 "call-site"), edges)
+            self.assertIn("file:mvk_compatible/__main__.py",
+                          {x["id"] for x in d["nodes"]})
+
     def test_go_declarations_not_fake_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
