@@ -73,3 +73,11 @@ jobs:
           node-version: '22'
       - name: Validate public LikeC4 architecture definitions
         run: npx --yes likec4@1.61.0 validate docs/architecture/mvkview-recovery/likec4 --max-warnings 0
+      - name: Build public LikeC4 single-file preview
+        run: npx --yes likec4@1.61.0 build --output-single-file -o /tmp/mvk-stage111-likec4 docs/architecture/mvkview-recovery/likec4
+      - name: Upload public-only LikeC4 preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvk-stage111-public-likec4
+          path: /tmp/mvk-stage111-likec4/index.html
+          retention-days: 14
