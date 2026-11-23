@@ -45,10 +45,35 @@ def original_adc_horizontal_options():
     } for tag,ms in enumerate(ADC_HORIZONTAL_MS))
 
 
-def original_adc_vertical_options():
+def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float)->str:
+    """Original PageAdc Y popup: nominal physical height, not a divisor.
+
+    Original IDP 008D33F4 holds 13 Y divisors; the screen captions are
+    their numeric heights relative to the channel's GraphDefaultVScale.
+    In the screenshot the base is 1000, so Tag0..12 read
+    1000,500,200,...,0.1 m/s2. A caller without verified FRange must
+    label its *local* baseline as uncalibrated; formatting never grants
+    physical device calibration.
+    """
+    tag=_tag("ADC V",tag,len(ADC_VERTICAL_DIVISORS))
+    if (isinstance(baseline_m_s2,bool) or
+            not isinstance(baseline_m_s2,(int,float)) or
+            not math.isfinite(float(baseline_m_s2)) or baseline_m_s2<=0):
+        raise ValueError("ADC Y captions need finite positive current baseline")
+    height=float(baseline_m_s2)/ADC_VERTICAL_DIVISORS[tag]
+    if not math.isfinite(height) or height<=0:
+        raise ValueError("ADC Y caption cannot represent current height")
+    # Exactly original operator text unit "м/с2" (not a fictitious
+    # dimensionless menu "1/N диапазона Y"). Russian decimal comma.
+    return f"{height:.9g}".replace(".",",")+" м/с2"
+
+
+def original_adc_vertical_options(*, baseline_m_s2:float|None=None):
     return tuple({
         "tag":tag,"divisor":div,
-        "caption":f"1/{div} диапазона Y",
+        "caption":(original_adc_vertical_physical_caption(
+            tag,baseline_m_s2) if baseline_m_s2 is not None
+            else f"1/{div} диапазона Y"),
         "original_source_table":"008D33F4",
     } for tag,div in enumerate(ADC_VERTICAL_DIVISORS))
 
@@ -187,6 +212,8 @@ def source_adc_vertical_view(flow:OfflineMeasurementFlow,trace:dict,tag:int,
         "source_window_basis":basis,
         "window_peak_from_core":peak,
         "local_half_height":half,
+        "axis_baseline_m_s2_nominal":baseline,
+        "y_caption_unit_nominal_not_device_calibration":True,
         "axis_baseline_origin":baseline_origin,
         "source_f_range_single":frange,
         "graph_default_vscale_candidate":graph_default,
