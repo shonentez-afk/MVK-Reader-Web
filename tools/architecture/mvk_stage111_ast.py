@@ -22,6 +22,10 @@ def analyze(repo, sha="UNPINNED"):
         path = repo / dirname
         if path.is_dir():
             files.extend(sorted(x for x in path.glob("*.py") if x.name != "__init__.py"))
+    # The real desktop entrypoint is outside core/desktop; it must be indexed.
+    entry = repo / 'mvk_compatible' / '__main__.py'
+    if entry.is_file():
+        files.append(entry)
     root = repo / GO
     if root.is_dir():
         files.extend(sorted(x for x in root.glob("*.go") if not x.name.endswith("_test.go")))
@@ -87,20 +91,31 @@ def analyze(repo, sha="UNPINNED"):
                 seen.add((originfile, dest))
         for name, node, owner in defs:
             origin = "function:" + rel + "::" + name
+            # Imports inside a function are common in Stage111's CLI/UI entrypoint.
+            local_aliases = dict(aliases)
+            for part in ast.walk(node):
+                if isinstance(part, ast.ImportFrom):
+                    target = target_module(part.module or '', part.level, pathlib.Path(rel))
+                    for imported in part.names:
+                        if imported.name != '*':
+                            local_aliases[imported.asname or imported.name] = target + '::' + imported.name
+                elif isinstance(part, ast.Import):
+                    for imported in part.names:
+                        local_aliases[imported.asname or imported.name.split('.')[0]] = imported.name.replace('.', '/') + '.py'
             for part in ast.walk(node):
                 if not isinstance(part, ast.Call):
                     continue
                 f, dest = part.func, None
                 if isinstance(f, ast.Name):
                     dest = "function:" + rel + "::" + f.id
-                    if f.id in aliases and "::" in aliases[f.id]:
-                        dest = "function:" + aliases[f.id]
+                    if f.id in local_aliases and "::" in local_aliases[f.id]:
+                        dest = "function:" + local_aliases[f.id]
                 elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
                     obj = f.value.id
                     if obj in ("self", "cls") and owner:
                         dest = "function:" + rel + "::" + owner + "." + f.attr
-                    elif obj in aliases and "::" not in aliases[obj]:
-                        dest = "function:" + aliases[obj] + "::" + f.attr
+                    elif obj in local_aliases and "::" not in local_aliases[obj]:
+                        dest = "function:" + local_aliases[obj] + "::" + f.attr
                 key = (origin, dest, part.lineno)
                 if dest in nodes and dest != origin and key not in seen:
                     edges.append({"from": origin, "to": dest, "type": "call-site",
@@ -109,7 +124,7 @@ def analyze(repo, sha="UNPINNED"):
     counts = Counter(item["type"] for item in nodes.values())
     counts.update({"files_scanned": len(files), "edges": len(edges), "parse_errors": len(errors)})
     return {"metadata": {"scope": "PUBLIC_STAGE111_ONLY", "sha": sha,
-                         "limitations": "Python AST conservative edges; Go declarations only; no original parity"},
+                         "limitations": "Python AST conservative edges incl. function-local imports; Go regex declarations replaced by separate Go AST artifact; no original parity"},
             "counts": dict(counts), "nodes": list(nodes.values()), "edges": edges, "errors": errors}
 
 def main():
