@@ -105,11 +105,11 @@ func TestOriginalQtStopFileEndsSameSocketAndClosesWriteDataWriteValues(t *testin
 
     reason,runErr:=sourceTask2CaptureAddressRetry(
         ctx,m,ln.Addr().String(),0,4*1024*1024,nil)
-    if err=<-stopIssued;err!=nil{t.Fatal(err)}
+    if stopErr:=<-stopIssued;stopErr!=nil{t.Fatal(stopErr)}
     if reason!="STOPPED_BY_USER" || runErr!=nil {
         t.Fatalf("Qt Stop request did not stop original-shaped Task2: %s %v",reason,runErr)
     }
-    if err=<-senderResult;err!=nil{t.Fatal(err)}
+    if senderErr:=<-senderResult;senderErr!=nil{t.Fatal(senderErr)}
     if m.sourceTCP.Active!=0 || m.sourceLiveDataWriter.active!=nil ||
         m.sourceLiveValuesWriter.active!=nil {
         t.Fatal("Task2 socket/WriteData/WriteValues still open after Stop")
