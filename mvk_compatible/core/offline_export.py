@@ -554,8 +554,8 @@ class OfflineSession:
               required_original_history(n_fft,int(fs),code))
         required=(plan['source_getadjusted_length_samples']
                   if source_selected_bspec_lines else plan['input_samples'])
-        if source_selected_bspec_lines and plan['post_fir_fft_n']<1024:
-            raise ValueError('Source post-FIR FFT below supported full-spectrum model')
+        if source_selected_bspec_lines and plan['post_fir_fft_n']<8:
+            raise ValueError('Source post-FIR FFT below full-spectrum summary range')
         if end_s is not None and (not math.isfinite(end_s) or end_s<=0):
             raise ValueError('Invalid endpoint for archival window')
         end=len(samples) if end_s is None else round(end_s*fs)
