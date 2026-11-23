@@ -277,7 +277,8 @@ def compare_original_mode2_pair(
     strict_same_raw_files_complete=bool(
         raw_proof is not None and raw_proof["same_original_tcp_bytes"]
         and explicit_four_mode_comparison and mode_comparison_equal
-        and writer_families.issubset(found)\n        and "GETSIGNAL_F32" in found and equal
+        and writer_families.issubset(found)
+        and "GETSIGNAL_F32" in found and equal
     )
     return {
         "strict_same_raw_file_evidence_complete":strict_same_raw_files_complete,
