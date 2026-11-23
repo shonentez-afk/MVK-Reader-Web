@@ -101,6 +101,47 @@ def local_adc_vertical_peak_fit(peak:float)->float:
     raise ValueError("ADC local Y baseline cannot fit peak")
 
 
+def source_live_adc_vertical_view(*,full_peak:float,tag:int,
+                                  source_frange1:bool)->dict:
+    """Pure live Y view over accepted Go Float32; no TX or new GetSignal.
+
+    Source original TMvkChannelStorage.FRange=1 is allowed only when the
+    caller has independently verified original source-ring provenance.
+    Otherwise fit the FULL (not LOD) waveform peak locally to 1/2/5.
+    This view only sets TQGrapher-equivalent bounds; physical calibration
+    and original x87 numerical parity are not thereby certified.
+    """
+    tag=_tag("ADC V",tag,len(ADC_VERTICAL_DIVISORS))
+    if type(source_frange1) is not bool:
+        raise ValueError("Source FRange1 provenance must be explicit")
+    if (isinstance(full_peak,bool) or not isinstance(full_peak,(int,float))
+            or not math.isfinite(float(full_peak)) or float(full_peak)<0):
+        raise ValueError("Live ADC full peak must be finite/nonnegative")
+    if source_frange1:
+        graph=spectrum_graph_default_vscale(1.0,1)
+        baseline=float(graph["candidate_graph_default_vscale_single"])
+        origin="SOURCE_LIVE_FRANGE1_GRAPH_DEFAULT_X87_UNATTESTED"
+    else:
+        baseline=local_adc_vertical_peak_fit(full_peak)
+        origin="LIVE_PREVIEW_LOCAL_125_UNCALIBRATED"
+    divisor=ADC_VERTICAL_DIVISORS[tag]
+    half=float(np.float32(baseline/divisor))
+    if not math.isfinite(half) or half<=0:
+        raise ValueError("Live ADC Y scale is not a finite positive Single")
+    return {
+        "source":SOURCE,"tag":tag,"divisor":divisor,
+        "axis_baseline_m_s2_nominal":baseline,
+        "source_f_range1_verified":source_frange1,
+        "axis_baseline_origin":origin,
+        "window_peak_from_full_source":float(full_peak),
+        "local_half_height":half,"y_min":-half,"y_max":half,
+        "original_delphi_canvas_parity_verified":False,
+        "physical_sensor_calibration_verified":False,
+        "wave_samples_recomputed_by_view":False,
+        "device_io_performed":False,
+    }
+
+
 def source_adc_horizontal_view(flow:OfflineMeasurementFlow,tag:int)->dict:
     """Integer GetSignal request length: SelectedSampleRate * ms // 1000.
 
