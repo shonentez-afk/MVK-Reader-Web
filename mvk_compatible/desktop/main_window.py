@@ -104,7 +104,7 @@ from ..core.original_adc_view_controls import (
     original_adc_horizontal_options,original_adc_vertical_options,
     original_adc_vertical_physical_caption,
     source_adc_horizontal_view,validate_source_adc_horizontal_trace,
-    source_adc_vertical_view,
+    source_adc_vertical_view,source_live_adc_vertical_view,
 )
 from ..core.original_adc_source_axes import (
     source_adc_grapher_x,source_adc_grapher_cursor,
@@ -156,6 +156,8 @@ class MainWindow(QMainWindow):
         self._live_long_window=None  # SHA verified source-ring bAdcHScale
         self._live_fft_window=None  # SHA verified source-ring bSpecLines
         self._live_long_rendered_key=None  # never replay the same 5MiB window per Qt tick
+        self._live_wave_vertical_basis=None  # Current SHA-verified live ADC snapshot
+        self._live_wave_scale_model=None  # Y-view only; never a TCP/GetSignal command
         self._source_fir_worker=None  # one cancellable, background FIR/IQ job
         self._source_fir_pending=None  # newest source-window while worker runs
         self._source_fir_trace=None  # full reversed FIR float32, not plotted LOD
@@ -1035,15 +1037,18 @@ class MainWindow(QMainWindow):
         if type(tag) is not int or not 0<=tag<len(ADC_VERTICAL_DIVISORS):
             raise ValueError('Source ADC V menu Tag 0..12 required')
         self._wave_vscale_tag=tag
-        if self._source_wave_trace is not None and not self._live_active:
+        if self._live_active:
+            # Source mAdcVScale1Click ONLY repaints the same signal.
+            # Do not read the Go ring again or advance LastProcessedPos.
+            self._apply_live_wave_vscale()
+        elif self._source_wave_trace is not None:
             self._apply_original_wave_vscale()
         else:
-            # No current source-window calibration: show the source-style
-            # numeric popup with a clearly labelled provisional baseline.
             self._sync_original_wave_vertical_popup()
 
     def _sync_original_wave_vertical_popup(self,baseline:float=1000.,
-                                            *,source_bound:bool=False):
+                                            *,source_bound:bool=False,
+                                            live_source:bool=False):
         """Numeric PageAdc Y menu, source Tag0..12 and checked state.
 
         The screenshot has Tag0=1000 m/s2. When an actual current GetSignal
@@ -1058,14 +1063,40 @@ class MainWindow(QMainWindow):
         selected=original_adc_vertical_physical_caption(
             self._wave_vscale_tag,baseline)
         self.wave_vscale_button.setText(selected)
-        origin=('TSXML FRange текущего канала (исходная формула, '
-                'физическая калибровка не подтверждена)' if source_bound
+        origin=('LIVE FRange=1 по подтверждённому Go-кольцу; '
+                'оригинальный x87 и калибровка не подтверждены' if live_source
+                else 'TSXML FRange текущего канала (исходная формула, '
+                     'физическая калибровка не подтверждена)' if source_bound
                 else 'локальная шкала или стартовый пример 1000; '
                      'физическая калибровка не подтверждена')
         explanation='Вертикальная шкала по исходным 13 делителям. '+origin
         self.wave_vscale_button.setToolTip(explanation)
         for action in self.wave_vscale_menu.actions():
             action.setToolTip(explanation)
+
+    def _apply_live_wave_vscale(self):
+        """Reframe existing LIVE waveform; never start a new RX/GetSignal.
+
+        Source PageAdc mAdcVScale1Click (0084B22C) calls pbAdcPaint,
+        unlike HScale and AC/AC+DC. Ignore stale channel/session data.
+        """
+        bound=self._live_wave_vertical_basis
+        status=self._native_live_status or {}
+        if (not isinstance(bound,dict) or not self._live_active
+                or bound.get('adc')!=self._ch()
+                or bound.get('session_id')!=status.get('session_id')):
+            self._live_wave_scale_model=None
+            self._sync_original_wave_vertical_popup()
+            return
+        model=source_live_adc_vertical_view(
+            full_peak=bound['full_peak'],tag=self._wave_vscale_tag,
+            source_frange1=bound['source_frange1'])
+        self.wave_plot.getViewBox().setYRange(
+            model['y_min'],model['y_max'],padding=0)
+        self._live_wave_scale_model=model
+        self._sync_original_wave_vertical_popup(
+            baseline=float(model['axis_baseline_m_s2_nominal']),
+            live_source=model['source_f_range1_verified'])
 
     def _apply_original_wave_vscale(self):
         '''One SHA-bound post-GetSignal Y axis, without reading drawn LOD samples.'''
@@ -3027,6 +3058,8 @@ class MainWindow(QMainWindow):
         self._live_long_window=None
         self._live_fft_window=None
         self._live_long_rendered_key=None
+        self._live_wave_vertical_basis=None
+        self._live_wave_scale_model=None
         self._source_getsignal_last_processed.clear()
         self._source_getsignal_last_preview_end.clear()
         self._source_large_fft_key=None
@@ -3472,6 +3505,12 @@ class MainWindow(QMainWindow):
                             pen=pg.mkPen('#176c92'))
         self.wave_plot.setXRange(
             0.,float(result['original_selected_ms']),padding=0.)
+        self._live_wave_vertical_basis=dict(
+            adc=result['adc'],session_id=result['source_session_id'],
+            full_peak=float(np.max(np.abs(result['full_reversed_getsignal']))),
+            source_frange1=True,
+            source_sha256=result['output_float32_sha256'])
+        self._apply_live_wave_vscale()
         self.wave_line=pg.InfiniteLine(angle=90,movable=False,
                                       pen=pg.mkPen('#ec9b20'))
         self.wave_line.setVisible(False)
@@ -3667,6 +3706,13 @@ class MainWindow(QMainWindow):
             self.wave_plot.plot(d['time_s'],d['amplitude'],
                                 pen=pg.mkPen('#176c92'))
             self.wave_plot.enableAutoRange()
+            self._live_wave_vertical_basis=dict(
+                adc=ch,session_id=preview.session_id,
+                full_peak=float(d['peak_m_s2']),
+                source_frange1=(
+                    d.get('input_domain')=='original_live_f_range1'),
+                source_sha256=preview.channels[ch].sha256)
+            self._apply_live_wave_vscale()
             if rendered_sig is not None:
                 self._live_long_rendered_key=rendered_sig
             self.wave_mean_primary.setText(
@@ -3686,6 +3732,9 @@ class MainWindow(QMainWindow):
             self.wave_plot.clear()
             self.wave_line=None
             self._wave_hover_window=None
+            self._live_wave_vertical_basis=None
+            self._live_wave_scale_model=None
+            self._sync_original_wave_vertical_popup()
             self.wave_mean_primary.setText(
                 'LIVE GetSignal: ожидание реальных отсчётов')
             self.wave_hint.setText('Live signal недоступен: '+str(exc))
