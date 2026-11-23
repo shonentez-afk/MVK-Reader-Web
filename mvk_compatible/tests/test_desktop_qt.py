@@ -256,7 +256,7 @@ def test_qt_stage111f_spectrum_envelope_requires_private_profile(tmp_path,qt_app
     qt_app.processEvents()
     assert window.spec_envelope_button.isChecked()
     assert window.spec_n.currentText()=='1024' # exact source FIR history; no N padding
-    assert window._full_spectrum['source']=='APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE'
+    # Original operator bSpecLines denotes PRE-FIR N; UI must now use the\n    # SOURCE_SELECTED GetSpectrum chain, not the old post-FIR research API.\n    assert window._full_spectrum['source']=='SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE'\n    plan=window._full_spectrum['original_source_fft_plan']\n    assert plan['post_fir_fft_n']==window._full_spectrum['n_fft']\n    assert plan['post_fir_sample_rate_hz']==window._full_spectrum['output_sample_rate_hz']
     assert len(window._full_spectrum['amplitude'])==512
     assert 'повторного DC нет' in window.spec_hint.text()
     assert not window.spec_compare_button.isEnabled()
