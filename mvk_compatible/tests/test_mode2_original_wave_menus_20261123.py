@@ -10,6 +10,7 @@ from ..core.original_adc_view_controls import (
     original_adc_vertical_options, original_adc_vertical_physical_caption,
 )
 from ..core.original_envelope_shared_menu import SOURCE_ORIGINAL_FILTER_CAPTIONS
+from .test_desktop_qt import qt_app
 
 
 def test_original_wave_popup_tables_and_1000_reference():
