@@ -24,12 +24,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
       - name: Test graph extractor
         run: python -m unittest discover -s tools/architecture -p 'test_*.py' -v
       - name: Build safe Stage111 graph
         run: >-
           python tools/architecture/mvk_stage111_ast.py --repo . --sha "${{ github.sha }}"
           --out docs/architecture/mvkview-recovery/stage111-public-graph.json
+      - name: Build Go AST native call graph
+        run: >-
+          go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ github.sha }}"
+          --out docs/architecture/mvkview-recovery/stage111-go-callgraph.json
       - name: Verify public-only graph
         run: |
           python - <<'PY'
@@ -40,10 +47,17 @@ jobs:
           assert d['counts']['files_scanned'] > 0
           forbidden=('Projects.7z','mvkview.idp','mvk_idr')
           assert all(not any(f in n['path'] for f in forbidden) for n in d['nodes'])
-          print(d['counts'])
+          go=json.loads(Path('docs/architecture/mvkview-recovery/stage111-go-callgraph.json').read_text(encoding='utf-8'))
+          assert go['metadata']['scope']=='PUBLIC_STAGE111_GO_AST_ONLY'
+          assert go['counts']['files_scanned'] >= 10
+          assert go['counts']['direct_call_sites'] > 0
+          assert all(not any(f in n['path'] for f in forbidden) for n in go['nodes'])
+          print(d['counts'], go['counts'])
           PY
       - uses: actions/upload-artifact@v4
         with:
           name: mvk-stage111-public-graph
-          path: docs/architecture/mvkview-recovery/stage111-public-graph.json
+          path: |
+            docs/architecture/mvkview-recovery/stage111-public-graph.json
+            docs/architecture/mvkview-recovery/stage111-go-callgraph.json
           retention-days: 14
