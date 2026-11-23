@@ -28,7 +28,12 @@ from .narrowband_idr_candidate import narrowband_from_samples
 from .calibration_candidate import resolve_f_range
 from .storage_f_range_idr_candidate import (prepare_original_fft_input,DOMAIN_CALIBRATED_BIN)
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
-from .envelope_spectrum_idr_candidate import (required_original_history, envelope_spectrum_idr_candidate, _delphi_integration_power)
+from .envelope_spectrum_idr_candidate import (
+    required_original_history, envelope_spectrum_idr_candidate,
+    source_selected_envelope_fft_plan,
+    source_selected_envelope_spectrum_candidate,
+    _delphi_integration_power,
+)
 from .native_r6_tach_evidence import validate_tach_evidence
 
 VERSION = 'Stage111 compatibility core 0.1 (research)'
@@ -524,21 +529,37 @@ class OfflineSession:
                           profile:EnvelopeProfile, *,
                           end_s:float|None=None,mode:int=1,
                           backend:str='idr_float32',f_range:float|None=None,
-                          input_domain:str=DOMAIN_CALIBRATED_BIN)->dict:
-        """Archival candidate of Delphi GetSpectrum envelope path, read-only.
+                          input_domain:str=DOMAIN_CALIBRATED_BIN,
+                          source_selected_bspec_lines:bool=False)->dict:
+        """Archive FIR spectrum with explicit ORIGINAL vs research N semantics.
 
-        Process exactly the real FIR history needed to yield n_fft samples,
-        then compute the un-decimated spectrum without a second DC removal.
-        end_s is a local input-window selection, NOT proven MVKView position.
+        In original MVKView the selected bSpecLines N is PRE-FIR
+        (007D1462/007D146A); GetAdjustedEnvelopeLength expands this
+        original request, decimation reduces Params.Count, and FFT uses
+        the POST-FIR count at 007D1518. This source menu behaviour is
+        mandatory when source_selected_bspec_lines=True.
+
+        The default False preserves the existing research API where n_fft
+        explicitly means POST-FIR FFT N. It must not be used by the
+        restored original popup. No missing RAW history is padded and
+        physical calibration/original Win32 parity are not inferred.
         """
+        if type(source_selected_bspec_lines) is not bool:
+            raise ValueError('bSpecLines interpretation must be explicit bool')
         samples,fs,audit,filename=self.samples(channel)
         if not float(fs).is_integer():
             raise ValueError('Original envelope FFT requires integer ADC sample rate')
-        plan=required_original_history(n_fft,int(fs),code)
+        plan=(source_selected_envelope_fft_plan(n_fft,int(fs),code)
+              if source_selected_bspec_lines else
+              required_original_history(n_fft,int(fs),code))
+        required=(plan['source_getadjusted_length_samples']
+                  if source_selected_bspec_lines else plan['input_samples'])
+        if source_selected_bspec_lines and plan['post_fir_fft_n']<1024:
+            raise ValueError('Source post-FIR FFT below supported full-spectrum model')
         if end_s is not None and (not math.isfinite(end_s) or end_s<=0):
             raise ValueError('Invalid endpoint for archival window')
         end=len(samples) if end_s is None else round(end_s*fs)
-        start=end-plan['input_samples']
+        start=end-required
         if start<0 or end>len(samples):
             raise ValueError('Insufficient actual BIN history for envelope FFT; no padding')
         if end<=start:raise ValueError('Empty original FFT input')
@@ -549,11 +570,23 @@ class OfflineSession:
             channel=channel,
             source_raw_sha256=audit.get('source_raw_sha256') if isinstance(audit,dict) else None)
         applied,range_source=resolve_f_range(f_range)
-        result=envelope_spectrum_idr_candidate(
-            samples[start:end],int(fs),code,profile,
-            n_fft=n_fft,mode=mode,backend=backend,f_range=applied,
-            input_domain=input_domain)
+        if source_selected_bspec_lines:
+            result=source_selected_envelope_spectrum_candidate(
+                samples[start:end],int(fs),code,profile,
+                selected_bspec_lines_n=n_fft,
+                mode=mode,backend=backend,f_range=applied,
+                input_domain=input_domain)
+        else:
+            result=envelope_spectrum_idr_candidate(
+                samples[start:end],int(fs),code,profile,
+                n_fft=n_fft,mode=mode,backend=backend,f_range=applied,
+                input_domain=input_domain)
         return dict(result,channel=channel,file=filename,
+                    source_bspec_lines_before_fir=(
+                        n_fft if source_selected_bspec_lines else None),
+                    source_bspec_lines_interpretation=(
+                        'ORIGINAL_SELECTED_PRE_FIR' if source_selected_bspec_lines
+                        else 'RESEARCH_EXPLICIT_POST_FIR_N'),
                     f_range_source=range_source,
                     input_source_window=source_window,
                     pre_fir_original_ring_start_index_unverified=True,
