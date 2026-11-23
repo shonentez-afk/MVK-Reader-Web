@@ -162,6 +162,7 @@ class MainWindow(QMainWindow):
         self._live_wave_vertical_basis=None  # Current SHA-verified live ADC snapshot
         self._live_wave_scale_model=None  # Y-view only; never a TCP/GetSignal command
         self._source_live_wave_cursor=None  # Cached full reversed Float32, not plot LOD
+        self._source_live_cursor_last=None  # Selected original uint64 ADC sample candidate
         self._source_fir_worker=None  # one cancellable, background FIR/IQ job
         self._source_fir_pending=None  # newest source-window while worker runs
         self._source_fir_trace=None  # full reversed FIR float32, not plotted LOD
@@ -3579,7 +3580,98 @@ class MainWindow(QMainWindow):
                 code==int(self.wave_envelope_code.currentData() or 0)):
             self._render_live_wave()
 
-    def _live_fir_cursor_from_scene(self,pos):
+    def _live_plain_cursor_from_scene(self,pos,*,force=False):
+        """Source X-only mouse -> SAME full Float32 GetSignal + original RX index.
+
+        No hardware calls, UI timer restart, packet reads, ring consumption,
+        FFT, or cursor lookup in the peak-preserving plotted LOD.
+        """
+        bound=self._source_live_wave_cursor
+        status=self._native_live_status or {}
+        basis=self._live_wave_vertical_basis
+        valid=(bound is not None and self.wave_line is not None
+               and isinstance(pos,QPointF) and self._live_active
+               and not self._measurement_exit_requested
+               and not self._source_live_view_frozen
+               and not self._source_mode2_runtime.status_cells.system_error_latched
+               and status.get('phase')=='RECORDING'
+               and status.get('snapshot_stale') is False
+               and status.get('session_id')==bound.session_id
+               and bound.adc==self._ch()
+               and bound.h_tag==self._wave_hscale_tag
+               and bound.mode==('ac' if self.wave_mode.currentIndex()==0
+                                else 'acdc')
+               and int(self.wave_envelope_code.currentData() or 0)==0
+               and isinstance(basis,dict)
+               and basis.get('source_sha256')==bound.source_input_sha256)
+        if not valid:
+            self._source_live_cursor_last=None
+            if self.wave_line is not None:self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
+            if self._live_active:self.wave_cursor_primary.setText('Курсор: —')
+            return
+        vb=self.wave_plot.getViewBox()
+        rect=vb.sceneBoundingRect()
+        px=math.trunc(pos.x()-rect.left())
+        if not force and px==self._wave_mouse_pixel:return
+        self._wave_mouse_pixel=px
+        canvas=self.wave_plot.source_canvas_model
+        hit=(source_live_cursor_hit(
+            canvas=canvas,scene_left=rect.left(),
+            scene_right=rect.right(),scene_x=pos.x())
+            if canvas is not None else None)
+        if (rect.width()<=2 or
+                (not hit['inside_original_pixel_rect'] if hit is not None
+                 else not rect.left()<pos.x()<rect.right())):
+            self._source_live_cursor_last=None
+            self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
+            self.wave_cursor_primary.setText('Курсор: —')
+            return
+        try:
+            x=float(vb.mapSceneToView(pos).x())
+            # One logical Qt pixel supplies the signed-peak column
+            # candidate. Original PixelLeft/Right + x87 truncation still
+            # require a same-frame Win32 pixel reference for 1:1 parity.
+            xnext=float(vb.mapSceneToView(
+                QPointF(min(rect.right(),pos.x()+1.),pos.y())).x())
+            selected=pick_source_live_wave_cursor(
+                bound,x,adjacent_x=xnext)
+            if selected is None:
+                self._source_live_cursor_last=None
+                self.wave_line.setVisible(False)
+                if self.wave_xor_crosshair is not None:
+                    self.wave_xor_crosshair.clear_cursor()
+                self.wave_cursor_primary.setText('Курсор: —')
+                return
+            self._source_live_cursor_last=selected
+            self.wave_line.setPos(selected['plot_x'])
+            self.wave_line.setVisible(True)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.set_cursor(
+                    selected['plot_x'],selected['full_float32_value'])
+            value=selected['full_float32_value']
+            index=selected['original_uint64_adc_sample_index']
+            self.wave_cursor_primary.setText(
+                f"{selected['plot_x']:.6g} {selected['axis_unit']}\n"
+                f"{value:.7g} м/с²")
+            self.wave_hint.setText(
+                f"GetSignal[{selected['output_index']}] = {value:.8g} м/с²"
+                f" · исходный АЦП#{index}"
+                f" · Go SHA={selected['source_input_sha256'][:12]}"
+                " · полный Float32, НЕ LOD; Win32 пиксели не аттестованы")
+        except (ValueError,KeyError,TypeError,OverflowError) as exc:
+            self._source_live_cursor_last=None
+            self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
+            self.wave_cursor_primary.setText('Курсор: —')
+            self.statusBar().showMessage(
+                'Живой курсор не принят: '+str(exc))
+
+    def _live_fir_cursor_from_scene(self,pos,*,force=False):
         """Source UpdateCursor X -> full reversed FIR sample, never plot LOD."""
         trace=self._source_fir_trace
         if (trace is None or self.wave_line is None or
@@ -6398,6 +6490,7 @@ class MainWindow(QMainWindow):
         """
         if page=='adc':
             self._wave_mouse_pixel=None
+            self._source_live_cursor_last=None
             line=getattr(self,'wave_line',None)
             if line is not None:line.setVisible(False)
             overlay=getattr(self,'wave_xor_crosshair',None)
@@ -6425,8 +6518,11 @@ class MainWindow(QMainWindow):
         self._wave_at_scene_pos(scene_pos,force=False)
 
     def _wave_at_scene_pos(self,pos,*,force=False):
-        if self._live_active and self._source_fir_trace is not None:
-            self._live_fir_cursor_from_scene(pos)
+        if self._live_active:
+            if self._source_fir_trace is not None:
+                self._live_fir_cursor_from_scene(pos,force=force)
+            else:
+                self._live_plain_cursor_from_scene(pos,force=force)
             return
         if not self.session or self.wave_line is None or not isinstance(pos,QPointF):
             return
