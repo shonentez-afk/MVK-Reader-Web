@@ -277,11 +277,11 @@ def compare_original_mode2_pair(
     strict_same_raw_files_complete=bool(
         raw_proof is not None and raw_proof["same_original_tcp_bytes"]
         and explicit_four_mode_comparison and mode_comparison_equal
-        and writer_families.issubset(found) and equal
+        and writer_families.issubset(found)\n        and "GETSIGNAL_F32" in found and equal
     )
     return {
         "strict_same_raw_file_evidence_complete":strict_same_raw_files_complete,
-        "strict_same_raw_is_physical_attestation":False,
+        "strict_getsignal_pair_supplied":"GETSIGNAL_F32" in found,\n        "strict_same_raw_is_physical_attestation":False,
         "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
         "session_id":session_id,
         "reference_origin":"OPERATOR_SUPPLIED_NOT_AUTHENTICATED_BY_THIS_TOOL",
@@ -325,7 +325,7 @@ def main(argv=None)->int:
     parser.add_argument("--manifest",required=True,
                         help="local JSON: session_id, files, optional two RAW basenames")
     parser.add_argument("--require-complete-same-raw",action="store_true",
-                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, writer outputs and all compared file bytes match; does NOT attest physical Win32 runtime")
+                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, GetSignal, writer outputs and all compared file bytes match; does NOT attest physical Win32 runtime")
     args=parser.parse_args(argv)
     manifest=Path(args.manifest)
     if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size>20000:
