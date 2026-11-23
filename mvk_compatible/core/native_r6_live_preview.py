@@ -19,7 +19,7 @@ import numpy as np
 from .native_r6_live_status import _utc_stamp
 from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
 from .storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
-from .offline_export import waveform_for_zip, spectrum_for_zip
+from .offline_export import waveform_for_zip, spectrum_for_zip, reduce_minmax
 from .original_getsignal_live_source import (
     source_live_adc_menu_length,source_getsignal_readiness,
 )
@@ -272,7 +272,8 @@ def provisional_waveform(
     out = waveform_for_zip(
         Path("NOT_OPENED"), adc, start/channel.rate_hz, duration,
         mode="ac" if ac else "acdc", display_order="chronological",
-        sample_provider=preview.samples_for_offline_candidate)
+        sample_provider=preview.samples_for_offline_candidate,
+        include_full_cursor=source_h_tag is not None)
     extended_first,_=extended_u32_window(
         channel.first_index,channel.next_index,total,
         channel.captured_samples if channel.captured_samples is not None
@@ -280,6 +281,23 @@ def provisional_waveform(
     offset = extended_first/channel.rate_hz
     out["time_s"] = [offset + float(x) for x in out["time_s"]]
     _mark_absolute_live_source_window(out,channel)
+    if source_h_tag is not None:
+        # The original PageAdc plots the returned REVERSED GetSignal
+        # buffer with ScrWidth<0. Preserve old absolute-preview time_s
+        # only as research metadata; the visible source X uses these
+        # full-buffer-relative peaks, never a stale LOD cursor.
+        full=out["cursor_full_reversed_getsignal"]
+        axis_factor=1. if source_ms>=10000 else 1000.
+        x,y=reduce_minmax(full,channel.rate_hz,0,4000)
+        out["cursor_plot_x"]=[float(np.float32(v*axis_factor)) for v in x]
+        out["cursor_plot_y"]=y
+        out["cursor_axis_unit"]="с" if source_ms>=10000 else "мс"
+        out["cursor_axis_max"]=(source_ms/1000. if source_ms>=10000
+                                else float(source_ms))
+        out["cursor_xscale_single"]=float(np.float32(
+            axis_factor/channel.rate_hz))
+        out["cursor_original_reverse_x_candidate"]=True
+        out["cursor_plot_is_peak_preserving_lod"]=True
     is_source=(
         preview.source_ring_provenance_verified and
         preview.input_domain==SOURCE_LIVE_ADC_DOMAIN)
