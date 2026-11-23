@@ -41,7 +41,7 @@ def _make_pair(tmp_path: Path, *, full: bool, mismatch: bool = False):
                                     candidate_name=name, source_spectrum_mode=mode))
         if mismatch:
             (candidate / "mode_0.dat").write_bytes(
-                np.arange(8, dtype="<f4").tobytes() + b"extra")
+                (np.arange(8, dtype="<f4") + np.float32(0.25)).tobytes())
     manifest = dict(session_id="SYNTHETIC_NOT_HARDWARE", files=descriptors,
                     reference_raw_name="raw.bin", candidate_raw_name="raw.bin")
     manifest_file = tmp_path / "manifest.json"
