@@ -3706,19 +3706,46 @@ class MainWindow(QMainWindow):
                     proof["next_processed_pos_64"])
                 self._source_getsignal_last_preview_end[cursor_key]=(
                     preview.channels[ch].next_index)
+            # Source PageAdc: original GetSignal returns REVERSED full
+            # Float32 and TQGrapher paints ScrWidth<0. Never use the
+            # chronological absolute-preview LOD as the mouse cursor.
+            # Binding hashes both Go input and GetSignal output once.
+            current_cursor=(bind_source_live_wave_cursor(d,preview,ch)
+                            if tag is not None else None)
+            self._source_live_wave_cursor=current_cursor
             self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
-            self.wave_line=None  # Original cursor requires audited archived samples
+            self.wave_line=None
+            self.wave_xor_crosshair=None
+            self._wave_mouse_pixel=None
             self._wave_hover_window=None
-            self.wave_plot.getViewBox().invertX(False)
-            self.wave_plot.setLabel('bottom','Индекс отсчёта/Fs, с · НЕ часы ПК')
+            self.wave_plot.getViewBox().invertX(current_cursor is not None)
+            self.wave_plot.setLabel(
+                'bottom',current_cursor.axis_unit if current_cursor is not None
+                else 'Индекс отсчёта/Fs, с · НЕ часы ПК')
             self.wave_plot.setLabel(
                 'left',
                 'Go · проверенное кольцо 2M, м/с²' if ring_selected
                 else 'Native R6.1 · preview, НЕ кольцо MVKView, м/с²')
-            self.wave_plot.plot(d['time_s'],d['amplitude'],
-                                pen=pg.mkPen('#176c92'))
-            self.wave_plot.enableAutoRange()
+            if current_cursor is not None:
+                self.wave_plot.plot(
+                    d['cursor_plot_x'],d['cursor_plot_y'],
+                    pen=pg.mkPen('#000000'))
+                self.wave_plot.setXRange(
+                    0.,current_cursor.axis_max,padding=0.)
+            else:
+                self.wave_plot.plot(d['time_s'],d['amplitude'],
+                                    pen=pg.mkPen('#176c92'))
+                self.wave_plot.enableAutoRange()
+            self.wave_line=pg.InfiniteLine(
+                angle=90,movable=False,pen=pg.mkPen(None))
+            self.wave_line.setVisible(False)
+            self.wave_plot.addItem(self.wave_line,ignoreBounds=True)
+            if current_cursor is not None:
+                self.wave_xor_crosshair=QtSpectrumXorCursor(
+                    self.wave_plot.getViewBox())
+                self.wave_plot.addItem(self.wave_xor_crosshair,ignoreBounds=True)
+            self.wave_cursor_primary.setText('Курсор: —')
             self._live_wave_vertical_basis=dict(
                 adc=ch,session_id=preview.session_id,
                 full_peak=float(d['peak_m_s2']),
