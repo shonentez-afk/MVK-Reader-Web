@@ -21,6 +21,7 @@ from ..core.offline_export import OfflineSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from .test_offline_core import fixture_zip
 from .test_envelope_idr_candidate import fake_profile
+from .test_desktop_qt import qt_app
 
 
 def test_original_selected_n_changes_fft_after_fir_and_matches_full_core(tmp_path):
@@ -47,7 +48,7 @@ def test_original_selected_n_changes_fft_after_fir_and_matches_full_core(tmp_pat
     assert len(got["amplitude"])==1024
     assert got["source_history_samples"]==4147
     assert got["archive_input_start_s"]==pytest.approx((12000-4147)/65536)
-    assert got["input_source_window"]["sample_count"]==4147
+    assert got["input_source_window"]["source_sample_count"]==4147
     np.testing.assert_array_equal(
         np.asarray(got["amplitude"],dtype="<f4").view("<u4"),
         np.asarray(expected["amplitude"],dtype="<f4").view("<u4"))
@@ -104,7 +105,7 @@ def test_original_pre_fir_filter_history_fails_closed_without_padding(tmp_path):
 def test_original_archive_spectrum_gui_binds_actual_post_fir_bins(qt_app,tmp_path):
     pytest.importorskip("PySide6")
     from ..desktop.main_window import MainWindow
-    from .test_desktop_qt import qt_app as _qt_fixture  # shared fixture
+    # Registered shared Qt fixture lives at module scope.
     w=MainWindow()
     w.show()
     try:
