@@ -296,7 +296,7 @@ def reduce_minmax(samples:np.ndarray, fs:float, offset:int, points:int):
 def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
                      mode: str='acdc', points:int=4000,
                      display_order: str='chronological', *,
-                     sample_provider=None)->dict:
+                     sample_provider=None,include_full_cursor:bool=False)->dict:
     """GetSignal no-envelope f32 candidate; separate original buffer from BIN time."""
     if mode not in ('ac','acdc'):
         raise ValueError('Режим должен быть ac или acdc')
@@ -320,7 +320,7 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
     frame=unfiltered_getsignal(samples[a:b],fs,no_dc=mode=='ac')
     signal=(frame.chronological if display_order=='chronological' else frame.getsignal_buffer)
     xx,yy=reduce_minmax(signal,fs,a,points)
-    return {'version':VERSION,'channel':channel,'sample_rate_hz':fs,
+    result={'version':VERSION,'channel':channel,'sample_rate_hz':fs,
             'total_samples':int(len(samples)), 'window_samples':int(len(signal)),
             'start_s':a/fs,'end_s':b/fs,
             'time_s':xx,'amplitude':yy,'unit':'м/с²',
@@ -341,6 +341,20 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
                'AC+DC: NoDC=False; GetSignal returns array reversed 007D0DEC. '
                'Envelope not implemented; TQGrapher display orientation still unverified.'),
             'file':filename}
+    if include_full_cursor:
+        # Only explicitly requested LIVE cursor windows hold this
+        # immutable full-resolution reversed GetSignal output. All
+        # ordinary archive/export return structures remain unchanged.
+        full=np.asarray(frame.getsignal_buffer,dtype='<f4')
+        full.setflags(write=False)
+        result['cursor_full_reversed_getsignal']=full
+        result['cursor_full_reversed_sha256']=hashlib.sha256(
+            full.tobytes()).hexdigest()
+        result['cursor_full_source_window_sha256']=source_window.get(
+            'source_float32_le_sha256')
+        result['cursor_not_visual_lod']=True
+        result['cursor_original_win32_pixel_parity_verified']=False
+    return result
 
 
 def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None=None,
