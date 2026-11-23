@@ -39,6 +39,7 @@ from ..core.native_r6_live_preview import provisional_waveform, provisional_spec
 from ..core.original_live_envelope_provenance import active_live_envelope_gate
 from ..core.envelope_spectrum_idr_candidate import (
     source_selected_envelope_spectrum_candidate,
+    source_selected_envelope_fft_plan,
 )
 from ..core.direct_bin_session import DirectBinSession
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
@@ -2246,7 +2247,13 @@ class MainWindow(QMainWindow):
                 raise ValueError('Для исходной FFT огибающей нужен локальный IDP и код')
             if not float(fs).is_integer():
                 raise ValueError('Режим исходной огибающей требует целый sample rate')
-            required=required_original_history(n_fft,int(fs),code)['input_samples']
+            # Original 007D1462 expands the SELECTED bSpecLines PRE-FIR N.
+            # The old inverse post-FIR history was a research-only API
+            # and gave the wrong source popup samples and peak frequencies.
+            plan=source_selected_envelope_fft_plan(n_fft,int(fs),code)
+            if plan['post_fir_fft_n']<1024:
+                raise ValueError('Исходный FFT после FIR меньше принятого диапазона')
+            required=plan['source_getadjusted_length_samples']
             end=(total_samples if self.spec_last.isChecked() else
                  round((self._effective_source_start_seconds()+self.wave_seconds.value())*fs))
             return fft_source_archive_gate(
@@ -2619,8 +2626,10 @@ class MainWindow(QMainWindow):
                 for i in range(self.spec_n.count()):
                     n=int(self.spec_n.itemText(i))
                     try:
-                        plan=required_original_history(n,int(fs),code)
-                        if plan['input_samples']<=len(samples):
+                        plan=source_selected_envelope_fft_plan(
+                            n,int(fs),code)
+                        if (plan['post_fir_fft_n']>=1024
+                                and plan['source_getadjusted_length_samples']<=len(samples)):
                             valid.append(n)
                     except ValueError:continue
                 if not valid:raise ValueError('Для такого кода огибающей недостаточно исходной истории BIN')
@@ -6291,16 +6300,26 @@ class MainWindow(QMainWindow):
                        self.envelope_profile,end_s=end_s,
                        mode=self.spec_mode.currentIndex(),
                        backend=self._fft_backend(),f_range=self.spec_f_range.value(),
-                       input_domain=self.spec_input_domain.currentData())
+                       input_domain=self.spec_input_domain.currentData(),
+                       source_selected_bspec_lines=True)
             else:
                 d=flow.spectrum(n_fft,self.spec_mode.currentIndex(),
                                         start,max_hz=1e9,max_points=n_fft//2,
                                         backend=self._fft_backend(),
                                         f_range=self.spec_f_range.value(),
                                         input_domain=self.spec_input_domain.currentData())
-            if len(d['amplitude'])!=n_fft//2:
+            actual_fft_n=int(d['n_fft'])
+            if self.spec_envelope_button.isChecked():
+                if (d.get('source_bspec_lines_before_fir')!=n_fft or
+                        d.get('source_bspec_lines_interpretation')!=
+                        'ORIGINAL_SELECTED_PRE_FIR'):
+                    raise ValueError('Исходный bSpecLines не совпадает с фильтрованным N')
+            elif actual_fft_n!=n_fft:
+                raise ValueError('Без FIR фактический FFT N обязан совпасть с меню')
+            if len(d['amplitude'])!=actual_fft_n//2:
                 raise ValueError('Пиксельный курсор требует все N/2 FFT-бинов')
-            display_contract=spectrum_display_contract(n_fft,d['df_hz']*n_fft)
+            display_contract=spectrum_display_contract(
+                actual_fft_n,d['df_hz']*actual_fft_n)
             d['grapher_series_bins']=display_contract['grapher_series_bins']
             self._spec_display_contract=display_contract
             # Original TQGrapher screenshot: x-axis ends at DataSize * df;
@@ -6327,7 +6346,7 @@ class MainWindow(QMainWindow):
                 if clock is None or clock.adc!=flow.channel:
                     clock=self._sync_source_time_from_wave_start(flow)
                 readout=source_spectrum_readout(
-                    flow,d,n_fft,archive_end=self.spec_last.isChecked(),
+                    flow,d,actual_fft_n,archive_end=self.spec_last.isChecked(),
                     view_time=clock)
                 self._source_spectrum_readout=readout
                 self._source_adc_spectrum_joint_receipt=None
@@ -6350,7 +6369,8 @@ class MainWindow(QMainWindow):
                         "данные из Core (не графические пиксели). "
                         "Разные окна допускаются. original Win32 runtime не сверен.")
                 self.spec_core_triplet.setText(
-                    f"FFT {n_fft}, Δf={readout['df_hz']:.7g} Гц · "
+                    f"bSpecLines {n_fft} → FFT {actual_fft_n}, "
+                    f"Δf={readout['df_hz']:.7g} Гц · "
                     f"СКЗ {readout['spectrum_rms_from_core']:.6g} · "
                     f"Пик {readout['peak_frequency_hz_from_core']:.7g} Гц / "
                     f"{readout['peak_y_from_core']:.6g} · {frame}")
@@ -6445,7 +6465,9 @@ class MainWindow(QMainWindow):
                     + f"Среднее: {summ['output_mean']:.7g} (FRange пока не проверен)\n"
                     f"Пик: {summ['output_peak_frequency_hz']:.7g} Гц\n"
                     f"Амплитуда пика: {summ['output_peak_y']:.7g}\n"
-                    f"Ширина FFT: {d['df_hz']:.7g} Гц, "
+                    f"bSpecLines до FIR: {n_fft}, "
+                    f"FFT после FIR: {actual_fft_n}, "
+                    f"шаг FFT: {d['df_hz']:.7g} Гц, "
                     f"серия {display_contract['grapher_series_bins']}/{len(xx)} бинов\n"
                     + ("Огибающая, исходные FIR локально" if self.spec_envelope_button.isChecked()
                        else "Без огибающей") + "\nОригинальный численный паритет не доказан")
@@ -6475,7 +6497,8 @@ class MainWindow(QMainWindow):
             label=('ОРИГИНАЛЬНЫЙ пункт bSpecLines' if n_fft in FFT_WINDOW_SAMPLES
                    else 'ИССЛЕДОВАТЕЛЬСКИЙ NFFT — в меню Delphi отсутствует')
             self.spec_n_provenance.setText(
-                f"FFT {n_fft}: {label}; история BIN проверена. "
+                f"bSpecLines {n_fft} → post-FIR FFT {actual_fft_n}: "
+                f"{label}; точная история BIN проверена. "
                 "Численный паритет Delphi не установлен.")
             self._sync_fft_menu_availability(samples_count=len(samples),
                                              sample_rate=fs)
