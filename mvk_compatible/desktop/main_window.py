@@ -3363,6 +3363,9 @@ class MainWindow(QMainWindow):
         self._live_long_window=None
         self._live_fft_window=None
         self._live_long_rendered_key=None
+        self._live_wave_vertical_basis=None
+        self._live_wave_scale_model=None
+        self._sync_original_wave_vertical_popup()
         if self._live_preview is None and not had_source:
             return
         self._live_preview=None
@@ -3389,6 +3392,9 @@ class MainWindow(QMainWindow):
         self._source_fir_pending=None
         self._source_fir_trace=None
         self._live_long_rendered_key=None
+        if self._live_active:
+            self._live_wave_vertical_basis=None
+            self._live_wave_scale_model=None
         worker=self._source_fir_worker
         if worker is not None and worker.isRunning():
             worker.cancel()
@@ -3923,6 +3929,9 @@ class MainWindow(QMainWindow):
         self._source_interface_clock.stop()
         self._source_interface_last_page=None
         self._live_active=False
+        self._live_wave_vertical_basis=None
+        self._live_wave_scale_model=None
+        self._sync_original_wave_vertical_popup()
         self._source_mode2_runtime.complete(accepted=bool(exported))
         self._sync_source_mode2_runtime()
         # Preserve ONLY completed windows, pinned to this real Native
