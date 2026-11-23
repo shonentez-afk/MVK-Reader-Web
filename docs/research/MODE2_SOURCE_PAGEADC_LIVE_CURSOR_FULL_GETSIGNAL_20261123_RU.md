@@ -33,3 +33,15 @@
 ## Что дальше
 
 Не дробить восстановление на новые страницы: после прохождения CI провести **один оригинальный общий capture** на одном и том же приборе/сеансе: `IP → Измерить → Task2 → RX → PageAdc GetSignal/AC/DC/H/V/фильтр/XOR → PageSpectrum → WriteData/WriteValues → Stop` с полной проверкой ошибок, пунктов меню, `GetValueText` и форматов. Для идентичности курсора дополнительно нужны реальные Win32 PixelLeft/Right, `FindPreciseXValue` и x87-округление на том же фрагменте. Не публиковать частные файлы и не изменять `main`.
+
+## Итоговая автоматическая приёмка, 23.11.2026
+
+**КОДОВЫЙ SHA:** `f369fddb69641bc907946ee94a20d5ffbba5361c`. [GitHub Actions #45134184106](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45134184106) завершился **5/5 SUCCESS**. Успешные задания: Linux All Core, Linux Go original TMVKThread RX/export, Windows native QPA DPI 100/150%, Windows Core + Qt smoke, Windows autonomous EXE PyInstaller + embedded Go receiver.
+
+Полный Windows-протокол: **2919 основных PASS**, 15 skipped, 30 subtests passed; **59 Qt GUI PASS**, **50 source GUI DPI100 PASS**, **194 original TQGrapher/XOR/cursor DPI150 PASS**. Две старые Windows проверки в `test_stage111z26b_live_qt.py` ожидали отсутствие live-курсора и абсолютное имя X-оси; теперь они проверяют *обязательный скрытый до MouseMove* курсор и source-relative X (мс/с), одновременно доказывая сохранность **абсолютного uint64 device sample index** из SHA-верифицированного полного буфера. Проверки не отключались. Новый `test_stage111z31cw_live_wave_cursor_qt.py` явно завершает синтетические Mode2/QTimer сеансы.
+
+- **EXE ZIP:** [MVKViewCompatible_Stage111_Windows_Preview — artifact #14800156170](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45134184106/artifacts/14800156170), 69 548 486 байт, доступен до 07.12.2026 08:06:52 UTC.
+- **Снимки Source UI DPI100/150:** [artifact #14799153357](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45134184106/artifacts/14799153357), до 30.11.2026.
+- **Синтетические Qt DPI150:** [artifact #14799811350](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45134184106/artifacts/14799811350), до 30.11.2026.
+
+**Верификация ограничена синтетическим/офлайн режимом**; это не результат парного оригинального Win32/x87/GDI на том же приборном MVK01 RAW и не сертификация аппаратной цепочки IP→Измерить→Task2→приём→GetSignal/GetSpectrum→запись→Stop. Исходники приватных файлов/PCAP не опубликованы. `main` не трогать.
