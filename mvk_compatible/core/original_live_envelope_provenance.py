@@ -56,11 +56,14 @@ def original_live_envelope_provenance(*, envelope_code:int,
     # The inverse must use the actual POST-FIR N, not the user's
     # selected PRE-FIR bSpecLines. This is source-confirmed by the
     # mutations of Params.Count at 007D1C48 and 007D1E70.
-    if post>=1024:
+    if post>=8:
+        # The original selected bSpecLines N is PRE-FIR. The resulting
+        # FFT can legitimately be <1024; evaluate the same recurrence
+        # on the true POST-FIR N, never the selected pre-FIR length.
         inverse=required_original_history(post,sample_rate_hz,envelope_code)
         candidate_n=inverse["input_samples"]
     else:
-        candidate_n=source_n  # same per-stage reverse already checked
+        candidate_n=source_n
     if source_n!=candidate_n:
         raise ValueError("Source original FIR window and inverse disagree")
     if not profile_available:
@@ -71,7 +74,7 @@ def original_live_envelope_provenance(*, envelope_code:int,
         reason="SOURCE_FIR_HISTORY_EXCEEDS_2M_RING"
     elif available_elements<source_n:
         reason="SOURCE_FIR_HISTORY_INCOMPLETE"
-    elif post<1024:
+    elif post<8:
         reason="SOURCE_POST_FIR_FFT_BELOW_ACCEPTED_MODEL_N"
     else:
         reason="ORIGINAL_FIR_NUMERICAL_PARITY_UNVERIFIED"
