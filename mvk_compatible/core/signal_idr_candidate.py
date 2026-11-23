@@ -11,6 +11,30 @@ import numpy as np
 from .fft_idr_candidate import mean_center_float32
 
 
+def source_stepwise_signal_power_f64(signal:np.ndarray)->float:
+    """007D0D9F..0DAD / 007D0DFB..0E03 source GetSignal RMS sum.
+
+    Delphi squares each Float32 in x87 (exact in binary64), adds the
+    previous Float64 accumulator and STORES qword after EVERY sample.
+    np.sum reorders additions (pairwise) and therefore is not this path.
+    NumPy accumulate/cumsum stores each intermediate float64 and is
+    vectorized; avoid a slow Python loop in the 20ms live Qt dispatcher.
+    No double gain, no synthetic source samples or original x87 claim.
+    """
+    a=np.asarray(signal,dtype=np.float32)
+    if a.ndim!=1 or not a.size or not bool(np.isfinite(a).all()):
+        raise ValueError("Source GetSignal sum requires finite Float32 window")
+    # The square of any two finite binary32 mantissas fits exactly
+    # in double precision (24+24 <= 48 significant bits).
+    squares=np.square(a.astype(np.float64))
+    if not bool(np.isfinite(squares).all()):
+        raise ValueError("Source GetSignal sum overflow")
+    sequential=np.cumsum(squares,dtype=np.float64)[-1]
+    if not math.isfinite(float(sequential)):
+        raise ValueError("Source GetSignal summed power overflow")
+    return float(sequential)
+
+
 @dataclass(frozen=True)
 class SignalFrame:
     """A reconstructed GetSignal return buffer plus chronological data."""
@@ -49,8 +73,10 @@ def unfiltered_getsignal(samples: np.ndarray, sample_rate: float,
     centered, removed = mean_center_float32(a)
     chronological = centered if no_dc else a.copy()
     output = chronological[::-1].copy()
-    power = np.sum(np.square(chronological.astype(np.float64)), dtype=np.float64)
-    rms = float(np.float32(math.sqrt(float(power) / len(chronological))))
+    # Original _Unit115 007D0D9F/007D0DFB stores a Float64 sum
+    # AFTER EACH sample. Pairwise np.sum is not the source sequence.
+    power = source_stepwise_signal_power_f64(chronological)
+    rms = float(np.float32(math.sqrt(power / len(chronological))))
     return SignalFrame(chronological=chronological, getsignal_buffer=output,
                        removed_mean=removed if no_dc else 0.0,
                        window_mean=removed,

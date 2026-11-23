@@ -39,9 +39,12 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
     # Original _Unit115:007D1807..007D1810 loads a qword accumulator,
     # adds ONE Single power bin, then FSTP qword on every iteration.
     # NumPy sum uses a pairwise reduction and is NOT the source operation.
-    total=0.0
-    for k in range(first,last+1):
-        total=float(total+float(corrected[k]))
+    # np.cumsum retains every binary64 accumulator store after
+    # each Single bin. Unlike np.sum(pairwise), it preserves the
+    # exact 007D1807..1810 source summation order while avoiding
+    # a slow Python iteration during long live spectra.
+    source_bins=corrected[first:last+1].astype(np.float64)
+    total=float(np.cumsum(source_bins,dtype=np.float64)[-1])
     # Source uses strict >, so NumPy argmax correctly keeps first tie.
     candidate=int(np.argmax(corrected[first:last+1]))+first
     peak_raw_power=float(corrected[candidate])
