@@ -50,7 +50,7 @@ def test_original_vscale_main_button_only_pops_menu_and_source_y_labels(
         expected=(10.,1.,.1,.01,.001,.0001)
         for i,(item,value) in enumerate(zip(actions,expected)):
             label=item.text()
-            assert label.startswith(f"{value:.6g} ")
+            assert label.startswith(f"{value:.6g}".replace(".",",")+" ")
             assert "м/с²" in label
             assert f"делитель {10**i}" in item.toolTip()
         assert button.text()=="0,01 м/с²"
@@ -101,7 +101,7 @@ def test_original_physical_scale_menu_1_10_100_preserves_baseline_and_fft(
             qt_app.processEvents()
             assert win._spec_original_vscale_tag==tag
             assert win.spec_vscale_menu.actions()[tag].isChecked()
-            assert win.spec_vscale_button.text().startswith(f"{height:.6g} ")
+            assert win.spec_vscale_button.text().startswith(f"{height:.6g}".replace(".",",")+" ")
             actual=win.spec_plot.getViewBox().viewRange()[1]
             assert actual[0]==pytest.approx(0.,abs=8e-6)
             assert actual[1]-actual[0]==pytest.approx(height,rel=2e-4)

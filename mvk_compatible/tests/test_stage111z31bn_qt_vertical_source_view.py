@@ -61,7 +61,7 @@ def test_original_source_y_axis_uses_tsxml_gain_and_bottom_anchored_mode_switch(
         assert w._spec_original_vscale_tag==3
         # Stage111Z31BZ: original _Unit128:0084B901 builds numerical
         # captions from GraphDefaultVScale/divisor, not the literal divisor.
-        assert w.spec_vscale_button.text()=="0.01 усл."
+        assert w.spec_vscale_button.text()=="0,01 м/с²"
         assert "видимый Y" in w.spec_vscale_button.toolTip()
         assert w.spec_vscroll.value()==99900
         model=w._spec_vscroll_source_candidate
