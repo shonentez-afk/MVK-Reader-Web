@@ -36,7 +36,7 @@ def test_original_wave_popup_tables_and_1000_reference():
     assert original_adc_vertical_physical_caption(2,200.)=="40 м/с2"
     # A source FRange may lead to an original rounded baseline; a
     # missing FRange never prints nine arbitrary decimals from raw peak.
-    assert local_adc_vertical_peak_fit(0)==pytest.approx(1e-12)
+    assert local_adc_vertical_peak_fit(0)==pytest.approx(1.)
     assert local_adc_vertical_peak_fit(.2133)==pytest.approx(.5)
     assert local_adc_vertical_peak_fit(1.1)==pytest.approx(2.)
     assert local_adc_vertical_peak_fit(23.)==pytest.approx(50.)
