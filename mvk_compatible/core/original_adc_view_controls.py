@@ -78,6 +78,29 @@ def original_adc_vertical_options(*, baseline_m_s2:float|None=None):
     } for tag,div in enumerate(ADC_VERTICAL_DIVISORS))
 
 
+def local_adc_vertical_peak_fit(peak:float)->float:
+    """Safe *local* 1/2/5 Y baseline using the verified FULL window peak.
+
+    When TSXML FRange is unknown, avoid presenting a long, spurious
+    0,229360819 m/s2 scale derived from an arbitrary raw Float32 peak.
+    The source original builds its Y menu from channel FRange instead;
+    this 20%-headroom fallback is explicitly NOT that algorithm or device
+    calibration. Never fit to the reduced on-screen curve.
+    """
+    if (isinstance(peak,bool) or not isinstance(peak,(float,int))
+            or not math.isfinite(float(peak)) or float(peak)<0):
+        raise ValueError("ADC local Y baseline needs a finite positive peak")
+    target=max(1e-12,float(peak)*1.2)
+    if not math.isfinite(target):
+        raise ValueError("ADC local Y baseline peak overflows")
+    decade=10.**math.floor(math.log10(target))
+    for step in (1.,2.,5.,10.):
+        candidate=decade*step
+        if candidate>=target*(1.-1e-12) and math.isfinite(candidate):
+            return float(candidate)
+    raise ValueError("ADC local Y baseline cannot fit peak")
+
+
 def source_adc_horizontal_view(flow:OfflineMeasurementFlow,tag:int)->dict:
     """Integer GetSignal request length: SelectedSampleRate * ms // 1000.
 
@@ -173,8 +196,8 @@ def source_adc_vertical_view(flow:OfflineMeasurementFlow,trace:dict,tag:int,
                 or not math.isfinite(peak) or peak<0):
             raise ValueError("No original GetSignal full-window peak")
         basis="GETSIGNAL_FULL_WINDOW_PEAK_NOT_PLOT_LOD"
-    baseline=peak if peak>0 else 1.
-    baseline_origin="LOCAL_UNCALIBRATED_FULL_SIGNAL_PEAK"
+    baseline=local_adc_vertical_peak_fit(peak)
+    baseline_origin="LOCAL_UNCALIBRATED_FULL_SIGNAL_PEAK_125_HEADROOM"
     frange=None
     graph_default=None
     x87_boundary_risk=False
