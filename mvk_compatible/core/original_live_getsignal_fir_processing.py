@@ -154,7 +154,7 @@ def source_live_filtered_cursor(
     """
     if (not isinstance(result,dict) or isinstance(x_ms,bool)
             or not isinstance(x_ms,(int,float)) or not math.isfinite(x_ms)):
-        raise ValueError("Filtered cursor requires valid full data and X")
+        raise ValueError("Filtered cursor requires a valid full-data result and X")
     values=result["full_reversed_getsignal"]
     fs=result["output_rate_hz"]
     if x_ms<0 or x_ms>result["original_selected_ms"] or len(values)==0:
