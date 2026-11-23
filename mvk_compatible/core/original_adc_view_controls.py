@@ -90,6 +90,8 @@ def local_adc_vertical_peak_fit(peak:float)->float:
     if (isinstance(peak,bool) or not isinstance(peak,(float,int))
             or not math.isfinite(float(peak)) or float(peak)<0):
         raise ValueError("ADC local Y baseline needs a finite positive peak")
+    if float(peak)==0.:
+        return 1.  # silence: preserve a legible centered fallback
     target=max(1e-12,float(peak)*1.2)
     if not math.isfinite(target):
         raise ValueError("ADC local Y baseline peak overflows")
