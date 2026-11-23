@@ -6107,7 +6107,8 @@ class MainWindow(QMainWindow):
                 'left',source_spectrum_y_unit(self.spec_mode.currentIndex()))
             self.spec_plot.getAxis('left').setToolTip(
                 'Единицы оси соответствуют выбранному режиму. '
-                'Физическая калибровка BIN/TSXML и паритет Win32 не аттестованы.')
+                'Физическая калибровка BIN/TSXML не подтверждена; '
+                'паритет Win32/GDI не аттестован.')
             self._spec_data_ymin=float(np.min(yy[visible])) if np.any(visible) else 0.
             self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
             if self._spec_data_ymax<=self._spec_data_ymin:
