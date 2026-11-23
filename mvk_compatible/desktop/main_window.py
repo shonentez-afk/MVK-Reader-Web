@@ -2251,8 +2251,8 @@ class MainWindow(QMainWindow):
             # The old inverse post-FIR history was a research-only API
             # and gave the wrong source popup samples and peak frequencies.
             plan=source_selected_envelope_fft_plan(n_fft,int(fs),code)
-            if plan['post_fir_fft_n']<1024:
-                raise ValueError('Исходный FFT после FIR меньше принятого диапазона')
+            if plan['post_fir_fft_n']<8:
+                raise ValueError('Исходный FFT после FIR слишком мал для полной сводки')
             required=plan['source_getadjusted_length_samples']
             end=(total_samples if self.spec_last.isChecked() else
                  round((self._effective_source_start_seconds()+self.wave_seconds.value())*fs))
@@ -2628,7 +2628,7 @@ class MainWindow(QMainWindow):
                     try:
                         plan=source_selected_envelope_fft_plan(
                             n,int(fs),code)
-                        if (plan['post_fir_fft_n']>=1024
+                        if (plan['post_fir_fft_n']>=8
                                 and plan['source_getadjusted_length_samples']<=len(samples)):
                             valid.append(n)
                     except ValueError:continue
