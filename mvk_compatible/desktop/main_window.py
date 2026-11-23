@@ -130,6 +130,9 @@ from .source_live_fir_worker import SourceLiveFIRWorker
 from ..core.original_live_getsignal_fir_processing import (
     source_live_fir_job_key,source_live_filtered_cursor,
 )
+from ..core.original_live_adc_cursor import (
+    bind_source_live_wave_cursor,pick_source_live_wave_cursor,
+)
 from .source_visual_skin import OriginalVisualSkin
 from .original_task_ui import make_original_channel_tabs
 from .source_control_canvas import source_control_canvas
@@ -158,6 +161,7 @@ class MainWindow(QMainWindow):
         self._live_long_rendered_key=None  # never replay the same 5MiB window per Qt tick
         self._live_wave_vertical_basis=None  # Current SHA-verified live ADC snapshot
         self._live_wave_scale_model=None  # Y-view only; never a TCP/GetSignal command
+        self._source_live_wave_cursor=None  # Cached full reversed Float32, not plot LOD
         self._source_fir_worker=None  # one cancellable, background FIR/IQ job
         self._source_fir_pending=None  # newest source-window while worker runs
         self._source_fir_trace=None  # full reversed FIR float32, not plotted LOD
@@ -3060,6 +3064,7 @@ class MainWindow(QMainWindow):
         self._live_long_rendered_key=None
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
+        self._source_live_wave_cursor=None
         self._source_getsignal_last_processed.clear()
         self._source_getsignal_last_preview_end.clear()
         self._source_large_fft_key=None
@@ -3365,6 +3370,7 @@ class MainWindow(QMainWindow):
         self._live_long_rendered_key=None
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
+        self._source_live_wave_cursor=None
         self._sync_original_wave_vertical_popup()
         if self._live_preview is None and not had_source:
             return
@@ -3395,6 +3401,7 @@ class MainWindow(QMainWindow):
         if self._live_active:
             self._live_wave_vertical_basis=None
             self._live_wave_scale_model=None
+            self._source_live_wave_cursor=None
         worker=self._source_fir_worker
         if worker is not None and worker.isRunning():
             worker.cancel()
@@ -3931,6 +3938,7 @@ class MainWindow(QMainWindow):
         self._live_active=False
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
+        self._source_live_wave_cursor=None
         self._sync_original_wave_vertical_popup()
         self._source_mode2_runtime.complete(accepted=bool(exported))
         self._sync_source_mode2_runtime()
