@@ -195,3 +195,32 @@ def test_live_original_bspec_short_fft_is_accepted_only_with_verified_ring():
         available_elements=1074)
     assert insufficient["local_fir_candidate_can_compute"] is False
     assert insufficient["reason_code"]=="SOURCE_FIR_HISTORY_INCOMPLETE"
+
+
+def test_page_spectrum_provenance_accepts_same_adc_short_fir_and_rejects_fake_grid(
+        tmp_path):
+    from ..core.original_spectrum_view_binding import (
+        source_spectrum_gain,source_spectrum_h_view)
+    sess=OfflineSession.open(fixture_zip(tmp_path,sample_count=4096))
+    flow=OfflineMeasurementFlow.bind(sess,channel=1)
+    d=flow.spectrum_envelope(
+        20,1024,fake_profile(i=1.,q=.4),
+        source_selected_bspec_lines=True,backend="numpy",mode=1)
+    assert d["n_fft"]==512
+    assert d["output_sample_rate_hz"]==32768
+    assert d["df_hz"]==pytest.approx(64.)
+    gain=source_spectrum_gain(flow,d,mode=1)
+    assert gain.channel==1
+    h=source_spectrum_h_view(flow,d,selected_hz=50)
+    assert h.n_fft==512
+    assert h.source_series_bins==200
+    assert h.source_axis_end_hz==pytest.approx(12800.)
+    # The previously broken validator must never accept the RAW Fs
+    # instead of this exact source-selected post-FIR rate or wrong N.
+    bad=dict(d,output_sample_rate_hz=65536)
+    with pytest.raises(ValueError,match="resolution|pre-FIR|output"):
+        source_spectrum_gain(flow,bad,mode=1)
+    corrupted_plan=dict(d["original_source_fft_plan"],post_fir_fft_n=1024)
+    with pytest.raises(ValueError,match="pre-FIR"):
+        source_spectrum_gain(
+            flow,dict(d,original_source_fft_plan=corrupted_plan),mode=1)
