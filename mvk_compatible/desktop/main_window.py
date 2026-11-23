@@ -81,7 +81,9 @@ from ..core.original_offline_view_state import original_reference_axis_contract
 from ..core.mvk_original_scale_tables_idr_candidate import (
     HORIZONTAL_HZ, FFT_WINDOW_SAMPLES, original_h_scale_options,
     original_v_scale_options,original_fft_size_options,validate_source_h_scale,
-    original_fft_resolution_caption,original_physical_y_caption)
+    original_fft_resolution_caption,original_physical_y_caption,
+    source_spectrum_y_unit,research_spectrum_vscale_auto_basis,
+    source_spectrum_h_available)
 from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
     RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
     source_vertical_selection,source_vertical_mode_transition,
@@ -1947,7 +1949,7 @@ class MainWindow(QMainWindow):
             source_vertical_page(
                 mode,source_default_vertical_tag(mode))['physical_divisor']))
         default_scale=(max(1e-8,self._spec_data_ymax-self._spec_data_ymin)
-                       if db else local_peak*local_default_divisor*1.2)
+                       if db else research_spectrum_vscale_auto_basis(local_peak))
         divisor=1 if db else int(choice['physical_divisor'])
         # A separately imported operator x32dbg Power/Y reference *does*
         # carry an explicit FRange Single word, so it can use the original
@@ -2055,13 +2057,15 @@ class MainWindow(QMainWindow):
         self._sync_original_spectrum_y_menu_presentation(
             choice,lower=lower,upper=upper,
             source_graph_default=source_scale['candidate_graph_default_vscale_single'],
+            local_graph_default=default_scale,
             source_bound=(exact_operator_frange or
                 (source_scope is not None and
                  source_scope['graph_default_vscale_candidate'] is not None)))
 
     def _sync_original_spectrum_y_menu_presentation(
             self,choice:dict,*,lower:float,upper:float,
-            source_graph_default:float,source_bound:bool):
+            source_graph_default:float,local_graph_default:float,
+            source_bound:bool):
         """Original menu caption is GraphDefaultVScale / divisor, not '÷1'.
 
         _Unit128:0084B901..B958 builds the six actual localized Y
@@ -2081,16 +2085,17 @@ class MainWindow(QMainWindow):
             current=int(opt['tag'])
             if mode==0:
                 caption=opt['caption']
-            elif source_bound:
-                divisor=int(opt['physical_divisor'])
-                absolute=float(np.float32(source_graph_default/divisor))
-                if not math.isfinite(absolute) or absolute<=0:
-                    raise ValueError('Original physical Y caption overflows Single')
-                # Unit is selected by Source Tag (VU, VS, VP), not
-                # an assertion of verified physical calibration.
-                caption=original_physical_y_caption(mode,absolute)
             else:
-                caption=f"÷ {opt['physical_divisor']} (лок.)"
+                divisor=int(opt['physical_divisor'])
+                basis=(source_graph_default if source_bound
+                       else local_graph_default)
+                absolute=float(np.float32(basis/divisor))
+                if not math.isfinite(absolute) or absolute<=0:
+                    raise ValueError('Physical Y caption overflows Single')
+                # Without FRange, captions correspond to actual LOCAL
+                # auto-fit graph heights, not meaningless "÷1000" labels.
+                # Units are NOMINAL: BIN calibration remains unverified.
+                caption=original_physical_y_caption(mode,absolute)
             action.setText(caption)
             action.setToolTip(
                 f"Delphi Tag{current}, "
@@ -6037,7 +6042,10 @@ class MainWindow(QMainWindow):
             # Y-axis caption 'дБ'; a verbose label consumes plot width and
             # falsely suggests a different axis unit for log spectra.
             self.spec_plot.setLabel(
-                'left','дБ' if self.spec_mode.currentIndex()==0 else d['unit'])
+                'left',source_spectrum_y_unit(self.spec_mode.currentIndex()))
+            self.spec_plot.getAxis('left').setToolTip(
+                'Единицы оси соответствуют выбранному режиму. '
+                'Физическая калибровка BIN/TSXML и паритет Win32 не аттестованы.')
             self._spec_data_ymin=float(np.min(yy[visible])) if np.any(visible) else 0.
             self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
             if self._spec_data_ymax<=self._spec_data_ymin:
@@ -6476,11 +6484,11 @@ class MainWindow(QMainWindow):
                 self.spec_hline.setVisible(True)
                 self.spec_xor_crosshair.set_cursor(cursor_x,cursor_y)
             self._spec_last_cursor=found
-            y_name=('дБ' if found['mode']==0 else
-                    ('усл. ед.' if isinstance(self.session,DirectBinSession)
-                     else ('','м/с²','мм/с','мкм')[found['mode']]))
-            cursor_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
-                         and found['mode']!=0 else found['unit'])
+            y_name=source_spectrum_y_unit(found['mode'])
+            cursor_unit=y_name
+            local_calibration_warning=(
+                ' · исходный BIN без подтверждённой физической калибровки'
+                if isinstance(self.session,DirectBinSession) else '')
             cursor=cursor_string_candidate(
                 found['x_value'],found['display_y'],
                 x_name='Гц',y_name=y_name,decimal_separator=',')
@@ -6490,6 +6498,7 @@ class MainWindow(QMainWindow):
                 f"IDR pixel {int(pixel)} · bins [{found['pixel_bin_first']}.."
                 f"{found['pixel_bin_last']}] → пик FFT[{found['selected_bin']}]"
                 f" · {found['frequency_hz']:.6g} Гц · {found['display_y']:.7g} {cursor_unit}"
+                +local_calibration_warning+
                 f" · avg={found['averaging']} (без /N)"
                 f" · {found['fft_backend']} · кандидат TQGrapher"
                 f" · snap={found['snapped_pixel_original_int_candidate']} px (Qt-геометрия)"
