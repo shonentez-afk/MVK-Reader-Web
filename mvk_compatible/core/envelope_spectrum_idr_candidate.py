@@ -24,7 +24,12 @@ from .storage_f_range_idr_candidate import (
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 
 SOURCE='APP_DERIVED_ENVELOPE_SPECTRUM_IDR_CANDIDATE'
-_INTEGRATION_CONSTANT=159.154943091895  # original 007D217C Extended 1000/(2*pi), documented
+# Original private MVKView 1.0.47 IDP 007D219C contains an 80-bit
+# Extended literal: 159.154943091895335768870545223308.
+# The old 159.154943091895 value was TRUNCATED (not source-exact).
+# Numerical constant only; never publish source bytes or private files.
+_INTEGRATION_CONSTANT_EXTENDED_DECIMAL="159.154943091895335768870545223308"
+_INTEGRATION_CONSTANT=float(_INTEGRATION_CONSTANT_EXTENDED_DECIMAL)
 _MODE_UNITS=('дБ, IDR-кандидат','м/с²','мм/с','мкм')
 
 
@@ -171,12 +176,22 @@ def _delphi_integration_power(power:np.ndarray, n:int, fs_out:int,
     inverse_df=np.float32(float(n)/float(fs_out))
     if not np.isfinite(inverse_df) or inverse_df<=0:
         raise ValueError("Original integration reciprocal df invalid")
-    bins=np.arange(1,len(p),dtype=np.float64)
-    factors=np.zeros(len(p),dtype=np.float64)
-    factors[1:]=((_INTEGRATION_CONSTANT/bins)*float(inverse_df))**2
+    # Original 007D2179..2192: Extended constant / bin * stored
+    # Single(N/Fs), square in Extended, multiply Power Single, FSTP Single
+    # after EACH pass. GNU x86 NumPy longdouble has 64-bit significand;
+    # Windows NumPy may alias to binary64. Do NOT label that fallback
+    # exact Win32 x87 runtime parity.
+    precision=(np.longdouble if
+        np.finfo(np.longdouble).nmant>np.finfo(np.float64).nmant
+        else np.float64)
+    bins=np.arange(1,len(p),dtype=precision)
+    factors=np.zeros(len(p),dtype=precision)
+    const=precision(_INTEGRATION_CONSTANT_EXTENDED_DECIMAL)
+    product=(const/bins)*precision(inverse_df)
+    factors[1:]=product*product
     for _ in range(repetitions):
         with np.errstate(over='ignore',invalid='ignore'):
-            p=np.asarray(p.astype(np.float64)*factors,dtype=np.float32)
+            p=np.asarray(p.astype(precision)*factors,dtype=np.float32)
         if not np.isfinite(p).all():
             raise ValueError("Original spectrum integration overflows Float32")
     return p

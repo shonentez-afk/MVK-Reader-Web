@@ -7,6 +7,8 @@ the original reference's physical provenance is independently unverified.
 
 Kinds: ADC_BIN_F32, TACH_BIN_BYTES, GETSIGNAL_F32, GETSPECTRUM_POWER_F32,
        GETSPECTRUM_Y_F32, TSXML_CP1251, VALUES_CSV, TABLE_CSV.
+Optional source-stage pairs: PRE_HANN_F32, WINDOWED_F32, FFT_COMPLEX_F32
+(interleaved Re,Im), POSTMODE_POWER_F32. Stop runtime not attested.
 For numerical files: compare exact Single words and aggregate differences.
 For exported files: compare bytes, SHA-256 and first mismatch, not guesses
 about CSV delimiters, locale, Win32 timestamps or user-selected names.
@@ -25,11 +27,15 @@ import numpy as np
 KINDS=frozenset((
     "ADC_BIN_F32","TACH_BIN_BYTES","GETSIGNAL_F32",
     "GETSPECTRUM_POWER_F32","GETSPECTRUM_Y_F32",
+    "GETSPECTRUM_PRE_HANN_F32","GETSPECTRUM_WINDOWED_F32",
+    "GETSPECTRUM_FFT_COMPLEX_F32","GETSPECTRUM_POSTMODE_POWER_F32",
     "TSXML_CP1251","VALUES_CSV","TABLE_CSV",
 ))
 FLOAT_KINDS=frozenset((
     "ADC_BIN_F32","GETSIGNAL_F32",
     "GETSPECTRUM_POWER_F32","GETSPECTRUM_Y_F32",
+    "GETSPECTRUM_PRE_HANN_F32","GETSPECTRUM_WINDOWED_F32",
+    "GETSPECTRUM_FFT_COMPLEX_F32","GETSPECTRUM_POSTMODE_POWER_F32",
 ))
 _FILE_NAME=re.compile(r"[A-Za-z0-9_\-. #$()А-Яа-я]{1,240}\Z")
 _SHA=re.compile(r"[0-9a-f]{64}\Z")
@@ -125,6 +131,9 @@ def _numeric_diff(before,after,kind):
     y=np.frombuffer(after,dtype="<f4")
     if not np.isfinite(x).all() or not np.isfinite(y).all():
         raise ValueError("Mode2 original/candidate Float32 contains NaN/Inf")
+    if kind=="GETSPECTRUM_FFT_COMPLEX_F32" and (
+            len(x)%2 or len(y)%2):
+        raise ValueError("Mode2 FFT complex requires interleaved Re/Im Single pairs")
     comparable=min(len(x),len(y))
     bits=x[:comparable].view("<u4")==y[:comparable].view("<u4")
     err=np.abs(x[:comparable].astype(np.float64)-
@@ -212,6 +221,13 @@ def compare_original_mode2_pair(
             row.update(_numeric_diff(a,b,kind))
         records.append(row)
     equal=all(x["byte_identical"] for x in records)
+    found={x["kind"] for x in records}
+    spectrum_families=frozenset((
+        "GETSPECTRUM_PRE_HANN_F32","GETSPECTRUM_WINDOWED_F32",
+        "GETSPECTRUM_FFT_COMPLEX_F32","GETSPECTRUM_POWER_F32",
+        "GETSPECTRUM_POSTMODE_POWER_F32","GETSPECTRUM_Y_F32"))
+    writer_families=frozenset((
+        "ADC_BIN_F32","TSXML_CP1251","VALUES_CSV","TABLE_CSV"))
     return {
         "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
         "session_id":session_id,
@@ -219,6 +235,13 @@ def compare_original_mode2_pair(
         "same_input_tcp_raw_verified":raw_proof is not None,
         "raw_proof":raw_proof,
         "file_pairs_compared":len(records),
+        "source_hann_fft_power_intermediate_families_supplied":(
+            spectrum_families.issubset(found)),
+        "source_spectrum_y_pair_count":sum(
+            x["kind"]=="GETSPECTRUM_Y_F32" for x in records),
+        "source_write_data_values_output_families_supplied":(
+            writer_families.issubset(found)),
+        "source_stop_boundary_authenticated_with_original_win32":False,
         "all_pairs_byte_identical":bool(equal),
         "exact_file_contents_match_for_supplied_pairs":bool(equal),
         "original_delphi_compatibility_verified":False,

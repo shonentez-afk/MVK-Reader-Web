@@ -86,3 +86,65 @@ def test_paired_kind_rejects_unknown_and_repeated_table(tmp_path):
     with pytest.raises(ValueError,match="duplicate"):
         compare_original_mode2_pair(
             a,b,files=[pairs[-1],pairs[-1]],session_id="test-source-run-1")
+
+
+def test_original_source_stages_same_raw_fails_on_one_bit_without_fake_stop(tmp_path):
+    """All synthetic pairs may match yet original Win32/Stop remains unproven."""
+    import numpy as np
+    a=tmp_path/"original";b=tmp_path/"new"
+    a.mkdir();b.mkdir()
+    raw=b"SYNTHETIC_ONLY_NOT_A_REAL_MVK_RX"
+    source={
+        "incoming.raw":raw,
+        "pre.bin":np.arange(8,dtype="<f4").tobytes(),
+        "windowed.bin":np.arange(8,dtype="<f4").tobytes(),
+        "complex.bin":np.arange(16,dtype="<f4").tobytes(),
+        "power.bin":np.arange(4,dtype="<f4").tobytes(),
+        "postmode.bin":np.arange(4,dtype="<f4").tobytes(),
+        "Y0.bin":np.arange(4,dtype="<f4").tobytes(),
+        "Y1.bin":np.arange(4,dtype="<f4").tobytes(),
+        "Y2.bin":np.arange(4,dtype="<f4").tobytes(),
+        "Y3.bin":np.arange(4,dtype="<f4").tobytes(),
+        "adc.bin":np.arange(8,dtype="<f4").tobytes(),
+        "adc.tsxml":b"SYNTHETIC_TSXML",
+        "values.csv":b"SYNTHETIC_VALUES",
+        "table.csv":b"SYNTHETIC_TABLE",
+    }
+    for folder in (a,b):
+        for name,body in source.items():
+            (folder/name).write_bytes(body)
+    entries=[
+        ("GETSPECTRUM_PRE_HANN_F32","pre.bin"),
+        ("GETSPECTRUM_WINDOWED_F32","windowed.bin"),
+        ("GETSPECTRUM_FFT_COMPLEX_F32","complex.bin"),
+        ("GETSPECTRUM_POWER_F32","power.bin"),
+        ("GETSPECTRUM_POSTMODE_POWER_F32","postmode.bin"),
+        *(( "GETSPECTRUM_Y_F32",f"Y{i}.bin") for i in range(4)),
+        ("ADC_BIN_F32","adc.bin"),("TSXML_CP1251","adc.tsxml"),
+        ("VALUES_CSV","values.csv"),("TABLE_CSV","table.csv"),
+    ]
+    files=[dict(kind=k,reference_name=f,candidate_name=f) for k,f in entries]
+    def compare():
+        return compare_original_mode2_pair(
+            a,b,files=files,session_id="SYNTHETIC_SOURCE_CHAIN",
+            reference_raw_name="incoming.raw",candidate_raw_name="incoming.raw")
+    accepted=compare()
+    assert accepted["all_pairs_byte_identical"]
+    assert accepted["same_input_tcp_raw_verified"]
+    assert accepted["source_hann_fft_power_intermediate_families_supplied"]
+    assert accepted["source_spectrum_y_pair_count"]==4
+    assert accepted["source_write_data_values_output_families_supplied"]
+    assert not accepted["source_stop_boundary_authenticated_with_original_win32"]
+    assert not accepted["original_1_to_1_release_gate_passed"]
+    corrupted=bytearray(source["postmode.bin"]);corrupted[0]^=1
+    (b/"postmode.bin").write_bytes(corrupted)
+    changed=compare()
+    assert not changed["all_pairs_byte_identical"]
+    problem=next(x for x in changed["pairs"]
+                 if x["kind"]=="GETSPECTRUM_POSTMODE_POWER_F32")
+    assert problem["different_float32_words"]==1
+    assert problem["first_different_float32_word"]==0
+    assert not changed["original_delphi_compatibility_verified"]
+    (b/"incoming.raw").write_bytes(raw+b"X")
+    with pytest.raises(ValueError,match="different RAW"):
+        compare()

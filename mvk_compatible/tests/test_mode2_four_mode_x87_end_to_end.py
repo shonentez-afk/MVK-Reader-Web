@@ -137,3 +137,42 @@ def test_synthetic_x87_agreement_is_not_original_delphi_pass():
     flags = display_source_provenance()
     assert flags["original_x87_log10_sqrt_float32_bitwise_parity_verified"] is False
     assert flags["original_full_display_y_runtime_parity_verified"] is False
+
+
+@pytest.mark.parametrize("n,fs,mode", [
+    (1024,65536,2), (4096,512,3), (65536,2048,3),
+    (262144,65536,2), (262144,512,3),
+])
+def test_original_extended_const_exact_power_after_each_integration(
+        reference_binaries,n,fs,mode):
+    """Complete N/2 source-derived power bytes, no original runtime claim."""
+    _fft,mode_exe=reference_binaries
+    half=n//2
+    bins=np.arange(half,dtype=np.int32)
+    power=np.asarray(
+        (bins%137+.5)/(1.+bins.astype(np.float64)/8192.),dtype="<f4")
+    frozen=power.tobytes()
+    low=max(2,round((n/fs)*.5))
+    candidate=power.copy()
+    candidate[:low]=0.
+    candidate=_delphi_integration_power(candidate,n,fs,mode-1)
+    expected=_run(mode_exe,
+        [str(n),str(mode),"1.0",str(fs),"--power"],frozen)
+    _assert_single_bits(candidate,expected)
+    assert power.tobytes()==frozen
+
+
+def test_original_extended_literal_is_not_the_truncated_old_one():
+    from mvk_compatible.core.envelope_spectrum_idr_candidate import (
+        _INTEGRATION_CONSTANT_EXTENDED_DECIMAL,
+    )
+    actual=np.longdouble(_INTEGRATION_CONSTANT_EXTENDED_DECIMAL)
+    legacy=np.longdouble("159.154943091895")
+    assert float(actual)>float(legacy)
+    if np.finfo(np.longdouble).nmant>np.finfo(np.float64).nmant:
+        assert actual!=legacy
+    from mvk_compatible.core.spectrum_display_source import (
+        display_source_provenance,
+    )
+    assert not display_source_provenance()[
+        "original_x87_log10_sqrt_float32_bitwise_parity_verified"]

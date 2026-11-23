@@ -74,6 +74,8 @@ int main(int argc, char **argv) {
     __asm__ volatile("fldcw %0"::"m"(cw));
     const float scale=f32store(((long double)1/(long double)half)*range);
     const float inverse_df=f32store((long double)n/(long double)rate);
+    /* Exact source-derived 80-bit VALUE at 007D219C (not IDP bytes). */
+    const long double integration_constant=0x9.f27aa59b86e7cabp+4L;
     unsigned low=(unsigned)nearbyintl(((long double)n/rate)*0.5L);
     if(low<2)low=2;
     if(low>=half)goto bad;
@@ -81,7 +83,7 @@ int main(int argc, char **argv) {
     if(mode>=2) {
         for(unsigned pass=0;pass<mode-1;pass++) {
             for(size_t k=1;k<half;k++) {
-                const long double t=(159.154943091895L/k)*(long double)inverse_df;
+                const long double t=(integration_constant/k)*(long double)inverse_df;
                 const long double v=(t*t)*(long double)p[k];
                 if(!isfinite(v) || v>FLT_MAX || v<0)goto bad;
                 p[k]=f32store(v);
