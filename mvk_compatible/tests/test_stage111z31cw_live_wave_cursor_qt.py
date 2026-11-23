@@ -16,8 +16,10 @@ def test_live_plain_getsignal_reverse_view_xonly_cursor_and_freeze(qt_app):
     source=preview()
     w=MainWindow();w.show();qt_app.processEvents()
     try:
+        w._begin_live_capture()  # mode shell only, never a socket
+        w.original_root_tabs.setCurrentIndex(3)
         w._wave_hscale_tag=9  # original 20 ms => 1310 samples
-        w._live_active=True
+        qt_app.processEvents()
         w._native_live_status=dict(
             session_id=source.session_id,
             phase="RECORDING",snapshot_stale=False,
@@ -77,8 +79,10 @@ def test_live_fir_cursor_clips_only_view_not_full_value(qt_app):
     from ..desktop.main_window import MainWindow
     w=MainWindow();w.show();qt_app.processEvents()
     try:
-        w._live_active=True
+        w._begin_live_capture()  # mode shell only, never a socket
+        w.original_root_tabs.setCurrentIndex(3)
         w._wave_hscale_tag=9
+        qt_app.processEvents()
         w._native_live_status=dict(
             session_id="SYNTHETIC_FIR_CURRENT",
             phase="RECORDING",snapshot_stale=False)
