@@ -17,7 +17,8 @@ def _make_pair(tmp_path: Path, *, full: bool, mismatch: bool = False):
     (reference / "raw.bin").write_bytes(raw)
     (candidate / "raw.bin").write_bytes(raw)
     kinds = [
-        "ADC_BIN_F32", "TSXML_CP1251", "VALUES_CSV", "TABLE_CSV",\n        "GETSIGNAL_F32",
+        "ADC_BIN_F32", "TSXML_CP1251", "VALUES_CSV", "TABLE_CSV",
+        "GETSIGNAL_F32",
         "GETSPECTRUM_PRE_HANN_F32", "GETSPECTRUM_WINDOWED_F32",
         "GETSPECTRUM_FFT_COMPLEX_F32", "GETSPECTRUM_POWER_F32",
     ] if full else ["GETSPECTRUM_Y_F32"]
