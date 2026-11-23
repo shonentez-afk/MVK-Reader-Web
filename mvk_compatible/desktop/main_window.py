@@ -2269,16 +2269,47 @@ class MainWindow(QMainWindow):
             "10 исходных пресетов 25600..50 Гц; меняется только видимый X. "
             "Данные FFT N/2 и СКЗ остаются без изменений. "+evidence.label)
 
+    def _real_spectrum_axis_end_hz(self):
+        """Source-backed TQGRSeries DataSize*XScale, not empty Nyquist tail.
+
+        The original H table remains 25600..50 Hz. When the current
+        low-Fs / post-FIR spectrum has a shorter recorded frequency axis,
+        Qt prevents user selection of an entirely empty band.
+        """
+        if self._full_spectrum is None:return None
+        info=self._spec_display_contract
+        if not isinstance(info,dict):return None
+        maximum=info.get('grapher_axis_end_frequency_hz')
+        if not isinstance(maximum,(float,int)) or not math.isfinite(maximum) or maximum<=0:
+            return None
+        return min(float(HORIZONTAL_HZ[0]),float(maximum))
+
+    def _sync_original_hscale_data_availability(self):
+        """Keep all ten source captions; gate invalid widths on actual FFT."""
+        available=self._real_spectrum_axis_end_hz()
+        flags=((True,)*len(HORIZONTAL_HZ) if available is None else
+               source_spectrum_h_available(available))
+        for action,enabled in zip(self._spec_hscale_actions,flags):
+            action.setEnabled(enabled)
+            action.setToolTip(
+                'Исходный пункт '+str(int(action.data()))+' Гц; '
+                +('доступен' if enabled else
+                   f'в текущем спектре частоты заканчиваются на {available:.7g} Гц'))
+        return flags
+
     def _cycle_original_hscale(self):
-        """Main part of split button: next source-verified smaller scale."""
+        """Only cycle source H widths supported by currently plotted bins."""
         if self._full_spectrum is None:return
         x0,x1=self.spec_plot.getViewBox().viewRange()[0]
         current=float(x1-x0)
-        for hz in HORIZONTAL_HZ:
-            if float(hz)<current-.01:
+        allowed=self._sync_original_hscale_data_availability()
+        usable=[hz for hz,ok in zip(HORIZONTAL_HZ,allowed) if ok]
+        if not usable:return
+        for hz in usable:
+            if hz<current-.01:
                 self._select_original_hscale(hz)
                 return
-        self._select_original_hscale(HORIZONTAL_HZ[-1])
+        self._select_original_hscale(usable[-1])
 
     def _select_original_hscale(self,hz,*,position_hz=None):
         """Original source H Tag/Position plus selected ADC/BIN provenance.
@@ -2288,7 +2319,17 @@ class MainWindow(QMainWindow):
         """
         hz=validate_source_h_scale(hz)
         if self._full_spectrum is None:return
-        full=HORIZONTAL_HZ[0]
+        actual_end=self._real_spectrum_axis_end_hz()
+        if actual_end is None:
+            raise ValueError('Нет проверенной частотной области спектра')
+        if hz>actual_end+1e-5:
+            raise ValueError(
+                f'Ширина {hz} Гц превышает реальный диапазон {actual_end:.7g} Гц')
+        # The ORIGINAL full range is always 25600 Hz. Qt data-view for
+        # lower Fs is bounded by the actual series; do not invent samples.
+        full=min(HORIZONTAL_HZ[0],int(math.floor(actual_end+1e-5)))
+        if hz>full:
+            raise ValueError('Слишком мало реальных частотных бинов для шкалы')
         vb=self.spec_plot.getViewBox()
         selected=self._spec_original_hscale_selected
         if position_hz is not None:
@@ -2306,7 +2347,8 @@ class MainWindow(QMainWindow):
         pos=max(0,min(full-hz,pos))
         # Capture source evidence before the mutable Qt viewport changes.
         source_view=None
-        if (self.session is not None and not self._live_active
+        if (full==HORIZONTAL_HZ[0] and
+                self.session is not None and not self._live_active
                 and self._spectrum_reference is None):
             source_view=source_spectrum_h_view(
                 self._current_offline_flow(),self._full_spectrum,
@@ -2317,7 +2359,7 @@ class MainWindow(QMainWindow):
         self._spec_original_hscale_selected=None
         self.spec_hz.blockSignals(True)
         try:
-            self.spec_hz.setValue(float(full))
+            self.spec_hz.setValue(float(HORIZONTAL_HZ[0]))
         finally:
             self.spec_hz.blockSignals(False)
         self._spec_visible_max_hz=float(full)
@@ -2329,12 +2371,20 @@ class MainWindow(QMainWindow):
         for action in self._spec_hscale_actions:
             action.setChecked(action.data()==hz)
         self._sync_spec_scroll()
+        self._sync_original_hscale_data_availability()
+        if isinstance(self._spec_hscroll_source_candidate,dict):
+            self._spec_hscroll_source_candidate.update({
+                'qt_axis_limited_to_real_source_data':full<HORIZONTAL_HZ[0],
+                'current_real_source_axis_end_hz':actual_end,
+                'original_short_fs_win32_canvas_parity_verified':False})
         if hasattr(self,'original_shell'):
             self.original_shell.record_source_spectrum_hscale(
                 self.spec_mode.currentIndex(),hz,pos)
         self.statusBar().showMessage(
-            f'Исходный H-пресет {hz} Гц · позиция {pos} Гц, '
-            'исходные N/2 FFT и VALUES не изменены; Win32 Canvas ещё не принят')
+            f'Ширина X {hz} Гц · позиция {pos} Гц · '
+            f'реальные частоты до {actual_end:.7g} Гц, '
+            'N/2 FFT и VALUES не изменены; '
+            'низкие Fs ограничены данными, Win32 Canvas не принят')
 
     def _sync_spec_scroll_geometry(self):
         """Unit128 0084C8A6..0084C8F3 aligns bars to drawable PixelRect.
@@ -2389,12 +2439,16 @@ class MainWindow(QMainWindow):
             if self._spec_original_hscale_selected in HORIZONTAL_HZ:
                 # Keep one current provenance record after USER-driven pan.
                 # No bin or FFT mutation, and no gain from another ADC.
-                if (self.session is not None and not self._live_active
+                if (self._real_spectrum_axis_end_hz() is not None and
+                        self._real_spectrum_axis_end_hz()>=HORIZONTAL_HZ[0]
+                        and self.session is not None and not self._live_active
                         and self._spectrum_reference is None):
                     self._spec_source_h_view=source_spectrum_h_view(
                         self._current_offline_flow(),self._full_spectrum,
                         selected_hz=self._spec_original_hscale_selected,
                         position_hz=native_pos)
+                else:
+                    self._spec_source_h_view=None
                 if hasattr(self,'original_shell'):
                     self.original_shell.record_source_spectrum_hscale(
                         self.spec_mode.currentIndex(),
@@ -5956,6 +6010,7 @@ class MainWindow(QMainWindow):
             self._spec_visible_max_hz=min(self.spec_hz.value(),
                                            display_contract['grapher_axis_end_frequency_hz'])
             self._full_spectrum=d
+            self._sync_original_hscale_data_availability()
             self._spectrum_summary=d.get('spectrum_summary')
             self._source_spectrum_gain=source_spectrum_gain(
                 flow,d,mode=self.spec_mode.currentIndex())
@@ -6069,7 +6124,10 @@ class MainWindow(QMainWindow):
             self.spec_plot.getViewBox().setLimits(
                 xMin=0,xMax=float(self._spec_visible_max_hz))
             self._sync_spec_scroll()
-            if previous_h in HORIZONTAL_HZ:
+            if (previous_h in HORIZONTAL_HZ and
+                    source_spectrum_h_available(
+                        display_contract['grapher_axis_end_frequency_hz'])[
+                        HORIZONTAL_HZ.index(previous_h)]):
                 self._select_original_hscale(
                     previous_h,position_hz=previous_pos)
             else:
