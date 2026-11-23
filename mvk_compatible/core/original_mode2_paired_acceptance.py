@@ -272,7 +272,17 @@ def compare_original_mode2_pair(
         all(r["byte_identical"] for r in
             list(tagged_y.values())+[
                 tagged_post_power[2],tagged_post_power[3]]))
-    # This is a FILE-EVIDENCE gate only. It cannot authenticate the operator\n    # or certify an original Win32 physical measurement.\n    strict_same_raw_files_complete=bool(\n        raw_proof is not None and raw_proof["same_original_tcp_bytes"]\n        and explicit_four_mode_comparison and mode_comparison_equal\n        and writer_families.issubset(found) and equal\n    )\n    return {\n        "strict_same_raw_file_evidence_complete":strict_same_raw_files_complete,\n        "strict_same_raw_is_physical_attestation":False,\n        "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
+    # This is a FILE-EVIDENCE gate only. It cannot authenticate the operator
+    # or certify an original Win32 physical measurement.
+    strict_same_raw_files_complete=bool(
+        raw_proof is not None and raw_proof["same_original_tcp_bytes"]
+        and explicit_four_mode_comparison and mode_comparison_equal
+        and writer_families.issubset(found) and equal
+    )
+    return {
+        "strict_same_raw_file_evidence_complete":strict_same_raw_files_complete,
+        "strict_same_raw_is_physical_attestation":False,
+        "schema":"MVK_ORIGINAL_MODE2_OPERATOR_LOCAL_COMPARISON_V1",
         "session_id":session_id,
         "reference_origin":"OPERATOR_SUPPLIED_NOT_AUTHENTICATED_BY_THIS_TOOL",
         "same_input_tcp_raw_verified":raw_proof is not None,
