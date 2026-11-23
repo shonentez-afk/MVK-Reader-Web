@@ -6,7 +6,7 @@ Synthetic fixtures passing this comparator NEVER certify Win32 Delphi 1:1;
 the original reference's physical provenance is independently unverified.
 
 Kinds: ADC_BIN_F32, TACH_BIN_BYTES, GETSIGNAL_F32, GETSPECTRUM_POWER_F32,
-       GETSPECTRUM_Y_F32, TSXML_CP1251, VALUES_CSV.
+       GETSPECTRUM_Y_F32, TSXML_CP1251, VALUES_CSV, TABLE_CSV.
 For numerical files: compare exact Single words and aggregate differences.
 For exported files: compare bytes, SHA-256 and first mismatch, not guesses
 about CSV delimiters, locale, Win32 timestamps or user-selected names.
@@ -25,7 +25,7 @@ import numpy as np
 KINDS=frozenset((
     "ADC_BIN_F32","TACH_BIN_BYTES","GETSIGNAL_F32",
     "GETSPECTRUM_POWER_F32","GETSPECTRUM_Y_F32",
-    "TSXML_CP1251","VALUES_CSV",
+    "TSXML_CP1251","VALUES_CSV","TABLE_CSV",
 ))
 FLOAT_KINDS=frozenset((
     "ADC_BIN_F32","GETSIGNAL_F32",
