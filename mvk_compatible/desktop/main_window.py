@@ -3680,38 +3680,90 @@ class MainWindow(QMainWindow):
                 'Живой курсор не принят: '+str(exc))
 
     def _live_fir_cursor_from_scene(self,pos,*,force=False):
-        """Source UpdateCursor X -> full reversed FIR sample, never plot LOD."""
+        """X-only source UpdateCursor over same-session full reversed FIR.
+
+        One-pixel signed peak is a static-source candidate, NOT a Win32
+        canvas x87-parity claim. Qt never reads Go/TCP or the plotted LOD.
+        """
         trace=self._source_fir_trace
-        if (trace is None or self.wave_line is None or
-                not isinstance(pos,QPointF) or not self._live_active or
-                self._measurement_exit_requested or
-                self._source_live_view_frozen or
-                self._ch()!=trace['adc'] or
-                self._wave_hscale_tag!=trace['source_h_tag'] or
-                int(self.wave_envelope_code.currentData() or 0)!=
-                    trace['envelope_code']):
+        status=self._native_live_status or {}
+        valid=(isinstance(trace,dict) and self.wave_line is not None
+               and isinstance(pos,QPointF) and self._live_active
+               and not self._measurement_exit_requested
+               and not self._source_live_view_frozen
+               and not self._source_mode2_runtime.status_cells.system_error_latched
+               and status.get('phase')=='RECORDING'
+               and status.get('snapshot_stale') is False
+               and status.get('session_id')==trace.get('source_session_id')
+               and self._ch()==trace.get('adc')
+               and self._wave_hscale_tag==trace.get('source_h_tag')
+               and self.wave_mode.currentIndex()==trace.get('source_mode')
+               and int(self.wave_envelope_code.currentData() or 0)==
+                   trace.get('envelope_code'))
+        if not valid:
+            self._source_live_cursor_last=None
+            if self.wave_line is not None:self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
+            if self._live_active:self.wave_cursor_primary.setText('Курсор: —')
             return
         vb=self.wave_plot.getViewBox()
-        if not vb.sceneBoundingRect().contains(pos):
+        rect=vb.sceneBoundingRect()
+        px=math.trunc(pos.x()-rect.left())
+        if not force and px==self._wave_mouse_pixel:return
+        self._wave_mouse_pixel=px
+        canvas=self.wave_plot.source_canvas_model
+        hit=(source_live_cursor_hit(
+            canvas=canvas,scene_left=rect.left(),
+            scene_right=rect.right(),scene_x=pos.x())
+            if canvas is not None else None)
+        if (rect.width()<=2 or
+                (not hit['inside_original_pixel_rect'] if hit is not None
+                 else not rect.left()<pos.x()<rect.right())):
+            self._source_live_cursor_last=None
             self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
             self.wave_cursor_primary.setText('Курсор: —')
             return
-        x=float(vb.mapSceneToView(pos).x())
-        selected=source_live_filtered_cursor(trace,x)
-        if selected is None:
+        try:
+            unit=trace.get('source_cursor_axis_unit','мс')
+            multiplier=1000. if unit=='с' else 1.
+            x=float(vb.mapSceneToView(pos).x())*multiplier
+            xnext=float(vb.mapSceneToView(
+                QPointF(min(rect.right(),pos.x()+1.),pos.y())).x())*multiplier
+            selected=source_live_filtered_cursor(
+                trace,x,adjacent_x_ms=xnext)
+            if selected is None:
+                self._source_live_cursor_last=None
+                self.wave_line.setVisible(False)
+                if self.wave_xor_crosshair is not None:
+                    self.wave_xor_crosshair.clear_cursor()
+                self.wave_cursor_primary.setText('Курсор: —')
+                return
+            graph_x=selected['plot_x_ms']/multiplier
+            self._source_live_cursor_last=selected
+            self.wave_line.setPos(graph_x)
+            self.wave_line.setVisible(True)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.set_cursor(
+                    graph_x,selected['value_from_full_filtered_float32'])
+            self.wave_cursor_primary.setText(
+                f"{graph_x:.6g} {unit}\n"
+                f"{selected['value_from_full_filtered_float32']:.7g} м/с²")
+            self.wave_hint.setText(
+                f"Go SHA={selected['source_float32_sha256'][:12]} · "
+                f"GetSignal FIR[{selected['output_index']}] "
+                f"= {selected['value_from_full_filtered_float32']:.8g} м/с² · "
+                "полный Float32, НЕ LOD; Win32 пиксели не аттестованы")
+        except (ValueError,KeyError,TypeError,OverflowError) as exc:
+            self._source_live_cursor_last=None
             self.wave_line.setVisible(False)
+            if self.wave_xor_crosshair is not None:
+                self.wave_xor_crosshair.clear_cursor()
             self.wave_cursor_primary.setText('Курсор: —')
-            return
-        self.wave_line.setPos(selected['plot_x_ms'])
-        self.wave_line.setVisible(True)
-        self.wave_cursor_primary.setText(
-            f"{selected['plot_x_ms']:.6g} мс\n"
-            f"{selected['value_from_full_filtered_float32']:.7g} м/с²")
-        self.wave_hint.setText(
-            f"Go SHA={selected['source_float32_sha256'][:12]} · "
-            f"GetSignal FIR[{selected['output_index']}] "
-            f"= {selected['value_from_full_filtered_float32']:.8g} м/с² · "
-            "полный Float32, не LOD; Win32 пиксели не приняты")
+            self.statusBar().showMessage(
+                'Курсор FIR не принят: '+str(exc))
 
     def _render_live_wave(self):
         if (not self._live_active or
