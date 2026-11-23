@@ -71,7 +71,10 @@ def test_live_plain_getsignal_reverse_view_xonly_cursor_and_freeze(qt_app):
         assert w._source_live_cursor_last is None
         assert w.wave_xor_crosshair.cursor is None
     finally:
-        w._live_active=False
+        # Ensure the source 20ms GUI dispatcher and any pending FIR
+        # workers cannot outlive their synthetic Qt test window.
+        if w._live_active:
+            w._end_live_capture(False)
         w.close();qt_app.processEvents()
 
 
@@ -123,5 +126,8 @@ def test_live_fir_cursor_clips_only_view_not_full_value(qt_app):
         assert w._source_live_cursor_last is None
         assert w.wave_xor_crosshair.cursor is None
     finally:
-        w._live_active=False
+        # Ensure the source 20ms GUI dispatcher and any pending FIR
+        # workers cannot outlive their synthetic Qt test window.
+        if w._live_active:
+            w._end_live_capture(False)
         w.close();qt_app.processEvents()
