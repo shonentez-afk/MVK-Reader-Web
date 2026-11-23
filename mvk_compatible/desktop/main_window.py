@@ -102,6 +102,7 @@ from ..core.original_adc_spectrum_actions import (
 from ..core.original_adc_view_controls import (
     ADC_HORIZONTAL_MS,ADC_VERTICAL_DIVISORS,
     original_adc_horizontal_options,original_adc_vertical_options,
+    original_adc_vertical_physical_caption,
     source_adc_horizontal_view,validate_source_adc_horizontal_trace,
     source_adc_vertical_view,
 )
@@ -673,7 +674,7 @@ class MainWindow(QMainWindow):
         self.wave_vscale_button.setPopupMode(QToolButton.InstantPopup)
         self._wave_vscale_tag=0
         self.wave_vscale_menu=QMenu(self.wave_vscale_button)
-        for option in original_adc_vertical_options():
+        for option in original_adc_vertical_options(baseline_m_s2=1000.):
             act=self.wave_vscale_menu.addAction(option['caption'])
             act.setData(option['tag'])
             act.setCheckable(True)
@@ -681,7 +682,7 @@ class MainWindow(QMainWindow):
                 lambda checked=False,tag=option['tag']:
                     self._select_original_wave_vscale(tag))
         self.wave_vscale_button.setMenu(self.wave_vscale_menu)
-        self.wave_vscale_button.setText('Шкала Y · 1/1 (лок.)')
+        self.wave_vscale_button.setText('1000 м/с2')
         left.addWidget(self.wave_vscale_button)
 
         self.wave_cursor_primary=QLabel('Курсор: —')
@@ -783,6 +784,7 @@ class MainWindow(QMainWindow):
         self.wave_mode.currentIndexChanged.connect(self._wave_mode_selected)
         self.wave_envelope_code.currentIndexChanged.connect(self._wave_filter_selected)
         self._sync_wave_primary_labels()
+        self._sync_original_wave_vertical_popup()
 
     def _wave_filter_primary_click(self):
         """Compatibility entrypoint: original bAnyDropDownClick only POPUPS."""
@@ -1033,12 +1035,37 @@ class MainWindow(QMainWindow):
         if type(tag) is not int or not 0<=tag<len(ADC_VERTICAL_DIVISORS):
             raise ValueError('Source ADC V menu Tag 0..12 required')
         self._wave_vscale_tag=tag
-        for action in self.wave_vscale_menu.actions():
-            action.setChecked(action.data()==tag)
         if self._source_wave_trace is not None and not self._live_active:
             self._apply_original_wave_vscale()
         else:
-            self.wave_vscale_button.setText(f'Шкала Y · 1/{ADC_VERTICAL_DIVISORS[tag]} (лок.)')
+            # No current source-window calibration: show the source-style
+            # numeric popup with a clearly labelled provisional baseline.
+            self._sync_original_wave_vertical_popup()
+
+    def _sync_original_wave_vertical_popup(self,baseline:float=1000.,
+                                            *,source_bound:bool=False):
+        """Numeric PageAdc Y menu, source Tag0..12 and checked state.
+
+        The screenshot has Tag0=1000 m/s2. When an actual current GetSignal
+        view is available, the bound model replaces this startup baseline.
+        Neither a local fit nor source TSXML FRange certifies sensor
+        calibration; keep that distinction in the tooltip.
+        """
+        for action in self.wave_vscale_menu.actions():
+            tag=int(action.data())
+            action.setText(original_adc_vertical_physical_caption(tag,baseline))
+            action.setChecked(tag==self._wave_vscale_tag)
+        selected=original_adc_vertical_physical_caption(
+            self._wave_vscale_tag,baseline)
+        self.wave_vscale_button.setText(selected)
+        origin=('TSXML FRange текущего канала (исходная формула, '
+                'физическая калибровка не подтверждена)' if source_bound
+                else 'локальная шкала или стартовый пример 1000; '
+                     'физическая калибровка не подтверждена')
+        explanation='Вертикальная шкала по исходным 13 делителям. '+origin
+        self.wave_vscale_button.setToolTip(explanation)
+        for action in self.wave_vscale_menu.actions():
+            action.setToolTip(explanation)
 
     def _apply_original_wave_vscale(self):
         '''One SHA-bound post-GetSignal Y axis, without reading drawn LOD samples.'''
@@ -1053,13 +1080,9 @@ class MainWindow(QMainWindow):
         self.wave_plot.getViewBox().setYRange(
             model['y_min'],model['y_max'],padding=0)
         self._source_wave_scale_model=model
-        self.wave_vscale_button.setText(
-            f"Шкала Y · 1/{model['divisor']} (лок.)")
-        self.wave_vscale_button.setToolTip(
-            f"Исходный делитель V подтверждён IDP; диапазон ±"
-            f"{model['local_half_height']:.7g} {model['unit']} из полного "
-            "GetSignal/FIR, НЕ оригинальный GraphDefaultVScale и не "
-            "подтверждённая калибровка.")
+        self._sync_original_wave_vertical_popup(
+            baseline=float(model['axis_baseline_m_s2_nominal']),
+            source_bound=model['source_f_range_single'] is not None)
 
     def _select_wave_window(self,seconds):
         '''Retain research-window editing without claiming an original menu Tag.'''
