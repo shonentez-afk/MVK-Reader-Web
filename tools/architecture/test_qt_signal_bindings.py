@@ -30,6 +30,28 @@ class QtSignalTests(unittest.TestCase):
             self.assertEqual(by["bWriteAdc"]["signal"],"clicked")
             self.assertEqual(d["counts"]["dynamic_or_external"],1)
             self.assertTrue(all("#L" in x["url"] for x in d["bindings"]))
+    def test_literal_guard_and_source_alias(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); folder=root/"mvk_compatible/desktop";folder.mkdir(parents=True)
+            (folder/"x.py").write_text(
+                "class Ui:\n"
+                " def wire(self):\n"
+                "  for name in ('bTaskConnect','bTaskView'):\n"
+                "   b=object()\n"
+                "   b.setObjectName(name)\n"
+                "   if name=='bTaskConnect':\n"
+                "    b.clicked.connect(self.capture)\n"
+                "   elif name=='bTaskView':\n"
+                "    b.clicked.connect(self.view)\n"
+                "  self.freeze=self.buttons['bFreezeUpdate']\n"
+                "  self.freeze.clicked.connect(self.pause)\n",
+                encoding="utf-8")
+            d=analyze(root,"synthetic")
+            pairs={(x["widget_key"],x["callback_target"]) for x in d["bindings"]}
+            self.assertIn(("bTaskConnect","Ui.capture"),pairs)
+            self.assertIn(("bTaskView","Ui.view"),pairs)
+            self.assertIn(("bFreezeUpdate","Ui.pause"),pairs)
+
     def test_no_deduction_from_caption_or_comments(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);folder=root/"mvk_compatible/desktop";folder.mkdir(parents=True)
