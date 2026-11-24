@@ -6,6 +6,8 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from .test_desktop_qt import qt_app
 
 from mvk_compatible.desktop.original_windowman_form import (
@@ -84,6 +86,11 @@ def test_error_information_and_wait_do_not_unlock_original_device(qt_app):
         assert wait.size().height()==124  # 2/3 logical candidate
         assert wait.img.property("originalSourceImageIndex")==1
         assert wait.property("deviceCommandAllowed") is False
+        assert not wait.windowFlags() & Qt.WindowCloseButtonHint
+        QTest.keyClick(wait,Qt.Key_Escape)
+        assert wait.isVisible()
+        assert not wait.close()
+        assert wait.isVisible()
         manager.hide_wait()
         qt_app.processEvents()
         assert not wait.isVisible()

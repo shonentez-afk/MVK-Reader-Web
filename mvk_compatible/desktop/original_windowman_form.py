@@ -23,6 +23,10 @@ class OriginalWindowManForm(QDialog):
         super().__init__(parent)
         self.setObjectName("WindowManForm")
         self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        self.setWindowFlag(Qt.CustomizeWindowHint, True)
+        self.setWindowFlag(Qt.WindowTitleHint, True)
+        self.setWindowFlag(Qt.WindowSystemMenuHint, False)
+        self.setWindowFlag(Qt.WindowCloseButtonHint, False)
         self.setModal(False)
         self.setFixedSize(*ORIGINAL_CLIENT_SIZE)
         self._language = language
@@ -86,6 +90,18 @@ class OriginalWindowManForm(QDialog):
         self.setProperty("originalSourceMessageMode", message.mode)
         self.setProperty("deviceCommandAllowed", False)
 
+    def reject(self):
+        # Esc must not dismiss a visible non-cancellable original wait.
+        if self._source_message is not None and self._source_message.mode=="wait":
+            return
+        super().reject()
+
+    def closeEvent(self,event):
+        if self._source_message is not None and self._source_message.mode=="wait":
+            event.ignore()
+            return
+        super().closeEvent(event)
+
     def original_button_result_map(self) -> dict[str, int]:
         return {name: result for name, (_, _, result) in self._buttons.items()}
 
@@ -139,5 +155,5 @@ class OriginalWindowMan:
 
     def hide_wait(self) -> None:
         if self._wait is not None:
-            self._wait.close()
+            self._wait.done(QDialog.Rejected)
             self._wait = None
