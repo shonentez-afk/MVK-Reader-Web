@@ -1,0 +1,7 @@
+# Stage111: VALUES trigger-prefix repair (candidate)
+
+Base EC: `e073d165852cddc2b82f90b518ae945658ee6c30`. Separate fix branch, no merge to main or research branch. The observation workflow #45328475183 showed suffix-dependent data in saved VALUES rows. This patch captures a by-value RegisterImage immediately after the first 0x3100 descriptor when the writer is active. The remaining descriptors still update the live image; normal whole-frame validation, counters, RAW, spool, latched masks, file formats, filenames and Stop paths remain unchanged. The writer uses only the inclusive prefix for TACH current-frame freshness. Duplicate triggers still fail closed under the existing policy (original frame grammar not attested). A missing prefix image is rejected, not substituted with end-of-frame state.
+
+Strict offline tests cover update before/after/both sides, trigger only, no trigger, duplicate, Freeze, inactive writer, prefix partial TACH, TACH2 trigger-inclusive data, final register image, RAW SHA and file artifacts. The existing synthetic loopback Qt Stop-file test now includes a multi-descriptor VALUES frame. Windows and Linux full Go regression/vet/build are checked separately.
+
+This is a source-derived compatibility fix, NOT original Win32 GetValueText, time/CSV or physical MVK01 parity. No instrument commands or private sources in tests. Production CI EC #45324239390 had unrelated Windows Qt failures; this branch does not change those UI paths. Do not claim a new desktop EXE or full EC parity.

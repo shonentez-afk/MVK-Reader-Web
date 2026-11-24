@@ -47,8 +47,13 @@ func TestOriginalQtStopFileEndsSameSocketAndClosesWriteDataWriteValues(t *testin
 
     // Same source RAW with one PARAM 0x3100 row strictly BETWEEN ADC frames.
     first:=task2Status0Param(0).Raw
-    values:=makeParam([]RegBlock{{Addr:0x3100,Words:2,
-        Payload:[]byte{0x11,0x22,0x33,0x44}}})
+    // The same socket carries two updates surrounding the VALUES trigger.
+    // The final register image must be 3, while the saved SPEC row is 2.
+    values:=makeParam([]RegBlock{
+        {Addr:0x2002,Words:2,Payload:sourceRawTestWords(0x40000000)},
+        {Addr:0x3100,Words:2,Payload:[]byte{0x11,0x22,0x33,0x44}},
+        {Addr:0x2002,Words:2,Payload:sourceRawTestWords(0x40400000)},
+    })
     frames:=make([][]byte,0,7)
     wire:=append([]byte{},first...)
     expectedADC:=make([]byte,0,1536*4)
@@ -142,6 +147,14 @@ func TestOriginalQtStopFileEndsSameSocketAndClosesWriteDataWriteValues(t *testin
     if err=json.Unmarshal(bytes.TrimSpace(row),&received);err!=nil{t.Fatal(err)}
     if received.Address!="0x3100" || received.PayloadLEHex!="11223344" {
         t.Fatalf("WriteValues event not tied to source PARAM register: %+v",received)
+    }
+    if received.RawTickEvidence==nil || len(received.RawTickEvidence.OrderedFields)==0{
+        t.Fatal("Stop lost VALUES prefix snapshot")
+    }
+    spec:=received.RawTickEvidence.OrderedFields[0]
+    if spec.Channel!=1 || spec.Group!="SPEC" || spec.CellIndex!=0 ||
+        spec.RawLE==nil || *spec.RawLE!="00000040" {
+        t.Fatalf("same socket VALUES used post-trigger suffix: %+v",spec)
     }
     for _,name:=range []string{
         sourceLiveWriterAudit,sourceLiveValuesAuditName,

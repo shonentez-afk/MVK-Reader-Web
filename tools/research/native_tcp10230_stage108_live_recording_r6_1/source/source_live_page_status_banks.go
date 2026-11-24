@@ -41,11 +41,15 @@ type sourceLivePageStatusBanks struct {
 }
 
 func (m *Monitor) sourceLiveRawDWORD(addr int) *string {
-    if addr<0 || addr+1>=registerWords ||
-        !m.image.Valid[addr] || !m.image.Valid[addr+1] {
+    return sourceRegisterImageRawDWORD(&m.image,addr)
+}
+
+func sourceRegisterImageRawDWORD(image *RegisterImage,addr int) *string {
+    if image==nil || addr<0 || addr+1>=registerWords ||
+        !image.Valid[addr] || !image.Valid[addr+1] {
         return nil
     }
-    raw:=hex.EncodeToString(m.image.Data[addr*2:(addr+2)*2])
+    raw:=hex.EncodeToString(image.Data[addr*2:(addr+2)*2])
     return &raw
 }
 

@@ -213,21 +213,27 @@ func anySourceValuesSelected(m frameMarkReceipt)bool{
     // Never arm for historical non-original bits 36..72.
     return false
 }
-func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time)error{
+func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time,triggerImage *RegisterImage)error{
     if w==nil || w.closed || w.active==nil{return nil}
-    var trigger *RegBlock
+    triggerIndex:=-1
     for i:=range blocks{
         if blocks[i].Addr!=0x3100{continue}
-        if trigger!=nil{return errors.New("source duplicate 0x3100 in PARAM")}
-        trigger=&blocks[i]
+        if triggerIndex>=0{return errors.New("source duplicate 0x3100 in PARAM")}
+        triggerIndex=i
     }
-    if trigger==nil{return nil}
+    if triggerIndex<0{return nil}
+    trigger:=&blocks[triggerIndex]
     if uint64(trigger.Words)*2!=uint64(len(trigger.Payload)) ||
        m.summary.ValuesTicks==0{
         return errors.New("source 0x3100 malformed writer payload/tick")
     }
-    snapshot,rawLayout,e:=m.sourceValuesOrderedRawTick(
-        w.active,blocks,at)
+    if triggerImage==nil{
+        return errors.New("source 0x3100 missing trigger-prefix register image")
+    }
+    // Restrict both data and per-tick freshness to the inclusive prefix.
+    // Suffix descriptors still update the main image for future frames.
+    snapshot,rawLayout,e:=sourceValuesOrderedRawTickFromImage(
+        triggerImage,w.active,blocks[:triggerIndex+1],at)
     if e!=nil{return e}
     textCandidate,e:=sourceValuesTextCandidateRow(snapshot)
     if e!=nil{return e}

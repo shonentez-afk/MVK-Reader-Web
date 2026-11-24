@@ -527,9 +527,22 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             m.note("original FreezeUpdate: received PARAM preserved in RAW; local register/DSP/VALUES update skipped")
             break
         }
+		// VALUES observes the register image at its descriptor, inclusive,
+		// not the end of the PARAM frame. Keep final image and all existing
+		// frame counters, spool validation and RAW handling unchanged.
+		var valuesTriggerImage *RegisterImage
 		for _, b := range blocks {
 			m.image.Put(b)
 			m.summary.RegisterBlocks++
+			if b.Addr == 0x3100 && valuesTriggerImage == nil &&
+				m.sourceLiveValuesWriter != nil &&
+				!m.sourceLiveValuesWriter.closed &&
+				m.sourceLiveValuesWriter.active != nil {
+				// RegisterImage owns fixed arrays (bytes and validity); this
+				// value copy cannot alias later updates to m.image.
+				atTrigger := m.image
+				valuesTriggerImage = &atTrigger
+			}
 		}
 		m.summary.RegisterUpdates++
 		if m.liveBin != nil {
@@ -547,10 +560,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				break
 			}
 		}
-        // The original writes one VALUES row on this PARAM 0x3100
-        // before the next socket read, NOT on a later AUX snapshot.
+        // Preserve whole-frame validation and the one-tick-per-frame
+        // policy; only the row's register source is trigger-prefix bound.
         if m.sourceLiveValuesWriter!=nil {
-            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at);e!=nil {return e}
+            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at,valuesTriggerImage);e!=nil {return e}
         }
 		if len(f.Raw) == 4700 {
 			m.summary.Aux4700++

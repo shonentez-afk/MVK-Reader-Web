@@ -80,7 +80,18 @@ func sourceResultAdcSixAddress(base,index int) (int,string) {
 func(m *Monitor) sourceValuesOrderedRawTick(
     w *sourceLiveValuesWindow, blocks []RegBlock, at time.Time,
 )(sourceValuesRawTick,[]byte,error){
-    if w==nil || m==nil || at.IsZero(){
+    if m==nil{
+        return sourceValuesRawTick{},nil,errors.New("source WriteValues tick requires register image")
+    }
+    return sourceValuesOrderedRawTickFromImage(&m.image,w,blocks,at)
+}
+
+// The live writer passes the image and accepted descriptor prefix captured
+// at 0x3100. The wrapper above is retained for independent layout tests.
+func sourceValuesOrderedRawTickFromImage(
+    image *RegisterImage, w *sourceLiveValuesWindow, blocks []RegBlock, at time.Time,
+)(sourceValuesRawTick,[]byte,error){
+    if w==nil || image==nil || at.IsZero(){
         return sourceValuesRawTick{},nil,errors.New("source WriteValues tick requires live time and selected window")
     }
     tick:=sourceValuesRawTick{
@@ -100,7 +111,7 @@ func(m *Monitor) sourceValuesOrderedRawTick(
         if addr>=0{
             location:=addr
             field.WordAddr=&location
-            if fresh{raw=m.sourceLiveRawDWORD(addr)}
+            if fresh{raw=sourceRegisterImageRawDWORD(image,addr)}
         }
         field.RawLE=raw
         field.SourceWordValid=raw!=nil
@@ -162,7 +173,8 @@ func(m *Monitor) sourceValuesOrderedRawTick(
             if !w.Values[30+i]{continue}
             addr:=base+offset
             // Unlike an old full snapshot, 0xFE needs independent
-            // freshness evidence from THIS same accepted PARAM.
+            // freshness evidence from THIS accepted PARAM prefix, up
+            // to and including its 0x3100 trigger descriptor.
             fresh:=i<5 || sourceRawWordsIncludedInCurrentParam(blocks,addr)
             kind:="U32_CANDIDATE"
             if i<2 {kind="F32_CANDIDATE"}
