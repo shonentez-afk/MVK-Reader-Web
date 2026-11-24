@@ -3006,8 +3006,8 @@ class MainWindow(QMainWindow):
         if self._source_mode2_runtime.status_cells.system_error_latched:
             raise ValueError(
                 "Исходная Stage3 системная ошибка не разрешает новую запись")
-        plan=self.original_shell.live_file_plan
         writer=self._source_live_writer
+        plan=writer.plan_for_frame_mark(kind,self.original_shell.live_file_plan)
         was_active=bool(writer.receipt()[
             "write_data_requested" if kind=="data"
             else "write_values_requested"])
@@ -4230,7 +4230,8 @@ class MainWindow(QMainWindow):
                 f"LIVE АЦП{ch} · N={d['n_fft']} · СКЗ "
                 f"{summary['output_mean']:.6g} · пик "
                 f"{summary['output_peak_frequency_hz']:.7g} Гц · "
-                "локальный результат, не приборный DSP")
+                + ("локальный FIR/IQ, не приборный DSP" if filtered
+                   else "локальный FFT, не приборный DSP"))
             self.spec_copy_button.setEnabled(False)
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)

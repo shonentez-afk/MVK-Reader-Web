@@ -258,6 +258,13 @@ class OriginalLiveWriteLedger:
         self.data_stage=STAGE_IDLE
         self.values_stage=STAGE_IDLE
 
+    def plan_for_frame_mark(self,kind:str,plan:OriginalLiveFilePlan):
+        """Use the BEGIN mask for END, even if the other writer's flags changed."""
+        if kind not in ("data","values") or not isinstance(plan,OriginalLiveFilePlan):
+            raise ValueError("Original write kind/selection invalid")
+        active=self._active_data if kind=="data" else self._active_values
+        return active[0] if active is not None else plan
+
     def toggle(self,kind:str,plan:OriginalLiveFilePlan,*,now=None,
                file_options:OriginalFileNameOptions|None=None):
         if kind not in ("data","values"):
@@ -280,8 +287,11 @@ class OriginalLiveWriteLedger:
         if active is None:
             if sum(bool(x) for x in plan.channels)==0:
                 raise ValueError("Original recorder cannot write zero channels")
-            if kind=="values" and not (any(plan.values) or any(plan.spec)):
-                raise ValueError("Original VALUES has zero selected result flags")
+            other=self._active_values if kind=="data" else self._active_data
+            if other is not None and plan.channels!=other[0].channels:
+                raise ValueError("Source shared channels locked by another writer")
+            if kind=="values" and plan.effective_values_count()==0:
+                raise ValueError("Original VALUES has zero selected result flags for selected channels")
             if len(self.windows)>=MAX_WINDOWS:
                 raise ValueError("At most eight checked local write intervals")
             _,samples,aux,frames,_=self._last

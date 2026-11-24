@@ -15,7 +15,7 @@ on:
       - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/source/**'
       - 'tools/architecture/**'
 env:
-  SOURCE_SHA: 'abbbe63f1a5a4c00382c480b3e1947935790c788'
+  SOURCE_SHA: 'dd020c4a8c1cd9d80440031730b7c4ee28bf8cef'
 jobs:
   public-stage111-graph:
     runs-on: ubuntu-latest
