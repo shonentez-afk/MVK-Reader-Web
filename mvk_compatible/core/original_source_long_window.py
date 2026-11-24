@@ -155,8 +155,10 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         requested=rate*ADC_HORIZONTAL_MS[source_h_tag]//1000
         if requested==0:
             raise ValueError("Source GetSignal FIR: time-scale has no real samples")
-        count=envelope_plan(requested,rate,envelope_code)[
-            "adjusted_input_length"]
+        plan=envelope_plan(requested,rate,envelope_code)
+        if plan["post_fir_output_samples"]==0:
+            raise ValueError("Source GetSignal FIR: original decimators produce no output")
+        count=plan["adjusted_input_length"]
     elif h_tag==-1:
         count=fft_n
     else:

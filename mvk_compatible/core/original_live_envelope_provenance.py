@@ -56,7 +56,7 @@ def original_live_envelope_provenance(*, envelope_code:int,
     # The inverse must use the actual POST-FIR N, not the user's
     # selected PRE-FIR bSpecLines. This is source-confirmed by the
     # mutations of Params.Count at 007D1C48 and 007D1E70.
-    if post>=8:
+    if post>=4:
         # The original selected bSpecLines N is PRE-FIR. The resulting
         # FFT can legitimately be <1024; evaluate the same recurrence
         # on the true POST-FIR N, never the selected pre-FIR length.
@@ -74,7 +74,7 @@ def original_live_envelope_provenance(*, envelope_code:int,
         reason="SOURCE_FIR_HISTORY_EXCEEDS_2M_RING"
     elif available_elements<source_n:
         reason="SOURCE_FIR_HISTORY_INCOMPLETE"
-    elif post<8:
+    elif post<4:
         reason="SOURCE_POST_FIR_FFT_BELOW_ACCEPTED_MODEL_N"
     else:
         reason="ORIGINAL_FIR_NUMERICAL_PARITY_UNVERIFIED"

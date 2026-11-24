@@ -20,8 +20,8 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
     before display conversion; no values taken from a decimated plotted line.
     """
     if (not isinstance(n_fft,(int,np.integer)) or isinstance(n_fft,bool)
-        or n_fft<8 or n_fft>262144 or n_fft&(n_fft-1)):
-        raise ValueError('Source FFT requires power-of-two N=8..262144 after FIR')
+        or n_fft<4 or n_fft>262144 or n_fft&(n_fft-1)):
+        raise ValueError('Source FFT requires power-of-two N=4..262144 after FIR')
     if (not math.isfinite(fs_out) or fs_out<=0 or not math.isfinite(f_range)
         or f_range<=0 or spectrum_mode not in range(4)):
         raise ValueError('Invalid original GetSpectrum frequency, range or mode')
@@ -32,8 +32,10 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
         raise ValueError('Original summary needs complete finite nonnegative FFT power')
     first=max(2,round(n_fft/(2.*fs_out)))
     last=min(half-1,math.trunc(n_fft/2.56))
-    if first>last:
-        raise ValueError('Invalid original spectral summary interval')
+    # Source 007D17E7 initializes zero; unsigned JB 007D1801
+    # skips the summation when first>last (reachable post-FIR N=4).
+    if first>half:
+        raise ValueError('Source lower cutoff exceeds full power buffer')
     corrected=a.copy()
     corrected[:first]=0
     # Original _Unit115:007D1807..007D1810 loads a qword accumulator,
@@ -44,10 +46,15 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
     # exact 007D1807..1810 source summation order while avoiding
     # a slow Python iteration during long live spectra.
     source_bins=corrected[first:last+1].astype(np.float64)
-    total=float(np.cumsum(source_bins,dtype=np.float64)[-1])
-    # Source uses strict >, so NumPy argmax correctly keeps first tie.
-    candidate=int(np.argmax(corrected[first:last+1]))+first
-    peak_raw_power=float(corrected[candidate])
+    total=float(np.cumsum(source_bins,dtype=np.float64)[-1]) if source_bins.size else 0.
+    # Original strict greater-than starts with max power/index zero.
+    candidate=0
+    peak_raw_power=0.
+    if source_bins.size:
+        i=int(np.argmax(source_bins))+first
+        if corrected[i]>0:
+            candidate=i
+            peak_raw_power=float(corrected[i])
     scale=float(f_range)/half
     mean=float(np.float32(math.sqrt(total/2.)*scale))
     x=float(np.float32(0.))
@@ -77,6 +84,7 @@ def original_spectrum_summary(power:np.ndarray,*,n_fft:int,fs_out:float,
         'n_fft':int(n_fft),'spectrum_mode':int(spectrum_mode),
         'fs_out_hz':float(fs_out),'df_hz':float(df),'f_range':float(f_range),
         'summary_first_bin':int(first),'summary_last_bin':int(last),
+        'source_summary_interval_empty':first>last,
         'raw_max_power_bin':candidate,'raw_max_power':peak_raw_power,
         'raw_total_band_power':total,'power_sum_order':'DELPHI_STEPWISE_F64_STORED',
         'output_mean':mean,

@@ -41,7 +41,7 @@ def test_profile_is_defensive_copy_and_readonly():
     (1,65536,1,97,16384), (2,65536,2,129,16384),
     (4,65536,4,193,8192), (5,65536,2,303,8192),
     (8,65536,2,605,4096), (11,65536,2,1209,2048),
-    (20,65536,5,51,32768), (20,20*65536,5,1771,32768),
+    (20,65536,5,51,32768), (20,32*65536,5,2383,32768),
 ])
 def test_original_adjusted_length_address_logic(code,fs,stage,prefix,reported):
     p=envelope_plan(5000,fs,code)
@@ -51,9 +51,10 @@ def test_original_adjusted_length_address_logic(code,fs,stage,prefix,reported):
     assert p['reported_output_rate_hz']==reported
 
 
-def test_original_ratio_16_is_invalid_not_approximated():
+def test_original_hex_ratio_16_is_valid_but_decimal_10_is_not():
+    assert envelope_plan(2000,65536,14)['pre_stage']==10
     with pytest.raises(ValueError,match='Invalid sample rate'):
-        envelope_plan(2000,65536,14)
+        envelope_plan(2000,10*65536,20)
 
 
 @pytest.mark.parametrize('code',[-1,0,32])
@@ -122,7 +123,7 @@ def test_stage_two_decimation_then_envelope():
 def test_high_ratio_two_decimators_before_quadrature():
     p=fake_profile(i=1,q=0)
     data=np.arange(4096,dtype='f4')
-    r=process_original_envelope_candidate(data,20*65536,20,p)
+    r=process_original_envelope_candidate(data,32*65536,20,p)
     assert r['stages_used']==(7,10,5)
     assert r['output_samples']>0
     assert all(np.isfinite(r['chronological']))

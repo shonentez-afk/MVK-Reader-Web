@@ -132,27 +132,36 @@ func sourceFIRWindowCounts(rate uint32,code int,selected uint32)(uint32,uint32,u
         return 0,0,0,errors.New("source FIR target rate not supported by ADC")
     }
     ratio:=rate/target
-    var prefix uint32
+    // IDR 007D1178/007D1C62 immediate operands are hexadecimal.
+    // q=0x10 is 16; q=0x20 is 32, then 64,128,256.
+    var pre,second int
     switch ratio {
-    case 1:prefix=0
-    case 2:prefix=45
-    case 4:prefix=89
-    case 8:prefix=177
+    case 1:
+    case 2:pre=7
+    case 4:pre=8
+    case 8:pre=9
+    case 16:pre=10
+    case 32:pre=7;second=10
+    case 64:pre=8;second=10
+    case 128:pre=9;second=10
+    case 256:pre=10;second=10
     default:return 0,0,0,errors.New("original source FIR Invalid sample rate")
     }
+    var prefix uint32
+    if second!=0 {prefix=sourceFIRTaps[second]}
+    if pre!=0 {prefix=prefix*sourceFIRDecim[pre]+sourceFIRTaps[pre]}
     stage:=sourceFIREnvelopeStages[code]
     count:=uint64(selected)+uint64(prefix)+uint64(sourceFIRTaps[stage])*uint64(ratio)
     if count==0 || count>sourceOriginalStorageSamples {
         return 0,0,0,errors.New("source FIR history exceeds original 2M ring")
     }
     n:=uint32(count)
-    if ratio>1 {
-        var pre int
-        switch ratio {case 2:pre=7;case 4:pre=8;case 8:pre=9}
-        if n<sourceFIRTaps[pre]+sourceFIRDecim[pre] {
+    for _,decimator:=range []int{pre,second} {
+        if decimator==0 {continue}
+        if n<sourceFIRTaps[decimator]+sourceFIRDecim[decimator] {
             return 0,0,0,errors.New("source FIR pre-decimator lacks history")
         }
-        n=(n-sourceFIRTaps[pre])/sourceFIRDecim[pre]
+        n=(n-sourceFIRTaps[decimator])/sourceFIRDecim[decimator]
     }
     if n<sourceFIRTaps[stage]+sourceFIRDecim[stage] {
         return 0,0,0,errors.New("source FIR I/Q lacks history")

@@ -27,7 +27,7 @@ def source_derived_mode_display(power: np.ndarray, *, n_fft: int,
     log10 and sqrt are NOT certified bitwise against Delphi Win32/x87.
     Input may be a view; no data are modified in place.
     """
-    if (type(n_fft) is not int or n_fft < 8 or n_fft > 262144
+    if (type(n_fft) is not int or n_fft < 4 or n_fft > 262144
         or (n_fft & (n_fft - 1)) or type(mode) is not int
         or mode not in (0, 1, 2, 3)):
         raise ValueError("Original FFT size or display mode invalid")
