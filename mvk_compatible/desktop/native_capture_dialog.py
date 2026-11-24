@@ -22,6 +22,7 @@ from ..core.native_r6_bridge import (CaptureSpec, native_executable,
                                      pack_completed_export, request_graceful_stop)
 from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview, MAX_SAMPLES
+from ..core.original_source_ring_receipt import source_epoch_recovery_pending
 from ..core.original_source_long_window import (
     submit_source_long_window,submit_source_fft_window,
     submit_source_envelope_window,submit_source_getsignal_envelope_window,
@@ -355,18 +356,11 @@ class NativeCaptureDialog(QDialog):
                       str(ch["sequence_discontinuities"]), status, ch["quality"]]
             for col, value in enumerate(values):
                 self.live_channels.item(i, col).setText(value)
-        # At most one bounded preview per new atomic snapshot, never a second
-        # TCP client and never an on-disk partial BIN. Failed provenance must
-        # CLEAR any previously displayed provisional data.
-        if snapshot.get("source_tcp_multi_socket"):
-            self.previewInvalid.emit(
-                "После переподключения исходная история графиков не может "
-                "считаться непрерывной; RAW разделён по TCP-сеансам")
-            return
-        if snapshot.get("source_rate_transition_during_live"):
-            self.previewInvalid.emit(
-                "Исходная ЧД изменилась в текущем сеансе; прежнее "
-                "превью скрыто, полный RAW продолжает сохраняться")
+        # Skip the ordinary forensic preview after a transition.
+        # The independent source-ring request above already recovered
+        # the current epoch (or is still waiting for its full history).
+        # A mixed-preview invalidation must not erase that valid graph.
+        if source_epoch_recovery_pending(snapshot):
             return
         if snapshot["phase"] != "RECORDING":
             self.previewInvalid.emit("Запись не в фазе RECORDING: предварительные графики скрыты")
@@ -400,7 +394,8 @@ class NativeCaptureDialog(QDialog):
                 parent is None or
                 not getattr(parent,"_live_active",False) or
                 getattr(parent,"_measurement_exit_requested",False) or
-                getattr(parent,"_source_live_view_frozen",False)):
+                getattr(parent,"_source_live_view_frozen",False) or
+                getattr(parent,"_source_graph_wait_rate",None) is not None):
             return
         tabs=getattr(parent,"original_root_tabs",None)
         if tabs is None:
@@ -444,8 +439,13 @@ class NativeCaptureDialog(QDialog):
                 tag=-2  # local spectrum FIR request, never TCP
             else:
                 tag=-1
+        rows=(snapshot.get("source_original_storage") or {}).get("channels") or []
+        row=rows[adc-1] if 1<=adc<=len(rows) else {}
+        epoch=row.get("source_epoch") or {}
         key=(snapshot.get("session_id"),adc,tag,fft_n,
-             envelope_code,source_h_tag)
+             envelope_code,source_h_tag,row.get("last_sample_rate_hz"),
+             epoch.get("socket_attempt"),epoch.get("continuity_generation"),
+             epoch.get("start_pos_64"))
         if self._source_long_selector!=key:
             self._source_long_selector=key
             self._source_long_request=None
@@ -453,9 +453,15 @@ class NativeCaptureDialog(QDialog):
             self._source_long_last_emitted=None
             self._source_long_last_capture_end=None
         try:
+            # BY DESIGN LoadCaptureLiveStatus receives the parent
+            # CaptureSpec root; the ring IPC APIs receive its exact child
+            # run. Never create/read IPC siblings or foreign runs.
+            run=Path(snapshot["run_directory"])
+            if (run.is_symlink() or run.parent.resolve()!=self._capture_root.resolve()):
+                raise ValueError("Source window outside generated capture directory")
             pending=self._source_long_request
             if pending is not None:
-                window=load_source_long_window(self._capture_root,snapshot,pending)
+                window=load_source_long_window(run,snapshot,pending)
                 if window is not None and pending.request_id!=self._source_long_last_emitted:
                     self._source_long_last_emitted=pending.request_id
                     self._source_long_last_capture_end=window.received_samples
@@ -473,13 +479,13 @@ class NativeCaptureDialog(QDialog):
                     rows[adc-1]["rx_pos_64"]<=self._source_long_last_capture_end):
                 return
             request=(submit_source_getsignal_envelope_window(
-                self._capture_root,snapshot,adc,source_h_tag,envelope_code)
+                run,snapshot,adc,source_h_tag,envelope_code)
                 if tag==-3 else submit_source_envelope_window(
-                    self._capture_root,snapshot,adc,fft_n,envelope_code)
+                    run,snapshot,adc,fft_n,envelope_code)
                 if tag==-2 else submit_source_fft_window(
-                    self._capture_root,snapshot,adc,fft_n)
+                    run,snapshot,adc,fft_n)
                 if tag==-1 else submit_source_long_window(
-                    self._capture_root,snapshot,adc,tag))
+                    run,snapshot,adc,tag))
             if request is None:
                 return  # Selected real source ring history not yet resident
             self._source_long_request=request

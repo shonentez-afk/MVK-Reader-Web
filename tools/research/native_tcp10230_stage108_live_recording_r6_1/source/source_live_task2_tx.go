@@ -134,7 +134,11 @@ func (s *sourceLiveTask2TX) takeOperatorLine(m *Monitor,line string) error {
  // Delphi TMVKThread.SetRate sets MvkSampleRate BEFORE writing the
  // 36-byte queued command, independently of its eventual ACK.
  if m.sourceOriginalRXGate!=nil {
+    previous:=m.sourceOriginalRXGate.rate
     if e=m.sourceOriginalRXGate.selectRate(uint32(n));e!=nil{return e}
+    if previous!=m.sourceOriginalRXGate.rate && m.sourceOriginalStorage!=nil {
+        m.sourceOriginalStorage.cutAllDisplayHistory()
+    }
  }
  // SetRate only ENQUEUES here. Original Execute sends at most one
  // FIFO command in each receive iteration, before its next ReadUInt32.

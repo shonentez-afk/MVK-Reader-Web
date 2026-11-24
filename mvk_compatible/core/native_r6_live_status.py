@@ -224,7 +224,8 @@ def validate_live_status(payload: dict, *, expected_run: str,
     source_receive_gate=validate_original_receive_gate_receipt(
         payload.get("source_original_receive_gate"),safe)
     source_ring=validate_original_storage_receipt(
-        payload.get("source_original_storage"),safe,source_receive_gate)
+        payload.get("source_original_storage"),safe,source_receive_gate,
+        socket_count=tcp_count)
     if source_ring is not None:
         for i in (8,9):
             row=source_ring["channels"][i]

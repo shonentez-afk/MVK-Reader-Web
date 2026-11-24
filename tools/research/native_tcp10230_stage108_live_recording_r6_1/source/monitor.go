@@ -437,9 +437,27 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // FreezeUpdate is false. No device TX is inferred or performed.
         sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
             m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
+        if !sourceStoreAllowed && m.sourceOriginalStorage!=nil {
+            // Freeze/rate-excluded wire data cannot make old samples fresh.
+            // Preserve RAW and internal accounting; fence only the UI window.
+            m.sourceOriginalStorage.channels[sample.Channel].cutDisplayHistory()
+        }
         if typ==typeTach && m.sourceParamGate!=nil && m.sourceOriginalRXGate!=nil {
             if e:=m.ensureSourceLocalTach();e!=nil{return e}
             if e:=m.sourceTach.onSample(m,f,*sample,sourceStoreAllowed);e!=nil{return e}
+        }
+        // Only a second ADMITTED rate, not discarded wrong-Fs wire data,
+        // proves a rate change. Preserve the homogeneous export ban even if
+        // the optional LiveBinSpool was not requested for this capture.
+        if m.sourceTask2TX!=nil && sourceStoreAllowed &&
+            m.sourceOriginalStorage!=nil &&
+            m.sourceOriginalStorage.channels[sample.Channel].seen &&
+            m.sourceOriginalStorage.channels[sample.Channel].sampleRate!=sample.Rate &&
+            !m.sourceRateTransitionDetected {
+            m.sourceRateTransitionDetected=true
+            m.summary.SourceRateTransition=true
+            m.warn("Original SetRate changed source Fs during capture: RAW retained, single-rate BIN export unavailable")
+            if m.liveBin!=nil {m.liveBin.preview=nil}
         }
         var physicalChunk []byte
 		// Original channel 8/9 store the 256 raw payload BYTES, not
@@ -449,22 +467,6 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
         }
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
-			// Original mRate1Click permits rate changes. Keep every subsequent
-			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
-			// corrupt TCP. Existing single-rate BIN cannot certify this session.
-			// A wire Fs not selected by MvkSampleRate is ignored by the
-            // original channel store. Only a SECOND accepted rate proves
-            // an actual SetRate transition; wrong-Fs RAW alone does not.
-            if m.sourceTask2TX!=nil && sourceStoreAllowed &&
-               m.sourceOriginalStorage!=nil &&
-               m.sourceOriginalStorage.channels[sample.Channel].seen &&
-               m.sourceOriginalStorage.channels[sample.Channel].sampleRate!=sample.Rate &&
-               !m.sourceRateTransitionDetected {
-				m.sourceRateTransitionDetected=true
-				m.summary.SourceRateTransition=true
-				m.warn("Original SetRate changed ADC Fs during capture: RAW retained, single-rate BIN export unavailable")
-				if m.liveBin.preview!=nil {m.liveBin.preview=nil}
-			}
             // The original receive gate drops mismatched Fs from
             // channel storage and WriteData, not merely from GUI. The
             // optional calibrated BIN must not consume that packet
@@ -494,7 +496,11 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e=m.sourceOriginalStorage.appendFrame(
                 *sample,aligned,domain);e!=nil{return e}
             state:=m.sourceOriginalStorage.channels[sample.Channel].rangeState
-            if m.sourceLiveDataWriter!=nil && sourcePhysicalRangeKnown(state) &&
+            // If a writer is re-opened after reconnect, retain its RAW
+            // evidence but do not label bytes physical based on old config.
+            rangeCurrent:=!m.summary.SourceTCPMultiSocket ||
+                state!=nil && state.SocketAttempt==m.summary.SourceTCPConnectionCount
+            if m.sourceLiveDataWriter!=nil && rangeCurrent && sourcePhysicalRangeKnown(state) &&
                 sample.NonFinite==0 && sourcePhysicalFinite(aligned) {
                 physicalChunk=aligned
             }

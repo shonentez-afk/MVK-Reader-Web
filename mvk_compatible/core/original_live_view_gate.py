@@ -11,7 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .native_r6_live_preview import LivePreview
-from .original_source_ring_receipt import source_live_range_matches,TACH_DOMAIN
+from .original_source_ring_receipt import (
+    source_live_range_matches,TACH_DOMAIN,source_channel_epoch,
+    source_epoch_recovery_pending,source_epoch_recovery_possible,
+)
 import numpy as np
 from .original_sample_cursor32 import u32_preview_bounds,u32_matches_go_status
 from .original_connected_status import connected_system_status
@@ -62,7 +65,16 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
     phase = proof.transport_phase
     if not proof.connection_verified or phase != "RECORDING":
         return deny("Нет подтверждённого действующего потока", phase)
-    if proof.stream_silent or proof.data_integrity_alert:
+    recovery = source_epoch_recovery_pending(status)
+    # A renewed, independently bounded source ring may be viewed even
+    # though global Native sequence counters retain a prior Fs/socket gap.
+    # Faults, unverified windows and historical nonfinite ADC still fail closed.
+    scoped = (recovery and source_epoch_recovery_possible(status)
+              and preview.source_ring_provenance_verified is True
+              and proof.native_invalid_frames == 0 and proof.native_nonfinite_samples == 0
+              and not proof.source_system_error_observed)
+    if (proof.stream_silent or (proof.data_integrity_alert and not scoped)
+            or (recovery and not scoped)):
         return deny("Поток остановлен или содержит ошибки", "STREAM_ERRORS")
     if status.get("capture_only") is not False:
         return deny("Нет подтверждённого потока Float32", "CAPTURE_ONLY")
@@ -130,6 +142,22 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                         "SOURCE_RING_UNVERIFIED")
         if from_source_ring:
             row=full_ring["channels"][number-1]
+            try:
+                epoch=source_channel_epoch(status,row)
+            except (ValueError,KeyError,TypeError):
+                return deny("Неподтверждённая эпоха кольца", "SOURCE_RING_STALE")
+            if (epoch!=ch.source_epoch or
+                    (recovery and epoch is None) or
+                    (epoch is not None and (ch.captured_samples is None or
+                     ch.captured_samples-len(ch.samples)<epoch["start_pos_64"]))):
+                return deny("Исходное окно из прошлой TCP/Fs эпохи",
+                            "SOURCE_RING_STALE")
+            if (recovery and (source_gate is None or
+                    source_gate["selected_rate_hz"]!=ch.rate_hz or
+                    (not is_tach and (ch.source_range_state or {}).get(
+                        "socket_attempt")!=epoch["socket_attempt"]))):
+                return deny("Нет актуального выбранного Fs/Range",
+                            "SOURCE_RING_STALE")
             valid_domain=(row.get("input_domain")==TACH_DOMAIN and
                 row.get("sample_width_bytes")==1 if is_tach else
                 source_live_range_matches(row,preview.input_domain,

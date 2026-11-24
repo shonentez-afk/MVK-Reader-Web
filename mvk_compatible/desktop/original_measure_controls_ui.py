@@ -199,6 +199,7 @@ class OriginalMeasureControls:
         if self.window._live_active:
             self.window._invalidate_graph_cursor("adc")
             self.window._invalidate_graph_cursor("spectrum")
+            self.window._sync_live_spectrum_export_buttons()
             # PageStatus uses the same accepted pre-freeze PARAM snapshot
             # across tcStatus modes and clears it on transport faults.
             self.window.original_shell.refresh_status()

@@ -24,7 +24,8 @@ import numpy as np
 
 from .native_r6_live_preview import LivePreview, PreviewADC, MAX_SAMPLES
 from .original_source_ring_receipt import (SOURCE_LIVE_ADC_DOMAIN,
-    source_live_range_matches,TACH_DOMAIN)
+    source_live_range_matches,TACH_DOMAIN,source_channel_epoch,
+    source_epoch_recovery_pending,source_epoch_recovery_possible)
 from .native_r6_live_status import _utc_stamp
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
 from .original_source_ring_receipt import BUFFER_ELEMENTS
@@ -58,6 +59,7 @@ class SourceWindowRequest:
     source_range_state: dict | None = None
     f_range_single: float = 1.0
     sample_width_bytes: int = 4
+    source_epoch: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -92,8 +94,6 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
             status.get("phase")!="RECORDING" or
             status.get("capture_only") is not False or
             status.get("invalid_frames")!=0 or
-            status.get("source_tcp_multi_socket") is True or
-            status.get("source_rate_transition_during_live") is True or
             status.get("snapshot_stale") is not False or
             status.get("source_original_storage_verified") is not True or
             status.get("source_original_storage") is None or
@@ -124,6 +124,10 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         raise ValueError("Source GetSignal: FFT length with time-scale request")
     row=status["source_original_storage"]["channels"][adc-1]
     live=status["channels"][adc-1]
+    epoch=source_channel_epoch(status,row)
+    recovering=source_epoch_recovery_pending(status)
+    if recovering and (epoch is None or not source_epoch_recovery_possible(status)):
+        raise ValueError("Source GetSignal: no trustworthy active original ring epoch")
     rate=row["last_sample_rate_hz"]
     gate=(status.get("source_original_receive_gate")
           if status.get("source_original_receive_gate_verified") is True
@@ -152,12 +156,14 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
     if (not valid_domain or
             rate==0 or
             rate not in live["sample_rates_hz"] or
-            live["sequence_discontinuities"] or (not is_tach and live["nonfinite_samples"]) or
-            row["rate_changes"] or row["rejected_nonfinite_frames"] or
+            (not recovering and (live["sequence_discontinuities"] or
+                                 row["rate_changes"] or row["sequence_gaps"]>allowed_source_gaps)) or
+            (not is_tach and live["nonfinite_samples"]) or row["rejected_nonfinite_frames"] or
             row["rx_pos_64"]!=admissible or row["rx_pos_64"]%wire_factor or
-            row["sequence_gaps"]>allowed_source_gaps or
             row["next_device_sample_index"] is None or
-            row["next_device_sample_index"]!=live["next_sample_index"]):
+            row["next_device_sample_index"]!=live["next_sample_index"] or
+            (recovering and not is_tach and
+             (row.get("source_range_state") or {}).get("socket_attempt")!=epoch["socket_attempt"])):
         raise ValueError("Source GetSignal: unverified live FRange1/discontinuous ADC")
     if h_tag==-2:
         source_plan=source_selected_envelope_fft_plan(
@@ -180,9 +186,12 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
     # which may include wrong-rate or frozen packets skipped by Delphi.
     if count<=0 or count>BUFFER_ELEMENTS:
         raise ValueError("Source GetSignal/GetSpectrum: invalid source 2M length")
-    if require_history and row["available_elements"]<count:
+    readable = row["available_elements"]
+    if epoch is not None:
+        readable=min(readable,row["rx_pos_64"]-epoch["start_pos_64"])
+    if require_history and readable<count:
         return None
-    return row,live,rate,count
+    return row,live,rate,count,epoch
 
 
 def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
@@ -196,7 +205,7 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         source_h_tag=source_h_tag)
     if settings is None:
         return None
-    row,live,rate,count=settings
+    row,live,rate,count,epoch=settings
     path=_root(root,status)
     rid=secrets.token_hex(16) if request_id is None else request_id
     if not isinstance(rid,str) or REQUEST_ID_RE.fullmatch(rid) is None:
@@ -211,7 +220,7 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         source_h_tag if h_tag==-3 else 0,
         row['input_domain'],row.get('source_range_state'),
         1.0 if adc>=9 else row['original_live_f_range_single'],
-        1 if adc>=9 else 4)
+        1 if adc>=9 else 4, epoch)
     data={
         "schema":REQUEST_SCHEMA,"session_id":req.session_id,
         "request_id":req.request_id,"adc":req.adc,
@@ -223,6 +232,8 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         data["sample_width_bytes"]=1
     if req.source_range_state is not None:
         data['source_range_state']=req.source_range_state
+    if req.source_epoch is not None:
+        data['source_epoch']=req.source_epoch
     if h_tag==-2:
         data["envelope_code"]=req.envelope_code
         data["original_bspec_lines"]=req.original_bspec_lines
@@ -296,7 +307,9 @@ def load_source_long_window(root:str|Path,status:dict,
         source_h_tag=request.original_h_tag)
     if settings is None:
         raise ValueError("Source GetSignal/GetSpectrum: real source history not resident")
-    row,live,rate,count=settings
+    row,live,rate,count,epoch=settings
+    if epoch!=request.source_epoch:
+        raise ValueError("Source GetSignal: stale source epoch")
     if rate!=request.sample_rate_hz or count!=request.samples:
         raise ValueError("Source GetSignal: selected source rate changed")
     is_tach=request.adc>=9
@@ -351,6 +364,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     meta.get("first_sample_index")!=((end_index-count)&0xffffffff) or
                     meta.get("input_domain")!=request.input_domain or
                     meta.get("source_range_state")!=request.source_range_state or
+                    meta.get("source_epoch")!=request.source_epoch or
                     meta.get("calibration_already_applied") is not (not is_tach) or
                     meta.get("provisional_not_audited") is not True):
                 raise ValueError("Source GetSignal: foreign or malformed source window")
@@ -370,6 +384,7 @@ def load_source_long_window(root:str|Path,status:dict,
             start=request.capture_end-count
             if (request.capture_end>row["rx_pos_64"] or
                     start<row["first_readable_pos_64"] or
+                    (epoch is not None and start<epoch["start_pos_64"]) or
                     request.capture_end>live["samples"]*wire_factor or
                     (row["rx_pos_64"]-request.capture_end)%wire_factor or
                     (is_tach and ((row["next_device_sample_index"]-
@@ -398,7 +413,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     request.adc,rate,meta["first_sample_index"],
                     meta["next_sample_index"],values,digest,
                     request.capture_end,request.f_range_single,
-                    request.source_range_state)},
+                    request.source_range_state,request.source_epoch)},
                 input_domain=request.input_domain,
                 source_ring_provenance_verified=True,
             )

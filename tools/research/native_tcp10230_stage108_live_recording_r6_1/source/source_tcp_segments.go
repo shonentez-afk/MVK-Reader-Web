@@ -44,8 +44,8 @@ func (l *sourceTCPLedger) begin(m *Monitor) error {
  if len(l.Segments)>0 {
   // Forensic registers, framing and published DSP/TACH status start
   // fresh on each connection. The independent form-owned ADC config
-  // and storage survive the original Task2 retry. That does not certify
-  // multi-socket windows or allow old wire words into socket evidence.
+  // and storage survive the original Task2 retry. Only the separately
+  // fenced local display may use new, contiguous source-epoch windows.
   m.f=&Framer{}
   m.image=RegisterImage{}
   if m.sourceTach!=nil {m.sourceTach.state=sourceLocalTachState{}}
@@ -65,6 +65,9 @@ func (l *sourceTCPLedger) begin(m *Monitor) error {
  })
  l.Active=len(l.Segments)
  m.summary.SourceTCPConnectionCount=uint64(len(l.Segments))
+ if m.sourceOriginalStorage!=nil {
+  m.sourceOriginalStorage.beginDisplaySocket(m.summary.SourceTCPConnectionCount)
+ }
  m.note(fmt.Sprintf("SOURCE TCP CONNECT #%d: RAW offset %d",l.Active,m.summary.RawBytes))
  return nil
 }

@@ -36,8 +36,14 @@ from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
 )
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
+from ..core.original_source_ring_receipt import (
+    source_epoch_recovery_possible, source_epoch_recovery_pending,
+)
 from ..core.original_live_spectrum_view import (
     bind_live_spectrum_view, live_spectrum_plot_points,
+)
+from ..core.live_spectrum_triplet import (
+    current_live_spectrum_triplet, FILENAME_PREFIX as LIVE_SPECTRUM_CSV_PREFIX,
 )
 from ..core.original_live_envelope_provenance import active_live_envelope_gate
 from ..core.envelope_spectrum_idr_candidate import (
@@ -159,6 +165,7 @@ class MainWindow(QMainWindow):
         self._measurement_connection_error=False  # separate source StatusIsError candidate
         self._measurement_exit_requested=False
         self._source_live_view_frozen=False  # Stage111Z31BS: screen-only; Native RAW always records
+        self._source_graph_wait_rate=None  # local SetRate selected; await matching Go epoch
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._live_long_window=None  # SHA verified source-ring bAdcHScale
         self._live_fft_window=None  # SHA verified source-ring bSpecLines
@@ -3162,6 +3169,7 @@ class MainWindow(QMainWindow):
         self._spec_source_h_view=None
         self.original_shell.clear_source_view_time()
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
+        self._source_graph_wait_rate=None
         self._live_active=True
         # One source WriteData/WriteValues recorder per real Native Go run.
         # Original stages start idle=2; no device writes ever.
@@ -3269,6 +3277,13 @@ class MainWindow(QMainWindow):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
+        awaiting=self._source_graph_wait_rate
+        if (awaiting is not None and
+                snapshot.get("source_original_receive_gate_verified") is True):
+            gate=snapshot["source_original_receive_gate"]
+            if (gate["selected_rate_hz"]==awaiting[0] and
+                    gate["selection_changes"]>awaiting[1]):
+                self._source_graph_wait_rate=None
         if snapshot.get("phase") in ("VERIFYING","COMPLETED"):
             self._native_capture_finalizing()
             return evidence
@@ -3336,15 +3351,29 @@ class MainWindow(QMainWindow):
         elif snapshot.get("phase")=="REFUSED":
             self._source_live_writer.invalidate(
                 "Native отказал в принятии измерения")
-        if (not evidence.connection_verified or evidence.data_integrity_alert
+        scoped_graph=(source_epoch_recovery_possible(snapshot)
+                      and evidence.native_invalid_frames==0
+                      and evidence.native_nonfinite_samples==0)
+        if (self._source_graph_wait_rate is not None
+                or not evidence.connection_verified
+                or (evidence.data_integrity_alert and not scoped_graph)
                 or system_latched):
             # A successful TCP JSON update does not make an old preview
             # current; fail closed on silence, stale or invalid frames.
             self._invalidate_live_preview("Live transport not trustworthy")
-        elif (self._live_spectrum_input is not None
-              and not self._source_live_view_frozen
-              and not self._live_spectrum_current()):
-            self._clear_live_spectrum("Окно спектра больше не соответствует текущему приёму")
+        elif not self._source_live_view_frozen:
+            from ..core.original_live_view_gate import gate_live_preview
+            if (source_epoch_recovery_pending(snapshot) and self._live_preview is not None
+                    and self._live_preview.source_ring_provenance_verified is not True):
+                self._invalidate_live_preview("Ожидание полного окна новой TCP/Fs эпохи")
+            elif (self._live_long_window is not None and
+                  not gate_live_preview(snapshot,self._live_long_window.preview).allowed):
+                self._invalidate_live_preview("Окно сигнала больше не соответствует текущей эпохе")
+            elif (self._live_spectrum_input is not None and
+                  not self._live_spectrum_current()):
+                self._live_fft_window=None
+                self._clear_live_spectrum("Окно спектра больше не соответствует текущему приёму")
+        self._sync_live_spectrum_export_buttons()
         self.original_shell._render_live_file_plan()
         self.original_shell.measure_controls.render()
         # Original tmInterfaceUpdate dispatches the ACTIVE source page.
@@ -3394,7 +3423,7 @@ class MainWindow(QMainWindow):
     def _receive_source_long_window(self, window):
         """Route one SHA-bound Go 2M ring window to GetSignal OR GetSpectrum."""
         if (not self._live_active or self._live_capture_stopping() or
-                self._source_live_view_frozen or
+                self._source_live_view_frozen or self._source_graph_wait_rate is not None or
                 self._source_mode2_runtime.status_cells.system_error_latched):
             return
         try:
@@ -3444,7 +3473,7 @@ class MainWindow(QMainWindow):
                     'Исходное GetSignal из кольца отклонено: '+str(exc))
 
     def _receive_live_preview(self, preview):
-        if not self._live_active:
+        if not self._live_active or self._source_graph_wait_rate is not None:
             return
         if self._source_mode2_runtime.status_cells.system_error_latched:
             self._invalidate_live_preview(
@@ -3543,8 +3572,7 @@ class MainWindow(QMainWindow):
         if (self._source_live_view_frozen or self._live_capture_stopping()
                 or status.get("phase")!="RECORDING" or
                 status.get("snapshot_stale") is not False or
-                status.get("source_original_storage_verified") is not True or
-                status.get("source_rate_transition_during_live") is True):
+                status.get("source_original_storage_verified") is not True):
             raise ValueError(
                 f"Огибающая Code{code}: источник/Fs/Freeze не подтверждены. "
                 "Обычный сигнал не подменяет огибающую")
@@ -3958,8 +3986,10 @@ class MainWindow(QMainWindow):
                     raise ValueError("Нет короткого проверенного окна Go")
                 preview=self._live_preview
                 rx_pos=channels[ch-1]['samples']
-            cursor_key=(preview.session_id,ch,tag,
-                        self.wave_mode.currentIndex(),rate)
+            epoch=preview.channels[ch].source_epoch
+            cursor_key=(preview.session_id,ch,tag,self.wave_mode.currentIndex(),rate)
+            if epoch is not None:
+                cursor_key+=(epoch["socket_attempt"],epoch["continuity_generation"])
             last=self._source_getsignal_last_processed.get(cursor_key,0)
             last_preview_end=self._source_getsignal_last_preview_end.get(cursor_key)
             # Original PageAdc 00847F75..00847FA0 disables overlap for
@@ -4089,7 +4119,7 @@ class MainWindow(QMainWindow):
 
     def _live_spectrum_current(self):
         if (not self._live_active or self._live_capture_stopping()
-                or self._source_live_view_frozen
+                or self._source_graph_wait_rate is not None or self._source_live_view_frozen
                 or self._source_mode2_runtime.status_cells.system_error_latched
                 or not self._live_spectrum_selection_matches()):
             return False
@@ -4258,6 +4288,7 @@ class MainWindow(QMainWindow):
             d=bind_live_spectrum_view(
                 source_preview,ch,d,selected_n=selected_n,code=code,
                 mode=self.spec_mode.currentIndex())
+            d["live_source_request_id"]=request_id
             if selected_n>=131072:
                 self._source_large_fft_key=key
                 self._source_large_fft_at=clock
@@ -4335,8 +4366,7 @@ class MainWindow(QMainWindow):
                 f"{summary['output_peak_frequency_hz']:.7g} Гц · "
                 + ("локальный FIR/IQ, не приборный DSP" if filtered
                    else "локальный FFT, не приборный DSP"))
-            self.spec_copy_button.setEnabled(False)
-            self.spec_save_button.setEnabled(False)
+            self._sync_live_spectrum_export_buttons()
             self.spec_original_copy_compare.setEnabled(False)
             self.spec_canvas_geometry_button.setEnabled(False)
             if filtered:
@@ -4352,7 +4382,7 @@ class MainWindow(QMainWindow):
                     f'история {proof["source_get_adjusted_envelope_length_samples"]} '
                     f'Float32 · post-IQ FFT N={d["n_fft"]} · '
                     f'FRange={channel.source_f_range_single:g}; нормализация и возврат масштаба; '
-                    'Copy/Save как оригинальный результат запрещён')
+                    'Copy/Save: только локальный результат из проверенного окна')
             else:
                 self.spec_mean.setText(
                     f'LIVE {channel_label} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
@@ -4367,7 +4397,7 @@ class MainWindow(QMainWindow):
                     + ('нормализация исходного кольца и возврат масштаба · '
                        if ring_selected else 'Native preview; FRange повторно НЕ применялся · ')
                     + 
-                    'результат не для оригинального Copy/Save')
+                    'Copy/Save: только локальный результат из проверенного кольца')
             self.spec_cursor_primary.setText(self._idle_spectrum_cursor_label())
         except (ValueError,OSError,KeyError,TypeError,OverflowError) as exc:
             self._clear_live_spectrum(str(exc))
@@ -4628,8 +4658,15 @@ class MainWindow(QMainWindow):
         except (ValueError,RuntimeError) as exc:
             self.statusBar().showMessage("Исходная SetRate не отправлена: "+str(exc))
             return False
-        if ok:self.statusBar().showMessage(
-            f"SetRate({rate}) поставлена в очередь. Факт TX ожидается от Go.")
+        if ok:
+            snapshot=self._native_live_status or {}
+            gate=(snapshot.get("source_original_receive_gate") or {}
+                  if snapshot.get("source_original_receive_gate_verified") is True else {})
+            if self._source_graph_wait_rate is not None or gate.get("selected_rate_hz")!=rate:
+                self._source_graph_wait_rate=(rate,gate.get("selection_changes",-1))
+                self._invalidate_live_preview("Ожидание подтверждения выбранной частоты")
+            self.statusBar().showMessage(
+                f"SetRate({rate}) поставлена в очередь. Факт TX ожидается от Go.")
         return ok
 
     def open_native_capture(self):
@@ -7470,10 +7507,43 @@ class MainWindow(QMainWindow):
             raise ValueError("Current spectrum channel disagrees with original tab")
         return flow,action
 
+    def _current_live_spectrum_triplet(self):
+        if not self._live_spectrum_current():
+            raise ValueError("Нет текущего проверенного LIVE-спектра")
+        window=self._live_fft_window
+        if window is None or window.preview is not self._live_spectrum_input:
+            raise ValueError("Отрисованное окно LIVE уже сменилось")
+        code=(int(self.spec_envelope_code.currentData() or 0)
+              if self.spec_envelope_button.isChecked() else 0)
+        return current_live_spectrum_triplet(
+            self._native_live_status,window,self._full_spectrum,
+            adc=self._ch(),mode=self.spec_mode.currentIndex(),
+            selected_n=int(self.spec_n.currentData()),code=code,
+            stop_requested=self._live_capture_stopping(),
+            frozen=self._source_live_view_frozen)
+
+    def _sync_live_spectrum_export_buttons(self):
+        if not self._live_active:
+            return
+        try:
+            self._current_live_spectrum_triplet()
+        except (ValueError,KeyError,TypeError,OverflowError):
+            enable=False
+        else:
+            enable=True
+        self.spec_copy_button.setEnabled(enable)
+        self.spec_save_button.setEnabled(enable)
+
     def _copy_spec_summary(self):
         """bSpecCopyValueClick 0084BC28: real selected channel's 3 values."""
         if self._spectrum_summary is None:return
         try:
+            if self._live_active:
+                live=self._current_live_spectrum_triplet()
+                QApplication.clipboard().setText(live.clipboard_text())
+                self.statusBar().showMessage(
+                    "Скопированы 3 локальных значения из текущего окна LIVE")
+                return
             flow,action=self._current_original_spectrum_action()
             action.validate_flow(flow,self._full_spectrum)
             if action.direct_bin_uncalibrated:
@@ -7502,6 +7572,25 @@ class MainWindow(QMainWindow):
         """
         if self._spectrum_summary is None:return
         try:
+            if self._live_active:
+                from datetime import datetime
+                live=self._current_live_spectrum_triplet()
+                channel=f"TACH{live.adc-8}" if live.adc>=9 else f"ADC{live.adc}"
+                name=(LIVE_SPECTRUM_CSV_PREFIX + channel +
+                      datetime.now().strftime("-%Y%m%d-%H%M%S.csv"))
+                target,_=QFileDialog.getSaveFileName(
+                    self,"Сохранить локальный LIVE-спектр (не оригинальный SPEC-FREQ)",
+                    name,"CSV (*.csv)")
+                if not target:
+                    return
+                # The native file dialog can process Stop, Freeze, rate,
+                # channel, or a replacement IPC window while it is open.
+                if self._current_live_spectrum_triplet()!=live:
+                    raise ValueError("Окно LIVE сменилось до сохранения")
+                live.save_new(target)
+                self.statusBar().showMessage(
+                    "Сохранены 3 локальных значения LIVE, не оригинальный SPEC-FREQ")
+                return
             flow,action=self._current_original_spectrum_action()
             if action.direct_bin_uncalibrated:
                 # A standalone BIN can be copied with an explicit warning,

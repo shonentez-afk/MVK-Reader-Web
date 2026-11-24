@@ -563,7 +563,7 @@ def test_original_qt_long_window_request_only_for_selected_page_and_tag(
     try:
         window._begin_live_capture()
         dialog._mode="capture"   # simulate already-authorized local Go run
-        dialog._capture_root=root
+        dialog._capture_root=tmp_path  # CaptureSpec parent; Go creates the child
         dialog._poll_source_long_window(status)
         assert not (root/REQUEST_NAME).exists() # initial PageStatus
         tabs=window.original_root_tabs

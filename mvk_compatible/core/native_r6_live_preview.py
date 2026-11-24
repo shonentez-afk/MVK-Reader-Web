@@ -59,6 +59,7 @@ class PreviewADC:
     captured_samples: int | None = None
     source_f_range_single: float = 1.0
     source_range_state: dict | None = None
+    source_epoch: dict | None = None
 
 
 @dataclass(frozen=True)

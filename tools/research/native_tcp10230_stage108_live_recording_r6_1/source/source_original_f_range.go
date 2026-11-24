@@ -79,10 +79,20 @@ func (m *Monitor) latchSourceOriginalRanges(){
     }
     if r.rangeLatchAttempt==attempt{return}
     r.rangeLatchAttempt=attempt
+    if attempt>1 {
+        // Even same-rate bytes received before this socket re-latches cannot
+        // enter a verified display window; internal source storage remains.
+        r.cutAllDisplayHistory()
+    }
     for ch:=0;ch<8;ch++ {
         s:=m.sourceOriginalADCConfig.rangeState(ch)
         s.LatchedFrame=m.summary.TotalFrames;s.SocketAttempt=attempt
-        c:=&r.channels[ch];c.rangeState=&s
+        c:=&r.channels[ch]
+        priorScale,_:=c.liveRange()
+        c.rangeState=&s
+        if attempt==1 && (priorScale!=s.Single || !s.Usable) {
+            c.cutDisplayHistory()
+        }
         // Retain pre-latch samples exactly as stored, without rescaling.
         if sourceIsLiveADC(c.domain) {
             _,domain:=c.liveRange()
