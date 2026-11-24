@@ -1,0 +1,135 @@
+name: MVKView Windows candidate (29c829f; not official Preview)
+
+on:
+  push:
+    branches: ['qa/stage111-windows-candidate-29c829f']
+    paths: ['.github/workflows/stage111-windows-candidate-29c829f.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/qa/stage111-windows-candidate-29c829f'
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: '29c829f5d8236c6a73ddd1df456a72dd7c635f0e'
+      SOURCE_BRANCH: 'fix/stage111-eg-computation-links-20261124'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUNBUFFERED: '1'
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    steps:
+      - name: Checkout unchanged public source at tested SHA
+        uses: actions/checkout@v6
+        with:
+          ref: '29c829f5d8236c6a73ddd1df456a72dd7c635f0e'
+          path: source
+          persist-credentials: false
+      - name: Verify exact clean source checkout
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $head -ne $env:SOURCE_SHA) { throw "Source SHA mismatch: $head" }
+          $status = git status --porcelain
+          if ($LASTEXITCODE -ne 0 -or $status) { throw 'Source checkout is not clean' }
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.2'
+          cache: false
+      - name: Install declared application dependencies, PyInstaller and pytest
+        run: |
+          python -m pip install -r mvk_compatible/requirements-desktop.txt pyinstaller pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Qt offline smoke tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m pytest -q mvk_compatible/tests/test_desktop_qt.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test and embed the project Go payload
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path (Get-Location) 'mvk_compatible/native_payload'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe = Join-Path $dir 'MVK_Native_R6_1_Stage108_Windows_x64.exe'
+          Push-Location tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+          try {
+            go test ./...
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            go vet ./...
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            go build -trimpath -ldflags '-s -w' -o $exe .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() |
+            Set-Content -Encoding ascii -LiteralPath (Join-Path $dir 'NATIVE_SHA256SUMS.txt')
+      - name: Package unofficial candidate and launch it offline
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'MVKViewCompatible_Stage111_UNOFFICIAL_CANDIDATE_29c829f'
+          $tmp = Join-Path $env:RUNNER_TEMP 'mvk-candidate-29c829f-smoke'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --runtime-tmpdir "$tmp" --paths . --add-binary 'mvk_compatible/native_payload/MVK_Native_R6_1_Stage108_Windows_x64.exe;mvk_native' --add-data 'mvk_compatible/native_payload/NATIVE_SHA256SUMS.txt;mvk_native' --name $name mvk_compatible/windows_launcher.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $app = (Resolve-Path "dist/$name.exe").Path
+          $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($app))
+          try {
+            if ($reader.ReadUInt16() -ne 0x5a4d) { throw 'Missing MZ header' }
+            $reader.BaseStream.Position = 0x3c
+            $reader.BaseStream.Position = $reader.ReadUInt32()
+            if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { throw 'Not a Windows x64 PE' }
+          } finally { $reader.Dispose() }
+          $proc = Start-Process -FilePath $app -PassThru
+          try {
+            $nativeName = 'MVK_Native_R6_1_Stage108_Windows_x64.exe'
+            $embedded = $null
+            for ($i = 0; $i -lt 90 -and -not $embedded; $i++) {
+              $proc.Refresh()
+              if ($proc.HasExited) { throw "Candidate exited during startup: $($proc.ExitCode)" }
+              $embedded = Get-ChildItem -LiteralPath $tmp -Filter $nativeName -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if (-not $embedded) { Start-Sleep -Seconds 1 }
+            }
+            if (-not $embedded) { throw 'Packed Go payload was not extracted' }
+            Start-Sleep -Seconds 12
+            $proc.Refresh()
+            if ($proc.HasExited) { throw "Candidate exited after unpacking: $($proc.ExitCode)" }
+            $expected = (Get-Content -Raw -LiteralPath 'mvk_compatible/native_payload/NATIVE_SHA256SUMS.txt').Trim()
+            if ((Get-FileHash -LiteralPath $embedded.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Packed Go payload SHA256 mismatch' }
+          } finally {
+            if (-not $proc.HasExited) { taskkill /PID $proc.Id /T /F | Out-Null }
+          }
+          $path = Join-Path $env:GITHUB_WORKSPACE 'candidate-output'
+          New-Item -ItemType Directory -Force -Path $path | Out-Null
+          $copy = Join-Path $path "$name.exe"
+          Copy-Item -LiteralPath $app -Destination $copy
+          $hash = (Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Artifact copy mismatch' }
+          "$hash  $name.exe" | Set-Content -Encoding ascii -LiteralPath (Join-Path $path 'SHA256SUMS.txt')
+          @(
+            'label=UNOFFICIAL_REVIEW_CANDIDATE (not official Windows Preview)'
+            "source_commit=$env:SOURCE_SHA"
+            "source_branch_label_at_pin=$env:SOURCE_BRANCH"
+            "runner_workflow_commit=$env:GITHUB_SHA"
+            "runner_workflow_branch=$env:GITHUB_REF_NAME"
+            'windows_offline_qt_tests=passed'
+            'native_go_tests_and_vet=passed'
+            'packaged_startup_offscreen_and_native_payload_sha256=passed'
+            'hardware_acceptance=not_performed'
+          ) | Set-Content -Encoding ascii -LiteralPath (Join-Path $path 'BUILD_INFO.txt')
+      - name: Upload unofficial short-lived Windows candidate
+        uses: actions/upload-artifact@v6
+        with:
+          name: MVKView_Stage111_UNOFFICIAL_WINDOWS_CANDIDATE_29c829f
+          path: candidate-output/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
