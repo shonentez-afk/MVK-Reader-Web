@@ -634,7 +634,9 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     expected_frozen_aux=raw_summary.get(
                         "source_original_aux4700_skipped_frozen",0),
                     expected_frozen_values=raw_summary.get(
-                        "source_original_values_3100_skipped_frozen",0))
+                        "source_original_values_3100_skipped_frozen",0),
+                    capture_register_prefix=raw_summary.get(
+                        "source_live_values_audit_sha256") is not None)
                 source_live_values_evidence=verify_original_live_values(
                     directory,summary=raw_summary,
                     source_sha=audit["source_raw_sha256"],
@@ -662,6 +664,22 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                     copied_hash.hexdigest()!=proof["sha256"]):
                                 raise ValueError("Source live VALUES changed during copy")
                         emitted.append({"kind":"source_live_values_3100_proof",**proof})
+                        layout=proof.get("source_raw_layout")
+                        if layout is not None:
+                            original_layout=directory/layout["name"]
+                            copied_layout=target/layout["name"]
+                            if (original_layout.is_symlink() or not original_layout.is_file()
+                                    or copied_layout.exists() or copied_layout.is_symlink()):
+                                raise ValueError("Unsafe source live VALUES layout copy")
+                            # The independent verifier already bounded this file.
+                            content=original_layout.read_bytes()
+                            if (len(content)!=layout["bytes"] or
+                                    sha256(content).hexdigest()!=layout["sha256"]):
+                                raise ValueError("Source live VALUES layout changed during copy")
+                            with copied_layout.open("xb") as dst:
+                                dst.write(content)
+                            emitted.append({"kind":"source_live_values_trigger_prefix_layout",
+                                            "window":proof["window"],**layout})
             if (raw_summary is not None and frame_mark_evidence is not None
                     and any(w.kind=="data" for w in ledger.windows)):
                 # Never silently re-scale raw ADC/TACH bytes: exact source
@@ -892,6 +910,9 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_original_filename_algorithm_recovered":True,
             "source_live_values_3100_verified":
                 source_live_values_evidence is not None,
+            "source_live_values_trigger_prefix_registers_verified":
+                bool(source_live_values_evidence and
+                     source_live_values_evidence["source_trigger_prefix_registers_verified"]),
             "source_live_values_3100_windows":
                 source_live_values_evidence["verified_windows"] if
                 source_live_values_evidence is not None else 0,

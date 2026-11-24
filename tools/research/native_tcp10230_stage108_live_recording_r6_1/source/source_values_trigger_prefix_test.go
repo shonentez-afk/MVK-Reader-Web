@@ -166,3 +166,37 @@ func TestValuesTriggerPrefixTachFreshnessAndInclusiveTrigger(t *testing.T){
         })
     }
 }
+
+ 
+// Only the isolated offline cross-language CI opts in to this output.
+// It exercises the actual writer/Finalize, not a Python-authored imitation.
+func TestValuesTriggerPrefixCoreFixture(t *testing.T){
+    root:=os.Getenv("MVK_PREFIX_FIXTURE_DIR")
+    if root==""{t.Skip("cross-language fixture not requested")}
+    run:=filepath.Join(root,"TEST_2026-11-24_04-00-00.000")
+    m,err:=NewMonitor(run,"OFFLINE_REPLAY","192.0.2.84");if err!=nil{t.Fatal(err)}
+    defer m.CloseFiles()
+    c,err:=newFrameMarkController(root,run);if err!=nil{t.Fatal(err)}
+    m.frameMarks=c
+    m.sourceLiveValuesWriter=newSourceLiveValuesWriter(m.dir)
+    var ch [10]bool;ch[0]=true;ch[8]=true
+    var spec [43]bool;spec[0]=true
+    var vals [73]bool;vals[0]=true;vals[6]=true;vals[35]=true
+    sourceSelectedMark(t,c,m,1,"values_begin",ch,spec,vals)
+    at:=time.Date(2026,11,24,4,0,0,0,time.UTC)
+    seed:=makeParam([]RegBlock{
+        prefixTestBlock(0x2002,0x3f800000),
+        prefixTestBlock(0x2120,0x00000051),
+        prefixTestBlock(0x2060,0x3fc00000),
+        prefixTestBlock(0x30fe,0x11111111),
+    })
+    packet:=makeParam([]RegBlock{
+        prefixTestBlock(0x2002,0x40000000),
+        prefixTestBlock(0x3100,0x11223344),
+        prefixTestBlock(0x2002,0x40400000),
+        prefixTestBlock(0x30fe,0x12345678),
+    })
+    if err=m.ProcessChunk(seed,at);err!=nil{t.Fatal(err)}
+    if err=m.ProcessChunk(packet,at.Add(time.Second));err!=nil{t.Fatal(err)}
+    if _,_,err=m.Finalize("STOPPED_BY_USER");err!=nil{t.Fatal(err)}
+}

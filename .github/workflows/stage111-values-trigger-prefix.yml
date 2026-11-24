@@ -4,6 +4,7 @@ on:
     branches: [fix/stage111-values-trigger-prefix-20261124]
     paths:
       - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/**'
+      - 'mvk_compatible/**'
       - '.github/workflows/stage111-values-trigger-prefix.yml'
   workflow_dispatch:
 permissions:
@@ -35,3 +36,41 @@ jobs:
         run: go vet ./...
       - name: Compile Native receiver (offline)
         run: go build -trimpath .
+
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      MVK_PREFIX_FIXTURE_DIR: ${{ runner.temp }}/mvk-prefix-fixture
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+          cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Generate actual Go writer evidence from synthetic frames
+        working-directory: tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+        run: |
+          mkdir -p "$MVK_PREFIX_FIXTURE_DIR"
+          go test -v -count=1 -run '^TestValuesTriggerPrefixCoreFixture$' .
+      - name: Install offline core test requirements
+        run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
+      - name: Verify actual Go RAW prefix and reject rehashed suffix
+        run: |
+          python -m pytest -q mvk_compatible/tests/test_mode2_live_values_trigger_prefix.py \
+            mvk_compatible/tests/test_mode2_live_values_full_chain.py \
+            mvk_compatible/tests/test_original_source_values_tick_acceptance.py \
+            mvk_compatible/tests/test_stage111z31fq_original_values_3100_timeline.py \
+            mvk_compatible/tests/test_stage111z31fq_marked_values_export.py
+      - name: Complete offline core regressions (no Qt or device)
+        run: |
+          python -m pytest -q mvk_compatible/tests \
+            --ignore=mvk_compatible/tests/test_desktop_qt.py \
+            --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py \
+            --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py

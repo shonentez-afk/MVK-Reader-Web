@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 import re
 
+from .original_values_3100_timeline import RegisterPrefixSnapshot
+
 SCHEMA="MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V1"
 HEX4=re.compile(r"[0-9a-f]{8}\Z")
 HEX64=re.compile(r"[0-9a-f]{64}\Z")
@@ -146,6 +148,54 @@ def parse_source_values_3100_event(event:dict)->dict:
         "original_get_value_text_parity_verified":False,
         "original_win32_time_parity_verified":False,
     }
+
+
+def verify_source_values_prefix_event(event, *, prefix, channels, spec, values)->dict:
+    """Check actual native selected cells against independently replayed RAW.
+
+    Layout/SHA alone cannot detect a later descriptor's value leaking into
+    an earlier row. Old trigger-only evidence never obtains this proof.
+    """
+    if not isinstance(prefix, RegisterPrefixSnapshot):
+        raise ValueError("Source WriteValues missing independent trigger-prefix replay")
+    parsed = parse_source_values_3100_event(event)
+    cells = event["source_ordered_raw_tick"]["original_selected_cell_order"]
+    selected = []
+    for channel in range(1, 9):
+        if not channels[channel - 1]:
+            continue
+        selected.extend((channel, "SPEC", i) for i in range(43) if spec[i])
+        selected.extend((channel, "RESULT", i) for i in range(6) if values[i])
+        selected.extend((channel, "BAND", i) for i in range(24) if values[i + 6])
+    for channel in (9, 10):
+        if channels[channel - 1]:
+            selected.extend((channel, "TACH", i) for i in range(6) if values[i + 30])
+    if [(c["channel"], c["source_list_group"], c["source_cell_index"])
+            for c in cells] != selected:
+        raise ValueError("Source WriteValues selected trigger-prefix mask mismatch")
+    if event["source_ordered_raw_tick"].get(
+            "non_original_legacy_73_flag_bits_ignored", 0) != sum(values[36:]):
+        raise ValueError("Source WriteValues legacy mask count mismatch")
+    for cell, (channel, group, index) in zip(cells, selected):
+        address, kind = _expected_address(channel, group, index)
+        raw = prefix.dword_hex(address, current=group == "TACH" and index == 5)
+        if cell.get("raw_dword_le_hex") != raw:
+            raise ValueError("Source WriteValues selected value differs from RAW trigger prefix")
+        cell_type = (10 if kind == "U32_ADVANCED_UNFORMATTED"
+                     else 2 if kind == "U32_CANDIDATE" else 0)
+        if type(cell.get("source_cell_type")) is not int or cell["source_cell_type"] != cell_type:
+            raise ValueError("Source WriteValues source cell type mismatch")
+        advanced = None
+        if cell_type == 10 and raw is not None:
+            word = int.from_bytes(bytes.fromhex(raw), "little")
+            start, width = ((0, 1), (4, 3), (10, 2))[index]
+            advanced = (word >> start) & ((1 << width) - 1)
+        if advanced is not None:
+            if type(cell.get("source_advanced_selected_id")) is not int or cell["source_advanced_selected_id"] != advanced:
+                raise ValueError("Source WriteValues Advanced selector differs from RAW trigger prefix")
+        elif "source_advanced_selected_id" in cell:
+            raise ValueError("Source WriteValues unexpected Advanced selector")
+    return parsed
 
 
 def verify_source_values_tick_files(events_jsonl,raw_layout_csv)->dict:

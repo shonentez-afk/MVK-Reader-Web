@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 from contextlib import nullcontext
+from dataclasses import dataclass
 from .original_param_gate_proof import OriginalParamGateReader
 from pathlib import Path
 import re
@@ -26,6 +27,25 @@ MAX_RAW = 2048 * 1024 * 1024
 MAX_EVENTS_PER_WINDOW = 64
 MAX_WINDOWS = 8
 RAW_SHA = re.compile(r"[0-9a-f]{64}\Z")
+REGISTER_WORDS = 0x4000
+
+
+@dataclass(frozen=True)
+class RegisterPrefixSnapshot:
+    """Internal replay evidence; never serialized or exported as a register dump."""
+    data: bytes
+    valid: bytes
+    current: bytes
+
+    def dword_hex(self, addr: int, *, current: bool = False) -> str | None:
+        if not 0 <= addr < REGISTER_WORDS - 1:
+            return None
+        if not self.valid[addr] or not self.valid[addr + 1]:
+            return None
+        if current and (not self.current[addr] or not self.current[addr + 1]):
+            return None
+        return self.data[addr * 2:(addr + 2) * 2].hex()
+
 
 
 def _counter(v: object, label: str, limit: int = (1 << 64) - 1) -> int:
@@ -70,6 +90,7 @@ def scan_original_values_3100(
     expected_frozen_param_frames: int = 0,
     expected_frozen_aux: int = 0,
     expected_frozen_values: int = 0,
+    capture_register_prefix: bool = False,
 ) -> dict[int, list[dict]]:
     """Replay complete frames and collect only the chosen 0x3100 events.
 
@@ -110,6 +131,11 @@ def scan_original_values_3100(
             raise ValueError("Original VALUES 0x3100: invalid tick bounds")
         chosen[number] = []
     intervals = [(number, start, end) for number, start, end in ranges]
+    if type(capture_register_prefix) is not bool:
+        raise ValueError("Original VALUES 0x3100: invalid prefix proof flag")
+    # Optional and bounded: only selected ticks retain immutable snapshots.
+    register_data = bytearray(REGISTER_WORDS * 2) if capture_register_prefix else None
+    register_valid = bytearray(REGISTER_WORDS) if capture_register_prefix else None
 
     digest = sha256()
     aux = 0
@@ -162,13 +188,28 @@ def scan_original_values_3100(
                 frozen_aux += (length == 4700)
                 frozen_values += bool(triggers)
                 continue
+            prefix = None
+            if capture_register_prefix:
+                selected = bool(triggers) and any(
+                    begin <= ticks < end for _, begin, end in intervals)
+                current = bytearray(REGISTER_WORDS) if selected else None
+                for addr, count, block in blocks:
+                    end_addr = addr + count
+                    register_data[addr * 2:end_addr * 2] = block
+                    register_valid[addr:end_addr] = bytes([1]) * count
+                    if current is not None:
+                        current[addr:end_addr] = bytes([1]) * count
+                        if addr == 0x3100:
+                            prefix = RegisterPrefixSnapshot(
+                                bytes(register_data), bytes(register_valid), bytes(current))
+                            current = None
             if length == 4700:
                 aux += 1
             if triggers:
                 words, raw = triggers[0]
                 for number, begin, end in intervals:
                     if begin <= ticks < end:
-                        chosen[number].append({
+                        event = {
                             "source_tick_index": ticks,
                             "frame_index": frame_index,
                             "source_register_address": "0x3100",
@@ -177,7 +218,12 @@ def scan_original_values_3100(
                             "register_payload_sha256": sha256(raw).hexdigest(),
                             "latest_earlier_aux_index": aux - 1 if aux else None,
                             "source_values_is_not_aux_tick": True,
-                        })
+                        }
+                        if capture_register_prefix:
+                            if prefix is None:
+                                raise ValueError("Original VALUES 0x3100: missing prefix proof")
+                            event["_register_prefix"] = prefix
+                        chosen[number].append(event)
                 ticks += 1
         final = src.read(MAX_FRAME)
         if len(final) != tail or src.read(1):

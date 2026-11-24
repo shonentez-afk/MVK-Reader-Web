@@ -14,12 +14,17 @@ from pathlib import Path
 import json
 import re
 
+from .original_source_values_tick_acceptance import verify_source_values_prefix_event
+
 SCHEMA="MVK_SOURCE_LIVE_VALUES_3100_EVENTS_V1"
 AUDIT="SOURCE_LIVE_VALUES_NATIVE_AUDIT.json"
 HEXDIGEST=re.compile(r"[0-9a-f]{64}\Z")
 MAX_AUDIT=1024*1024
 MAX_EVENTS=64
 MAX_FILE=32*1024*1024
+BASE_EVENT_KEYS={"frame_index","source_values_tick_index","received_utc",
+                 "param_address","register_words","param_payload_le_hex",
+                 "param_payload_sha256"}
 
 
 def _sha(x,name):
@@ -152,6 +157,8 @@ def verify_original_live_values(
         lines=content.splitlines(keepends=True)
         if len(lines)!=len(expected):
             raise ValueError("Original WriteValues missing/extra JSONL event")
+        prefix_rows=[]
+        rich_mode=None
         for a,b in zip(lines,expected):
             if not a.endswith(b"\n"):
                 raise ValueError("Original WriteValues incomplete event line")
@@ -161,6 +168,13 @@ def verify_original_live_values(
                 raise ValueError("Original WriteValues event JSON corrupted") from exc
             if not isinstance(event,dict):
                 raise ValueError("Original WriteValues event not an object")
+            keys=set(event)
+            rich=keys==BASE_EVENT_KEYS|{"source_ordered_raw_tick"}
+            if not rich and keys!=BASE_EVENT_KEYS:
+                raise ValueError("Original WriteValues unexpected event fields")
+            if rich_mode is not None and rich_mode!=rich:
+                raise ValueError("Original WriteValues mixed event schemas")
+            rich_mode=rich
             when=event.get("received_utc")
             if type(when) is not str:
                 raise ValueError("Original WriteValues missing source timestamp")
@@ -176,15 +190,37 @@ def verify_original_live_values(
                     event.get("register_words")!=b["register_words"] or
                     event.get("param_payload_le_hex")!=b["register_bytes_hex"] or
                     event.get("param_payload_sha256")!=
-                       b["register_payload_sha256"] or
-                    len(event)!=7):
+                       b["register_payload_sha256"]):
                 raise ValueError("Original WriteValues source RX event disagrees")
+            if rich:
+                checked=verify_source_values_prefix_event(
+                    event,prefix=b.get("_register_prefix"),
+                    channels=channels,spec=spec,values=values)
+                prefix_rows.append(checked["raw_line_bytes"])
+        layout_evidence=None
+        if rich_mode:
+            layout_name=f"SOURCE_W{index:02d}_VALUES_3100_RAW_LAYOUT.csv"
+            if record.get("source_raw_layout_name")!=layout_name:
+                raise ValueError("Original WriteValues source RAW layout name mismatch")
+            layout=_file(folder,layout_name,MAX_FILE).read_bytes()
+            if (layout!=b"".join(prefix_rows) or
+                    len(layout)!=_count(record.get("source_raw_layout_bytes"),
+                                        "RAW layout bytes",MAX_FILE) or
+                    len(prefix_rows)!=_count(record.get("source_raw_layout_rows"),
+                                            "RAW layout rows",MAX_EVENTS) or
+                    sha256(layout).hexdigest()!=_sha(record.get("source_raw_layout_sha256"),
+                                                     "RAW layout")):
+                raise ValueError("Original WriteValues source RAW layout differs from trigger proof")
+            layout_evidence={"name":layout_name,"bytes":len(layout),
+                             "sha256":record["source_raw_layout_sha256"]}
         total_events+=len(lines)
         out.append({
             "name":name,"window":global_index,"bytes":len(content),
             "sha256":record["sha256"],"events":len(lines),
             "source_raw_sha256":raw_sha,
             "original_source_3100_payloads_verified":True,
+            "source_trigger_prefix_registers_verified":bool(rich_mode),
+            "source_raw_layout":layout_evidence,
             "delphi_get_value_text_parity_verified":False,
         })
     if total_events!=summary.get("source_live_values_event_records"):
@@ -194,5 +230,8 @@ def verify_original_live_values(
         "native_audit_sha256":proof_sha,
         "verified_windows":len(out),"verified_events":total_events,
         "verified_files":out,
+        "source_trigger_prefix_registers_verified":bool(total_events) and all(
+            not item["events"] or item["source_trigger_prefix_registers_verified"]
+            for item in out),
         "original_delphi_get_value_text_parity_verified":False,
     }
