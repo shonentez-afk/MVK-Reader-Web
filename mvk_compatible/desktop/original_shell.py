@@ -47,6 +47,7 @@ from ..core.original_pagestatus_source import TACH_FIELDS
 from ..core.native_r6_tach_evidence import read_tach_evidence
 from ..core.original_live_pagefile import (
     OriginalLiveFilePlan,live_pagefile_channel_rows,
+    source_live_file_edit_policy,source_live_file_field_title,
 )
 from ..core.original_live_operator_status import (
     LivePageStatusBinding, source_live_operator_status_projection,
@@ -1020,6 +1021,10 @@ class OriginalRootShell:
     def _file_channel_chosen(self, item, previous=None) -> None:
         if item is None:
             return
+        # Original cbFileChannelsClick (0084C954) updates pnMeasure;
+        # file selection does not select tcAdc/tcSpectrum in LIVE.
+        if self.live_file_plan is not None and self.window._measurement_mode_selected:
+            return
         channel = item.data(Qt.UserRole)
         if isinstance(channel, int) and 1 <= channel <= self.window.adc.count():
             if self.window.adc.currentIndex() != channel - 1:
@@ -1037,6 +1042,8 @@ class OriginalRootShell:
             index=flow.channel-1
             self.update_file_evidence(flow)
         self._remember_view_action('select_channel',index+1)
+        if self.live_file_plan is not None and self.window._measurement_mode_selected:
+            return
         for row in range(self.file_channels.count()):
             item = self.file_channels.item(row)
             if item.data(Qt.UserRole) == index + 1:
@@ -1124,15 +1131,20 @@ class OriginalRootShell:
         self._render_live_file_plan()
         return self.file_page.property("sourceLiveFilePlanReceipt")
 
+    def _live_file_edit_policy(self):
+        writer=getattr(self.window,"_source_live_writer",None)
+        flags=writer.receipt() if writer is not None else {}
+        return source_live_file_edit_policy(
+            write_data=bool(flags.get("write_data_requested")),
+            write_values=bool(flags.get("write_values_requested")),
+            stopping=bool(self.window._measurement_exit_requested))
+
     def _render_live_file_plan(self):
         plan=self.live_file_plan
         if plan is None:
             return
         labels=live_pagefile_channel_rows(self._live_file_status)
-        writer=getattr(self.window,"_source_live_writer",None)
-        flags=writer.receipt() if writer is not None else {}
-        data_active=bool(flags.get("write_data_requested"))
-        values_active=bool(flags.get("write_values_requested"))
+        edit=self._live_file_edit_policy()
         from ..core.original_live_pagefile import SOURCE_VALUE_COUNT
         for group,widget,count in (
             ("channels",self.file_channels,CHANNEL_COUNT),
@@ -1141,25 +1153,26 @@ class OriginalRootShell:
         ):
             blocked=widget.blockSignals(True)
             try:
-                widget.clear()
+                # Preserve selection, scroll and actual list item identities
+                # on periodic Native status updates (no clear/rebuild).
+                if widget.count()!=count:
+                    widget.clear()
+                    for i in range(count):
+                        widget.addItem(self._checked_item("",i,False))
                 for i in range(count):
-                    if group=="channels":
-                        title=labels[i]
-                    elif group=="spec":
-                        title=f"SPEC {i+1} · приборное значение ожидается"
-                    elif i<6:
-                        title=f"RESULT {i+1} · исходный тип/состояние"
-                    elif i<30:
-                        title=f"BAND {i-5} · 24 исходных RMS"
-                    else:
-                        title=f"TACH VALUE {i-29} · исходное значение"
-                    editable=(not data_active if group=="channels"
-                              else not values_active)
-                    item=self._checked_item(
-                        title,i,getattr(plan,group)[i],editable)
+                    title=(labels[i] if group=="channels" else
+                           source_live_file_field_title(group,i))
+                    item=widget.item(i)
+                    item.setText(title)
+                    item.setData(Qt.UserRole+1,i)
                     if group=="channels":
                         item.setData(Qt.UserRole,i+1)
-                    widget.addItem(item)
+                    flags=Qt.ItemIsSelectable|Qt.ItemIsUserCheckable
+                    if edit[group]:
+                        flags|=Qt.ItemIsEnabled
+                    item.setFlags(flags)
+                    item.setCheckState(Qt.Checked if getattr(plan,group)[i]
+                                       else Qt.Unchecked)
             finally:
                 widget.blockSignals(blocked)
         self._sync_file_tick_from_model(1)
@@ -1177,9 +1190,9 @@ class OriginalRootShell:
         # Source 008485BC..00848678: lock TSXML, device and folder
         # settings while original WriteData flag is on.
         for flag in self.file_record_flags.values():
-            flag.setEnabled(not data_active)
+            flag.setEnabled(edit["file_options"])
         for name,field in self.file_record_names.items():
-            allowed=(not data_active and (
+            allowed=(edit["file_options"] and (
                 name=="edFilePrefix" or
                 (name=="edFolderPrefix" and self.file_record_flags[
                     "cbFileFolderPrefix"].isChecked()) or
@@ -1187,8 +1200,9 @@ class OriginalRootShell:
                     "cbFileMvkName"].isChecked())))
             field.setEnabled(allowed)
         self.file_page.setProperty(
-            "sourceOriginalPageFileOptionsLocked",data_active)
+            "sourceOriginalPageFileOptionsLocked",not edit["file_options"])
         receipt=plan.receipt()
+        receipt["source_pagefile_edit_policy"]=edit
         receipt["connected_status_evidence_accepted"]=self._live_file_status is not None
         receipt["operator_status_reason"]=self._live_file_reason
         self.file_page.setProperty("sourceLiveFilePlanReceipt",receipt)
@@ -1258,11 +1272,12 @@ class OriginalRootShell:
                 f"закрытых интервалов {status['completed_window_count']}. "
                 if status is not None else "")
             return (
-                "Исходная запись Mode2: 10 каналов, 43 SPEC, 73 VALUES. "
+                "Исходная запись Mode2: 10 каналов, 43 SPEC, 36 VALUES. "
                 f"Выбрано АЦП {len(receipt['selected_adc_indices'])}, "
                 f"TACH {len(receipt['selected_tach_indices'])}, "
                 f"SPEC {len(receipt['selected_spec_indices'])}, "
-                f"VALUES {len(receipt['selected_value_indices'])}. "
+                f"VALUES {len(receipt['selected_value_indices'])}; "
+                f"столбцов записи {receipt['selected_source_values_columns']}. "
                 +prefix+
                 "Go Native сохраняет полный RAW; WriteData записывает "
                 "допущенные пакеты, WriteValues реагирует на PARAM 0x3100. "
@@ -1291,6 +1306,8 @@ class OriginalRootShell:
             index=item.data(Qt.UserRole+1)
             if type(index) is not int:return
             try:
+                if not self._live_file_edit_policy()[group]:
+                    raise ValueError("Original PageFile selection locked by writer")
                 self.live_file_plan=self.live_file_plan.set_checked(
                     group,index,item.checkState()==Qt.Checked)
             except ValueError:
@@ -1302,6 +1319,8 @@ class OriginalRootShell:
                 finally:
                     widget.blockSignals(blocked)
             self._render_live_file_plan()
+            if hasattr(self,"measure_controls"):
+                self.measure_controls.render()
             return
         if (self.file_record_selection is None or self._file_flow is None
                 or self.window.session is None or

@@ -73,6 +73,16 @@ class OriginalLiveFilePlan:
         result[index]=checked
         return replace(self,**{group:tuple(result)})
 
+    def effective_values_count(self):
+        """Count actual SOURCE VALUES columns, not unrelated checked flags.
+
+        ADC uses SPEC43 + RESULT6 + BAND24; TACH uses its six cells.
+        The legacy 73-bit IPC mask is not a 73-item operator checkbox list.
+        """
+        adc_fields=sum(self.spec)+sum(self.values[:30])
+        tach_fields=sum(self.values[30:36])
+        return sum(self.channels[:8])*adc_fields+sum(self.channels[8:])*tach_fields
+
     def bind_status(self,status:dict):
         """Reject mixing sequential captures in the one source Mode2 view."""
         if not isinstance(status,dict):
@@ -111,6 +121,7 @@ class OriginalLiveFilePlan:
             "selected_tach_indices":[i-7 for i in self.selected("channels") if i>=8],
             "selected_spec_indices":list(self.selected("spec")),
             "selected_value_indices":list(self.selected("values")),
+            "selected_source_values_columns":self.effective_values_count(),
             "has_native_session_identity":self.session_id is not None,
             "selection_controls_native_r6_raw_capture":False,
             "original_thread_write_data_flag_modified":False,
@@ -214,3 +225,41 @@ def live_pagefile_channel_rows(status:dict|None):
         result.append(
             f"{name} · {amount} отсчётов · {frequency} · {label}")
     return tuple(result)
+
+
+
+def source_live_file_edit_policy(*,write_data:bool,write_values:bool,
+                                 stopping:bool=False)->dict:
+    """Original 0084853C..00848678: two independently latched writers.
+
+    Shared channels are immutable while EITHER writer is active.
+    SPEC/VALUES belong to WriteValues only; naming/XML to WriteData only.
+    Stop adds a compatible safety lock until the session ends.
+    """
+    if any(type(v) is not bool for v in (write_data,write_values,stopping)):
+        raise ValueError("Source PageFile writer flags must be Boolean")
+    return {
+        "channels":not(stopping or write_data or write_values),
+        "spec":not(stopping or write_values),
+        "values":not(stopping or write_values),
+        "file_options":not(stopping or write_data),
+    }
+
+
+def source_live_file_field_title(group:str,index:int)->str:
+    """Same titles/units used by the original source GetTitle/GetUnits."""
+    from .original_ru_csv_layout import source_ru_cell_title
+    from .original_get_value_text_30 import live_get_units
+    if type(index) is not int:
+        raise ValueError("Source PageFile index must be integer")
+    if group=="spec" and 0<=index<SPEC_COUNT:
+        family,cell="SPEC",index
+    elif group=="values" and 0<=index<SOURCE_VALUE_COUNT:
+        family,cell=(("RESULT",index) if index<6 else
+                     ("BAND",index-6) if index<30 else
+                     ("TACH",index-30))
+    else:
+        raise ValueError("Source PageFile field group/index invalid")
+    title=source_ru_cell_title(family,cell)
+    unit=live_get_units(family,cell)
+    return title+(" · "+unit if unit else "")

@@ -130,3 +130,61 @@ def test_live_invalid_status_disarms_source_writers_without_fake_files(
     finally:
         win.close()
         qt_app.processEvents()
+
+
+def test_live_pagefile_real_writer_locks_and_independent_channel_selector(qt_app):
+    from PySide6.QtCore import Qt
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win._begin_live_capture()
+        win._receive_native_live_status(source_status())
+        shell=win.original_shell
+        panel=win.original_measure_controls
+        c,s,v=shell.file_channels,shell.file_spec,shell.file_values
+        channel=c.item(0)
+        adc=win.adc.currentIndex()
+        c.setCurrentRow(1)
+        assert win.adc.currentIndex()==adc
+        panel.buttons["bWriteAdc"].click()
+        assert not channel.flags() & Qt.ItemIsEnabled
+        assert s.item(0).flags() & Qt.ItemIsEnabled
+        assert not shell.file_record_flags["cbFileWriteXml"].isEnabled()
+        s.item(0).setCheckState(Qt.Unchecked)
+        assert not shell.live_file_plan.spec[0]
+        panel.buttons["bWriteAdc"].click()
+        assert channel.flags() & Qt.ItemIsEnabled
+        panel.buttons["bWriteValues"].click()
+        assert not channel.flags() & Qt.ItemIsEnabled
+        assert not s.item(0).flags() & Qt.ItemIsEnabled
+        assert not v.item(0).flags() & Qt.ItemIsEnabled
+        assert shell.file_record_flags["cbFileWriteXml"].isEnabled()
+        channel.setCheckState(Qt.Unchecked)
+        assert shell.live_file_plan.channels[0]
+        assert channel.checkState()==Qt.Checked
+        win._receive_native_live_status(source_status(
+            adc_samples=512,aux=1,frames=30,raw=19000))
+        assert c.item(0) is channel
+        # The row stays selected even while locked; no rebuilding on RX.
+        assert c.currentRow()==1
+        panel.buttons["bWriteValues"].click()
+        assert channel.flags() & Qt.ItemIsEnabled
+        assert s.item(0).flags() & Qt.ItemIsEnabled
+        assert not shell.live_file_plan.spec[0]
+        assert "Полоса 0.63 Гц" in s.item(0).text()
+        assert v.item(0).text()=="Индикатор перегрузки"
+        # ADC result flags alone cannot start a TACH-only VALUES file.
+        for i in range(8):
+            c.item(i).setCheckState(Qt.Unchecked)
+        c.item(8).setCheckState(Qt.Checked)
+        assert panel.buttons["bWriteAdc"].isEnabled()
+        assert not panel.buttons["bWriteValues"].isEnabled()
+        v.item(30).setCheckState(Qt.Checked)
+        assert panel.buttons["bWriteValues"].isEnabled()
+    finally:
+        if win._live_active:
+            win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()

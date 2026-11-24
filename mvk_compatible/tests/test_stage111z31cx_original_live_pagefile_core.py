@@ -143,3 +143,55 @@ def test_non_numeric_present_native_counts_still_rejected():
     status["channels"][0]["samples"]=True
     with pytest.raises(ValueError):
         live_pagefile_channel_rows(status)
+
+
+def test_original_file_lock_matrix_and_effective_selected_columns():
+    from ..core.original_live_pagefile import (
+        source_live_file_edit_policy,source_live_file_field_title)
+    for data,values,expected in (
+        (False,False,(True,True,True,True)),
+        (True,False,(False,True,True,False)),
+        (False,True,(False,False,False,True)),
+        (True,True,(False,False,False,False)),
+    ):
+        policy=source_live_file_edit_policy(write_data=data,write_values=values)
+        assert tuple(policy[k] for k in ("channels","spec","values","file_options"))==expected
+        assert not any(source_live_file_edit_policy(
+            write_data=data,write_values=values,stopping=True).values())
+    plan=OriginalLiveFilePlan()
+    assert plan.effective_values_count()==8*(43+30)
+    only_tach=OriginalLiveFilePlan(channels=(False,)*8+(True,False))
+    assert only_tach.effective_values_count()==0
+    only_tach=only_tach.set_checked("values",30,True)
+    assert only_tach.effective_values_count()==1
+    assert only_tach.receipt()["selected_source_values_columns"]==1
+    assert source_live_file_field_title("spec",0).startswith("Полоса 0.63 Гц")
+    assert source_live_file_field_title("values",0)=="Индикатор перегрузки"
+    assert source_live_file_field_title("values",6).startswith("Виброускорение, 10..3000 Гц")
+    assert source_live_file_field_title("values",30).startswith("Частота вращения")
+
+
+def test_writer_begin_mask_remains_authoritative_on_end():
+    from ..core.original_live_write_stages import OriginalLiveWriteLedger
+    from .test_stage111z31cz_source_write_stages_core import source_status
+    status=source_status()
+    writer=OriginalLiveWriteLedger()
+    writer.observe(status)
+    start=OriginalLiveFilePlan().bind_status(status)
+    writer.toggle("data",start)
+    later=start.set_checked("spec",0,False)
+    assert writer.plan_for_frame_mark("data",later) is start
+    assert writer.plan_for_frame_mark("values",later) is later
+    with pytest.raises(ValueError,match="shared channels locked"):
+        writer.toggle("values",later.set_checked("channels",0,False))
+    writer.toggle("values",later)
+    assert writer.plan_for_frame_mark("values",start) is later
+    writer.observe(source_status(adc_samples=512,aux=1,frames=30,raw=18000))
+    writer.toggle("data",later)
+    writer.toggle("values",start)
+    assert writer.windows[0].spec==start.spec
+    assert writer.windows[1].spec==later.spec
+    assert writer.plan_for_frame_mark("data",later) is later
+    with pytest.raises(ValueError,match="zero selected result flags"):
+        writer.toggle("values",OriginalLiveFilePlan(
+            channels=(False,)*8+(True,False)).bind_status(status))

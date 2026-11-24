@@ -443,8 +443,7 @@ class OriginalMeasureControls:
         source_has_data=bool(
             source_plan is not None and any(source_plan.channels))
         source_has_values=bool(
-            source_has_data and source_plan is not None and
-            (any(source_plan.spec) or any(source_plan.values)))
+            source_plan is not None and source_plan.effective_values_count()>0)
         data_requested=bool(
             writer is not None and writer.receipt()["write_data_requested"])
         values_requested=bool(
