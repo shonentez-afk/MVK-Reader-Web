@@ -849,7 +849,8 @@ class MainWindow(QMainWindow):
             # radio can trigger a new filter in a frozen source view.
             usable=(entry['qt_selectable_without_fabricated_fir'] and
                 self._spectrum_reference is None and
-                not (self._live_active and self._ch()>=9))
+                not (self._live_active and self._ch()>=9) and
+                not self._offline_tach_channel())
             action.setEnabled(usable)
             radio.setEnabled(usable)
             radio.setToolTip(action.toolTip())
@@ -869,6 +870,29 @@ class MainWindow(QMainWindow):
                 "только с реальными коэффициентами/историей; "
                 "спектральная калибровка/Delphi x87 не подтверждены.")
 
+    def _offline_tach_channel(self) -> bool:
+        """Only a checked saved Byte source may opt into offline TACH UI."""
+        return (not self._live_active and isinstance(self.session,DirectBinSession)
+                and self.session.is_tach(self._ch()))
+
+    def _sync_saved_tach_research_controls(self, enabled: bool):
+        controls=(self.spec_f_range,self.spec_input_domain,
+                  self.spec_compare_button,self.narrow_run,self.wave_mode,
+                  self.wave_envelope_code,self.spec_envelope_code,
+                  self.wave_vscale_button)
+        previous=getattr(self,'_saved_tach_research_states',None)
+        if not enabled and previous is None:
+            self._saved_tach_research_states=tuple(
+                w.isEnabledTo(w.parentWidget()) for w in controls)
+            for widget in controls:
+                widget.setEnabled(False)
+            self.narrow_result.setText('Узкая полоса АЦП недоступна для TACH Byte')
+        elif enabled and previous is not None:
+            self._saved_tach_research_states=None
+            for widget,was_enabled in zip(controls,previous):
+                widget.setEnabled(was_enabled)
+            self.narrow_result.setText('Узкополосный результат: —')
+
     def _restore_live_adc_controls(self):
         previous=getattr(self,'_live_tach_adc_controls',None)
         if previous is None:
@@ -887,11 +911,14 @@ class MainWindow(QMainWindow):
 
     def _rebind_original_envelope_for_selected_channel(self):
         """Source 0084BB2E: disabled selected Fs code falls back to Tag0."""
-        if self._live_active and self._ch()>=9:
+        saved_tach=self._offline_tach_channel()
+        self._sync_saved_tach_research_controls(not saved_tach)
+        if saved_tach or (self._live_active and self._ch()>=9):
             controls=(self.wave_type_button,self.wave_filter_button,self.spec_envelope_button)
             if getattr(self,'_live_tach_adc_controls',None) is None:
                 self._live_tach_adc_controls=(self.wave_mode.currentIndex(),
-                    tuple(w.isEnabled() for w in controls))
+                    tuple(w.isEnabledTo(w.parentWidget()) if saved_tach else
+                          w.isEnabled() for w in controls))
             for combo in (self.wave_envelope_code,self.spec_envelope_code):
                 was=combo.blockSignals(True)
                 try:
@@ -910,7 +937,8 @@ class MainWindow(QMainWindow):
                 self.spec_envelope_button.blockSignals(was)
             for control in controls:
                 control.setEnabled(False)
-            self._cancel_source_live_fir()
+            if self._live_active:
+                self._cancel_source_live_fir()
             self._sync_wave_primary_labels()
             return {"reset_to_zero":True,"source_tach_byte":True}
         self._restore_live_adc_controls()
@@ -953,7 +981,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 'Исходная огибающая недоступна в режиме эталона')
             return
-        if self._live_active and self._ch()>=9:
+        if self._offline_tach_channel() or (self._live_active and self._ch()>=9):
             return
         if self._live_active and tag!=0:
             status=self._native_live_status or {}
@@ -1101,6 +1129,8 @@ class MainWindow(QMainWindow):
     def _select_original_wave_vscale(self,tag:int):
         if type(tag) is not int or not 0<=tag<len(ADC_VERTICAL_DIVISORS):
             raise ValueError('Source ADC V menu Tag 0..12 required')
+        if self._offline_tach_channel():
+            return  # original Byte graph ignores ADC's scale selection
         self._wave_vscale_tag=tag
         if self._live_active:
             # Source mAdcVScale1Click ONLY repaints the same signal.
@@ -1174,16 +1204,30 @@ class MainWindow(QMainWindow):
                 or self._source_wave_trace is None
                 or self._source_wave_trace_digest is None):
             return
-        model=source_adc_vertical_view(
-            self._current_offline_flow(),self._source_wave_trace,
-            self._wave_vscale_tag,
-            bound_source_sha256=self._source_wave_trace_digest)
+        flow=self._current_offline_flow()
+        if flow.tach_byte:
+            record=flow.source_record()
+            if (self._source_wave_trace_digest!=record['source_bin_sha256']
+                    or self._source_wave_trace.get('channel')!=flow.channel):
+                raise ValueError('Устаревшая шкала сохранённого TACH')
+            # Type2 _Unit128:0084B353..0084B360: fixed native
+            # ScrBottom=-1/2, ScrHeight=2. 0084B013 sets disabled "1".
+            model={'source':'MODE1_TACH_BYTE_FIXED_WAVE_Y',
+                   'selected_adc':flow.channel,
+                   'source_bin_sha256':record['source_bin_sha256'],
+                   'y_min':-.5,'y_max':1.5}
+            self.wave_vscale_button.setText('1')
+            self.wave_vscale_button.setToolTip('TACH Byte/255 · исходная фиксированная шкала')
+        else:
+            model=source_adc_vertical_view(
+                flow,self._source_wave_trace,self._wave_vscale_tag,
+                bound_source_sha256=self._source_wave_trace_digest)
+            self._sync_original_wave_vertical_popup(
+                baseline=float(model['axis_baseline_m_s2_nominal']),
+                source_bound=model['source_f_range_single'] is not None)
         self.wave_plot.getViewBox().setYRange(
             model['y_min'],model['y_max'],padding=0)
         self._source_wave_scale_model=model
-        self._sync_original_wave_vertical_popup(
-            baseline=float(model['axis_baseline_m_s2_nominal']),
-            source_bound=model['source_f_range_single'] is not None)
 
     def _select_wave_window(self,seconds):
         '''Retain research-window editing without claiming an original menu Tag.'''
@@ -1979,9 +2023,13 @@ class MainWindow(QMainWindow):
         # that triplet "дБ" or switch its units with the chart Y scale.
         mode=self.spec_mode.currentIndex()
         summary_unit=('м/с²','м/с²','мм/с','мкм')[mode]
-        if self._live_active and isinstance(self._full_spectrum,dict):
+        saved_tach=self._offline_tach_channel()
+        if (self._live_active or saved_tach) and isinstance(self._full_spectrum,dict):
             summary_unit=self._full_spectrum.get('source_summary_unit',summary_unit)
-        if isinstance(self.session,DirectBinSession):
+        if saved_tach:
+            unit=summary_unit
+            calibration='TACH Byte/255 · расчёт сохранённого файла, не обороты'
+        elif isinstance(self.session,DirectBinSession):
             unit=summary_unit+' (условн.)'
             calibration=(
                 'Калибровка НЕ подтверждена · единицы режима номинальные')
@@ -2124,7 +2172,8 @@ class MainWindow(QMainWindow):
                      source_scope['f_range_single'] is not None) else
                  source_evidence.frange_single if source_tsxml else
                  live_frange if live_frange is not None else
-                 1.0 if self._live_active else self.spec_f_range.value())
+                 1.0 if (self._live_active or self._offline_tach_channel())
+                 else self.spec_f_range.value())
         local_native=source_spectrum_v_scr(
             choice['delphi_position'],choice['page'],choice['full'],
             db_mode=db,graph_default_v_scale=default_scale,
@@ -2248,6 +2297,8 @@ class MainWindow(QMainWindow):
                 units=None
                 if self._live_active and isinstance(self._full_spectrum,dict):
                     units=self._full_spectrum.get('source_summary_unit')
+                elif self._offline_tach_channel():
+                    units=self._full_spectrum['unit']
                 caption=original_physical_y_caption(mode,absolute,units=units)
             action.setText(caption)
             action.setToolTip(
@@ -2698,6 +2749,14 @@ class MainWindow(QMainWindow):
             self._toggle_spec_envelope(True)
 
     def _toggle_spec_envelope(self,checked):
+        if checked and self._offline_tach_channel():
+            blocker=self.spec_envelope_button.blockSignals(True)
+            try:
+                self.spec_envelope_button.setChecked(False)
+            finally:
+                self.spec_envelope_button.blockSignals(blocker)
+            self.statusBar().showMessage('Сохранённый TACH Byte: исходный режим без FIR')
+            return
         if checked and self.envelope_profile is None:
             self.spec_envelope_button.blockSignals(True)
             self.spec_envelope_button.setChecked(False)
@@ -3170,6 +3229,9 @@ class MainWindow(QMainWindow):
         self.original_shell.clear_source_view_time()
         self.spec_core_triplet.setText('LIVE: архивный спектр и VALUES не аттестованы')
         self._source_graph_wait_rate=None
+        # Do not carry saved Byte-only disabled controls into the recorder.
+        self._restore_live_adc_controls()
+        self._sync_saved_tach_research_controls(True)
         self._live_active=True
         # One source WriteData/WriteValues recorder per real Native Go run.
         # Original stages start idle=2; no device writes ever.
@@ -4769,8 +4831,11 @@ class MainWindow(QMainWindow):
         selectors have the same available channels and the same index.
         """
         channels=tuple(channels)
+        saved_tach=(isinstance(self.session,DirectBinSession)
+                    and any(self.session.is_tach(ch) for ch in channels))
+        count=10 if (self._live_active or saved_tach) else 8
         if (not channels or channels!=tuple(sorted(set(channels)))
-                or any(type(ch) is not int or not 1<=ch<=(10 if self._live_active else 8)
+                or any(type(ch) is not int or not 1<=ch<=count
                        for ch in channels)):
             raise ValueError('Источник не предоставляет допустимый набор АЦП')
         selected=channels[0] if selected_channel is None else selected_channel
@@ -4779,9 +4844,8 @@ class MainWindow(QMainWindow):
         wanted=selected-1
         combo_blocked=self.adc.blockSignals(True)
         try:
-            # Only Mode2 owns the two live Byte channels. Offline ZIP/BIN
-            # keeps its existing eight-channel source inventory.
-            count=10 if self._live_active else 8
+            # A native ZIP still has eight graph channels. Only a
+            # validated saved Byte pair or Mode2 supplies TACH tabs.
             while self.adc.count()<count:
                 self.adc.addItem(f'TACH {self.adc.count()-7}')
             while self.adc.count()>count:
@@ -4821,16 +4885,18 @@ class MainWindow(QMainWindow):
             if direct:
                 s=DirectBinSession.open(source)
                 channels=s.available_channels
+                primary=s.primary_channel
             else:
                 s=OfflineSession.open(source)
                 s.calculations()
                 channels=tuple(range(1,9))
-            samples,fs,_,_=s.samples(channels[0])
+                primary=channels[0]
+            samples,fs,_,_=s.samples(primary)
             valid_sizes=[int(self.spec_n.itemText(i)) for i in range(self.spec_n.count())
                          if int(self.spec_n.itemText(i))<=len(samples)]
-            if not valid_sizes:
+            if not valid_sizes and not direct:
                 raise ValueError('Для графического FFT требуется не менее 1024 отсчётов')
-            flow=OfflineMeasurementFlow.bind(s,channel=channels[0])
+            flow=OfflineMeasurementFlow.bind(s,channel=primary)
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             QMessageBox.critical(self,'Архив отклонён',str(exc))
             return
@@ -4838,10 +4904,16 @@ class MainWindow(QMainWindow):
         # Do not let a previous visual-only x32dbg snapshot leak into a newly
         # selected archive's data, cursor, Copy or Save.
         self._leave_original_spectrum_reference()
+        self._clear_archive_source_projection()
+        self._archive_raw_line=None
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self._wave_hover_window=None
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
         self.session=s
         self._offline_flow=flow
         self._source_envelope_menu_fs=float(fs)
-        self._rebind_original_envelope_for_selected_channel()
         # Accepted new file must not inherit a former ZIP VALUES/AUX bank.
         # File/Signal/Spectrum/Status are updated together after rebinding.
         self._pagestatus_snapshot=None
@@ -4871,7 +4943,8 @@ class MainWindow(QMainWindow):
             self.wave_start.blockSignals(blocked)
         # Source data, selected combo ADC and both DFM tab bars move as
         # ONE transaction. A BIN-only ADC4 never selects stale ADC1/2.
-        self._bind_only_verified_channels(channels)
+        self._bind_only_verified_channels(channels,selected_channel=primary)
+        self._rebind_original_envelope_for_selected_channel()
         self._spec_last_valid_fft_n=None
         self._spec_original_vscale_tag=None
         self._spec_original_vscale_mode=None
@@ -4881,13 +4954,13 @@ class MainWindow(QMainWindow):
         for action in self._spec_vscale_actions:
             action.setChecked(False)
         self.spec_n.blockSignals(True)
-        if int(self.spec_n.currentText())>len(samples):
+        if valid_sizes and int(self.spec_n.currentText())>len(samples):
             self.spec_n.setCurrentText(str(max(valid_sizes)))
         self.spec_n.blockSignals(False)
         self._sync_fft_menu_availability(samples_count=len(samples),
                                          sample_rate=fs)
         self.title.setText(
-            (f'{s.serial} · {len(channels)} АЦП · BIN/TSXML (DSP недоступен)'
+            (f'{s.serial} · {len(channels)} канал(ов) · BIN/TSXML (DSP недоступен)'
              if direct else
              s.serial+f' · {s.updates} расчётных обновлений')
         )
@@ -4898,8 +4971,8 @@ class MainWindow(QMainWindow):
         self._set_active(True)
         self.task_session_summary.setText(
             f'Открыт файл: {Path(path).name}\n'
-            f'Прибор: {s.serial}; доступных АЦП: {len(channels)}.\n'
-            + ('Источник BIN/TSXML Single. Калибровка/приборные DSP '
+            f'Прибор: {s.serial}; доступных каналов: {len(channels)}.\n'
+            + ('Источник BIN/TSXML. Калибровка/приборные DSP '
                'не подтверждены.' if direct else
                'Экспорт Native R6.1. Приборные VALUES/AUX отдельно проверены.'))
         self.original_shell.sync_file_session(s,channels,flow=flow)
@@ -4916,10 +4989,14 @@ class MainWindow(QMainWindow):
             self._select_original_vscale(
                 choice['source_menu_tag'],source_choice=choice)
         self.statusBar().showMessage(
-            ('Открыт локальный BIN/TSXML Single; калибровка и приборный DSP НЕ подтверждены · '
+            ('Открыт локальный BIN/TSXML; калибровка и приборный DSP НЕ подтверждены · '
              if direct else 'Открыт проверенный ZIP Native R6.1 · ')
             + Path(path).name
         )
+
+    @staticmethod
+    def _source_channel_label(channel:int) -> str:
+        return f'TACH{channel-8}' if channel>=9 else f'АЦП{channel}'
 
     def _ch(self):
         return self.adc.currentIndex()+1
@@ -4937,6 +5014,8 @@ class MainWindow(QMainWindow):
         self._offline_flow=None
         self._source_envelope_menu_fs=None
         self._source_original_envelope_receipt=None
+        self._restore_live_adc_controls()
+        self._sync_saved_tach_research_controls(True)
         self._sync_original_envelope_menu_ui()
         self._full_spectrum=None
         self._spectrum_summary=None
@@ -4988,6 +5067,10 @@ class MainWindow(QMainWindow):
         if info is None:
             self.spec_source_gain_label.setText(
                 'TSXML: канал не представлен в текущей группе')
+            return
+        if self._offline_tach_channel():
+            self.spec_source_gain_label.setText(
+                'TSXML TACH · Byte / 255 · Count · FRange=1, без калибровки')
             return
         if info.original_f_range_single_candidate is not None:
             gain=f'{info.original_f_range_single_candidate:.9g}'
@@ -5231,7 +5314,7 @@ class MainWindow(QMainWindow):
             self._reset_dsp_tach_panel('BIN/TSXML: нет проверенных DSP/TACH регистрационных тиков')
             self.original_shell.refresh_file_workbench()
             self.note.setText(
-                'LOCAL BIN/TSXML Single: физическая калибровка не подтверждена; '
+                'LOCAL BIN/TSXML: физическая калибровка не подтверждена; '
                 'приборные показатели DSP/третьоктавы НЕ вычисляются')
             return
         try:
@@ -5346,9 +5429,10 @@ class MainWindow(QMainWindow):
         flow=self._current_offline_flow()
         try:
             time=self._sync_source_time_from_wave_start(flow)
-            mode='ac' if self.wave_mode.currentIndex()==0 else 'acdc'
+            tach=flow.tach_byte
+            mode='ac' if self.wave_mode.currentIndex()==0 and not tach else 'acdc'
             order=self._signal_order()
-            code=int(self.wave_envelope_code.currentData() or 0)
+            code=0 if tach else int(self.wave_envelope_code.currentData() or 0)
             duration=self.wave_seconds.value()
             self._source_wave_hscale_model=None
             self._source_wave_xaxes_model=None
@@ -5381,7 +5465,8 @@ class MainWindow(QMainWindow):
                                         display_order=order)
                 self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
                     else 'Позиция буфера GetSignal, с (НЕ время BIN)')
-                units=('условн. ед. BIN' if isinstance(self.session,DirectBinSession)
+                units=('Byte/255' if tach else
+                       'условн. ед. BIN' if isinstance(self.session,DirectBinSession)
                        else 'м/с²')
                 descr=(f"GetSignal/IDR · {mode} · {order} · {d['window_samples']} отсчётов"
                     f" · локальное СКЗ: {d['rms_m_s2']:.7g} {units}"
@@ -5415,7 +5500,8 @@ class MainWindow(QMainWindow):
             self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
             self.wave_plot.setLabel(
-                'left', 'Отсчёты BIN (калибровка не проверена)'
+                'left', 'TACH · норм. амплитуда (Byte/255)' if tach else
+                'Отсчёты BIN (калибровка не проверена)'
                 if isinstance(self.session,DirectBinSession)
                 else 'Ускорение, м/с²')
             axes=self._source_wave_xaxes_model
@@ -5496,7 +5582,8 @@ class MainWindow(QMainWindow):
                 descr + (' · исходный ScrWidth<0, XScale Single; '
                          'Win32 Canvas не аттестован'
                          if self._source_wave_xaxes_model is not None else ''))
-            source_unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
+            source_unit=('Byte/255' if tach else
+                         'усл. ед.' if isinstance(self.session,DirectBinSession)
                          else 'расч. ед.')
             self.wave_mean_primary.setText(
                 f'СКЗ сигнала: {(verified_wave["rms_from_core"] if verified_wave is not None else d["rms_m_s2"]):.5g} {source_unit}\n'
@@ -5508,7 +5595,7 @@ class MainWindow(QMainWindow):
             if verified_wave is not None:
                 self.wave_mean_primary.setToolTip(
                     f"GetSignal: {verified_wave['signal_samples']} исходных "
-                    f"отсчётов, АЦП{verified_wave['adc']}, SHA "
+                    f"отсчётов, {self._source_channel_label(verified_wave['adc'])}, SHA "
                     f"{verified_wave['source_bin_sha256'][:12]}…; "
                     "данные взяты из Core, не из прореженного графика.")
             else:
@@ -6613,6 +6700,8 @@ class MainWindow(QMainWindow):
         self._source_spectrum_gain=None
         for action in self._spec_hscale_actions:
             action.setChecked(False)
+        insufficient_history=False
+        tach=flow.tach_byte
         try:
             start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
             n_fft=int(self.spec_n.currentText())
@@ -6620,6 +6709,9 @@ class MainWindow(QMainWindow):
             self._sync_spec_lines_presentation(fs)
             gate=self._spec_history_gate(n_fft,len(samples),fs)
             if not gate['can_compute_without_padding']:
+                # A checked short file still has a valid signal/time axis.
+                # Never pad FFT or invalidate its already-accepted waveform.
+                insufficient_history=flow.direct_bin
                 raise ValueError(
                     f"Отсутствует полная реальная история FFT N={n_fft}: "
                     f"нужно {gate['required_real_history_samples']}, "
@@ -6627,7 +6719,11 @@ class MainWindow(QMainWindow):
                     "дополнение нулями запрещено")
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
-            if self.spec_envelope_button.isChecked():
+            if tach:
+                d=flow.spectrum(n_fft,self.spec_mode.currentIndex(),
+                                start,max_hz=1e9,max_points=n_fft//2,
+                                backend=self._fft_backend())
+            elif self.spec_envelope_button.isChecked():
                 if self.envelope_profile is None:
                     raise ValueError('Для спектра огибающей требуется локальный mvkview.idp')
                 code=int(self.spec_envelope_code.currentData() or 0)
@@ -6701,7 +6797,7 @@ class MainWindow(QMainWindow):
                 if self._source_adc_spectrum_joint_receipt is not None:
                     pair=self._source_adc_spectrum_joint_receipt
                     self.spec_core_triplet.setToolTip(
-                        f"PageAdc + PageSpectrum: один АЦП{pair['adc']}, "
+                        f"PageAdc + PageSpectrum: один {self._source_channel_label(pair['adc'])}, "
                         f"BIN SHA {pair['source_bin_sha256'][:12]}…, "
                         f"N/2={pair['full_spectrum_bins']}; "
                         "данные из Core (не графические пиксели). "
@@ -6754,7 +6850,8 @@ class MainWindow(QMainWindow):
             # Y-axis caption 'дБ'; a verbose label consumes plot width and
             # falsely suggests a different axis unit for log spectra.
             self.spec_plot.setLabel(
-                'left',source_spectrum_y_unit(self.spec_mode.currentIndex()))
+                'left',d['unit'] if tach else
+                source_spectrum_y_unit(self.spec_mode.currentIndex()))
             self.spec_plot.getAxis('left').setToolTip(
                 'Единицы оси соответствуют выбранному режиму. '
                 'Физическая калибровка BIN/TSXML не подтверждена; '
@@ -6796,11 +6893,14 @@ class MainWindow(QMainWindow):
                 self._idle_spectrum_cursor_label())
             if valid_summary:
                 summ=self._spectrum_summary
+                gain_note=('FRange=1, TACH Byte' if tach else 'FRange пока не проверен')
                 self.spec_mean.setText(
-                    ("GetSpectrum · BIN/TSXML Single (калибровка НЕ подтверждена)\n"
+                    ("GetSpectrum · TACH Byte/255, без FIR, не обороты\n"
+                     if tach else
+                     "GetSpectrum · BIN/TSXML Single (калибровка НЕ подтверждена)\n"
                      if isinstance(self.session,DirectBinSession)
                      else "GetSpectrum · IDR-кандидат\n")
-                    + f"Среднее: {summ['output_mean']:.7g} (FRange пока не проверен)\n"
+                    + f"Среднее: {summ['output_mean']:.7g} ({gain_note})\n"
                     f"Пик: {summ['output_peak_frequency_hz']:.7g} Гц\n"
                     f"Амплитуда пика: {summ['output_peak_y']:.7g}\n"
                     f"bSpecLines до FIR: {n_fft}, "
@@ -6811,12 +6911,14 @@ class MainWindow(QMainWindow):
                        else "Без огибающей") + "\nОригинальный численный паритет не доказан")
             else:
                 self.spec_mean.setText('Нет принятого локального GetSpectrum summary')
+            dc_unit=('Byte/255' if tach else
+                     'условн. ед. BIN' if flow.direct_bin else 'м/с²')
             self.spec_hint.setText(
                 f"{d['source']} · {d['fft_backend']} · N/2={len(xx)} исходных бинов · "
                 f"TQGRSeries={display_contract['grapher_series_bins']} · "
                 f"df={d['df_hz']:.7g} Гц · среднее DC "
                 f"{d.get('raw_mean_removed_m_s2',d.get('removed_mean_m_s2',0.)):.6g} "
-                f"{'условн. ед. BIN' if isinstance(self.session,DirectBinSession) else 'м/с²'} · "
+                f"{dc_unit} · "
                 + ("после FIR повторного DC нет · "
                    if self.spec_envelope_button.isChecked() else "")
                 + ("FIR на Single(BIN/FRange) до удаления DC: ГИПОТЕЗА "
@@ -6828,7 +6930,8 @@ class MainWindow(QMainWindow):
                   "фактическая калибровка НЕ доказана · "
                   "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
             self._spec_graph_default_vscale_candidate=spectrum_graph_default_vscale(
-                self.spec_f_range.value(),self.spec_mode.currentIndex())
+                1.0 if tach else self.spec_f_range.value(),
+                self.spec_mode.currentIndex())
             self._update_original_vscale_candidate_label(
                 self._spec_graph_default_vscale_candidate)
             self._spec_last_valid_fft_n=n_fft
@@ -6851,7 +6954,7 @@ class MainWindow(QMainWindow):
                 self._apply_original_vscale_candidate(restored)
             # Final source X/Y view has been applied.
             self.spec_pair_button.setEnabled(
-                self._full_spectrum.get('fft_backend')=='idr_float32'
+                not tach and self._full_spectrum.get('fft_backend')=='idr_float32'
                 and self._spectrum_reference is None)
             self._sync_archive_source_projection()
             # Bind ONLY a current, Core-computed, full N/2 Float32
@@ -6896,8 +6999,9 @@ class MainWindow(QMainWindow):
             # re-enter source_linked_caption here: it re-reads that same
             # rejected BIN and would escape this error handler.  Invalidate
             # the old time, provenance caption and any source zoom instead.
-            self._source_view_time=None
-            self.original_shell.clear_source_view_time()
+            if not insufficient_history:
+                self._source_view_time=None
+                self.original_shell.clear_source_view_time()
             self.spec_core_triplet.setText(
                 'Спектр не рассчитан: '+str(e))
             self._spec_display_contract=None
@@ -6913,11 +7017,13 @@ class MainWindow(QMainWindow):
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)
             self.spec_canvas_geometry_button.setEnabled(False)
+            self.spec_pair_button.setEnabled(False)
             self._sync_spectrum_summary_primary()
             self.spec_cursor_primary.setText('Курсор: —')
             self.spec_mean.setText('Спектр не рассчитан: '+str(e))
             self.spec_hint.setText('Нет действительного спектра: '+str(e))
-            self._error(e)
+            if not insufficient_history:
+                self._error(e)
 
     def _invalidate_graph_cursor(self, page):
         """A cursor from the old affine viewport must never survive a pan/resize.
@@ -7070,16 +7176,15 @@ class MainWindow(QMainWindow):
             if self.wave_xor_crosshair is not None:
                 self.wave_xor_crosshair.set_cursor(
                     float(self.wave_line.value()),float(p['value_m_s2']))
+            unit=('Byte/255' if self._offline_tach_channel() else
+                  'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.')
             self.wave_cursor_primary.setText(
                 f"{p['original_sample_time_s']:.5g} с\n"
-                f"{p['value_m_s2']:.5g} "
-                + ('усл. ед.' if isinstance(self.session,DirectBinSession)
-                   else 'расч. ед.'))
+                f"{p['value_m_s2']:.5g} {unit}")
             self.wave_hint.setText(
                 f"GetSignal[{p['display_index']}] → BIN[{p['index']}]"
                 f" · физическое время BIN {p['original_sample_time_s']:.8f} c"
-                f" · {p['value_m_s2']:.8g} "
-                f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'} · {p['mode']}"
+                f" · {p['value_m_s2']:.8g} {unit} · {p['mode']}"
                 + (' · исходная обратная ось GetSignal; GDI пиксели не аттестованы'
                    if self._source_wave_xaxes_model is not None else
                    ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены'))
@@ -7217,7 +7322,8 @@ class MainWindow(QMainWindow):
                 found["live_provisional_not_audited"]=True
             self._spec_last_cursor=found
             y_name=(self._full_spectrum.get('unit',source_spectrum_y_unit(found['mode']))
-                    if self._live_active else source_spectrum_y_unit(found['mode']))
+                    if (self._live_active or self._offline_tach_channel())
+                    else source_spectrum_y_unit(found['mode']))
             cursor_unit=y_name
             local_calibration_warning=(
                 ' · исходный BIN без подтверждённой физической калибровки'
@@ -7243,7 +7349,7 @@ class MainWindow(QMainWindow):
 
     def _run_narrowband(self):
         """Private original IDR candidate; never a substitute for DSP AUX4700."""
-        if not self.session:return
+        if not self.session or self._offline_tach_channel():return
         try:
             n_fft=int(self.spec_n.currentText())
             start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
@@ -7546,6 +7652,7 @@ class MainWindow(QMainWindow):
                 return
             flow,action=self._current_original_spectrum_action()
             action.validate_flow(flow,self._full_spectrum)
+            opened_session=flow.session
             if action.direct_bin_uncalibrated:
                 confirmed=QMessageBox.question(
                     self,'Некалиброванные значения BIN/TSXML',
@@ -7553,10 +7660,13 @@ class MainWindow(QMainWindow):
                     'локальные значения с предупреждением об условных единицах?',
                     QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
                 if confirmed!=QMessageBox.Yes:return
+                flow,new_action=self._current_original_spectrum_action()
+                if flow.session is not opened_session or new_action!=action:
+                    raise ValueError('Источник сменился до копирования')
             text=action.clipboard_text(decimal_separator=',')
             QApplication.clipboard().setText(text)
             self.statusBar().showMessage(
-                f"bSpecCopyValue: АЦП{action.adc}, режим "
+                f"bSpecCopyValue: {self._source_channel_label(action.adc)}, режим "
                 f"{action.spectrum_mode}, FFT {action.n_fft} · "
                 "три числа из текущего GetSpectrum, не приборный DSP")
         except (OSError,KeyError,TypeError,ValueError) as exc:
@@ -7593,6 +7703,7 @@ class MainWindow(QMainWindow):
                 return
             flow,action=self._current_original_spectrum_action()
             if action.direct_bin_uncalibrated:
+                opened_session=flow.session
                 # A standalone BIN can be copied with an explicit warning,
                 # but cannot produce an original-looking SPEC-FREQ CSV.
                 # Retain the clearly different existing RESEARCH format.
@@ -7605,8 +7716,14 @@ class MainWindow(QMainWindow):
                 if confirmed!=QMessageBox.Yes:return
                 target,_=QFileDialog.getSaveFileName(
                     self,'Сохранить некалиброванный локальный FFT',
-                    'MVK_COMPATIBLE_SPEC_CANDIDATE.csv','CSV (*.csv)')
+                    ('MVK_COMPATIBLE_TACH_SPEC_CANDIDATE.csv' if flow.tach_byte else
+                     'MVK_COMPATIBLE_SPEC_CANDIDATE.csv'),'CSV (*.csv)')
                 if not target:return
+                if Path(target).name.upper().startswith('SPEC-FREQ-'):
+                    raise ValueError('Локальный BIN FFT не сохраняется под именем оригинального SPEC-FREQ')
+                current_flow,new_action=self._current_original_spectrum_action()
+                if current_flow.session is not opened_session or new_action!=action:
+                    raise ValueError('Источник сменился до сохранения')
                 report=append_research_summary_csv(
                     target,self._spectrum_summary,uncalibrated=True)
                 self.statusBar().showMessage(
@@ -7633,7 +7750,6 @@ class MainWindow(QMainWindow):
                 # the original SPEC-FREQ daily file. The original handler
                 # only accepts its exact source file name and writes to
                 # edLibraryPath when that folder is selected.
-                from pathlib import Path
                 if not Path(target).name.startswith('SPEC-FREQ-'):
                     report=append_research_summary_csv(
                         target,self._spectrum_summary,
@@ -7659,7 +7775,7 @@ class MainWindow(QMainWindow):
             self.original_window_man.spawn_error(
                 'Исходная операция Save Spectrum отклонена: '+str(exc))
     def compare_fft(self):
-        if not self.session:return
+        if not self.session or self._offline_tach_channel():return
         try:
             start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
             d=self.session.compare_fft_backends(self._ch(),int(self.spec_n.currentText()),

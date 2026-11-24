@@ -8,6 +8,7 @@ proprietary Pascal or original test measurement is distributed.
 Explicit source scopes:
 * original same-window Power/Y + SHA-bound visible FFT (operator attestation)
 * positive current-channel TSXML InternalChannelGain (static loader candidate)
+* fixed unit range of a verified saved Mode1 TACH Byte source
 * mode 0 dB menu geometry independent of any FRange
 * linear mode with no source-backed FRange remains in Qt research fallback
 """
@@ -21,7 +22,7 @@ import numpy as np
 
 from .offline_measurement_flow import OfflineMeasurementFlow
 from .original_spectrum_view_binding import (
-    SourceSpectrumGain, SOURCE_GAIN, source_spectrum_gain,
+    SourceSpectrumGain, SOURCE_GAIN, SOURCE_BYTE_GAIN, source_spectrum_gain,
 )
 from .mvk_spectrum_menu_runtime_idr_candidate import source_vertical_page
 from .tqgrapher_spectrum_scroll_idr_candidate import source_spectrum_v_scr
@@ -31,6 +32,7 @@ SOURCE = "MVK_SOURCE_BOUND_SPECTRUM_VERTICAL_VIEW_STAGE111Z31BN"
 PAIR_SCHEMA = "MVKVIEW_VISIBLE_ORIGINAL_SAME_WINDOW_PAIR_V1"
 ORIGIN_PAIRED = "OPERATOR_ASSERTED_SAME_WINDOW_ORIGINAL_POWER_Y"
 ORIGIN_TSXML = "POSITIVE_CURRENT_CHANNEL_TSXML_FRANGE_STATIC_CANDIDATE"
+ORIGIN_BYTE = "MODE1_TACH_BYTE_FIXED_UNIT_RANGE"
 ORIGIN_DB = "ORIGINAL_DB_FIXED_RANGE_INDEPENDENT_OF_FRANGE"
 
 
@@ -93,9 +95,12 @@ def source_spectrum_vertical_view(
     if not isinstance(source_window, dict):
         raise ValueError("No SHA-verified FFT source window")
     f_range = current.frange_single
-    origin = ORIGIN_TSXML if f_range is not None else None
+    origin = (ORIGIN_BYTE if current.origin == SOURCE_BYTE_GAIN else
+              ORIGIN_TSXML if f_range is not None else None)
     pair_accepted = False
     if visible_pair is not None:
+        if flow.tach_byte:
+            raise ValueError("ADC Power/Y attestation is unavailable for Mode1 TACH Byte")
         if not isinstance(visible_pair, dict):
             raise ValueError("Invalid operator original pair")
         values = np.asarray(spectrum.get("amplitude"), dtype="<f4")
@@ -127,7 +132,7 @@ def source_spectrum_vertical_view(
         f_range = pair_range
         origin = ORIGIN_PAIRED
         pair_accepted = True
-    elif f_range is not None and current.origin != SOURCE_GAIN:
+    elif f_range is not None and current.origin not in (SOURCE_GAIN,SOURCE_BYTE_GAIN):
         raise ValueError("Untrusted source FRange origin")
 
     if mode == 0:

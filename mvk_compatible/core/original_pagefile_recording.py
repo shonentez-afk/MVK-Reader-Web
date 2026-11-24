@@ -82,8 +82,8 @@ class OriginalPageFileSelection:
         native_tach=(
             None if flow.direct_bin else read_tach_evidence(flow.session.path))
         available_tach=(
-            set() if native_tach is None else
-            set(native_tach.safe_native_channels))
+            set(flow.available_channels) if flow.direct_bin else
+            set() if native_tach is None else set(native_tach.safe_native_channels))
         channels=tuple(
             i+1 in (flow.available_channels if i<8 else available_tach)
             for i in range(CHANNEL_COUNT))
@@ -248,8 +248,10 @@ def export_selected_original_pagefile(
     selection.validate(flow)
     selected=[i+1 for i in selection.checked("channels") if i<8]
     selected_tach=[i-7 for i in selection.checked("channels") if i>=8]
+    selected_direct_tach=selected_tach if flow.direct_bin else []
+    selected_native_tach=selected_tach if not flow.direct_bin else []
     if not selected and not selected_tach:
-        raise ValueError("At least one SHA-verified ADC or Native TACH required")
+        raise ValueError("At least one SHA-verified ADC/TACH required")
     folder=Path(parent_folder).absolute()
     if folder.is_symlink() or not folder.is_dir():
         raise ValueError("Output parent must be a real existing local folder")
@@ -266,7 +268,7 @@ def export_selected_original_pagefile(
         target.mkdir(exist_ok=False)
         created=True
         if flow.direct_bin:
-            for adc in selected:
+            for adc in selected + [n+8 for n in selected_direct_tach]:
                 ch=next((c for c in source.channel_files if c.adc==adc),None)
                 if ch is None:
                     raise ValueError("Selected original channel absent from BIN")
@@ -353,9 +355,11 @@ def export_selected_original_pagefile(
             "selected_channels":selected+[
                 n+8 for n in selected_tach],
             "selected_adc_channels":selected,
-            "selected_native_tach_channels":selected_tach,
+            "selected_native_tach_channels":selected_native_tach,
+            "selected_direct_tach_channels":selected_direct_tach,
             "native_tach_input_domain":"DEVICE_TACH_INPUT_FLOAT32_UNSCALED"
-                if selected_tach else None,
+                if selected_native_tach else None,
+            "saved_tach_copied_as_original_bytes":bool(selected_direct_tach),
             "original_tach_tsxml_generated":False,
             "source_pagefile_checklists":selection.report(),
             "source_pagefile_settings":{
@@ -376,7 +380,8 @@ def export_selected_original_pagefile(
             "files_written":len(manifest_items)+1,
             "selected_channels":selected+[
                 n+8 for n in selected_tach],
-            "selected_native_tach_channels":selected_tach,
+            "selected_native_tach_channels":selected_native_tach,
+            "selected_direct_tach_channels":selected_direct_tach,
             "selected_result_rows":len(raw_rows),
             "source_files_copied_without_resampling":True,
             "device_io_executed":False,

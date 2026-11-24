@@ -34,6 +34,12 @@ ORIGINAL_WRITER_FIELDS=(
 _SAFE_NAME=re.compile(r"^(?:\.[\\/])?([^\\/:\x00-\x1f]+)$")
 
 
+class _NoDoctype(ET.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        # Parser-level rejection works for all detected XML encodings.
+        raise ValueError("TSXML с DTD/ENTITY не поддерживается")
+
+
 @dataclass(frozen=True)
 class OriginalTsxmlContract:
     sample_rate_hz: int
@@ -94,7 +100,7 @@ def inspect_original_tsxml(
     if b"<!DOCTYPE" in xml_bytes.upper() or b"<!ENTITY" in xml_bytes.upper():
         raise ValueError("TSXML с DTD/ENTITY не поддерживается")
     try:
-        root=ET.fromstring(xml_bytes)
+        root=ET.fromstring(xml_bytes, parser=ET.XMLParser(target=_NoDoctype()))
     except (ET.ParseError,LookupError,ValueError) as exc:
         raise ValueError("TSXML: ошибка разбора XML/кодировки") from exc
     if root.tag!="MainRoot":

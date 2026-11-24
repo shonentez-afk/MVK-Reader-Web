@@ -683,7 +683,14 @@ class OriginalRootShell:
         self.status_note.setToolTip(caption)
 
     def _remember_view_action(self,action,selection):
-        self.view_state=self.view_state.transition(action,selection)
+        # A live selection is not a saved Byte file and must not extend
+        # this portable offline state. The typed offline flow owns 9/10.
+        saved=(action=='select_channel' and selection>=9
+               and self.window._offline_tach_channel())
+        if action=='select_channel' and selection>=9 and not saved:
+            return
+        self.view_state=self.view_state.transition(
+            action,selection,verified_saved_tach=saved)
         self.window.source_view_state=self.view_state
 
     def _source_file_action_mode_changed(self,index:int):
@@ -1075,10 +1082,12 @@ class OriginalRootShell:
         try:
             flow.require_session(self.window.session)
             info = flow.source_record()
+            ch=info['selected_channel']
+            channel=f"TACH{ch-8}" if flow.tach_byte else f"АЦП{ch}"
+            dtype="Byte" if flow.tach_byte else "Single"
             self.file_source_evidence.setText(
                 f"Один источник {info['measurement_kind']} · "
-                f"АЦП{info['selected_channel']} / "
-                f"{info['sample_count']} реальных Single @ "
+                f"{channel} / {info['sample_count']} реальных {dtype} @ "
                 f"{info['sample_rate_hz']:g} Гц · "
                 f"SHA256 {info['source_bin_sha256'][:16]}… · "
                 + ("AUX/VALUES DSP НЕТ; физическая калибровка НЕ подтверждена"
@@ -1515,7 +1524,7 @@ class OriginalRootShell:
             self.file_values.blockSignals(blocked_values)
 
     def sync_file_session(self, session, channels, *, flow=None) -> None:
-        """Populate ORIGINAL ten check flags, verified ADC only, never TACH fake."""
+        """Populate the original ten flags from checked archive channel roles."""
         self._file_flow=flow
         self.file_record_selection=None
         self.file_page.setProperty("sourceAppliedLiveFilePlanReceipt",None)
@@ -1525,6 +1534,8 @@ class OriginalRootShell:
         try:
             self.file_channels.clear()
             if session is None:
+                if self.view_state.saved_byte_channel:
+                    self._remember_view_action("select_channel",1)
                 self.update_file_evidence(None)
                 self.refresh_file_workbench()
                 return
@@ -1550,7 +1561,12 @@ class OriginalRootShell:
                 if native_tach_receipt is not None else None)
             for i in range(CHANNEL_COUNT):
                 adc=i+1
-                if i>=8:
+                if i>=8 and flow.direct_bin and adc in source_by_adc:
+                    source=source_by_adc[adc]
+                    name=(f"TACH{i-7}: {source.bin_path.name} · "
+                          f"Byte @ {source.sample_rate_hz} Гц")
+                    enabled=True
+                elif i>=8:
                     ch=(native_tach.channels[i-8]
                         if native_tach is not None else None)
                     if ch is not None and ch.present:

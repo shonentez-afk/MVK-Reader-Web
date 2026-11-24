@@ -75,6 +75,7 @@ def source_file_workbench(
     if selected != flow.channel or selected not in channels:
         raise ValueError("File UI channel differs from authoritative Core")
     direct = flow.direct_bin
+    tach = flow.tach_byte
     if direct and verified_status is not None:
         raise ValueError("A standalone BIN never has authenticated DSP/AUX")
     if verified_status is not None:
@@ -129,9 +130,11 @@ def source_file_workbench(
     else:
         value_rows = ["Нет подтверждённых приборных VALUES/AUX для этого выбора"]
         spectrum_rows = [
-            "Приборный SPEC не подтверждён; расчётный FFT доступен на странице «Спектр»"
+            "Приборный SPEC не подтверждён; локальный FFT требует достаточно отсчётов"
         ]
         note = (
+            "BIN/TSXML: TACH Byte, график Byte/255; нет RPM или VALUES/AUX"
+            if tach else
             "BIN/TSXML: только реальные Single; нет аппаратных VALUES/AUX, "
             "DSP, третьоктав и физически подтверждённой калибровки"
             if direct else
@@ -146,10 +149,11 @@ def source_file_workbench(
         raise ValueError("Unverified signal length/rate")
     meta = (
         ("Имя исходного файла", source["data_file_label"]),
-        ("Источник", "BIN/TSXML Single" if direct else "Native R6.1 ZIP"),
+        ("Источник", "BIN/TSXML Byte" if tach else
+         "BIN/TSXML Single" if direct else "Native R6.1 ZIP"),
         ("Прибор", source["serial"]),
-        ("Выбранный канал", f"АЦП{selected}"),
-        ("Число отсчётов Single", str(samples)),
+        ("Выбранный канал", f"TACH{selected-8}" if tach else f"АЦП{selected}"),
+        ("Число отсчётов Byte" if tach else "Число отсчётов Single", str(samples)),
         ("Частота дискретизации", f"{rate:g} Гц"),
         ("Длительность сигнала", f"{samples/rate:.6g} с"),
         ("SHA256 источника BIN", source["source_bin_sha256"]),

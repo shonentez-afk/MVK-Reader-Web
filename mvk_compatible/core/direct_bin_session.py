@@ -1,12 +1,12 @@
 """Stage111Z.16: direct LOCAL BIN + TSXML read-only session (no R6.1 ZIP).
 
-Supported ONLY when the companion TSXML explicitly describes one little-
-endian IEEE754 Single channel, with a verified byte offset/length and an
-integer sample rate. Does NOT decode arbitrary native MVK BIN formats or
-infer physical calibration. Such files fail closed instead of being
-silently interpreted as floats.
+Accepts little-endian IEEE754 Single ADC, or explicitly identified original
+Count/Byte TACH1–2. A typed Mode1 Byte source is read as unsigned bytes;
+only its graph sample provider uses GetDataArray's Single(Byte/255).
+The saved bytes are kept intact. No arbitrary native BIN format, physical
+calibration, RPM or DSP values are inferred.
 
-The optional same-named MVK...-ADC1..8 group can be opened together,
+The optional same-named MVK...-ADC/TACH group can be opened together,
 strictly requiring the same instrument/time stem. Nothing in this module
 connects to a device, internet, cloud, or writes a measurement file.
 No AUX/VALUES/third-octave DSP results are manufactured.
@@ -21,20 +21,24 @@ import re
 import numpy as np
 
 from .offline_export import (
-    BIN_NAME_RE, MAX_BIN_SAMPLES, OfflineSession, VERSION,
+    MAX_BIN_SAMPLES, OfflineSession,
     waveform_for_zip, spectrum_for_zip,
 )
 from .storage_f_range_idr_candidate import DOMAIN_CALIBRATED_BIN
 from .original_tsxml_contract import (
     OriginalTsxmlContract,inspect_original_tsxml,ORIGINAL_TSXML_SOURCE,
 )
+from .mvk_original_scale_tables_idr_candidate import source_spectrum_unit_contract
 
 MAX_TSXML_BYTES = 64_000
 _MAX_BIN_BYTES = MAX_BIN_SAMPLES * 4
 _CHANNEL_NAME = re.compile(
-    r"^(MVK\d+)-ADC([1-8])-(\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2})\.bin$"
+    r"(MVK\d+)-(ADC[1-8]|TACH[12])-(\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2})\.bin\Z"
 )
 PROVENANCE = "LOCAL_DIRECT_BIN_TSXML_SINGLE_UNVERIFIED_CALIBRATION"
+TACH_PROVENANCE = "LOCAL_DIRECT_BIN_TSXML_MODE1_TACH_BYTE"
+TACH_INPUT_DOMAIN = "MODE1_TACH_BYTE_DIV255_FLOAT32"
+TACH_MODE1_SAMPLE_RATES = frozenset((512, 2048, 8192, 32768, 65536))
 
 
 @dataclass(frozen=True)
@@ -49,15 +53,28 @@ class DirectBinChannel:
     tsxml_sha256: str
     source_metadata: OriginalTsxmlContract
 
+    @property
+    def tach_byte(self) -> bool:
+        return self.source_metadata.data_type == "Byte"
+
+    @property
+    def sample_count(self) -> int:
+        return self.data_length_bytes // self.source_metadata.sample_width_bytes
+
 
 def _checked_file(path: Path, *, limit: int, what: str) -> bytes:
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"{what}: нужен обычный локальный файл, не ссылка")
-    size = path.stat().st_size
+    before = path.stat()
+    size = before.st_size
     if not 1 <= size <= limit:
         raise ValueError(f"{what}: недопустимый размер файла")
-    data = path.read_bytes()
-    if len(data) != size:
+    with path.open("rb") as handle:
+        data = handle.read(size + 1)
+    after = path.stat()
+    if (len(data) != size or path.is_symlink()
+            or (before.st_dev, before.st_ino, size, before.st_mtime_ns)
+               != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
         raise ValueError(f"{what}: файл изменился во время чтения")
     return data
 
@@ -95,23 +112,27 @@ def _inspect_channel(bin_file: Path, adc: int | None) -> DirectBinChannel:
     xml = _checked_file(sidecar, limit=MAX_TSXML_BYTES, what="TSXML")
     contract = inspect_original_tsxml(
         xml, actual_bin_filename=bin_file.name,max_data_bytes=_MAX_BIN_BYTES)
-    if contract.data_type=="Byte":
-        # Source _Unit125 (00806F68) writes Byte for tachometer/count
-        # channels. Never reinterpret those counts as Float32 acceleration
-        # and never synthesize a 1-channel FFT on integer counter bytes.
-        raise ValueError(
-            "Оригинальный BIN имеет RealDataType=Byte (счётный канал). "
-            "Метаданные распознаны, но FFT ускорения для Byte недоступен.")
-    if contract.data_length_bytes<4:
-        raise ValueError("Single BIN требует минимум 4 байта")
+    tach = contract.data_type == "Byte"
     declared=contract.channel_number
+    if tach and (
+            declared not in (9, 10) or contract.channel_units_text != "Count"
+            or contract.file_name_declared is None
+            or contract.data_offset_bytes != 0
+            or contract.sample_rate_hz not in TACH_MODE1_SAMPLE_RATES
+            or contract.internal_gain_single not in (None, 1.0)):
+        raise ValueError(
+            "RealDataType=Byte: требуется связанный TSXML для TACH1/2 "
+            "(ChannelNumber 9/10, Units=Count, DataOffset=0, "
+            "частота Mode1, gain 1 или отсутствует)")
+    if contract.data_length_bytes // contract.sample_width_bytes > MAX_BIN_SAMPLES:
+        raise ValueError("Слишком много отсчётов в выбранном BIN")
     if declared is not None:
-        if not 1<=declared<=8:
+        if not tach and not 1<=declared<=8:
             raise ValueError(
                 "ChannelNumber указывает не на один из восьми АЦП ускорения")
         if adc is not None and adc!=declared:
             raise ValueError(
-                "ChannelNumber в TSXML не совпадает с АЦП в имени BIN")
+                "ChannelNumber в TSXML не совпадает с каналом в имени BIN")
         adc=declared
     elif adc is None:
         # The old Stage111Z.16 minimal/synthetic sidecar has no number.
@@ -126,9 +147,10 @@ def _inspect_channel(bin_file: Path, adc: int | None) -> DirectBinChannel:
         raise ValueError(
             "BIN/TSXML: DataOffset+DataLength должны точно покрывать файл"
         )
-    samples = np.frombuffer(raw, dtype="<f4", count=length//4, offset=offset)
-    if not bool(np.isfinite(samples).all()):
-        raise ValueError("BIN содержит NaN/Inf: прямой импорт отклонён")
+    if not tach:
+        samples = np.frombuffer(raw, dtype="<f4", count=length//4, offset=offset)
+        if not bool(np.isfinite(samples).all()):
+            raise ValueError("BIN содержит NaN/Inf: прямой импорт отклонён")
     return DirectBinChannel(
         adc=adc, bin_path=bin_file, tsxml_path=sidecar,
         sample_rate_hz=contract.sample_rate_hz,
@@ -141,12 +163,19 @@ def _inspect_channel(bin_file: Path, adc: int | None) -> DirectBinChannel:
 
 @dataclass(frozen=True)
 class DirectBinSession(OfflineSession):
-    """Explicitly uncalibrated single- or multi-channel BIN/TSXML source.
+    """Explicitly typed and non-calibrated local BIN/TSXML source.
 
     Inherited original-window candidate routines call self.samples(), which
     reads verified local bytes. Native ZIP data and DSP CSV paths are untouched.
     """
     channel_files: tuple[DirectBinChannel, ...]
+
+    @property
+    def primary_channel(self) -> int:
+        return next(entry.adc for entry in self.channel_files if entry.bin_path == self.path)
+
+    def is_tach(self, channel: int) -> bool:
+        return any(entry.adc == channel and entry.tach_byte for entry in self.channel_files)
 
     @classmethod
     def open(cls, file: str | Path) -> "DirectBinSession":
@@ -154,16 +183,14 @@ class DirectBinSession(OfflineSession):
         if selected.is_symlink() or not selected.is_file():
             raise ValueError("Нужен обычный локальный BIN/TSXML без ссылок")
         primary = _bin_from_selection(selected)
-        _checked_file(primary, limit=_MAX_BIN_BYTES + 4_096, what="BIN")
-        _sidecar_for_bin(primary)
-
         m = _CHANNEL_NAME.fullmatch(primary.name)
         discovered: list[tuple[int | None, Path]] = []
-        if m and BIN_NAME_RE.fullmatch(primary.name):
+        if m:
             serial, _, timestamp = m.groups()
-            for ch in range(1, 9):
+            for ch in range(1, 11):
+                label = f"ADC{ch}" if ch <= 8 else f"TACH{ch-8}"
                 sibling = primary.with_name(
-                    f"{serial}-ADC{ch}-{timestamp}.bin"
+                    f"{serial}-{label}-{timestamp}.bin"
                 )
                 if sibling.exists() or sibling.is_symlink():
                     discovered.append((ch, sibling))
@@ -208,17 +235,26 @@ class DirectBinSession(OfflineSession):
         if (hashlib.sha256(raw).hexdigest() != entry.bin_sha256 or
                 hashlib.sha256(xml).hexdigest() != entry.tsxml_sha256):
             raise ValueError("Исходный BIN или TSXML изменён после открытия")
-        buffer = np.frombuffer(
-            raw, dtype="<f4", count=entry.data_length_bytes // 4,
-            offset=entry.data_offset_bytes
-        )
+        typed = np.frombuffer(raw, dtype="u1" if entry.tach_byte else "<f4",
+                              count=entry.sample_count, offset=entry.data_offset_bytes)
+        if entry.tach_byte:
+            # Type2 007D2317..007D232D: Byte/255 rounded on store to Single,
+            # independent of FileMode's ApplyRange and the (fixed) Byte gain.
+            buffer = (typed.astype(np.float64) / 255.0).astype("<f4")
+            buffer.setflags(write=False)
+        else:
+            buffer = typed
         if not bool(np.isfinite(buffer).all()):
             raise ValueError("BIN содержит неконечные Float32")
         return buffer, float(entry.sample_rate_hz), {
-            "source": PROVENANCE,
+            "source": TACH_PROVENANCE if entry.tach_byte else PROVENANCE,
             "physical_units_verified": False,
             "dsp_metrics_available": False,
-            "original_byte_order": "little_endian_Single_from_TSXML",
+            "original_byte_order": ("unsigned_Byte_from_TSXML" if entry.tach_byte
+                                    else "little_endian_Single_from_TSXML"),
+            "source_tach_byte_window": entry.tach_byte,
+            "source_sample_width_bytes": entry.source_metadata.sample_width_bytes,
+            "source_tach_byte_normalization_divisor": 255 if entry.tach_byte else None,
             "original_tsxml_contract_source": ORIGINAL_TSXML_SOURCE,
             "original_tsxml_writer_fields_complete":
                 entry.source_metadata.source_meta_complete,
@@ -245,10 +281,21 @@ class DirectBinSession(OfflineSession):
     def waveform(self, channel: int, start_s: float, seconds: float,
                  mode: str = "acdc", points: int = 4000,
                  display_order: str = "chronological") -> dict:
+        if mode not in ("ac", "acdc"):
+            raise ValueError("Режим должен быть ac или acdc")
+        tach = self.is_tach(channel)
         result = waveform_for_zip(
-            self.path, channel, start_s, seconds, mode, points, display_order,
+            self.path, channel, start_s, seconds, "acdc" if tach else mode, points, display_order,
             sample_provider=self.samples
         )
+        if tach:
+            return dict(result, source=TACH_PROVENANCE, unit="",
+                        input_domain=TACH_INPUT_DOMAIN,
+                        rms_normalized=result["rms_m_s2"],
+                        source_tach_byte_normalization_divisor=255,
+                        source_sample_width_bytes=1, physical_units_verified=False,
+                        original_bin_decoder_parity_verified=False,
+                        processing_note="TACH Byte/255; AC+DC, без FIR. Не обороты в минуту.")
         return dict(
             result, source=PROVENANCE,
             unit="исходные отсчёты · физическая калибровка не проверена",
@@ -264,11 +311,23 @@ class DirectBinSession(OfflineSession):
                  backend: str = "idr_float32", *,
                  f_range: float | None = None,
                  input_domain: str = DOMAIN_CALIBRATED_BIN) -> dict:
+        tach = self.is_tach(channel)
+        if tach and (f_range not in (None, 1.0) or input_domain != DOMAIN_CALIBRATED_BIN):
+            raise ValueError("TACH Byte использует фиксированный FRange=1 без повторной калибровки")
         result = spectrum_for_zip(
             self.path, channel, n_fft, mode, start_s, max_hz, max_points,
-            backend, f_range=f_range, input_domain=input_domain,
+            backend, f_range=1.0 if tach else f_range, input_domain=input_domain,
             sample_provider=self.samples,
         )
+        if tach:
+            return dict(result, source="APP_DERIVED_MODE1_TACH_BYTE_FFT_CANDIDATE",
+                        input_domain=TACH_INPUT_DOMAIN,
+                        source_tach_byte_normalization_divisor=255,
+                        source_sample_width_bytes=1, physical_units_verified=False,
+                        original_bin_decoder_parity_verified=False,
+                        warning="TACH Byte/255 → удаление среднего → Hann/FFT. "
+                                "Не обороты в минуту, паритет Win32 не подтверждён.",
+                        **source_spectrum_unit_contract(mode, "", source_bound=True))
         return dict(
             result, source="APP_DERIVED_DIRECT_BIN_FFT_CANDIDATE",
             unit=("относительные дБ (без аттестации калибровки)"
@@ -280,20 +339,47 @@ class DirectBinSession(OfflineSession):
             original_bin_decoder_parity_verified=False,
         )
 
-    def exact_sample(self, *args, **kwargs) -> dict:
-        result = super().exact_sample(*args, **kwargs)
+    def exact_sample(self, channel, time_s, start_s=0., seconds=1.,
+                     mode="acdc", display_order="chronological") -> dict:
+        if mode not in ("ac", "acdc"):
+            raise ValueError("Режим должен быть ac или acdc")
+        tach = self.is_tach(channel)
+        result = super().exact_sample(channel, time_s, start_s, seconds,
+                                      "acdc" if tach else mode, display_order)
         return dict(
-            result, source=PROVENANCE, physical_units_verified=False,
+            result, source=TACH_PROVENANCE if tach else PROVENANCE,
+            physical_units_verified=False,
             original_bin_decoder_parity_verified=False,
+            **({"unit":"", "normalized_byte_value":result["value_m_s2"]}
+               if tach else {}),
         )
 
+    def envelope(self, channel, *args, **kwargs) -> dict:
+        if self.is_tach(channel):
+            raise ValueError("TACH Byte: огибающая (FIR) недоступна")
+        return super().envelope(channel, *args, **kwargs)
+
+    def spectrum_envelope(self, channel, *args, **kwargs) -> dict:
+        if self.is_tach(channel):
+            raise ValueError("TACH Byte: спектральная огибающая (FIR) недоступна")
+        return super().spectrum_envelope(channel, *args, **kwargs)
+
+    def narrowband(self, channel, *args, **kwargs) -> dict:
+        if self.is_tach(channel):
+            raise ValueError("TACH Byte: узкополосная оценка прибора не подтверждена")
+        return super().narrowband(channel, *args, **kwargs)
+
     def verify(self) -> dict:
+        has_tach = any(e.tach_byte for e in self.channel_files)
         return {
-            "status": "local_bin_tsxml_float32_structurally_valid",
+            "status": ("local_bin_tsxml_typed_structurally_valid" if has_tach
+                       else "local_bin_tsxml_float32_structurally_valid"),
             "serial": self.serial,
             "updates": self.updates,
             "channels": [
-                {"adc": e.adc, "samples": e.data_length_bytes // 4,
+                {"adc": e.adc, "samples": e.sample_count,
+                 "real_data_type": e.source_metadata.data_type,
+                 "channel_role": "TACH" if e.tach_byte else "ADC",
                  "fs_hz": e.sample_rate_hz, "calibration_verified": False,
                  "original_tsxml_writer_fields_complete":
                      e.source_metadata.source_meta_complete,
@@ -311,7 +397,8 @@ class DirectBinSession(OfflineSession):
                 for e in self.channel_files
             ],
             "dsp_source": "NOT_AVAILABLE_NO_AUX_VALUES",
-            "precision": "TSXML_DECLARED_SINGLE_FLOAT32_ONLY",
+            "precision": ("TSXML_DECLARED_SINGLE_OR_UNSIGNED_BYTE" if has_tach
+                          else "TSXML_DECLARED_SINGLE_FLOAT32_ONLY"),
             "no_device_connection": True,
             "fft_original_parity_verified": False,
             "original_native_bin_format_fully_decoded": False,

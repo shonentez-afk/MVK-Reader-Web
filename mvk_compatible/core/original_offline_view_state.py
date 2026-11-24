@@ -100,11 +100,16 @@ class OriginalOfflineView:
     config_tab: int = 0
     file_action_tab: int = 0
     calibration_result_tab: int = 0
+    saved_byte_channel: bool = False
 
     def __post_init__(self):
         if self.page not in PAGES:
             raise ValueError("Not an original DFM root page")
-        _bounded_int("channel",self.channel,1,8)
+        if type(self.saved_byte_channel) is not bool:
+            raise ValueError("Saved Byte channel scope must be explicit")
+        _bounded_int("channel",self.channel,
+                     9 if self.saved_byte_channel else 1,
+                     10 if self.saved_byte_channel else 8)
         _bounded_int("status_tab",self.status_tab,0,len(MODE_NAMES)-1)
         _bounded_int("spectrum_mode",self.spectrum_mode,0,3)
         _bounded_int("hscale_tag",self.hscale_tag,0,len(HORIZONTAL_HZ)-1)
@@ -132,7 +137,8 @@ class OriginalOfflineView:
     def initial(cls):
         return cls()
 
-    def transition(self,action:str,selection)->"OriginalOfflineView":
+    def transition(self,action:str,selection,*,
+                   verified_saved_tach:bool=False)->"OriginalOfflineView":
         """A strict allowlist. Never reinterpret device commands as UI actions."""
         if not isinstance(action,str) or action not in SAFE_TRANSITIONS:
             raise PermissionError(
@@ -142,7 +148,9 @@ class OriginalOfflineView:
                 raise ValueError("Unknown source form page")
             return replace(self,page=selection)
         if action=="select_channel":
-            return replace(self,channel=_bounded_int("channel",selection,1,8))
+            channel=_bounded_int("channel",selection,1,
+                                 10 if verified_saved_tach is True else 8)
+            return replace(self,channel=channel,saved_byte_channel=channel>=9)
         if action=="select_status_tab":
             return replace(self,status_tab=_bounded_int(
                 "status_tab",selection,0,len(MODE_NAMES)-1))
@@ -202,6 +210,7 @@ class OriginalOfflineView:
         result={
             "source":SOURCE,
             "page":self.page,"channel":self.channel,
+            "saved_byte_channel":self.saved_byte_channel,
             "status_tab":self.status_tab,"spectrum_mode":self.spectrum_mode,
             "hscale_tag":self.hscale_tag,
             "hscale_hz":HORIZONTAL_HZ[self.hscale_tag],

@@ -26,6 +26,7 @@ from .storage_f_range_idr_candidate import DOMAIN_CALIBRATED_BIN
 SOURCE = "MVKVIEW_OFFLINE_MEASUREMENT_FLOW_STAGE111Z31BC"
 SOURCE_ZIP = "VERIFIED_NATIVE_R6_ZIP_VALUES_WITH_OPTIONAL_AUX"
 SOURCE_BIN = "LOCAL_SINGLE_BIN_TSXML_WITHOUT_DSP"
+SOURCE_TACH_BIN = "LOCAL_MODE1_TACH_BYTE_BIN_TSXML_WITHOUT_DSP"
 MAX_SAMPLE_COUNT = 10_000_000
 
 
@@ -56,7 +57,7 @@ class OfflineMeasurementFlow:
                 or type(self.session.updates) is not int
                 or not 1 <= self.session.updates <= 1_000_000):
             raise ValueError("Malformed verified session identity")
-        _integer("channel", self.channel, 1, 8)
+        _integer("channel", self.channel, 1, 10 if self.direct_bin else 8)
         if self.channel not in self.available_channels:
             raise ValueError("Selected channel is absent in this measurement")
         _integer("tick_index", self.tick_index, 0, self.session.updates - 1)
@@ -66,6 +67,10 @@ class OfflineMeasurementFlow:
     @property
     def direct_bin(self) -> bool:
         return type(self.session) is DirectBinSession
+
+    @property
+    def tach_byte(self) -> bool:
+        return self.direct_bin and self.session.is_tach(self.channel)
 
     @property
     def available_channels(self) -> tuple[int, ...]:
@@ -83,7 +88,8 @@ class OfflineMeasurementFlow:
             raise ValueError("A measurement with zero ADC channels cannot be displayed")
         return cls(
             session=session,
-            channel=channels[0] if channel is None else channel,
+            channel=((session.primary_channel if type(session) is DirectBinSession
+                      else channels[0]) if channel is None else channel),
             tick_index=(session.updates - 1 if tick_index is None else tick_index),
         )
 
@@ -144,7 +150,8 @@ class OfflineMeasurementFlow:
             raise ValueError("Unverified source BIN digest")
         return {
             "source": SOURCE,
-            "measurement_kind": SOURCE_BIN if self.direct_bin else SOURCE_ZIP,
+            "measurement_kind": (SOURCE_TACH_BIN if self.tach_byte else
+                                 SOURCE_BIN if self.direct_bin else SOURCE_ZIP),
             "serial": self.session.serial,
             "available_channels": list(self.available_channels),
             "selected_channel": self.channel,
@@ -153,6 +160,8 @@ class OfflineMeasurementFlow:
             "raw_aux_values_available_only_if_authenticated": True,
             "physical_calibration_original_runtime_verified": False,
             "physical_units_unverified_for_direct_bin": self.direct_bin,
+            "source_real_data_type": "Byte" if self.tach_byte else "Single",
+            "source_tach_byte_normalization_divisor": 255 if self.tach_byte else None,
             "original_runtime_parity_verified": False,
             "data_file_label": label,  # filename only, NEVER absolute path
             "source_bin_sha256": fingerprint.lower(),
@@ -165,7 +174,7 @@ class OfflineMeasurementFlow:
     def status_snapshot(self) -> dict | None:
         """Only actual source verified native ZIP VALUES/AUX tick.
 
-        A stand-alone BIN/TSXML has NO original AUX/VALUES/TACH and must
+        A stand-alone BIN/TSXML has NO original AUX/VALUES/TACH telemetry and must
         show the source "unavailable" layout, not invented readings.
         """
         if self.direct_bin:

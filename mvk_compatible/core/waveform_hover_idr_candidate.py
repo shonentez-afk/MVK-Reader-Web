@@ -72,14 +72,22 @@ def prepare_waveform_hover_window(session,channel:int, *,
     numerical parity remain open.
     """
     if (not isinstance(channel,numbers.Integral) or isinstance(channel,bool)
-            or not 1<=channel<=8 or mode not in ('ac','acdc')
+            or not 1<=channel<=10 or mode not in ('ac','acdc')
             or display_order not in ('chronological','getsignal_buffer')):
         raise ValueError('Invalid channel, mode or original buffer order')
     if (not all(isinstance(v,numbers.Real) and not isinstance(v,bool)
                 and math.isfinite(float(v)) for v in (start_s,seconds))
             or not 0<=start_s or not 0<seconds<=30):
         raise ValueError('Invalid waveform archive window')
-    values,fs,_,_=session.samples(int(channel))
+    if channel>=9:
+        from .direct_bin_session import DirectBinSession
+        if type(session) is not DirectBinSession or not session.is_tach(int(channel)):
+            raise ValueError('Cursor TACH requires verified saved Byte source')
+    values,fs,audit,_=session.samples(int(channel))
+    if channel>=9:
+        if not isinstance(audit,dict) or audit.get('source_tach_byte_window') is not True:
+            raise ValueError('Cursor TACH requires verified saved Byte source')
+        mode='acdc'
     if not math.isfinite(float(fs)) or fs<=0:
         raise ValueError('Invalid archive sample rate')
     values=np.asarray(values,dtype=np.float32)
