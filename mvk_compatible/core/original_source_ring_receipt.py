@@ -6,13 +6,18 @@ All 10 original TMvkChannelStorage buffers have 2**21 elements:
 eight Float32 (4 bytes), two TACH bytes (1 byte).
 """
 from __future__ import annotations
+import math
+import struct
+import re
 
 SCHEMA="MVK_SOURCE_CHANNEL_STORAGE_V1"
 BUFFER_ELEMENTS=1<<21
 # Exact original LIVE FRange source; never mix with Native exporter gain.
 SOURCE_LIVE_ADC_DOMAIN="ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
+SOURCE_CONFIG_ADC_DOMAIN="ORIGINAL_LIVE_ADC_CONFIG_FRANGE_FLOAT32"
+SOURCE_LIVE_ADC_DOMAINS=frozenset((SOURCE_LIVE_ADC_DOMAIN,SOURCE_CONFIG_ADC_DOMAIN))
 ADC_DOMAIN=frozenset((
-    SOURCE_LIVE_ADC_DOMAIN,
+    SOURCE_LIVE_ADC_DOMAIN,SOURCE_CONFIG_ADC_DOMAIN,
     "RAW_DEVICE_FLOAT32_NOT_YET_CALIBRATED",
     "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32",
 ))
@@ -26,6 +31,59 @@ def _bounded_int(obj:dict,key:str,max_value:int=U64_MAX)->int:
     if type(value) is not int or not 0<=value<=max_value:
         raise ValueError(f"Original storage: invalid {key}")
     return value
+
+
+def validate_source_range_state(state,channel):
+    """Prove the reported Single against source config bytes, not UI gain."""
+    if state is None:
+        return None
+    fields={"single","origin","register_word","register_raw_le","units_raw_le",
+            "latched_frame","socket_attempt","usable"}
+    if not isinstance(state,dict) or set(state)!=fields or not 1<=channel<=8:
+        raise ValueError("Original live FRange: malformed state")
+    if state["register_word"]!=0x100*channel+0x0e:
+        raise ValueError("Original live FRange: wrong ADC register")
+    _bounded_int(state,"latched_frame")
+    if _bounded_int(state,"socket_attempt")==0:
+        raise ValueError("Original live FRange: invalid socket attempt")
+    raw=state["register_raw_le"]
+    units=state["units_raw_le"]
+    if (not isinstance(raw,str) or (raw!="" and not re.fullmatch("[0-9a-f]{8}",raw))
+            or not isinstance(units,str) or
+            (units!="" and not re.fullmatch("[0-9a-f]{64}",units))):
+        raise ValueError("Original live FRange: malformed register bytes")
+    value=state["single"]
+    if type(value) not in (float,int) or not math.isfinite(value) or type(state["usable"]) is not bool:
+        raise ValueError("Original live FRange: invalid Single")
+    decoded=struct.unpack("<f",bytes.fromhex(raw))[0] if raw else None
+    if decoded is None:
+        expected,origin,usable=1.0,"UNOBSERVED_REGISTER_PROVISIONAL_ONE",True
+    elif decoded==0:
+        expected,origin,usable=1.0,"REGISTER_ZERO_FALLBACK_ONE",True
+    elif math.isfinite(decoded) and decoded>0:
+        expected,origin,usable=decoded,"REGISTER_FLOAT32",True
+    else:
+        expected,origin,usable=0.0,"INVALID_REGISTER_NO_CALCULATION",False
+    try:
+        match=struct.pack("<f",value)==struct.pack("<f",expected)
+    except (OverflowError,struct.error):
+        match=False
+    if not match or state["origin"]!=origin or state["usable"]!=usable:
+        raise ValueError("Original live FRange: Single does not match register")
+    return dict(state)
+
+
+def source_live_range_matches(row,domain,scale,state):
+    if domain not in SOURCE_LIVE_ADC_DOMAINS or row.get("input_domain")!=domain:
+        return False
+    if row.get("source_range_state")!=state or row.get("original_live_f_range_single")!=scale:
+        return False
+    if type(scale) not in (float,int) or not math.isfinite(scale) or scale<=0:
+        return False
+    if state is None:
+        return domain==SOURCE_LIVE_ADC_DOMAIN and scale==1.0
+    return (state.get("usable") is True and state.get("single")==scale and
+            ((scale==1.0)==(domain==SOURCE_LIVE_ADC_DOMAIN)))
 
 
 def validate_original_storage_receipt(
@@ -90,10 +148,10 @@ def validate_original_storage_receipt(
             raise ValueError("Original storage: source RX counters disagree")
         domain=row.get("input_domain")
         live_range=row.get("original_live_f_range_single")
-        if domain==SOURCE_LIVE_ADC_DOMAIN:
-            if type(live_range) not in (int,float) or live_range!=1.0:
-                raise ValueError(
-                    "Original live FRange: source ring must prove Single 1.0")
+        range_state=validate_source_range_state(row.get("source_range_state"),i+1)
+        if domain in SOURCE_LIVE_ADC_DOMAINS:
+            if not source_live_range_matches(row,domain,live_range,range_state):
+                raise ValueError("Original live FRange: source ring must prove current Single")
         elif live_range is not None:
             raise ValueError(
                 "Original live FRange: cannot attach factor to foreign domain")
@@ -126,6 +184,7 @@ def validate_original_storage_receipt(
             "available_elements":available,"last_sample_rate_hz":sample_rate,
             "next_device_sample_index":idx,"input_domain":domain,
             "original_live_f_range_single":live_range,
+            **({"source_range_state":range_state} if range_state is not None else {}),
             "sequence_gaps":gap,"rate_changes":rate_changes,
             "rejected_nonfinite_frames":dropped,
         })

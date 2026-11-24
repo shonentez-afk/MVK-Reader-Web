@@ -18,6 +18,7 @@ from .envelope_idr_candidate import (
     EnvelopeProfile, envelope_plan, process_original_envelope_candidate,
 )
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
+from .storage_f_range_idr_candidate import prepare_original_fft_input,DOMAIN_ORIGINAL_STORAGE
 from .original_source_long_window import SourceLongWindow
 
 
@@ -73,9 +74,12 @@ def source_live_filtered_getsignal(
     digest=hashlib.sha256(input_values.tobytes()).hexdigest()
     if digest!=channel.sha256:
         raise ValueError("Filtered GetSignal: original Go ring SHA mismatch")
+    scale=channel.source_f_range_single
+    normalized=prepare_original_fft_input(input_values,f_range=scale,
+        input_domain=DOMAIN_ORIGINAL_STORAGE)["samples_before_dc_removal"]
     dsp=process_original_envelope_candidate(
-        input_values,req.sample_rate_hz,code,profile,
-        f_range=1.0,cancelled=cancelled)
+        normalized,req.sample_rate_hz,code,profile,
+        f_range=scale,cancelled=cancelled)
     full=np.asarray(dsp['getsignal_buffer'],dtype='<f4')
     if (len(full)==0 or not np.all(np.isfinite(full)) or
             not np.array_equal(full,dsp['chronological'][::-1])):
@@ -133,8 +137,9 @@ def source_live_filtered_getsignal(
         rms_m_s2=dsp['rms_m_s2'],
         f_range_applied_to_calibrated_input=1.0,
         calibration_already_applied=True,
-        live_original_f_range_single=1.0,
-        live_original_f_range_source="TmvkChannelStorage.Create_007D0A61",
+        live_original_f_range_single=scale,
+        live_original_f_range_source=(channel.source_range_state or {}).get("origin","TmvkChannelStorage.Create_007D0A61"),
+        source_range_state=channel.source_range_state,
         native_bin_exporter_gain_applied=False,
         original_delphi_numerical_parity_verified=False,
         original_canvas_cursor_parity_verified=False,

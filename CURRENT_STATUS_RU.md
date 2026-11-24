@@ -574,3 +574,10 @@ Regression Go [544bbfc](https://github.com/shonentez-afk/MVK-Reader-Web/commit/5
 ### Главные ссылки
 
 [Исторические BIN/скрин сравнения](docs/research/STAGE111Z31N_REUSE_FIRST_SPECTRUM_VALIDATION_RU.md) · [Аудит численного GetSpectrum](docs/research/STAGE111Z31K_SPECTRUM_CALCULATION_AUDIT_RU.md) · [Stage31N исходный рендер обычного архива](docs/research/STAGE111Z31N_ARCHIVE_GRAPH_NUMERICAL_PRIORITIES_RU.md) · [Исторический мастер-план](docs/research/STAGE111Z25_FULL_RECOVERY_MASTER_PLAN_RU.md). При конфликте старого OPEN с более поздней оригинальной приёмкой использовать **данную матрицу + конкретный эталонный отчёт**, не исторический заголовок.
+
+
+## Stage111Z31EF — correction of live FRange (2026-11-24)
+
+Candidate branch: `fix/stage111-frange-config-latch-20261124`, based on EE `8ebddeedb40d7a7f84738db4d09552a467686479` (5/5 successful, run 45364186556, artifact 14905444970). Do not merge until CI is reviewed. Private source/IDP/SQLite remain local.
+
+Original _Unit115 007D0A61 initializes 1.0; _Unit125 00806964 reads ConfigAdcCellList +0x0E (word 0x010E..0x080E), zero maps to 1. _Unit125 008085FA..00808682 latches range and ConfigUnits (+0x10, 32 bytes) at Stage0->1 inside first nonempty PARAM descriptor, not whole frame and not every PARAM. Freeze skips register updates; empty PARAM does not transition. Constructor/pre-latch ring bits are retained; current FRange is applied once on ADC receive, GetSignal without FIR reads stored values, GetSignal FIR / GetSpectrum normalize by current Single before computation and restore scale on output. TACH bytes and RAW/WriteData wire bytes are unchanged. Missing config remains explicitly provisional; unsupported negative/nonfinite range cannot authorize source calculation. IPC binds range state and raw bytes to selected ADC and latch frame/socket attempt. TSXML close-time range/units are a different read and remain open; no claim of original numeric/Win32/physical parity. New Go regressions replace the incorrect FRange=1-only assumption. Full CI pending.

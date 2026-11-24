@@ -17,7 +17,7 @@ import zipfile
 import numpy as np
 
 from .native_r6_live_status import _utc_stamp
-from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
+from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN, SOURCE_LIVE_ADC_DOMAINS
 from .storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
 from .offline_export import waveform_for_zip, spectrum_for_zip, reduce_minmax
 from .original_getsignal_live_source import (
@@ -56,6 +56,8 @@ class PreviewADC:
     samples: np.ndarray
     sha256: str
     captured_samples: int | None = None
+    source_f_range_single: float = 1.0
+    source_range_state: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -300,12 +302,16 @@ def provisional_waveform(
         out["cursor_plot_is_peak_preserving_lod"]=True
     is_source=(
         preview.source_ring_provenance_verified and
-        preview.input_domain==SOURCE_LIVE_ADC_DOMAIN)
-    out["source"] = ("LIVE_SOURCE_TMVK_CHANNEL_FRANGE1_UNVERIFIED"
+        preview.input_domain in SOURCE_LIVE_ADC_DOMAINS)
+    out["source"] = (("LIVE_SOURCE_TMVK_CHANNEL_FRANGE1_UNVERIFIED" if channel.source_f_range_single==1 else
+                      "LIVE_SOURCE_TMVK_CHANNEL_CONFIG_FRANGE_UNVERIFIED")
                      if is_source else
                      "LIVE_NATIVE_R6_CALIBRATED_PREVIEW_UNVERIFIED")
     out["input_domain"]=(
-        "original_live_f_range1" if is_source else DOMAIN)
+        ("original_live_f_range1" if channel.source_f_range_single==1 else
+         "original_live_config_f_range") if is_source else DOMAIN)
+    out["source_live_f_range_single"]=channel.source_f_range_single if is_source else None
+    out["source_range_state"]=channel.source_range_state if is_source else None
     out["provisional_not_audited"] = True
     out["source_waveform_latest_real_samples"] = visible
     out["source_waveform_max_display_seconds"] = 30
@@ -318,7 +324,7 @@ def provisional_waveform(
         out["source_getsignal_exact_selected_count"] = (
             out["window_samples"] == visible)
     out["warning"] = (
-        "Исходный живой Float32 FRange=1, SHA-проверенное Go кольцо; "
+        f"Исходный живой Float32 FRange={channel.source_f_range_single:g}, SHA-проверенное Go кольцо; "
         "Win32 численный паритет не доказан."
         if is_source else
         "Предварительный GetSignal-кандидат по уже калиброванным "
@@ -354,7 +360,7 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
             "уменьшение N или нулевое дополнение запрещено")
     is_source=(
         preview.source_ring_provenance_verified and
-        preview.input_domain==SOURCE_LIVE_ADC_DOMAIN)
+        preview.input_domain in SOURCE_LIVE_ADC_DOMAINS)
     out = spectrum_for_zip(
         Path("NOT_OPENED"), adc, n_fft, mode, None,
         # Full N/2 power and summary are still computed. Only the
@@ -363,7 +369,7 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
         max_hz=channel.rate_hz/2,
         max_points=n_fft//2 if full_bins else 5000,
         backend="idr_float32",
-        f_range=1.0, input_domain=(
+        f_range=channel.source_f_range_single if is_source else 1.0, input_domain=(
             DOMAIN_ORIGINAL_STORAGE if is_source else "calibrated_bin"),
         sample_provider=preview.samples_for_offline_candidate)
     _mark_absolute_live_source_window(out,channel)
@@ -373,12 +379,15 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
     out["source_fft_n_matches_requested_bSpecLines"] = True
     out["original_bSpecLines_source"] = "_Unit128.pas:0084819A-00848200"
     out["source_history_uses_exact_calibrated_float32"] = not is_source
-    out["source_history_uses_original_live_f_range1_float32"] = is_source
+    out["source_history_uses_original_live_f_range1_float32"] = is_source and channel.source_f_range_single==1
+    out["source_history_uses_original_live_float32"] = is_source
+    out["source_live_f_range_single"]=channel.source_f_range_single if is_source else None
+    out["source_range_state"]=channel.source_range_state if is_source else None
     out["source_fft_full_power_bins"] = n_fft//2
     out["source_plot_peak_preserving_max_points"] = 5000
     out["original_delphi_numerical_parity"] = False
     out["warning"] = (
-        "Оригинальное живое кольцо Float32/FRxPos с FRange=1.0, "
+        f"Оригинальное живое кольцо Float32/FRxPos с FRange={channel.source_f_range_single:g}, "
         "без коэффициента экспортёра BIN; x87/Delphi FFT ещё не доказан."
         if is_source else
         "Live FFT из калиброванного BIN-превью R6.1 (FRange=1, "

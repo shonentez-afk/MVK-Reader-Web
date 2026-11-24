@@ -76,6 +76,8 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
             "live_selected_bspec_lines": selected_n,
             "live_envelope_code": code,
             "live_input_ring_verified": preview.source_ring_provenance_verified,
+            "source_live_f_range_single":channel.source_f_range_single if preview.source_ring_provenance_verified else None,
+            "source_range_state":channel.source_range_state if preview.source_ring_provenance_verified else None,
             "provisional_not_audited": True,
             "original_delphi_numerical_parity_verified": False}
 

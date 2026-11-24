@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .native_r6_live_preview import LivePreview
-from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
+from .original_source_ring_receipt import source_live_range_matches
 from .original_sample_cursor32 import u32_preview_bounds,u32_matches_go_status
 from .original_connected_status import connected_system_status
 
@@ -121,8 +121,8 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
         if from_source_ring:
             row=full_ring["channels"][number-1]
             if (source_gate is not None and source_gate["freeze_update"] or
-                    row["input_domain"]!=SOURCE_LIVE_ADC_DOMAIN or
-                     row.get("original_live_f_range_single")!=1.0 or
+                    not source_live_range_matches(row,preview.input_domain,
+                        ch.source_f_range_single,ch.source_range_state) or
                     ch.captured_samples is None or
                     ch.captured_samples<len(ch.samples) or
                     ch.captured_samples>row["rx_pos_64"] or

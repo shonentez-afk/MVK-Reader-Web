@@ -104,7 +104,7 @@ def local_adc_vertical_peak_fit(peak:float)->float:
 
 
 def source_live_adc_vertical_view(*,full_peak:float,tag:int,
-                                  source_frange1:bool)->dict:
+                                  source_frange1:bool,source_f_range:float|None=None)->dict:
     """Pure live Y view over accepted Go Float32; no TX or new GetSignal.
 
     Source original TMvkChannelStorage.FRange=1 is allowed only when the
@@ -119,10 +119,11 @@ def source_live_adc_vertical_view(*,full_peak:float,tag:int,
     if (isinstance(full_peak,bool) or not isinstance(full_peak,(int,float))
             or not math.isfinite(float(full_peak)) or float(full_peak)<0):
         raise ValueError("Live ADC full peak must be finite/nonnegative")
-    if source_frange1:
-        graph=spectrum_graph_default_vscale(1.0,1)
+    if source_frange1 or source_f_range is not None:
+        graph=spectrum_graph_default_vscale(source_f_range if source_f_range is not None else 1.0,1)
         baseline=float(graph["candidate_graph_default_vscale_single"])
-        origin="SOURCE_LIVE_FRANGE1_GRAPH_DEFAULT_X87_UNATTESTED"
+        origin=("SOURCE_LIVE_FRANGE1_GRAPH_DEFAULT_X87_UNATTESTED" if source_f_range in (None,1.0)
+                else "SOURCE_LIVE_CONFIG_FRANGE_GRAPH_DEFAULT_X87_UNATTESTED")
     else:
         baseline=local_adc_vertical_peak_fit(full_peak)
         origin="LIVE_PREVIEW_LOCAL_125_UNCALIBRATED"
@@ -133,7 +134,8 @@ def source_live_adc_vertical_view(*,full_peak:float,tag:int,
     return {
         "source":SOURCE,"tag":tag,"divisor":divisor,
         "axis_baseline_m_s2_nominal":baseline,
-        "source_f_range1_verified":source_frange1,
+        "source_f_range1_verified":source_frange1 and source_f_range in (None,1.0),
+        "source_f_range_verified":source_frange1 or source_f_range is not None,
         "axis_baseline_origin":origin,
         "window_peak_from_full_source":float(full_peak),
         "local_half_height":half,"y_min":-half,"y_max":half,
