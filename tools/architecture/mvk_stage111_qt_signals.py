@@ -57,6 +57,28 @@ def analyze(repo,sha):
                                 if isinstance(m,(ast.FunctionDef,ast.AsyncFunctionDef)))
         for method,cls in sections:
             seen=set()
+            # A property alias such as self.freeze = self.buttons["bFreezeUpdate"]
+            # can be proven by an assignment; never guess aliases by spelling.
+            aliases={}
+            parents={}
+            for parent_node in ast.walk(method):
+                for child in ast.iter_child_nodes(parent_node):
+                    parents[child]=parent_node
+                if isinstance(parent_node,ast.Assign):
+                    rhs=source_segment(src,parent_node.value)
+                    m=re.fullmatch(r"""self\.buttons\[\s*['"]([^'"]+)['"]\s*\]""",rhs)
+                    if m:
+                        for lhs in parent_node.targets:
+                            if isinstance(lhs,ast.Attribute) and isinstance(lhs.value,ast.Name) and lhs.value.id=="self":
+                                aliases[lhs.attr]=m.group(1)
+            # A loop-local button 'b' guarded by if name == "bTaskConnect"
+            # receives the literal object name only if the method explicitly
+            # calls b.setObjectName(name); preserve the conditional provenance.
+            has_name_setter=any(isinstance(x,ast.Call) and isinstance(x.func,ast.Attribute)
+                    and x.func.attr=="setObjectName"
+                    and source_segment(src,x.func.value)=="b"
+                    and len(x.args)==1 and isinstance(x.args[0],ast.Name) and x.args[0].id=="name"
+                    for x in ast.walk(method))
             for node in ast.walk(method):
                 if not isinstance(node,ast.Call) or not isinstance(node.func,ast.Attribute):continue
                 if node.func.attr!="connect" or not isinstance(node.func.value,ast.Attribute):continue
@@ -76,6 +98,26 @@ def analyze(repo,sha):
                 if not component:
                     dot=re.match(r"self\.([A-Za-z_]\w*)$",widget)
                     if dot:component=dot.group(1)
+                if component in aliases:
+                    component=aliases[component]
+                    # The assignment is a real source-level Qt alias.
+                if not component and widget=="b" and has_name_setter:
+                    ancestor=parents.get(node)
+                    while ancestor is not None:
+                        if isinstance(ancestor,ast.If):
+                            test=ancestor.test
+                            if (isinstance(test,ast.Compare) and len(test.ops)==1
+                                    and isinstance(test.ops[0],ast.Eq)
+                                    and len(test.comparators)==1):
+                                pair=(test.left,test.comparators[0])
+                                for a,b in (pair,tuple(reversed(pair))):
+                                    if (isinstance(a,ast.Name) and a.id=="name"
+                                            and isinstance(b,ast.Constant)
+                                            and isinstance(b.value,str)):
+                                        component=b.value
+                                        break
+                        if component:break
+                        ancestor=parents.get(ancestor)
                 line=node.lineno
                 key=(rel,line,widget,sig,callback)
                 if key in seen:continue
