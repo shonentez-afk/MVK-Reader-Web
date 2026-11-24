@@ -50,7 +50,7 @@ def test_qt_local_epoch_recovers_copy_save_and_rejects_modal_staleness(
         monkeypatch.setattr(main_window,"QFileDialog",SimpleNamespace(
             getSaveFileName=lambda *_:(str(destination),"CSV (*.csv)")))
         w.spec_save_button.click()
-        assert DISCLAIMER in destination.read_text()
+        assert DISCLAIMER in destination.read_text(encoding="utf-8")
 
         # A rate/continuity generation change while the file picker runs
         # invalidates precisely the linked SHA window and never writes.

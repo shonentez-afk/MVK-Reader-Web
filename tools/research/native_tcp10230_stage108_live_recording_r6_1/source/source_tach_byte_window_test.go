@@ -37,10 +37,12 @@ func runTachByteWindowTest(t *testing.T,dir string){
         tag,n:=9,uint32(1310)
         if i==1{tag,n=-1,1024}
         row:=m.sourceOriginalStorage.channels[i+8]
+        epoch:=m.sourceOriginalStorage.displayEpoch(i+8)
+        if epoch==nil{t.Fatal("missing display epoch for typed TACH window")}
         req:=sourceLongWindowRequest{Schema:sourceLongWindowRequestSchema,
             SessionID:filepath.Base(dir),RequestID:strings.Repeat(string(rune('a'+i)),32),
             ADC:i+9,HTag:tag,Samples:n,CaptureEnd:row.rxPos,
-            SampleRateHz:65536,DeviceEnd:row.nextDeviceIndex,SampleWidth:1}
+            SampleRateHz:65536,DeviceEnd:row.nextDeviceIndex,SampleWidth:1,SourceEpoch:epoch}
         write:=func(req sourceLongWindowRequest){
             t.Helper()
             b,e:=json.Marshal(req);if e!=nil{t.Fatal(e)}
@@ -64,6 +66,7 @@ func runTachByteWindowTest(t *testing.T,dir string){
            rec.SampleWidth!=1||rec.InputDomain!=sourceStorageTachBytes||
            rec.CalibrationAlreadyApplied||rec.NextIndex!=0||rec.FirstIndex!=uint32(0)-n||
            rec.DeviceEndWordIndex==nil||*rec.DeviceEndWordIndex!=0x40000000||
+           rec.SourceEpoch==nil||*rec.SourceEpoch!=*epoch||
            rec.CaptureEnd!=2048||row.rxPos!=2048 {
             t.Fatalf("wrong typed TACH window %+v len=%d",rec,len(data))
         }

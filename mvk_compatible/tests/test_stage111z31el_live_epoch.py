@@ -133,8 +133,9 @@ def test_live_local_triplet_never_exports_stale_or_to_vendor_file(tmp_path):
     out=tmp_path/"MVK-COMPATIBLE-LIVE-ADC1.csv"
     action.save_new(out)
     assert len(action.clipboard_text().splitlines()[1].split("\t"))==3
-    assert DISCLAIMER in out.read_text()
-    assert len(out.read_text().splitlines()[-1].split("|"))==3
+    saved=out.read_text(encoding="utf-8")
+    assert DISCLAIMER in saved
+    assert len(saved.splitlines()[-1].split("|"))==3
     with pytest.raises(FileExistsError):
         action.save_new(out)
     vendor=tmp_path/"SPEC-FREQ-2026-11-24.csv"
