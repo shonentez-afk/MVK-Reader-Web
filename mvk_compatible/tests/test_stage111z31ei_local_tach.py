@@ -55,7 +55,7 @@ def actual_tach_run(tmp_path):
     root=os.getenv("MVK_PREFIX_FIXTURE_DIR")
     if not root:
         pytest.skip("Go-generated local TACH fixture available in cross-language CI")
-    path=Path(root)/"TEST_2026-11-24_05-00-00.000"
+    path=Path(root)/"tach"/"TEST_2026-11-24_05-00-00.000"
     assert path.is_dir()
     return Path(shutil.copytree(path,tmp_path/path.name))
 

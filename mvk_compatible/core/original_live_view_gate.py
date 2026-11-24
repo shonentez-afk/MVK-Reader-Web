@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .native_r6_live_preview import LivePreview
-from .original_source_ring_receipt import source_live_range_matches
+from .original_source_ring_receipt import source_live_range_matches,TACH_DOMAIN
+import numpy as np
 from .original_sample_cursor32 import u32_preview_bounds,u32_matches_go_status
 from .original_connected_status import connected_system_status
 
@@ -80,17 +81,26 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
     if not isinstance(preview.channels, dict) or not preview.channels:
         return deny("Нет измеренных АЦП", "NO_CHANNEL")
     for number, ch in preview.channels.items():
-        if type(number) is not int or not 1 <= number <= 8 or ch.number != number:
+        if type(number) is not int or not 1 <= number <= 10 or ch.number != number:
             return deny("Нарушен порядок АЦП", "CHANNEL_MISMATCH")
+        is_tach=number>=9
+        if is_tach and (preview.input_domain!=TACH_DOMAIN or
+                preview.source_ring_provenance_verified is not True or
+                ch.samples.dtype!=np.dtype("u1") or ch.source_range_state is not None or
+                ch.source_f_range_single!=1.0):
+            return deny("TACH requires verified source Byte storage","CHANNEL_MISMATCH")
+        if not is_tach and preview.input_domain==TACH_DOMAIN:
+            return deny("ADC cannot read TACH Byte storage","CHANNEL_MISMATCH")
+        wire_factor=4 if is_tach else 1
         source = channels[number - 1]
         rates = source.get("sample_rates_hz")
         samples = source.get("samples")
-        if (source.get("channel") != number or source.get("type") != "ADC"
+        if (source.get("channel") != number or source.get("type") != ("TACH" if is_tach else "ADC")
                 or type(samples) is not int or samples < 0
                 or not isinstance(rates, list) or ch.rate_hz not in rates
                 or type(ch.first_index) is not int
                 or type(ch.next_index) is not int
-                or samples<len(ch.samples)
+                or samples*wire_factor<len(ch.samples)
                 or not u32_preview_bounds(
                     ch.first_index,ch.next_index,len(ch.samples))):
             return deny("Нарушены исходные границы или частота АЦП",
@@ -120,9 +130,13 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                         "SOURCE_RING_UNVERIFIED")
         if from_source_ring:
             row=full_ring["channels"][number-1]
+            valid_domain=(row.get("input_domain")==TACH_DOMAIN and
+                row.get("sample_width_bytes")==1 if is_tach else
+                source_live_range_matches(row,preview.input_domain,
+                    ch.source_f_range_single,ch.source_range_state))
             if (source_gate is not None and source_gate["freeze_update"] or
-                    not source_live_range_matches(row,preview.input_domain,
-                        ch.source_f_range_single,ch.source_range_state) or
+                    not valid_domain or
+                    row.get("last_sample_rate_hz",ch.rate_hz)!=ch.rate_hz or
                     ch.captured_samples is None or
                     ch.captured_samples<len(ch.samples) or
                     ch.captured_samples>row["rx_pos_64"] or
@@ -132,6 +146,12 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                             "в подтверждённом кольце", "SOURCE_RING_STALE")
             status_count=row["rx_pos_64"]
             status_index=row["next_device_sample_index"]
+            if is_tach:
+                if (type(status_index) is not int or
+                        ch.captured_samples%4 or
+                        (status_count-ch.captured_samples)%4):
+                    return deny("TACH Byte/word cursor mismatch","SOURCE_INDEX_MISMATCH")
+                status_index=(status_index*4)&0xffffffff
         else:
             if source_gate is not None:
                 admitted=source_gate["channels"][number-1]

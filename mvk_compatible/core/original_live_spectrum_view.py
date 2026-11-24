@@ -11,7 +11,7 @@ import numpy as np
 from .native_r6_live_preview import LivePreview
 from .tqgrapher_display_idr_candidate import spectrum_display_contract
 from .mvk_original_scale_tables_idr_candidate import source_spectrum_unit_contract
-from .original_source_ring_receipt import source_live_units_text
+from .original_source_ring_receipt import source_live_units_text,TACH_DOMAIN
 
 
 def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
@@ -26,6 +26,10 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
             or type(mode) is not int or mode not in range(4)
             or result.get("mode") != mode or result.get("channel") != adc):
         raise ValueError("Live PageSpectrum ADC/mode/N mismatch")
+    is_tach=adc>=9 and preview.input_domain==TACH_DOMAIN
+    if is_tach and (code or not preview.source_ring_provenance_verified or
+            channel.samples.dtype!=np.dtype("u1")):
+        raise ValueError("Live PageSpectrum: TACH Byte source cannot use FIR")
     if code:
         plan = result.get("original_source_fft_plan") or {}
         if (not preview.source_ring_provenance_verified
@@ -66,9 +70,10 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
         actual=result["spectrum_summary"].get("f_range")
         if actual!=channel.source_f_range_single:
             raise ValueError("Live PageSpectrum stale FRange in result")
-    units=source_live_units_text(channel.source_range_state)
+    units="" if is_tach else source_live_units_text(channel.source_range_state)
     unit_contract=source_spectrum_unit_contract(mode,units,
-        source_bound=(preview.source_ring_provenance_verified and channel.source_range_state is not None))
+        source_bound=(preview.source_ring_provenance_verified and
+                      (is_tach or channel.source_range_state is not None)))
     x = x.copy()
     y = y.copy()
     x.setflags(write=False)

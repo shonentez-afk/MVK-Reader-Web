@@ -321,6 +321,7 @@ def waveform_for_zip(path: Path, channel: int, start_s: float, seconds: float,
         native_audit=bool(isinstance(audit,dict) and
             audit.get('instrument_serial') and audit.get('output_file_sha256')),
         channel=channel,
+        source_tach_byte_window=(isinstance(audit,dict) and audit.get('source_tach_byte_window') is True),
         source_raw_sha256=audit.get('source_raw_sha256') if isinstance(audit,dict) else None)
     frame=unfiltered_getsignal(samples[a:b],fs,no_dc=mode=='ac')
     signal=(frame.chronological if display_order=='chronological' else frame.getsignal_buffer)
@@ -383,6 +384,7 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
         native_audit=bool(isinstance(audit,dict) and
             audit.get('instrument_serial') and audit.get('output_file_sha256')),
         channel=channel,
+        source_tach_byte_window=(isinstance(audit,dict) and audit.get('source_tach_byte_window') is True),
         source_raw_sha256=audit.get('source_raw_sha256') if isinstance(audit,dict) else None)
     # Original GetSpectrum (0x007D14B3) ALWAYS removes stored f32 mean.
     # Stage111B reconstructed IDR FFT is still candidate, NOT instrument DSP.

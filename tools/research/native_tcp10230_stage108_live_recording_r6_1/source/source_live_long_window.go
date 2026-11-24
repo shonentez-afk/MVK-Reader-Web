@@ -45,6 +45,7 @@ type sourceLongWindowRequest struct {
     CaptureEnd uint64 `json:"capture_end"`
     SampleRateHz uint32 `json:"sample_rate_hz"`
     DeviceEnd uint32 `json:"device_end_index"`
+    SampleWidth int `json:"sample_width_bytes,omitempty"`
     EnvelopeCode int `json:"envelope_code,omitempty"`
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
     OriginalHTag int `json:"original_h_tag,omitempty"`
@@ -64,6 +65,8 @@ type sourceLongWindowResult struct {
     SampleRateHz uint32 `json:"sample_rate_hz"`
     FirstIndex uint32 `json:"first_sample_index"`
     NextIndex uint32 `json:"next_sample_index"`
+    SampleWidth int `json:"sample_width_bytes,omitempty"`
+    DeviceEndWordIndex *uint32 `json:"device_end_word_index,omitempty"`
     InputDomain string `json:"input_domain"`
     CalibrationAlreadyApplied bool `json:"calibration_already_applied"`
     Provisional bool `json:"provisional_not_audited"`
@@ -225,8 +228,17 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     if !sourceLongWindowID.MatchString(req.RequestID) ||
        req.Schema!=sourceLongWindowRequestSchema ||
        req.SessionID!=filepath.Base(m.dir) ||
-       req.ADC<1 || req.ADC>8 {
+       req.ADC<1 || req.ADC>10 {
         return errors.New("untrusted source long-window request identity")
+    }
+    isTach:=req.ADC>=9
+    if isTach {
+        if req.SampleWidth!=1 || req.SourceRangeState!=nil || req.HTag < -1 ||
+           req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0 || req.OriginalHTag!=0 {
+            return errors.New("TACH source window requires typed Byte with no FIR")
+        }
+    } else if req.SampleWidth!=0 && req.SampleWidth!=4 {
+        return errors.New("ADC source window requires Float32")
     }
     // A duplicate request never causes a 2M/FFT window to be
     // re-read/re-written on each 750ms status publication.
@@ -271,17 +283,23 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     // After thaw, source FRxPos is smaller than forensic Native.Samples.
     // It must equal the count admitted to ORIGINAL ring by the exact
     // rate/freeze gate, not the count of every packet read from TCP.
-    allowedCount:=summary.Samples
+    wireFactor:=uint64(1)
+    if isTach {wireFactor=4}
+    if summary.Samples > ^uint64(0)/wireFactor {return errors.New("source wire count overflow")}
+    observedElements:=summary.Samples*wireFactor
+    allowedCount:=observedElements
     if m.sourceOriginalRXGate!=nil {
         g:=m.sourceOriginalRXGate
         allowedCount=g.allowed[idx]
         if (g.frozen || g.rate!=req.SampleRateHz ||
                 g.allowed[idx]+g.skippedRate[idx]+g.skippedFrozen[idx]!=
-                    summary.Samples) {
+                    observedElements) {
             return errors.New("source original gate not ready for long GetSignal")
         }
     }
-    if !channel.seen || !sourceIsLiveADC(channel.domain) ||
+    validDomain:=sourceIsLiveADC(channel.domain)
+    if isTach {validDomain=channel.domain==sourceStorageTachBytes}
+    if !channel.seen || !validDomain ||
        channel.sampleRate!=req.SampleRateHz ||
        channel.rxPos!=allowedCount {
         // Do NOT use the all-TCP rates/sequence/nonfinite counters here.
@@ -289,7 +307,7 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         // GetSignal reads ONLY the original gated ring. Ring.validPos
         // and ring.window reject gaps/nonfinite/overwritten history.
 
-        return errors.New("source long window not confirmed original live FRange1 ADC")
+        return errors.New("source long window not confirmed original live typed storage")
     }
     if !reflect.DeepEqual(req.SourceRangeState,channel.rangeState) {
         return errors.New("source long window stale FRange epoch")
@@ -304,7 +322,8 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     // provided the exact slice has not been overwritten.
     lag:=channel.rxPos-req.CaptureEnd
     if lag>sourceOriginalStorageSamples-uint64(req.Samples) ||
-       channel.nextDeviceIndex-uint32(lag)!=req.DeviceEnd {
+       lag%wireFactor!=0 || req.CaptureEnd%wireFactor!=0 ||
+       channel.nextDeviceIndex-uint32(lag/wireFactor)!=req.DeviceEnd {
         return errors.New("source long window stale or device index mismatch")
     }
     first:=req.CaptureEnd-uint64(req.Samples)
@@ -312,6 +331,16 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     if e!=nil{return e}
     sum:=sha256.Sum256(data)
     entry:=fmt.Sprintf("ADC%d.f32",req.ADC)
+    // FRxPos counts bytes; header Index counts words. Separate epochs.
+    endIndex:=req.DeviceEnd
+    var deviceEndWord *uint32
+    width:=0
+    if isTach {
+        entry=fmt.Sprintf("TACH%d.u8",req.ADC-8)
+        endIndex=req.DeviceEnd*4
+        deviceEndWord=&req.DeviceEnd
+        width=1
+    }
     receipt:=sourceLongWindowResult{
         Schema:sourceLongWindowResultSchema,SessionID:req.SessionID,
         RequestID:req.RequestID,Phase:"RECORDING",
@@ -319,9 +348,10 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         ADC:req.ADC,HTag:req.HTag,Entry:entry,
         Samples:req.Samples,CaptureEnd:req.CaptureEnd,
         SampleRateHz:req.SampleRateHz,
-        FirstIndex:req.DeviceEnd-req.Samples,NextIndex:req.DeviceEnd,
+        FirstIndex:endIndex-req.Samples,NextIndex:endIndex,
+        SampleWidth:width,DeviceEndWordIndex:deviceEndWord,
         InputDomain:channel.domain,SourceRangeState:channel.rangeState,
-        CalibrationAlreadyApplied:true,Provisional:true,
+        CalibrationAlreadyApplied:!isTach,Provisional:true,
         RawBytes:m.summary.RawBytes,FramesDecoded:m.summary.TotalFrames,
         SHA256:hex.EncodeToString(sum[:]),
         EnvelopeCode:req.EnvelopeCode,
@@ -333,8 +363,8 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
 
 func writeSourceLongWindowAtomic(dir,entry string,data []byte,
                                  receipt sourceLongWindowResult) error {
-    // One selected original ADC at a time. Do not export 8*2M or the two
-    // TACH byte rings to Qt, and do not change the forensic RAW/BIN spool.
+    // One selected original channel at a time, exact Float32 or Byte.
+    // Never change the forensic RAW/BIN spool.
     tmp,e:=os.CreateTemp(dir,".mvk_long_window_pending_")
     if e!=nil{return e}
     defer os.Remove(tmp.Name())

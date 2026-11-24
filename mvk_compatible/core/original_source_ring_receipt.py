@@ -212,13 +212,15 @@ def source_live_units_text(state, *, windows_ansi_code_page=None):
 def source_status_channel_units(status,adc):
     """PageStatus uses its own accepted snapshot; tcAdc is independent."""
     if (not isinstance(status,dict) or status.get("source_original_storage_verified") is not True
-            or type(adc) is not int or not 1<=adc<=8):
+            or type(adc) is not int or not 1<=adc<=10):
         return None
     bank=status.get("source_original_storage")
     rows=bank.get("channels") if isinstance(bank,dict) else None
     if not isinstance(rows,list) or len(rows)!=10 or not isinstance(rows[adc-1],dict):
         return None
     try:
+        if adc>=9:
+            return "" if rows[adc-1].get("input_domain")==TACH_DOMAIN else None
         state=validate_source_range_state(rows[adc-1].get("source_range_state"),adc)
         return source_live_units_text(state)
     except (ValueError,TypeError,KeyError,OverflowError):

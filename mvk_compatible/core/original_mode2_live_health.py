@@ -109,7 +109,15 @@ def live_transport_health(snapshot:dict|None)->LiveTransportHealth:
             if type(count) is not int or count<0:
                 raise ValueError("Invalid channel stream counter")
         gaps+=ch["sequence_discontinuities"]
-        nonfinite+=ch["nonfinite_samples"]
+        # Only an independently checked original Byte ring authorizes
+        # treating the apparent Float32 NaN bit-pattern as ordinary bytes.
+        # Legacy forensic receipts retain the conservative warning.
+        storage=(snapshot.get("source_original_storage") or {}).get("channels",[])
+        typed_tach=(number>=9 and snapshot.get("source_original_storage_verified") is True
+            and len(storage)==10 and storage[number-1].get("sample_width_bytes")==1
+            and storage[number-1].get("input_domain")=="TACH_EXACT_DEVICE_PAYLOAD_BYTES")
+        if not typed_tach:
+            nonfinite+=ch["nonfinite_samples"]
     return LiveTransportHealth(
         10,raw_invalid,gaps,nonfinite,silent,
         raw_invalid>0 or gaps>0 or nonfinite>0 or operation_denied or system_error,

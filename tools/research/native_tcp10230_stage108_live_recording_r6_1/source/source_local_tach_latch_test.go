@@ -101,6 +101,8 @@ func TestSourceLocalTachLatchReceiveToValuesAndStatus(t *testing.T){
 func TestSourceLocalTachCoreFixture(t *testing.T){
     root:=os.Getenv("MVK_PREFIX_FIXTURE_DIR")
     if root==""{t.Skip("cross-language fixture not requested")}
+    root=filepath.Join(root,"tach")
+    if e:=os.MkdirAll(root,0700);e!=nil{t.Fatal(e)}
     run:=filepath.Join(root,"TEST_2026-11-24_05-00-00.000")
     m,e:=NewMonitor(run,"OFFLINE_REPLAY","192.0.2.84");if e!=nil{t.Fatal(e)}
     defer m.CloseFiles()

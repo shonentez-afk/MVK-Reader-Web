@@ -86,7 +86,8 @@ class TachGateReader:
         if len(frame)==28:
             return
         ch,rate=struct.unpack_from("<II",frame,20)
-        if ch not in (8,9) or rate not in RATES:
+        # Unsupported wire Fs is valid RAW but cannot be admitted.
+        if ch not in (8,9):
             raise ValueError("Source local TACH: invalid channel/rate")
         line=self.file.readline(2049)
         if not line or len(line)>2048 or self.records>=self.count:

@@ -420,7 +420,7 @@ class NativeCaptureDialog(QDialog):
             fft_n=None
             if type(source_h_tag) is not int:
                 return
-            envelope_code=int(parent.wave_envelope_code.currentData() or 0)
+            envelope_code=int(parent.wave_envelope_code.currentData() or 0) if adc<=8 else 0
             if envelope_code:
                 profile=getattr(parent,"envelope_profile",None)
                 if (profile is None or getattr(profile,"provenance",None)!=
@@ -434,7 +434,7 @@ class NativeCaptureDialog(QDialog):
                 fft_n=int(parent.spec_n.currentData())
             except (ValueError,TypeError,AttributeError):
                 return
-            if parent.spec_envelope_button.isChecked():
+            if adc<=8 and parent.spec_envelope_button.isChecked():
                 envelope_code=int(parent.spec_envelope_code.currentData() or 0)
                 profile=getattr(parent,"envelope_profile",None)
                 if (envelope_code<1 or profile is None or

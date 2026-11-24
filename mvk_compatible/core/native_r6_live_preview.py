@@ -18,7 +18,7 @@ import numpy as np
 
 from .native_r6_live_status import _utc_stamp
 from .original_source_ring_receipt import (SOURCE_LIVE_ADC_DOMAIN, SOURCE_LIVE_ADC_DOMAINS,
-    source_live_units_text)
+    source_live_units_text,TACH_DOMAIN)
 from .storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
 from .offline_export import waveform_for_zip, spectrum_for_zip, reduce_minmax
 from .original_getsignal_live_source import (
@@ -78,6 +78,13 @@ class LivePreview:
         ch = self.channels.get(channel)
         if ch is None:
             raise ValueError(f"ADC{channel}: no real samples in provisional window")
+        if self.input_domain==TACH_DOMAIN:
+            if (channel not in (9,10) or not self.source_ring_provenance_verified or
+                    ch.samples.dtype!=np.dtype("u1")):
+                raise ValueError("TACH requires verified original Byte ring")
+            # 007D2317..007D232D fild Byte; fdiv Single(255); fstp Single.
+            normalized=(ch.samples.astype(np.float64)/255.0).astype("<f4")
+            return normalized,float(ch.rate_hz),{"source_tach_byte_window":True},f"Source TACH{channel-8} Byte/255"
         # The original spool already scaled each float32; the offline
         # candidate MUST NOT multiply channel FRange a second time.
         return ch.samples, float(ch.rate_hz), {}, f"Native R6.1 LIVE ADC{channel}"
@@ -226,6 +233,16 @@ def _mark_absolute_live_source_window(result: dict, channel: PreviewADC) -> None
     evidence["original_live_rxpos_parity_verified"]=False
     evidence["provisional_not_audited"]=True
     evidence["time_kind"]="ADC_SAMPLE_INDEX_FROM_NATIVE_R6_PREVIEW_NOT_DSP_UTC"
+    if channel.number>=9:
+        # Source display is relative to GetSignal; byte FRxPos is local.
+        # A 32-bit word header is NOT an absolute 32-bit byte clock.
+        first=channel.captured_samples-len(channel.samples)
+        evidence["live_first_adc_sample_index"]=first+evidence["first_archive_sample_index"]
+        evidence["live_last_adc_sample_exclusive"]=first+evidence["last_archive_sample_exclusive"]
+        evidence["live_first_tach_byte_pos"]=evidence["live_first_adc_sample_index"]
+        evidence["live_last_tach_byte_exclusive"]=evidence["live_last_adc_sample_exclusive"]
+        evidence["source_tach_byte_sha256"]=channel.sha256
+        evidence["time_kind"]="TACH_CAPTURE_LOCAL_BYTE_POSITION_NOT_DSP_UTC"
     result["input_source_window"]=evidence
 
 
@@ -246,6 +263,8 @@ def provisional_waveform(
     channel = preview.channels.get(adc)
     if channel is None:
         raise ValueError("Live ADC window not yet available")
+    is_tach=adc>=9 and preview.input_domain==TACH_DOMAIN
+    if is_tach: ac=False
     total = len(channel.samples)
     source_receipt=None
     source_ms=None
@@ -281,7 +300,7 @@ def provisional_waveform(
         channel.first_index,channel.next_index,total,
         channel.captured_samples if channel.captured_samples is not None
         else total)
-    offset = extended_first/channel.rate_hz
+    offset = ((channel.captured_samples-total) if is_tach else extended_first)/channel.rate_hz
     out["time_s"] = [offset + float(x) for x in out["time_s"]]
     _mark_absolute_live_source_window(out,channel)
     if source_h_tag is not None:
@@ -325,6 +344,13 @@ def provisional_waveform(
         out["source_getsignal_readiness"] = source_receipt.receipt()
         out["source_getsignal_exact_selected_count"] = (
             out["window_samples"] == visible)
+    if is_tach:
+        out.update(source="LIVE_SOURCE_TACH_BYTE_GETSIGNAL_CANDIDATE",
+            input_domain=TACH_DOMAIN,source_live_f_range_single=1.0,
+            source_range_state=None,source_live_units="",unit="",
+            source_sample_width_bytes=1,source_tach_byte_normalization_divisor=255,
+            warning="TACH: Byte/255, без NoDC и FIR; Win32 не аттестован.")
+        return out
     out["warning"] = (
         f"Исходный живой Float32 FRange={channel.source_f_range_single:g}, SHA-проверенное Go кольцо; "
         "Win32 численный паритет не доказан."
@@ -360,6 +386,7 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
             f"FFT N={n_fft}: требуется {n_fft} реальных отсчётов, "
             f"в текущем Live окне {len(channel.samples)}; "
             "уменьшение N или нулевое дополнение запрещено")
+    is_tach=adc>=9 and preview.input_domain==TACH_DOMAIN
     is_source=(
         preview.source_ring_provenance_verified and
         preview.input_domain in SOURCE_LIVE_ADC_DOMAINS)
@@ -388,6 +415,12 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
     out["source_fft_full_power_bins"] = n_fft//2
     out["source_plot_peak_preserving_max_points"] = 5000
     out["original_delphi_numerical_parity"] = False
+    if is_tach:
+        out.update(source_history_uses_exact_calibrated_float32=False,
+            source_live_f_range_single=1.0,source_range_state=None,
+            source_sample_width_bytes=1,source_tach_byte_normalization_divisor=255,
+            warning="TACH Byte/255 -> удаление среднего -> Hann/FFT; Win32 не аттестован.")
+        return out
     out["warning"] = (
         f"Оригинальное живое кольцо Float32/FRxPos с FRange={channel.source_f_range_single:g}, "
         "без коэффициента экспортёра BIN; x87/Delphi FFT ещё не доказан."

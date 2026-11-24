@@ -24,7 +24,7 @@ import numpy as np
 
 from .native_r6_live_preview import LivePreview, PreviewADC, MAX_SAMPLES
 from .original_source_ring_receipt import (SOURCE_LIVE_ADC_DOMAIN,
-    source_live_range_matches)
+    source_live_range_matches,TACH_DOMAIN)
 from .native_r6_live_status import _utc_stamp
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
 from .original_source_ring_receipt import BUFFER_ELEMENTS
@@ -57,6 +57,7 @@ class SourceWindowRequest:
     input_domain: str = SOURCE_LIVE_ADC_DOMAIN
     source_range_state: dict | None = None
     f_range_single: float = 1.0
+    sample_width_bytes: int = 4
 
 
 @dataclass(frozen=True)
@@ -99,8 +100,11 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
             status.get("seconds_since_last_packet") is not None and
             status["seconds_since_last_packet"]>4):
         raise ValueError("Source GetSignal: no trustworthy active original ring")
-    if type(adc) is not int or not 1<=adc<=8:
-        raise ValueError("Source GetSignal: ADC 1..8 required")
+    if type(adc) is not int or not 1<=adc<=10:
+        raise ValueError("Source GetSignal: original channel 1..10 required")
+    is_tach=adc>=9
+    if is_tach and (h_tag in (-2,-3) or envelope_code or source_h_tag):
+        raise ValueError("Source GetSignal: Byte TACH does not support FIR")
     # The source's ORIGINAL HTag is >=0; negative values are LOCAL IPC
     # discriminators, never network or device commands.
     if type(h_tag) is not int or not (
@@ -124,7 +128,9 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
     gate=(status.get("source_original_receive_gate")
           if status.get("source_original_receive_gate_verified") is True
           else None)
-    admissible=live["samples"]
+    wire_factor=4 if is_tach else 1
+    native_elements=live["samples"]*wire_factor
+    admissible=native_elements
     skipped=0
     allowed_source_gaps=0
     if gate is not None:
@@ -135,16 +141,22 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         if gate["freeze_update"] or gate["selected_rate_hz"]!=rate:
             raise ValueError("Source GetSignal: MvkSampleRate/FreezeUpdate gate active")
         admissible=g["accepted_elements"]
-        if admissible+skipped!=live["samples"]:
+        if admissible+skipped!=native_elements:
             raise ValueError("Source GetSignal: source gate/native RX mismatch")
-    if (not source_live_range_matches(row,row["input_domain"],
-            row.get("original_live_f_range_single"),row.get("source_range_state")) or
+    valid_domain=(row["input_domain"]==TACH_DOMAIN and
+        row.get("sample_width_bytes")==1 and
+        row.get("source_range_state") is None and
+        row.get("original_live_f_range_single") is None
+        if is_tach else source_live_range_matches(row,row["input_domain"],
+            row.get("original_live_f_range_single"),row.get("source_range_state")))
+    if (not valid_domain or
             rate==0 or
             rate not in live["sample_rates_hz"] or
-            live["sequence_discontinuities"] or live["nonfinite_samples"] or
+            live["sequence_discontinuities"] or (not is_tach and live["nonfinite_samples"]) or
             row["rate_changes"] or row["rejected_nonfinite_frames"] or
-            row["rx_pos_64"]!=admissible or
+            row["rx_pos_64"]!=admissible or row["rx_pos_64"]%wire_factor or
             row["sequence_gaps"]>allowed_source_gaps or
+            row["next_device_sample_index"] is None or
             row["next_device_sample_index"]!=live["next_sample_index"]):
         raise ValueError("Source GetSignal: unverified live FRange1/discontinuous ADC")
     if h_tag==-2:
@@ -198,7 +210,8 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         fft_n if h_tag==-2 else 0,
         source_h_tag if h_tag==-3 else 0,
         row['input_domain'],row.get('source_range_state'),
-        row['original_live_f_range_single'])
+        1.0 if adc>=9 else row['original_live_f_range_single'],
+        1 if adc>=9 else 4)
     data={
         "schema":REQUEST_SCHEMA,"session_id":req.session_id,
         "request_id":req.request_id,"adc":req.adc,
@@ -206,6 +219,8 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         "capture_end":req.capture_end,"sample_rate_hz":req.sample_rate_hz,
         "device_end_index":req.device_end_index,
     }
+    if req.sample_width_bytes==1:
+        data["sample_width_bytes"]=1
     if req.source_range_state is not None:
         data['source_range_state']=req.source_range_state
     if h_tag==-2:
@@ -284,8 +299,13 @@ def load_source_long_window(root:str|Path,status:dict,
     row,live,rate,count=settings
     if rate!=request.sample_rate_hz or count!=request.samples:
         raise ValueError("Source GetSignal: selected source rate changed")
-    if not source_live_range_matches(row,request.input_domain,request.f_range_single,
-                                     request.source_range_state):
+    is_tach=request.adc>=9
+    if is_tach:
+        if (request.sample_width_bytes!=1 or request.input_domain!=TACH_DOMAIN or
+                request.source_range_state is not None or request.f_range_single!=1.0):
+            raise ValueError("Source GetSignal: stale TACH type")
+    elif request.sample_width_bytes!=4 or not source_live_range_matches(
+            row,request.input_domain,request.f_range_single,request.source_range_state):
         raise ValueError('Source GetSignal: stale FRange epoch')
     path=_root(root,status)/RESULT_NAME
     if not path.exists():
@@ -295,13 +315,9 @@ def load_source_long_window(root:str|Path,status:dict,
     try:
         with zipfile.ZipFile(path) as z:
             names=z.namelist()
-            entry=f"ADC{request.adc}.f32"
-            if sorted(names)!=sorted((entry,"MANIFEST.json")):
+            entry=(f"TACH{request.adc-8}.u8" if is_tach else f"ADC{request.adc}.f32")
+            if len(names)!=2 or len(set(names))!=2 or "MANIFEST.json" not in names or z.getinfo("MANIFEST.json").file_size>4096:
                 raise ValueError("Source GetSignal: invalid ZIP members")
-            if (z.getinfo(entry).compress_type!=zipfile.ZIP_STORED or
-                    z.getinfo(entry).file_size!=count*4 or
-                    z.getinfo("MANIFEST.json").file_size>4096):
-                raise ValueError("Source GetSignal: source ZIP oversized/rewritten")
             meta=json.loads(z.read("MANIFEST.json"))
             if not isinstance(meta,dict):
                 raise ValueError("Source GetSignal: invalid manifest")
@@ -309,6 +325,16 @@ def load_source_long_window(root:str|Path,status:dict,
             # coexist until Go replaces the result; never show them.
             if meta.get("request_id")!=request.request_id:
                 return None
+            if (sorted(names)!=sorted((entry,"MANIFEST.json")) or
+                    z.getinfo(entry).compress_type!=zipfile.ZIP_STORED or
+                    z.getinfo(entry).file_size!=count*request.sample_width_bytes):
+                raise ValueError("Source GetSignal: source ZIP oversized/rewritten")
+            wire_factor=4 if is_tach else 1
+            end_index=(request.device_end_index*wire_factor)&0xffffffff
+            if (meta.get("sample_width_bytes",4)!=request.sample_width_bytes or
+                    (is_tach and meta.get("device_end_word_index")!=request.device_end_index) or
+                    (not is_tach and "device_end_word_index" in meta)):
+                raise ValueError("Source GetSignal: malformed source element type")
             if (meta.get("schema")!=RESULT_SCHEMA or
                     meta.get("session_id")!=request.session_id or
                     meta.get("phase")!="RECORDING" or
@@ -321,12 +347,11 @@ def load_source_long_window(root:str|Path,status:dict,
                     meta.get("samples")!=count or
                     meta.get("capture_end")!=request.capture_end or
                     meta.get("sample_rate_hz")!=rate or
-                    meta.get("next_sample_index")!=request.device_end_index or
-                    meta.get("first_sample_index")!=
-                        ((request.device_end_index-count)&0xffffffff) or
+                    meta.get("next_sample_index")!=end_index or
+                    meta.get("first_sample_index")!=((end_index-count)&0xffffffff) or
                     meta.get("input_domain")!=request.input_domain or
                     meta.get("source_range_state")!=request.source_range_state or
-                    meta.get("calibration_already_applied") is not True or
+                    meta.get("calibration_already_applied") is not (not is_tach) or
                     meta.get("provisional_not_audited") is not True):
                 raise ValueError("Source GetSignal: foreign or malformed source window")
             receipt_ts=_utc_stamp(meta.get("updated_utc"),
@@ -345,12 +370,15 @@ def load_source_long_window(root:str|Path,status:dict,
             start=request.capture_end-count
             if (request.capture_end>row["rx_pos_64"] or
                     start<row["first_readable_pos_64"] or
-                    request.capture_end>live["samples"] or
+                    request.capture_end>live["samples"]*wire_factor or
+                    (row["rx_pos_64"]-request.capture_end)%wire_factor or
+                    (is_tach and ((row["next_device_sample_index"]-
+                        (row["rx_pos_64"]-request.capture_end)//4)&0xffffffff)!=request.device_end_index) or
                     not u32_preview_bounds(meta["first_sample_index"],
                                            meta["next_sample_index"],count) or
                     not u32_matches_go_status(
-                        request.device_end_index,
-                        row["next_device_sample_index"],
+                        end_index,
+                        (row["next_device_sample_index"]*wire_factor)&0xffffffff,
                         status_samples=row["rx_pos_64"],
                         window_samples=count,
                         captured_samples=request.capture_end)):
@@ -360,7 +388,7 @@ def load_source_long_window(root:str|Path,status:dict,
             if (not isinstance(digest,str) or SHA_RE.fullmatch(digest) is None
                     or hashlib.sha256(data).hexdigest()!=digest):
                 raise ValueError("Source GetSignal: original live FRange1 Float32 SHA mismatch")
-            values=np.frombuffer(data,dtype="<f4")
+            values=np.frombuffer(data,dtype="u1" if is_tach else "<f4")
             if len(values)!=count or not np.all(np.isfinite(values)):
                 raise ValueError("Source GetSignal: nonfinite original ring data")
             values.setflags(write=False)

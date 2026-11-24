@@ -21,12 +21,15 @@ TIME_KIND="ADC_ABSOLUTE_SAMPLE_INDEX_RELATIVE_TO_ARCHIVE_NOT_HOST_UTC"
 
 def archive_input_window_evidence(samples, *, first: int, end: int,
                                   sample_rate_hz: float, native_audit: bool,
-                                  channel: int, source_raw_sha256: str | None = None
+                                  channel: int, source_raw_sha256: str | None = None,
+                                  source_tach_byte_window: bool=False
                                   ) -> dict:
     """Explicitly bounded, nonpadded Float32 archive segment fingerprint."""
     if (type(first) is not int or type(end) is not int or
             type(native_audit) is not bool or type(channel) is not int or
-            not 1<=channel<=8 or
+            type(source_tach_byte_window) is not bool or
+            (not (channel in (9,10) and not native_audit) if source_tach_byte_window
+             else not 1<=channel<=8) or
             (native_audit and (not isinstance(source_raw_sha256,str) or
                 not re.fullmatch(r'[a-f0-9]{64}',source_raw_sha256))) or
             (source_raw_sha256 is not None and (not isinstance(source_raw_sha256,str) or
@@ -47,6 +50,7 @@ def archive_input_window_evidence(samples, *, first: int, end: int,
         "channel":channel,
         "claimed_source_raw_sha256":source_raw_sha256,
         "time_kind":TIME_KIND,
+        **({"source_tach_normalized_byte_window":True} if source_tach_byte_window else {}),
         "first_archive_sample_index":first,
         "last_archive_sample_exclusive":end,
         "source_sample_count":end-first,

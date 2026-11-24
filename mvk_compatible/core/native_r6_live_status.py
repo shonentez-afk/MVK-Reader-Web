@@ -225,6 +225,16 @@ def validate_live_status(payload: dict, *, expected_run: str,
         payload.get("source_original_receive_gate"),safe)
     source_ring=validate_original_storage_receipt(
         payload.get("source_original_storage"),safe,source_receive_gate)
+    if source_ring is not None:
+        for i in (8,9):
+            row=source_ring["channels"][i]
+            ch=safe[i]
+            if (row["input_domain"]=="TACH_EXACT_DEVICE_PAYLOAD_BYTES" and
+                    row["sample_width_bytes"]==1 and ch["samples"] and
+                    not ch["sequence_discontinuities"] and len(ch["sample_rates_hz"])<=1):
+                # Preserve forensic nonfinite_samples; the live typed Byte
+                # channel itself has no IEEE754 NaN.
+                ch["quality"]="ПОТОК ПОЛУЧЕН"
     live_banks=parse_live_result_registers(payload)
     result = dict(payload)
     result["source_live_page_status_banks_verified"]=live_banks is not None

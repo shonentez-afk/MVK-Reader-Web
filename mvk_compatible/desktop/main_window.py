@@ -841,7 +841,8 @@ class MainWindow(QMainWindow):
             # LIVE/reference availability; neither action nor visible
             # radio can trigger a new filter in a frozen source view.
             usable=(entry['qt_selectable_without_fabricated_fir'] and
-                self._spectrum_reference is None)
+                self._spectrum_reference is None and
+                not (self._live_active and self._ch()>=9))
             action.setEnabled(usable)
             radio.setEnabled(usable)
             radio.setToolTip(action.toolTip())
@@ -861,8 +862,51 @@ class MainWindow(QMainWindow):
                 "только с реальными коэффициентами/историей; "
                 "спектральная калибровка/Delphi x87 не подтверждены.")
 
+    def _restore_live_adc_controls(self):
+        previous=getattr(self,'_live_tach_adc_controls',None)
+        if previous is None:
+            return
+        self._live_tach_adc_controls=None
+        mode,enabled=previous
+        was=self.wave_mode.blockSignals(True)
+        try:
+            self.wave_mode.setCurrentIndex(mode)
+        finally:
+            self.wave_mode.blockSignals(was)
+        for control,state in zip((self.wave_type_button,self.wave_filter_button,
+                                  self.spec_envelope_button),enabled):
+            control.setEnabled(state)
+        self._sync_wave_primary_labels()
+
     def _rebind_original_envelope_for_selected_channel(self):
         """Source 0084BB2E: disabled selected Fs code falls back to Tag0."""
+        if self._live_active and self._ch()>=9:
+            controls=(self.wave_type_button,self.wave_filter_button,self.spec_envelope_button)
+            if getattr(self,'_live_tach_adc_controls',None) is None:
+                self._live_tach_adc_controls=(self.wave_mode.currentIndex(),
+                    tuple(w.isEnabled() for w in controls))
+            for combo in (self.wave_envelope_code,self.spec_envelope_code):
+                was=combo.blockSignals(True)
+                try:
+                    combo.setCurrentIndex(combo.findData(0))
+                finally:
+                    combo.blockSignals(was)
+            was=self.wave_mode.blockSignals(True)
+            try:
+                self.wave_mode.setCurrentIndex(1)
+            finally:
+                self.wave_mode.blockSignals(was)
+            was=self.spec_envelope_button.blockSignals(True)
+            try:
+                self.spec_envelope_button.setChecked(False)
+            finally:
+                self.spec_envelope_button.blockSignals(was)
+            for control in controls:
+                control.setEnabled(False)
+            self._cancel_source_live_fir()
+            self._sync_wave_primary_labels()
+            return {"reset_to_zero":True,"source_tach_byte":True}
+        self._restore_live_adc_controls()
         current=int(self.wave_envelope_code.currentData() or 0)
         model=source_original_envelope_rebind(
             selected_tag=current,
@@ -901,6 +945,8 @@ class MainWindow(QMainWindow):
         if self._spectrum_reference is not None:
             self.statusBar().showMessage(
                 'Исходная огибающая недоступна в режиме эталона')
+            return
+        if self._live_active and self._ch()>=9:
             return
         if self._live_active and tag!=0:
             status=self._native_live_status or {}
@@ -3145,7 +3191,7 @@ class MainWindow(QMainWindow):
         # Keep live operator checkbox choices made before TCP started:
         # the original source does not erase these when thread starts.
         self.original_shell.begin_live_file_plan()
-        self._bind_only_verified_channels(tuple(range(1,9)))
+        self._bind_only_verified_channels(tuple(range(1,11)))
         self._set_active(True)
         self._sync_mode2_operator_controls()
         self.original_shell.measure_controls.begin_live()
@@ -3694,7 +3740,7 @@ class MainWindow(QMainWindow):
                and status.get('session_id')==bound.session_id
                and bound.adc==self._ch()
                and bound.h_tag==self._wave_hscale_tag
-               and bound.mode==('ac' if self.wave_mode.currentIndex()==0
+               and bound.mode==('ac' if self._ch()<=8 and self.wave_mode.currentIndex()==0
                                 else 'acdc')
                and int(self.wave_envelope_code.currentData() or 0)==0
                and isinstance(basis,dict)
@@ -3748,13 +3794,15 @@ class MainWindow(QMainWindow):
                 self.wave_xor_crosshair.set_cursor(
                     selected['plot_x'],selected['full_float32_value'])
             value=selected['full_float32_value']
-            index=selected['original_uint64_adc_sample_index']
+            index=(selected['original_uint64_tach_byte_index'] if self._ch()>=9
+                   else selected['original_uint64_adc_sample_index'])
+            index_label="локальный Byte" if self._ch()>=9 else "исходный АЦП"
             self.wave_cursor_primary.setText(
                 f"{selected['plot_x']:.6g} {selected['axis_unit']}\n"
                 f"{value:.7g} {self._current_live_wave_units()}")
             self.wave_hint.setText(
                 f"GetSignal[{selected['output_index']}] = {value:.8g} {self._current_live_wave_units()}"
-                f" · исходный АЦП#{index}"
+                f" · {index_label}#{index}"
                 f" · Go SHA={selected['source_input_sha256'][:12]}"
                 " · полный Float32, НЕ LOD; Win32 пиксели не аттестованы")
         except (ValueError,KeyError,TypeError,OverflowError) as exc:
@@ -3936,7 +3984,7 @@ class MainWindow(QMainWindow):
                     'подтверждённых отсчётов')
                 return
             d=provisional_waveform(
-                preview,ch,ac=self.wave_mode.currentIndex()==0,
+                preview,ch,ac=ch<=8 and self.wave_mode.currentIndex()==0,
                 source_h_tag=tag,capture_rxpos=rx_pos,
                 last_processed_pos=last,source_allow_overlap=allow_overlap)
             proof=d.get("source_getsignal_readiness")
@@ -3962,7 +4010,7 @@ class MainWindow(QMainWindow):
             self.wave_plot.setLabel(
                 'bottom',current_cursor.axis_unit if current_cursor is not None
                 else 'Индекс отсчёта/Fs, с · НЕ часы ПК')
-            units=(d.get('source_live_units') if ring_selected and
+            units=("" if ch>=9 else d.get('source_live_units') if ring_selected and
                 d.get('source_range_state') is not None else 'м/с²')
             units='ед. не подтверждены' if units is None else units
             self.wave_plot.setLabel(
@@ -3992,15 +4040,16 @@ class MainWindow(QMainWindow):
                 adc=ch,session_id=preview.session_id,
                 full_peak=float(d['peak_m_s2']),
                 source_frange1=(
-                    d.get('input_domain')=='original_live_f_range1'),
+                    d.get('input_domain') in ('original_live_f_range1','TACH_EXACT_DEVICE_PAYLOAD_BYTES')),
                 source_f_range=d.get('source_live_f_range_single'),
                 source_units=units,
                 source_sha256=preview.channels[ch].sha256)
             self._apply_live_wave_vscale()
             if rendered_sig is not None:
                 self._live_long_rendered_key=rendered_sig
+            channel_label=f'TACH{ch-8}' if ch>=9 else f'АЦП{ch}'
             self.wave_mean_primary.setText(
-                f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} {units}\n'
+                f'LIVE {channel_label} · локальное СКЗ: {d["rms_m_s2"]:.5g} {units}\n'
                 'Не сверено с оригинальной MVKView')
             source_scale=(
                 f'bAdcHScale={d["original_bAdcHScale_milliseconds"]} мс · '
@@ -4008,8 +4057,8 @@ class MainWindow(QMainWindow):
             self.wave_hint.setText(
                 ('LIVE SOURCE 2M КОЛЬЦО · ' if ring_selected
                  else 'LIVE PREVIEW (не исходное кольцо) · ') + source_scale +
-                f'{d["window_samples"]} реальных Float32 отсчётов · '
-                f'AC={"без DC" if self.wave_mode.currentIndex()==0 else "с DC"} · '
+                f'{d["window_samples"]} реальных {"Byte/255" if ch>=9 else "Float32"} отсчётов · '
+                f'AC={"без DC" if ch<=8 and self.wave_mode.currentIndex()==0 else "с DC"} · '
                 'GetSignal IDR-кандидат; исходный RAW не изменён')
         except (ValueError,OSError,KeyError) as exc:
             self.wave_plot.clear_source_tqgr_series()
@@ -4118,7 +4167,7 @@ class MainWindow(QMainWindow):
             # bSpecLines selected N is the PRE-FIR request length,
             # not necessarily the FFT N after source decimation/I/Q.
             # A real SHA-verified input is the only permitted source.
-            filtered=bool(self.spec_envelope_button.isChecked())
+            filtered=ch<=8 and bool(self.spec_envelope_button.isChecked())
             code=int(self.spec_envelope_code.currentData() or 0) if filtered else 0
             proof=None
             if filtered:
@@ -4279,8 +4328,9 @@ class MainWindow(QMainWindow):
             self._sync_live_spectrum_curve()
             self._sync_spectrum_summary_primary()
             summary=self._spectrum_summary
+            channel_label=f'TACH{ch-8}' if ch>=9 else f'АЦП{ch}'
             self.spec_core_triplet.setText(
-                f"LIVE АЦП{ch} · N={d['n_fft']} · СКЗ "
+                f"LIVE {channel_label} · N={d['n_fft']} · СКЗ "
                 f"{summary['output_mean']:.6g} · пик "
                 f"{summary['output_peak_frequency_hz']:.7g} Гц · "
                 + ("локальный FIR/IQ, не приборный DSP" if filtered
@@ -4305,7 +4355,7 @@ class MainWindow(QMainWindow):
                     'Copy/Save как оригинальный результат запрещён')
             else:
                 self.spec_mean.setText(
-                    f'LIVE ADC{ch} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
+                    f'LIVE {channel_label} · FFT N={d["n_fft"]}; шаг {d["df_hz"]:.6g} Гц\n'
                     + ('Источник: кольцо Go 2M; ' if ring_selected
                        else 'Источник: Preview (не оригинальное кольцо); ')
                     + 'FFT локальный, не Delphi/x87 1:1')
@@ -4347,6 +4397,8 @@ class MainWindow(QMainWindow):
         self._source_interface_clock.stop()
         self._source_interface_last_page=None
         self._live_active=False
+        self._bind_only_verified_channels(tuple(range(1,9)))
+        self._restore_live_adc_controls()
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
         self._source_live_wave_cursor=None
@@ -4681,7 +4733,7 @@ class MainWindow(QMainWindow):
         """
         channels=tuple(channels)
         if (not channels or channels!=tuple(sorted(set(channels)))
-                or any(type(ch) is not int or not 1<=ch<=8
+                or any(type(ch) is not int or not 1<=ch<=(10 if self._live_active else 8)
                        for ch in channels)):
             raise ValueError('Источник не предоставляет допустимый набор АЦП')
         selected=channels[0] if selected_channel is None else selected_channel
@@ -4690,12 +4742,23 @@ class MainWindow(QMainWindow):
         wanted=selected-1
         combo_blocked=self.adc.blockSignals(True)
         try:
+            # Only Mode2 owns the two live Byte channels. Offline ZIP/BIN
+            # keeps its existing eight-channel source inventory.
+            count=10 if self._live_active else 8
+            while self.adc.count()<count:
+                self.adc.addItem(f'TACH {self.adc.count()-7}')
+            while self.adc.count()>count:
+                self.adc.removeItem(self.adc.count()-1)
             for i in range(self.adc.count()):
                 self.adc.model().item(i).setEnabled(i+1 in channels)
             self.adc.setCurrentIndex(wanted)
             for tabs in (self.wave_channel_tabs,self.spec_channel_tabs):
                 was=tabs.blockSignals(True)
                 try:
+                    while tabs.count()<count:
+                        tabs.addTab(self.adc.itemText(tabs.count()))
+                    while tabs.count()>count:
+                        tabs.removeTab(tabs.count()-1)
                     for i in range(tabs.count()):
                         tabs.setTabEnabled(i,i+1 in channels)
                     tabs.setCurrentIndex(wanted)
@@ -4996,6 +5059,17 @@ class MainWindow(QMainWindow):
             status=self._native_live_status or {}
             rows=(status.get("source_original_storage") or {}).get("channels") or []
             adc=self._ch()
+            bound=self._live_wave_vertical_basis
+            if isinstance(bound,dict) and bound.get("adc")!=adc:
+                self.wave_plot.clear_source_tqgr_series()
+                self.wave_plot.clear()
+                self.wave_line=None
+                self.wave_xor_crosshair=None
+                self._live_wave_vertical_basis=None
+                self._live_wave_scale_model=None
+                self._source_live_wave_cursor=None
+                self._live_long_rendered_key=None
+                self._invalidate_graph_cursor("adc")
             seen=(self._live_preview.channels.get(adc)
                   if self._live_preview is not None else None)
             rate=(rows[adc-1].get("last_sample_rate_hz")
