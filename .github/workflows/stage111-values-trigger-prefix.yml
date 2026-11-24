@@ -1,7 +1,7 @@
 name: Stage111 - VALUES trigger-prefix regression
 on:
   push:
-    branches: [fix/stage111-values-trigger-prefix-20261124]
+    branches: [fix/stage111-values-trigger-prefix-20261124, research/stage111-mvkview-desktop-20261029]
     paths:
       - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/**'
       - 'mvk_compatible/**'

@@ -1,0 +1,15 @@
+# Stage111Z31ED — интеграция исходного момента VALUES, Mode2 и Stop
+
+24.11.2026. Рабочая ветка research/stage111-mvkview-desktop-20261029. Основой служит EC e073d165852cddc2b82f90b518ae945658ee6c30 плюс проверенный PR #14 (2fdbfd4bb0042fa6ac1504560dbda89cf3c142e3; три коммита, behind=0). Main не изменяется.
+
+## Подтвержденная причина регрессии EC
+
+CI [45324239390](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45324239390): Linux 2705 PASS/149 skip, Go RX/export success; Windows Core 2947 PASS/8 FAIL/15 skip; native QPA 100/150% по 46 PASS/6 FAIL; EXE skipped. В OriginalMeasureControls.render переменная requested сначала означает selected Mode2, затем переписывается циклом подписей writers (последний WriteValues). При selected Mode2 без активного LIVE и без WriteValues ошибочно используется idle-ветка статуса, скрывающая красный индикатор и текст ожидания. Исправлено разделением mode2_requested и write_requested. Старые строгие проверки статусов не ослаблены. Старый тест локальных frame marks теперь проверяет точный hh:mm:ss, свойство elapsed seconds, происхождение времени и сброс после END. Новый Qt-тест проверяет переходы до TCP, четыре комбинации writers, отказ после завершения и выход. Реальные таймеры EC и блокировка late commands/Stop остаются.
+
+## Интеграция Go → RAW → Python → Qt
+
+PR #14 переносится целиком в ED, включая независимый RAW-prefix replay, проверки layout/SHA и regression fixture. У оригинала вызов VALUES внутри обработки дескриптора 0x3100, после применения этого дескриптора, а не всего кадра. Это повторно сверено с локальным Atlas v32 и его сохраненными инструкциями. Go фиксирует by-value snapshot префикса; suffix обновляет финальный live register image, не строку VALUES; TACH freshness ограничена включительно trigger; дубликаты отвергаются. Сохранены full RAW, frame-mark masks, Stop final audit и EC ledger. [Предыдущий CI PR #14](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45329798611) SUCCESS на точном SHA 2fdbfd4. Отдельный cross-language CI теперь запускается и на исследовательской ветке. [Подробности](MODE2_VALUES_TRIGGER_PREFIX_FIX_20261124_RU.md).
+
+## Границы доказательств / приемка
+
+Проверены локальные материалы v32: исходное обновление Status/StatusIsError, independent elapsed timers, вызов записи 0x3100 и handoff. Статические контракты 8 точек и исторические 40 def-use не выдаются за реальные runtime callers. Не повторять Atlas static pass. Приватные файлы/графы/CSV не публиковать. Windows full Core/QPA/EXE и prefix workflow ED требуют собственных результатов CI; не считать прежний зеленый PR полной сборкой. Последний подтвержденный EXE EB: [artifact 14881884515](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45307882905/artifacts/14881884515). Точные Delphi file-open timestamps, подстановки имен, third-octave, Config/Calib и SAME-RX Win32 численная/файловая/аппаратная приемка остаются отдельными незакрытыми доказательствами. Ни одного физического подключения или команды прибору в этом этапе.

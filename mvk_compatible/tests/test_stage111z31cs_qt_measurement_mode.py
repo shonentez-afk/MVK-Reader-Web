@@ -285,3 +285,51 @@ def test_mode2_second_click_before_tcp_restores_previous_verified_archive(
     finally:
         win.close()
         settle(qt_app)
+
+
+def test_mode2_indicator_independent_of_both_writer_captions(qt_app):
+    """EC regression: writer flags must never replace Mode2 selection."""
+    from .test_stage111z31cz_source_write_stages_core import source_status
+    win=MainWindow()
+    win.show()
+    settle(qt_app)
+    try:
+        assert win.enter_measurement_mode()
+        panel=win.original_measure_controls
+        assert panel.status.text()=="Ожидание подключения к прибору"
+        assert not panel.bad_indicator.isVisible()
+        win._begin_live_capture()
+        win._receive_native_live_status(source_status())
+        settle(qt_app)
+        # All four independent writer combinations, including no active
+        # writer with selected Mode2. Use the actual Qt render path.
+        for name,expected in ((None,(False,False)),
+                              ("bWriteAdc",(True,False)),
+                              ("bWriteValues",(True,True)),
+                              ("bWriteAdc",(False,True)),
+                              ("bWriteValues",(False,False))):
+            if name is not None:
+                panel.buttons[name].click()
+            settle(qt_app)
+            state=win._source_live_writer.receipt()
+            assert (state["write_data_requested"],state["write_values_requested"])==expected
+            view=win.measurement_connection_display()
+            assert view.transport_verified
+            assert panel.status.text()==view.text
+            assert panel.indicator.isVisible()
+            assert not panel.bad_indicator.isVisible()
+        win._end_live_capture(False)
+        settle(qt_app)
+        assert win._measurement_mode_selected
+        assert not win._live_active
+        assert panel.status.text()=="Ошибка соединения с прибором"
+        assert panel.bad_indicator.isVisible()
+        assert not panel.indicator.isVisible()
+        assert win.leave_measurement_mode()
+        settle(qt_app)
+        assert not panel.panel.isVisible()
+    finally:
+        if win._live_active:
+            win._end_live_capture(False)
+        win.close()
+        settle(qt_app)

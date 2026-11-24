@@ -62,8 +62,14 @@ def test_original_qt_buttons_queue_true_next_frame_marks_not_status_counters(
         panel.buttons["bWriteValues"].click()
         assert win._source_live_writer.frame_marks_required
         assert len(win._source_live_writer.frame_mark_actions)==2
-        assert panel.buttons["bWriteAdc"].text()=="Завершить запись сигнала"
-        assert panel.buttons["bWriteValues"].text()=="Завершить запись значений"
+        for name,label in (("bWriteAdc","сигнала"),("bWriteValues","значений")):
+            button=panel.buttons[name]
+            seconds=button.property("sourceWriterElapsedSeconds")
+            assert type(seconds) is int and seconds>=0
+            assert button.property("sourceWriterElapsedTimeBasis")==(
+                "OPERATOR_REQUEST_UTC_NOT_DELPHI_FILE_OPEN")
+            hhmmss=f"{seconds//3600%24:02d}:{seconds//60%60:02d}:{seconds%60:02d}"
+            assert button.text()=="Завершить запись "+label+"\n"+hhmmss
         src=(json.loads((inbox/"0001.json").read_text()),
              json.loads((inbox/"0002.json").read_text()))
         assert [x["event"] for x in src]==["data_begin","values_begin"]
@@ -77,6 +83,10 @@ def test_original_qt_buttons_queue_true_next_frame_marks_not_status_counters(
         qt_app.processEvents()
         panel.buttons["bWriteAdc"].click()
         panel.buttons["bWriteValues"].click()
+        assert panel.buttons["bWriteAdc"].text()=="Запись сигнала"
+        assert panel.buttons["bWriteValues"].text()=="Запись значений"
+        assert panel.buttons["bWriteAdc"].property("sourceWriterElapsedSeconds") is None
+        assert panel.buttons["bWriteValues"].property("sourceWriterElapsedSeconds") is None
         assert len(win._source_live_writer.frame_mark_actions)==4
         assert [json.loads((inbox/f"{i:04d}.json").read_text())["event"]
                 for i in range(1,5)]==[

@@ -326,8 +326,8 @@ class OriginalMeasureControls:
         state=self.state
         mode=state.mode
         live=(mode=="live")
-        requested=bool(self.window._measurement_mode_selected)
-        offline=(mode=="offline" and not requested)
+        mode2_requested=bool(self.window._measurement_mode_selected)
+        offline=(mode=="offline" and not mode2_requested)
         # Original pnMeasure design-time Visible=False and the accepted
         # operator PageSpectrum archive screenshot shows ONLY pnView time,
         # not the 53px five-button device toolbar. In a connected Native
@@ -343,7 +343,7 @@ class OriginalMeasureControls:
         has_values=bool(selection and (
             selection.checked("spec") or selection.checked("values")))
         policy=measurement_operator_policy(
-            ui_mode=mode,mode2_selected=requested,
+            ui_mode=mode,mode2_selected=mode2_requested,
             capture_active=bool(self.window._live_active),
             technical_ui=technical,
             native_archive_available=bool(
@@ -458,12 +458,13 @@ class OriginalMeasureControls:
             policy.local_values_enabled or
             (source_ready and (source_has_values or values_requested)))
         elapsed=writer.elapsed_receipt() if writer is not None else {}
-        for name,kind,requested,label in (
+        # Never shadow the selected Mode2 state with either writer flag.
+        for name,kind,write_requested,label in (
                 ("bWriteAdc","data",data_requested,"сигнала"),
                 ("bWriteValues","values",values_requested,"значений")):
             text=("Завершить запись "+label+"\n"+
                   (elapsed.get(kind+"_elapsed_text") or "00:00:00")
-                  if live and requested else "Запись "+label)
+                  if live and write_requested else "Запись "+label)
             button=self.buttons[name]
             if button.text()!=text:
                 button.setText(text)
@@ -475,7 +476,7 @@ class OriginalMeasureControls:
         self.panel.setProperty(
             "sourceOriginalWriteStageReceipt",
             writer.receipt() if writer is not None else None)
-        if requested or live:
+        if mode2_requested or live:
             state_view=self.window.measurement_connection_display()
             # Native Go is passive: an incoming DENIED is a real instrument
             # reply, but never an ACK/error for a command sent by this app.
