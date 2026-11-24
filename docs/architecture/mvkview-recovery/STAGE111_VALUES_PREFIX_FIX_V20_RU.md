@@ -12,7 +12,7 @@
 
 ## Подтверждённые тесты
 - [Go CI #45329559212](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45329559212) SUCCESS Linux+Windows: все 13 новых subtests (8 order, 5 TACH), существующие Stop/EOF и изменённый loopback Qt Stop-file с multi-block PARAM, полный Go regression, vet, build. Actual logs: after trigger row=1 final=2; both sides row=2 final=3; Freeze/inactive/no-trigger do not write; duplicate rejected. TACH after, stale, partial prefix unavailable, trigger-inclusive TACH2 accepted.
-- [Расширенный CI #45329798611](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45329798611): Linux Go SUCCESS; Core SUCCESS (targeted 33 passed; full 2707 passed, 149 skipped, 30 subtests passed). Actual Go-generated fixture with SPEC/RESULT/BAND/TACH verified by Python; altered suffix value with rehashed event/row/audit rejected. Windows full Go regression and vet passed; итог статуса Windows build и всего запуска проверить по ссылке. Предыдущий Go-only run был полностью 2/2 SUCCESS.
+- [Расширенный CI #45329798611](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45329798611): **3/3 SUCCESS**: Linux Go, Windows Go, Core SUCCESS (targeted 33 passed; full 2707 passed, 149 skipped, 30 subtests passed). Actual Go-generated fixture with SPEC/RESULT/BAND/TACH verified by Python; altered suffix value with rehashed event/row/audit rejected. Windows full Go regression, vet, build SUCCESS. Предыдущий Go-only run также полностью 2/2 SUCCESS.
 - Первичная невалидная YAML настройка CI #45329768710 исправлена до запуска тестов, не является отказом кода приложения.
 
 ## Граница результата / передача
