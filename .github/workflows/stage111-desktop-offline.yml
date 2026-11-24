@@ -3,14 +3,14 @@
 # operator reference screenshots must NEVER enter GitHub/CI.
 # The synthetic Qt preview PNGs below are generated inside CI from
 # deterministic fake test fixtures; no user-owned source bytes are uploaded.
-# Manual dispatch: choose research/stage111-mvkview-desktop-20261029,
+# Manual dispatch: choose research/stage111-ee-frange-numerical-20261124,
 # NOT the default main branch. Push builds run on the research branch only.
 name: MVKView Compatible - Windows EXE
 
 on:
   push:
     branches:
-      - research/stage111-mvkview-desktop-20261029
+      - research/stage111-ee-frange-numerical-20261124
     paths:
       - 'mvk_compatible/**'
       - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/**'
@@ -31,7 +31,7 @@ env:
 jobs:
   linux-core:
     name: Linux - all offline core tests
-    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    if: github.ref == 'refs/heads/research/stage111-ee-frange-numerical-20261124'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -57,7 +57,7 @@ jobs:
 
   source-original-rx-go:
     name: Linux - original TMVKThread Go RX and export contract
-    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    if: github.ref == 'refs/heads/research/stage111-ee-frange-numerical-20261124'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -80,7 +80,7 @@ jobs:
 
   desktop-windows:
     name: Windows - offline core and Qt smoke tests
-    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    if: github.ref == 'refs/heads/research/stage111-ee-frange-numerical-20261124'
     runs-on: windows-latest
     timeout-minutes: 40
     env:
@@ -228,7 +228,7 @@ jobs:
     needs:
       - linux-core
       - desktop-windows
-    if: github.ref == 'refs/heads/research/stage111-mvkview-desktop-20261029'
+    if: github.ref == 'refs/heads/research/stage111-ee-frange-numerical-20261124'
     runs-on: windows-latest
     timeout-minutes: 40
     defaults:

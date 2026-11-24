@@ -1,7 +1,7 @@
-name: Stage111 EE source TACH latch and metadata integration
+name: Stage111 EE FRange and TACH integration
 on:
   push:
-    branches: [research/stage111-ee-tach-rx-integration-20261124]
+    branches: [research/stage111-ee-frange-numerical-20261124]
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,7 +24,7 @@ jobs:
         with:
           go-version: '1.24'
           cache: false
-      - run: go test -v -count=1 -run 'TestSourceTachLatchCoreFixture|TestSourceMetadataSocketBoundary|TestValuesTriggerPrefix|TestOriginalMode2EmptyPARAM' .
+      - run: go test -v -count=1 -run 'TestSourceMetadataNumerical|TestSourceTachLatchCoreFixture|TestSourceMetadataSocketBoundary|TestValuesTriggerPrefix|TestOriginalMode2EmptyPARAM' .
       - run: go test -count=1 ./...
       - run: go vet ./...
       - run: go build -trimpath .
@@ -47,12 +47,14 @@ jobs:
         run: |
           export MVK_TACH_LATCH_FIXTURE_DIR="$RUNNER_TEMP/mvk-latch-fixture"
           export MVK_PREFIX_FIXTURE_DIR="$RUNNER_TEMP/mvk-prefix-fixture"
-          mkdir -p "$MVK_TACH_LATCH_FIXTURE_DIR" "$MVK_PREFIX_FIXTURE_DIR"
+          export MVK_RANGE_FIXTURE_DIR="$RUNNER_TEMP/mvk-range-fixture"
+          mkdir -p "$MVK_TACH_LATCH_FIXTURE_DIR" "$MVK_PREFIX_FIXTURE_DIR" "$MVK_RANGE_FIXTURE_DIR"
+          echo "MVK_RANGE_FIXTURE_DIR=$MVK_RANGE_FIXTURE_DIR" >> "$GITHUB_ENV"
           echo "MVK_TACH_LATCH_FIXTURE_DIR=$MVK_TACH_LATCH_FIXTURE_DIR" >> "$GITHUB_ENV"
           echo "MVK_PREFIX_FIXTURE_DIR=$MVK_PREFIX_FIXTURE_DIR" >> "$GITHUB_ENV"
-          go test -v -count=1 -run '^(TestSourceTachLatchCoreFixture|TestValuesTriggerPrefixCoreFixture)$' .
+          go test -v -count=1 -run '^(TestSourceMetadataNumericalCoreFixture|TestSourceTachLatchCoreFixture|TestValuesTriggerPrefixCoreFixture)$' .
       - run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
       - name: Verify old and new RAW replay and reject rehashed latch errors
-        run: python -m pytest -q mvk_compatible/tests/test_stage111_ee_tach_latch_integration.py mvk_compatible/tests/test_mode2_live_values_trigger_prefix.py mvk_compatible/tests/test_original_source_values_tick_acceptance.py mvk_compatible/tests/test_stage111z31fq_original_values_3100_timeline.py mvk_compatible/tests/test_stage111z31fq_marked_values_export.py
+        run: python -m pytest -q mvk_compatible/tests/test_stage111_ee_frange_numerical_integration.py mvk_compatible/tests/test_stage111_ee_tach_latch_integration.py mvk_compatible/tests/test_mode2_live_values_trigger_prefix.py mvk_compatible/tests/test_original_source_values_tick_acceptance.py mvk_compatible/tests/test_stage111z31fq_original_values_3100_timeline.py mvk_compatible/tests/test_stage111z31fq_marked_values_export.py
       - name: Full offline core regression
         run: python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py

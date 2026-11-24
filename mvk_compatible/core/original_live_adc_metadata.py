@@ -60,7 +60,7 @@ def metadata_for_ring_row(row):
         if row.get("source_adc_metadata") is None:
             raise ValueError("Source ADC metadata: missing valid current range")
         return parse_source_adc_metadata(row["source_adc_metadata"])
-    raise ValueError("Source ADC metadata: foreign storage domain")
+    raise ValueError("Source ADC metadata: foreign storage domain / unverified live FRange1")
 
 
 def source_derived_units(metadata, mode=None):
