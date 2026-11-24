@@ -327,7 +327,8 @@ def provisional_waveform(
 
 
 def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
-                         *, n_fft: int | None = None) -> dict:
+                         *, n_fft: int | None = None,
+                         full_bins: bool = False) -> dict:
     """Compute only the SELECTED source bSpecLines N, no silent fallback.
 
     Source _Unit128.pas 0084819A..008481AA assigns gvar_008D3450
@@ -336,6 +337,8 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
     menu, currently default N=65536. Preserve the no-argument API
     solely for offline/test callers; Qt always supplies its menu N.
     """
+    if type(full_bins) is not bool:
+        raise ValueError("Live full_bins must be Boolean")
     channel = preview.channels.get(adc)
     if channel is None or len(channel.samples) < 1024:
         raise ValueError("Live ADC has insufficient real FFT history")
@@ -357,7 +360,8 @@ def provisional_spectrum(preview: LivePreview, adc: int, mode: int = 1,
         # Full N/2 power and summary are still computed. Only the
         # on-screen pyqtgraph polyline is reduced to peak-preserving
         # <=5000 bins, avoiding a 131072-point repaint every tick.
-        max_hz=channel.rate_hz/2, max_points=5000,
+        max_hz=channel.rate_hz/2,
+        max_points=n_fft//2 if full_bins else 5000,
         backend="idr_float32",
         f_range=1.0, input_domain=(
             DOMAIN_ORIGINAL_STORAGE if is_source else "calibrated_bin"),

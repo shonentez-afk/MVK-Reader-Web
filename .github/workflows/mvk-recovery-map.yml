@@ -14,6 +14,8 @@ on:
       - 'mvk_compatible/desktop/**'
       - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/source/**'
       - 'tools/architecture/**'
+env:
+  SOURCE_SHA: '9f6a3a74535408253f883ae9b49903363c77a69d'
 jobs:
   public-stage111-graph:
     runs-on: ubuntu-latest
@@ -21,6 +23,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify production source equals pinned Stage111 revision
+        run: git diff --exit-code "$SOURCE_SHA" -- mvk_compatible tools/research/native_tcp10230_stage108_live_recording_r6_1/source
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -31,19 +37,19 @@ jobs:
         run: python -m unittest discover -s tools/architecture -p 'test_*.py' -v
       - name: Build safe Stage111 graph
         run: >-
-          python tools/architecture/mvk_stage111_ast.py --repo . --sha "${{ github.sha }}"
+          python tools/architecture/mvk_stage111_ast.py --repo . --sha "${{ env.SOURCE_SHA }}"
           --out docs/architecture/mvkview-recovery/stage111-public-graph.json
       - name: Build Qt AST event bindings
         run: >-
-          python tools/architecture/mvk_stage111_qt_signals.py --repo . --sha "${{ github.sha }}"
+          python tools/architecture/mvk_stage111_qt_signals.py --repo . --sha "${{ env.SOURCE_SHA }}"
           --out docs/architecture/mvkview-recovery/stage111-qt-signals.json
       - name: Build Go AST native call graph
         run: >-
-          go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ github.sha }}"
+          go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ env.SOURCE_SHA }}"
           --out docs/architecture/mvkview-recovery/stage111-go-callgraph.json
       - name: Index public original-address references in Stage111
         run: >-
-          python tools/architecture/mvk_stage111_address_refs.py --repo . --sha "${{ github.sha }}"
+          python tools/architecture/mvk_stage111_address_refs.py --repo . --sha "${{ env.SOURCE_SHA }}"
           --out docs/architecture/mvkview-recovery/stage111-address-references.json
       - name: Assemble unified Python Go Qt graph
         run: python tools/architecture/mvk_stage111_merge_graphs.py
@@ -75,7 +81,8 @@ jobs:
           assert all(not any(f in n['path'] for f in forbidden) for n in unified['nodes'])
           address=json.loads(Path('docs/architecture/mvkview-recovery/stage111-address-references.json').read_text(encoding='utf-8'))
           assert address['metadata']['scope']=='PUBLIC_STAGE111_ADDRESS_LITERALS_ONLY'
-          assert address['metadata']['sha']==unified['metadata']['sha']
+          import os
+          assert address['metadata']['sha']==unified['metadata']['sha']==os.environ['SOURCE_SHA']
           assert all(not any(f in x['path'] for f in forbidden) for x in address['references'])
           print(d['counts'], go['counts'], qt['counts'], unified['counts'], address['counts'])
           PY

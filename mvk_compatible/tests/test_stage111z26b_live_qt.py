@@ -52,8 +52,10 @@ def test_live_preview_uses_same_existing_wave_spectrum_tabs_without_archive(tmp_
     assert "FRange повторно НЕ применялся" in window.spec_hint.text()
     assert not window.spec_copy_button.isEnabled()
     assert not window.spec_save_button.isEnabled()
-    assert window._spectrum_summary is None
-    assert window._full_spectrum is None
+    assert window._spectrum_summary is not None
+    assert window._full_spectrum["live_measurement_view"] is True
+    assert len(window._full_spectrum["amplitude"])==65536//2
+    assert window._full_spectrum["live_window_sha256"]==preview.channels[1].sha256
     # Original PageAdc now has an invisible-until-MouseMove cursor bound
     # to FULL reversed GetSignal, not a research-only curve without cursor.
     assert window.wave_line is not None
@@ -668,3 +670,70 @@ def test_original_short_live_preview_excludes_frozen_adc_bytes(tmp_path,qt_app):
     source[0]["last_skipped_native_samples"]=0
     approved=gate_live_preview(status,preview)
     assert approved.allowed
+
+def test_live_spectrum_full_bins_scale_cursor_and_stop_same_adc(tmp_path,qt_app):
+    from PySide6.QtCore import QPointF
+    from mvk_compatible.desktop.main_window import MainWindow
+    from mvk_compatible.core.native_r6_live_preview import provisional_spectrum
+    import numpy as np
+
+    status,preview=_preview(tmp_path)
+    w=MainWindow()
+    w.show()
+    qt_app.processEvents()
+    try:
+        w._begin_live_capture()
+        w._receive_native_live_status(status)
+        w._receive_live_preview(preview)
+        tabs=w.original_root_tabs
+        tabs.setCurrentIndex(next(i for i in range(tabs.count())
+                                 if tabs.tabData(i)=="PageSpectrum"))
+        qt_app.processEvents()
+        result=w._full_spectrum
+        assert result["live_session_id"]==preview.session_id
+        assert result["channel"]==1
+        assert result["live_window_sha256"]==preview.channels[1].sha256
+        full=provisional_spectrum(preview,1,mode=w.spec_mode.currentIndex(),
+                                  n_fft=65536,full_bins=True)
+        np.testing.assert_array_equal(result["amplitude"],full["amplitude"])
+        assert result["amplitude"].flags.writeable is False
+        assert result["grapher_series_bins"]==25600
+        w._select_original_hscale(1600,position_hz=0)
+        w._select_original_vscale(1)
+        qt_app.processEvents()
+        assert w._full_spectrum is result
+        assert w.spec_plot.getViewBox().viewRange()[0]==pytest.approx(
+            [0,1600],abs=0.01)
+        line=w.spec_plot.listDataItems()[0]
+        assert len(line.xData)<=1602
+        vb=w.spec_plot.getViewBox()
+        lo,hi=vb.viewRange()[1]
+        pos=vb.mapViewToScene(QPointF(1000.,(lo+hi)/2))
+        w._spec_at_scene_pos(pos,force=True)
+        selected=w._spec_last_cursor
+        assert selected is not None,w.statusBar().currentMessage()
+        assert selected["live_window_sha256"]==result["live_window_sha256"]
+        assert selected["full_bin_count"]==32768
+        assert not selected["chart_decimation_used"]
+        assert w.spec_xor_crosshair.cursor is not None
+        assert not w.spec_copy_button.isEnabled()
+        assert not w.spec_save_button.isEnabled()
+        w.adc.setCurrentIndex(1)
+        qt_app.processEvents()
+        assert w._full_spectrum["channel"]==2
+        assert w._full_spectrum["live_window_sha256"]==preview.channels[2].sha256
+        assert w._spec_last_cursor is None
+        w._source_live_view_frozen=True
+        w._spec_at_scene_pos(pos,force=True)
+        assert w._spec_last_cursor is None
+        w._source_live_view_frozen=False
+        w._invalidate_live_preview("synthetic stop boundary")
+        assert w._full_spectrum is None
+        assert w._spectrum_summary is None
+        assert w._live_spectrum_input is None
+        assert not w.spec_plot.listDataItems()
+    finally:
+        if w._live_active:
+            w._end_live_capture(False)
+        w.close()
+        qt_app.processEvents()

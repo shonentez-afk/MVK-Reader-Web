@@ -49,3 +49,19 @@
 После исходного кода `aaa82782e077` Linux core и Go RX прошли. Последний проверяемый новый кодовый SHA с обязательным GetSignal: `8bcbf148b99cc9f7ce7ab1c295fb5f5e60e02152`. [Workflow #45239840355](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45239840355) необходимо проверить до объявления полного PASS и ссылки на обновлённый EXE. CI не должен называться физической аттестацией.
 
 Документы `START_NEW_CHAT_RU.md` и `CURRENT_STATUS_RU.md` должны продолжать требовать источник + аппаратную проверку; `main`, приёмник Go/TCP и уже восстановленные 32+2+14+13 исходные меню не изменяются.
+
+
+## Подтверждённая финальная приёмка CI / Windows EXE (24.11.2026)
+
+**РЕАЛЬНЫЙ КОДОВЫЙ SHA:** `8bdd85cfad322a9ac089cc5f312ecade0c4162fe`. Он содержит все исправления strict same-RAW + обязательного GetSignal, корректные Float32 тестовые различия, а также ВЫПОЛНЯЕМЫЕ Windows Qt проверки `SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE`, `plan.post_fir_fft_n`, `post_fir_sample_rate_hz` и `len(amplitude)==post_fir_fft_n//2`. Ранее ошибочно закомментированные из-за буквальных `\\n` утверждения восстановлены, не отключены.
+
+[GitHub Actions #45240889385](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45240889385) **completed SUCCESS, все 5/5 заданий**:
+- Linux Core **2691 passed, 149 skipped**, 2 warnings.
+- Linux original Go TMVKThread RX/export **SUCCESS**.
+- Windows native QPA/Font DPI 100/150 **SUCCESS**.
+- Windows Core **2938 passed, 15 skipped**, 2 warnings; Qt smoke **59 passed**, доп. native Qt **50 passed**, DPI/original-reference Qt **194 passed**.
+- Windows one-file PyInstaller EXE с компилируемым embedded Native R6.1 Go receiver **SUCCESS**, SHA-интеграция и выгрузка проверены CI.
+
+Новый [Windows EXE ZIP — artifact 14853087405](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45240889385/artifacts/14853087405), 69 548 237 байт, истекает **07.12.2026 18:55 UTC**. Дополнительно [скриншоты исходных Qt экранов DPI100/150 — artifact 14853140875](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45240889385/artifacts/14853140875).
+
+**НЕ ПРИСВАИВАТЬ СТАТУС HARDWARE VERIFIED.** Все тесты offline/synthetic, реальный оригинальный Win32 Delphi + физический МВК01 на одной RX-сессии с stop/write-data/write-values/x87/FRange не проходили. Заявление "полное восстановление 100%" и байтовый аппаратный паритет остаются ЗАПРЕЩЕНЫ до фактической отдельной операторской проверки. Приватные 7z/IDP/SQLite, приборные данные и `main` не менялись/не публиковались.
