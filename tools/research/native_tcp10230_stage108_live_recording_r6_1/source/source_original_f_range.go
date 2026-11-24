@@ -21,7 +21,6 @@ package main
 // Subnormal/Inf/NaN and non-default x87 CW parity require separate proof.
 import (
     "encoding/binary"
-    "encoding/hex"
     "errors"
     "math"
 )
@@ -60,27 +59,6 @@ type sourceOriginalRangeState struct {
     SocketAttempt uint64 `json:"socket_attempt"`
     Usable bool `json:"usable"`
 }
-func readSourceOriginalRange(image *RegisterImage,ch int) sourceOriginalRangeState {
-    addr:=0x100+ch*0x100+0x0e
-    s:=sourceOriginalRangeState{Single:1,Origin:"UNOBSERVED_REGISTER_PROVISIONAL_ONE",RegisterWord:addr,Usable:true}
-    if bits,err:=image.Uint32(addr);err==nil {
-        s.RegisterRawLE=hex.EncodeToString(image.Data[addr*2:(addr+2)*2])
-        v:=math.Float32frombits(bits)
-        switch {
-        case v==0:
-            s.Origin="REGISTER_ZERO_FALLBACK_ONE"
-        case finiteF32(v)&&v>0:
-            s.Single=v;s.Origin="REGISTER_FLOAT32"
-        default:
-            s.Single=0;s.Origin="INVALID_REGISTER_NO_CALCULATION";s.Usable=false
-        }
-    }
-    units:=addr+2
-    valid:=true
-    for i:=units;i<units+16;i++ {if !image.Valid[i]{valid=false;break}}
-    if valid {s.UnitsRawLE=hex.EncodeToString(image.Data[units*2:(units+16)*2])}
-    return s
-}
 func sourceIsLiveADC(domain string)bool {
     return domain==sourceStorageOriginalLiveADC||domain==sourceStorageOriginalConfigADC
 }
@@ -94,13 +72,15 @@ func (m *Monitor) latchSourceOriginalRanges(){
     r:=m.sourceOriginalStorage
     if r==nil||m.sourceOriginalRXGate==nil{return}
     attempt:=uint64(1)
-    if m.sourceOriginalTask2Stage!=nil&&m.sourceOriginalTask2Stage.attempts>0 {
+    if m.summary.SourceTCPConnectionCount>0 {
+        attempt=m.summary.SourceTCPConnectionCount
+    } else if m.sourceOriginalTask2Stage!=nil&&m.sourceOriginalTask2Stage.attempts>0 {
         attempt=m.sourceOriginalTask2Stage.attempts
     }
     if r.rangeLatchAttempt==attempt{return}
     r.rangeLatchAttempt=attempt
     for ch:=0;ch<8;ch++ {
-        s:=readSourceOriginalRange(&m.image,ch)
+        s:=m.sourceOriginalADCConfig.rangeState(ch)
         s.LatchedFrame=m.summary.TotalFrames;s.SocketAttempt=attempt
         c:=&r.channels[ch];c.rangeState=&s
         // Retain pre-latch samples exactly as stored, without rescaling.

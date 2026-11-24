@@ -125,6 +125,7 @@ type Monitor struct {
 	closed      bool
 	liveBin     *LiveBinSpool
 	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
+	sourceOriginalADCConfig sourceOriginalADCConfig // accepted Range/Units words, form lifetime (not socket)
     sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
     sourceOriginalTask2Stage *sourceOriginalTask2Lifecycle // independent Task2 Stage0/1/3 and DENIED original receive status
     sourceParamGate *sourceOriginalParamGateJournal // original PARAM freeze decisions per actual source TCP frame
@@ -527,9 +528,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         m.summary.SourceNonemptyParameters++
         // _Unit125.pas:0080850C..008085E1: while FreezeUpdate=1, the
         // original STILL reads each PARAM register word from TCP, but
-        // skips register-image update, FRange, GetValueText, AUX and the
-        // WriteValues trigger at 0x3100. Do not substitute stale DSP
-        // readings or write an event just because RAW contains 0x3100.
+        // skips register-image changes, AUX and the WriteValues trigger
+        // at 0x3100. Stage0 still reads the retained ADC config below.
+        // Do not substitute stale DSP readings or emit a VALUES event
+        // just because RAW contains 0x3100.
         // The immutable forensic incoming.raw retains those exact bytes.
         if sourceFrozen {
             // Nonempty frozen PARAM still transitions Stage0; image is unchanged.
@@ -549,7 +551,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		var valuesTriggerImage *RegisterImage
         var valuesTriggerTach *sourceLocalTachState
 		for _, b := range blocks {
-			m.image.Put(b)
+			m.storeSourcePARAMDescriptor(b)
             if m.sourceTach!=nil {m.sourceTach.state.onBlock(b)}
 			m.summary.RegisterBlocks++
             // Source 00808617..00808682 is inside the descriptor loop.
