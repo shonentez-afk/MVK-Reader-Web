@@ -1,0 +1,118 @@
+name: MVK Stage111 public architecture index
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - research/stage111-mvkview-desktop-20261029
+    paths:
+      - 'tools/architecture/**'
+      - 'docs/architecture/mvkview-recovery/**'
+      - '.github/workflows/mvk-recovery-map.yml'
+  push:
+    paths:
+      - 'mvk_compatible/core/**'
+      - 'mvk_compatible/desktop/**'
+      - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/source/**'
+      - 'tools/architecture/**'
+env:
+  SOURCE_SHA: 'dd020c4a8c1cd9d80440031730b7c4ee28bf8cef'
+jobs:
+  public-stage111-graph:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify production source equals pinned Stage111 revision
+        run: git diff --exit-code "$SOURCE_SHA" -- mvk_compatible tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Test graph extractor
+        run: python -m unittest discover -s tools/architecture -p 'test_*.py' -v
+      - name: Build safe Stage111 graph
+        run: >-
+          python tools/architecture/mvk_stage111_ast.py --repo . --sha "${{ env.SOURCE_SHA }}"
+          --out docs/architecture/mvkview-recovery/stage111-public-graph.json
+      - name: Build Qt AST event bindings
+        run: >-
+          python tools/architecture/mvk_stage111_qt_signals.py --repo . --sha "${{ env.SOURCE_SHA }}"
+          --out docs/architecture/mvkview-recovery/stage111-qt-signals.json
+      - name: Build Go AST native call graph
+        run: >-
+          go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ env.SOURCE_SHA }}"
+          --out docs/architecture/mvkview-recovery/stage111-go-callgraph.json
+      - name: Index public original-address references in Stage111
+        run: >-
+          python tools/architecture/mvk_stage111_address_refs.py --repo . --sha "${{ env.SOURCE_SHA }}"
+          --out docs/architecture/mvkview-recovery/stage111-address-references.json
+      - name: Assemble unified Python Go Qt graph
+        run: python tools/architecture/mvk_stage111_merge_graphs.py
+      - name: Verify public-only graph
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('docs/architecture/mvkview-recovery/stage111-public-graph.json').read_text(encoding='utf-8'))
+          assert d['metadata']['scope']=='PUBLIC_STAGE111_ONLY'
+          assert d['counts']['files_scanned'] > 0
+          forbidden=('Projects.7z','mvkview.idp','mvk_idr')
+          assert all(not any(f in n['path'] for f in forbidden) for n in d['nodes'])
+          go=json.loads(Path('docs/architecture/mvkview-recovery/stage111-go-callgraph.json').read_text(encoding='utf-8'))
+          assert go['metadata']['scope']=='PUBLIC_STAGE111_GO_AST_ONLY'
+          assert go['counts']['files_scanned'] >= 10
+          assert go['counts']['direct_call_sites'] > 0
+          assert all(not any(f in n['path'] for f in forbidden) for n in go['nodes'])
+          qt=json.loads(Path('docs/architecture/mvkview-recovery/stage111-qt-signals.json').read_text(encoding='utf-8'))
+          assert qt['metadata']['scope']=='PUBLIC_STAGE111_QT_AST_ONLY'
+          assert qt['counts']['bindings'] > 0
+          assert not qt['errors']
+          assert all(not any(f in r['path'] for f in forbidden) for r in qt['bindings'])
+          unified=json.loads(Path('docs/architecture/mvkview-recovery/stage111-unified-graph.json').read_text(encoding='utf-8'))
+          assert unified['metadata']['scope']=='PUBLIC_STAGE111_UNIFIED_AST_ONLY'
+          assert unified['metadata']['sha']==d['metadata']['sha']==go['metadata']['sha']==qt['metadata']['sha']
+          assert unified['counts']['qt_signal_bindings']==qt['counts']['bindings']
+          assert unified['counts']['qt_targets_resolved'] > 0
+          assert all(not any(f in n['path'] for f in forbidden) for n in unified['nodes'])
+          address=json.loads(Path('docs/architecture/mvkview-recovery/stage111-address-references.json').read_text(encoding='utf-8'))
+          assert address['metadata']['scope']=='PUBLIC_STAGE111_ADDRESS_LITERALS_ONLY'
+          import os
+          assert address['metadata']['sha']==unified['metadata']['sha']==os.environ['SOURCE_SHA']
+          assert all(not any(f in x['path'] for f in forbidden) for x in address['references'])
+          print(d['counts'], go['counts'], qt['counts'], unified['counts'], address['counts'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mvk-stage111-public-graph
+          path: |
+            docs/architecture/mvkview-recovery/stage111-public-graph.json
+            docs/architecture/mvkview-recovery/stage111-go-callgraph.json
+            docs/architecture/mvkview-recovery/stage111-qt-signals.json
+            docs/architecture/mvkview-recovery/stage111-unified-graph.json
+            docs/architecture/mvkview-recovery/stage111-address-references.json
+          retention-days: 14
+
+  public-likec4-model:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate public LikeC4 architecture definitions
+        run: npx --yes likec4@1.61.0 validate docs/architecture/mvkview-recovery/likec4 --max-warnings 0
+      - name: Build public LikeC4 single-file preview
+        run: npx --yes likec4@1.61.0 build --output-single-file -o /tmp/mvk-stage111-likec4 docs/architecture/mvkview-recovery/likec4
+      - name: Upload public-only LikeC4 preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvk-stage111-public-likec4
+          path: /tmp/mvk-stage111-likec4/index.html
+          retention-days: 14
