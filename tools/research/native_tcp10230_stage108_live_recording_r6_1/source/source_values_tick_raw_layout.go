@@ -23,6 +23,7 @@ import (
 )
 
 const sourceValuesRawLayoutSchema="MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V1"
+const sourceValuesLatchLayoutSchema="MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V2_TACH_LATCH"
 const sourceValuesMaxRowBytes=65536
 
 type sourceSelectedRawValue struct {
@@ -89,13 +90,16 @@ func(m *Monitor) sourceValuesOrderedRawTick(
 // The live writer passes the image and accepted descriptor prefix captured
 // at 0x3100. The wrapper above is retained for independent layout tests.
 func sourceValuesOrderedRawTickFromImage(
-    image *RegisterImage, w *sourceLiveValuesWindow, blocks []RegBlock, at time.Time,
+    image *RegisterImage, w *sourceLiveValuesWindow, blocks []RegBlock, at time.Time, latchMode ...bool,
 )(sourceValuesRawTick,[]byte,error){
     if w==nil || image==nil || at.IsZero(){
         return sourceValuesRawTick{},nil,errors.New("source WriteValues tick requires live time and selected window")
     }
+    sourceLatch:=len(latchMode)==1 && latchMode[0]
+    schema:=sourceValuesRawLayoutSchema
+    if sourceLatch{schema=sourceValuesLatchLayoutSchema}
     tick:=sourceValuesRawTick{
-        Schema:sourceValuesRawLayoutSchema,
+        Schema:schema,
         LocalTime:at.Format("15:04:05.000"),
         OrderedFields:make([]sourceSelectedRawValue,0,8*(43+6+24)+2*6),
     }
@@ -175,7 +179,7 @@ func sourceValuesOrderedRawTickFromImage(
             // Unlike an old full snapshot, 0xFE needs independent
             // freshness evidence from THIS accepted PARAM prefix, up
             // to and including its 0x3100 trigger descriptor.
-            fresh:=i<5 || sourceRawWordsIncludedInCurrentParam(blocks,addr)
+            fresh:=i<5 || sourceLatch || sourceRawWordsIncludedInCurrentParam(blocks,addr)
             kind:="U32_CANDIDATE"
             if i<2 {kind="F32_CANDIDATE"}
             appendField(9+tach,"TACH",i,addr,kind,fresh)

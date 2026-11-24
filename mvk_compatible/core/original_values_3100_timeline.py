@@ -17,6 +17,7 @@ from hashlib import sha256
 from contextlib import nullcontext
 from dataclasses import dataclass
 from .original_param_gate_proof import OriginalParamGateReader
+from .original_tach_gate_proof import OriginalTachGateReader, TACH, apply_tach_bytes, set_latch
 from pathlib import Path
 import re
 import struct
@@ -36,6 +37,7 @@ class RegisterPrefixSnapshot:
     data: bytes
     valid: bytes
     current: bytes
+    tach_latch: bool = False
 
     def dword_hex(self, addr: int, *, current: bool = False) -> str | None:
         if not 0 <= addr < REGISTER_WORDS - 1:
@@ -91,6 +93,9 @@ def scan_original_values_3100(
     expected_frozen_aux: int = 0,
     expected_frozen_values: int = 0,
     capture_register_prefix: bool = False,
+    tach_gate_path: Path | str | None = None,
+    expected_tach_gate_sha256: str | None = None,
+    expected_tach_gate_records: int = 0,
 ) -> dict[int, list[dict]]:
     """Replay complete frames and collect only the chosen 0x3100 events.
 
@@ -116,6 +121,9 @@ def scan_original_values_3100(
              expected_param_gate_records or final_frozen_param or
              final_frozen_aux or final_frozen_values)):
         raise ValueError("Original VALUES 0x3100: Freeze requires verified PARAM gate")
+    if (tach_gate_path is None and (expected_tach_gate_sha256 is not None or expected_tach_gate_records)
+            or tach_gate_path is not None and param_gate_path is None):
+        raise ValueError("Original TACH gate: requires complete TACH and PARAM evidence")
     tail = _counter(expected_tail_bytes, "final incomplete tail", MAX_FRAME - 1)
     if path.stat().st_size != total:
         raise ValueError("Original VALUES 0x3100: RAW length changed")
@@ -152,7 +160,11 @@ def scan_original_values_3100(
             expected_frames=frames,
         ) if param_gate_path is not None else nullcontext(None)
     )
-    with path.open("rb") as src, gate_context as gate:
+    tach_context = (OriginalTachGateReader(tach_gate_path, expected_sha256=expected_tach_gate_sha256,
+                    expected_records=expected_tach_gate_records, expected_frames=frames)
+                    if tach_gate_path is not None else nullcontext(None))
+    last_tach = [0, 0]
+    with path.open("rb") as src, gate_context as gate, tach_context as tach_gate:
         for frame_index in range(frames):
             header = src.read(8)
             if len(header) != 8:
@@ -166,6 +178,10 @@ def scan_original_values_3100(
             frame = header + payload
             digest.update(frame)
             read_total += length
+            if frame_type == TACH and tach_gate is not None:
+                channel, admitted = tach_gate.consume(frame_index=frame_index + 1, frame=frame)
+                if admitted and capture_register_prefix:
+                    apply_tach_bytes(register_data, register_valid, last_tach, channel, frame[28:])
             if frame_type != PARAM:
                 continue
             blocks = list(_parameter_blocks(frame))
@@ -201,8 +217,13 @@ def scan_original_values_3100(
                         current[addr:end_addr] = bytes([1]) * count
                         if addr == 0x3100:
                             prefix = RegisterPrefixSnapshot(
-                                bytes(register_data), bytes(register_valid), bytes(current))
+                                bytes(register_data), bytes(register_valid), bytes(current),
+                                tach_latch=tach_gate is not None)
                             current = None
+                    # Reset after inclusive snapshot, even when no writer is open.
+                    if addr == 0x3100 and tach_gate is not None:
+                        set_latch(register_data, register_valid, 0, 0)
+                        set_latch(register_data, register_valid, 1, 0)
             if length == 4700:
                 aux += 1
             if triggers:
@@ -232,6 +253,8 @@ def scan_original_values_3100(
         read_total += len(final)
         if gate is not None:
             gate.finish()
+        if tach_gate is not None:
+            tach_gate.finish()
     if (read_total != total or digest.hexdigest() != expected_sha256
             or ticks != final_ticks or aux != final_aux or
             frozen_param != final_frozen_param or

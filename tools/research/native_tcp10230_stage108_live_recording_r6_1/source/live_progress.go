@@ -59,6 +59,7 @@ type LiveStatus struct {
     SourceOriginalStorage *sourceOriginalStorageReceipt `json:"source_original_storage,omitempty"`
     SourceOriginalReceiveGate *sourceOriginalReceiveGateReceipt `json:"source_original_receive_gate,omitempty"`
     SourceOriginalTask2Stage *sourceOriginalTask2LifecycleReceipt `json:"source_original_task2_stage,omitempty"`
+    SourceMetadataObservation *sourceMetadataObservation `json:"source_adc_metadata_observation,omitempty"`
     SourceTCPConnectionCount uint64 `json:"source_tcp_connection_count"`
     SourceTCPMultiSocket bool `json:"source_tcp_multi_socket"`
     SourceTCPReconnectAfterRAW uint64 `json:"source_tcp_reconnects_after_raw"`
@@ -149,6 +150,7 @@ func (m *Monitor) snapshotLiveStatus(phase string, now time.Time) LiveStatus {
         SourceOriginalStorage:originalStorage,
         SourceOriginalReceiveGate:originalGate,
         SourceOriginalTask2Stage:stageProof,
+        SourceMetadataObservation:report.SourceMetadataObservation,
         SourceTCPConnectionCount:report.SourceTCPConnectionCount,
         SourceTCPMultiSocket:report.SourceTCPMultiSocket,
         SourceTCPReconnectAfterRAW:report.SourceTCPReconnectAfterRAW,

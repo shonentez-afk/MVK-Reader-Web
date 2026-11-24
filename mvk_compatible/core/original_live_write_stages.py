@@ -37,6 +37,7 @@ from .original_pagefile_recording import OriginalPageFileSelection,OriginalFileN
 from .original_measure_controls import table_rows
 from .original_values_3100_timeline import scan_original_values_3100
 from .original_param_gate_proof import SOURCE_PARAM_GATE_NAME
+from .original_tach_gate_proof import SOURCE_TACH_GATE_NAME
 from .original_write_data_wire_replay import export_source_wire_write_intervals
 from .original_write_data_live_gate import verify_native_live_write_data
 from .original_mode2_source_files import (
@@ -638,7 +639,11 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     expected_frozen_values=raw_summary.get(
                         "source_original_values_3100_skipped_frozen",0),
                     capture_register_prefix=raw_summary.get(
-                        "source_live_values_audit_sha256") is not None)
+                        "source_live_values_audit_sha256") is not None,
+                    tach_gate_path=(directory/SOURCE_TACH_GATE_NAME if
+                        raw_summary.get("source_original_tach_gate_sha256") else None),
+                    expected_tach_gate_sha256=raw_summary.get("source_original_tach_gate_sha256"),
+                    expected_tach_gate_records=raw_summary.get("source_original_tach_gate_records",0))
                 source_live_values_evidence=verify_original_live_values(
                     directory,summary=raw_summary,
                     source_sha=audit["source_raw_sha256"],
@@ -918,6 +923,9 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_live_values_trigger_prefix_registers_verified":
                 bool(source_live_values_evidence and
                      source_live_values_evidence["source_trigger_prefix_registers_verified"]),
+            "source_live_values_tach_latch_replay_verified":
+                bool(source_live_values_evidence and
+                     source_live_values_evidence.get("source_tach_latch_replay_verified")),
             "source_live_values_3100_windows":
                 source_live_values_evidence["verified_windows"] if
                 source_live_values_evidence is not None else 0,

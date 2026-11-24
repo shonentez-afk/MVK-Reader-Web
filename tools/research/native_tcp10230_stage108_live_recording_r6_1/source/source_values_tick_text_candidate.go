@@ -65,7 +65,7 @@ func sourceAdvancedIsOriginalSelectorValue(field sourceSelectedRawValue)bool{
 }
 
 func sourceValuesTextCandidateRow(tick sourceValuesRawTick)([]byte,error){
-    if tick.Schema!=sourceValuesRawLayoutSchema ||
+    if (tick.Schema!=sourceValuesRawLayoutSchema && tick.Schema!=sourceValuesLatchLayoutSchema) ||
         tick.LocalTime=="" || len(tick.OrderedFields)==0{
         return nil,errors.New("source text candidate requires a checked 0x3100 source tick")
     }

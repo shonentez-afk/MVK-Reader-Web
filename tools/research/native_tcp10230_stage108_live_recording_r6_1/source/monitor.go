@@ -84,6 +84,10 @@ type Summary struct {
     SourceFrozenValuesTicks uint64 `json:"source_original_values_3100_skipped_frozen,omitempty"`
     SourceOriginalParamGateSHA256 string `json:"source_original_param_gate_sha256,omitempty"`
     SourceOriginalParamGateRecords uint64 `json:"source_original_param_gate_records,omitempty"`
+    SourceTachGateSchema string `json:"source_original_tach_gate_schema,omitempty"`
+    SourceTachGateSHA256 string `json:"source_original_tach_gate_sha256,omitempty"`
+    SourceTachGateRecords uint64 `json:"source_original_tach_gate_records,omitempty"`
+    SourceMetadataObservation *sourceMetadataObservation `json:"source_adc_metadata_observation,omitempty"`
 	RegisterBlocks         uint64            `json:"register_blocks"`
 	Aux4700                uint64            `json:"aux4700_updates"`
 	ValuesTicks            uint64            `json:"values_ticks_address_3100"`
@@ -126,6 +130,8 @@ type Monitor struct {
     sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
     sourceOriginalTask2Stage *sourceOriginalTask2Lifecycle // independent Task2 Stage0/1/3 and DENIED original receive status
     sourceParamGate *sourceOriginalParamGateJournal // original PARAM freeze decisions per actual source TCP frame
+    sourceTachGate *sourceTachGateJournal
+    sourceContract *sourceMetadataLatchCandidate
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
@@ -403,6 +409,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // _Unit125:008081E0 skips zero-length source packets without
         // changing TMvkChannelStorage or receiving data counters.
         if sample.Samples==0 {
+            if typ==typeTach {if err:=m.observeSourceTach(f,*sample,false);err!=nil{return err}}
             m.note("empty source sample packet (header only); original ring unchanged")
             break
         }
@@ -433,6 +440,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // FreezeUpdate is false. No device TX is inferred or performed.
         sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
             m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
+        if typ==typeTach {if err:=m.observeSourceTach(f,*sample,sourceStoreAllowed);err!=nil{return err}}
         if m.sourceLiveDataWriter!=nil {
             if e:=m.sourceLiveDataWriter.onSample(
                 m,*sample,f.Raw[28:],sourceStoreAllowed);e!=nil {return e}
@@ -518,6 +526,8 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // readings or write an event just because RAW contains 0x3100.
         // The immutable forensic incoming.raw retains those exact bytes.
         if sourceFrozen {
+            // Stage0 metadata still latches; Freeze skips mutation/reset.
+            if m.sourceContract!=nil {for _,b:=range blocks {if _,err:=m.sourceContract.param(int(b.Addr),b.Payload,true);err!=nil{return err}}}
             m.summary.SourceFrozenParamFrames++
             m.summary.SourceFrozenParamBlocks+=uint64(len(blocks))
             if len(f.Raw)==4700 {m.summary.SourceFrozenAux4700++}
@@ -534,6 +544,8 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		for _, b := range blocks {
 			m.image.Put(b)
 			m.summary.RegisterBlocks++
+            var sourceTick *[2]sourceImpulseValue
+            if m.sourceContract!=nil {var err error;sourceTick,err=m.sourceContract.param(int(b.Addr),b.Payload,false);if err!=nil{return err}}
 			if b.Addr == 0x3100 && valuesTriggerImage == nil &&
 				m.sourceLiveValuesWriter != nil &&
 				!m.sourceLiveValuesWriter.closed &&
@@ -541,6 +553,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				// RegisterImage owns fixed arrays (bytes and validity); this
 				// value copy cannot alias later updates to m.image.
 				atTrigger := m.image
+                if m.sourceContract!=nil {sourceOverlayTachTick(&atTrigger,sourceTick)}
 				valuesTriggerImage = &atTrigger
 			}
 		}
@@ -592,6 +605,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 
 func (m *Monitor) Snapshot() Summary {
 	result := m.summary
+    result.SourceMetadataObservation=m.sourceContract.observation()
 	if s:=m.sourceTask2TX;s!=nil {
 		result.SourceSetRateApproved=s.enabled
 		result.SourceSetRateCount=s.sentCommands
@@ -642,6 +656,7 @@ func (m *Monitor) CloseFiles() error {
     if m.sourceLiveDataWriter!=nil {m.sourceLiveDataWriter.cleanup()}
     if m.sourceLiveValuesWriter!=nil {m.sourceLiveValuesWriter.cleanup()}
     if m.sourceParamGate!=nil {m.sourceParamGate.cleanup()}
+    if m.sourceTachGate!=nil {m.sourceTachGate.cleanup()}
 	return first
 }
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
@@ -683,6 +698,7 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
                 m.summary.CaptureOnly=true
             }
         }
+        if m.sourceTachGate!=nil {if err:=m.sourceTachGate.finalize(m);err!=nil {m.warn("source TACH admission ledger unavailable: "+err.Error());m.captureOnly=true;m.summary.CaptureOnly=true}}
 		if m.frameMarks != nil {
 			if markErr := m.frameMarks.finalize(m); markErr != nil {
 				m.warn("Local frame mark audit unavailable: " + markErr.Error())

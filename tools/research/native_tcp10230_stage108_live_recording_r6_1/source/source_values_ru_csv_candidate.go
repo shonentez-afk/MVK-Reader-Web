@@ -170,7 +170,7 @@ func sourceRUAdvancedResultTitle(index int,id uint32)(string,error){
 // A direct companion to RAW_LAYOUT and TEXT_CANDIDATE, built at precisely
 // the same accepted PARAM 0x3100 tick and in identical original cell order.
 func sourceRUValuesCandidateRow(tick sourceValuesRawTick)([]byte,error){
-    if tick.Schema!=sourceValuesRawLayoutSchema || tick.LocalTime=="" ||
+    if (tick.Schema!=sourceValuesRawLayoutSchema && tick.Schema!=sourceValuesLatchLayoutSchema) || tick.LocalTime=="" ||
         len(tick.OrderedFields)==0{
         return nil,errors.New("Russian VALUES row requires validated real tick")
     }

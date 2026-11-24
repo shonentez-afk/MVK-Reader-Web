@@ -15,6 +15,7 @@ import json
 import re
 
 from .original_source_values_tick_acceptance import verify_source_values_prefix_event
+from .original_tach_gate_proof import SOURCE_TACH_GATE_SCHEMA
 
 SCHEMA="MVK_SOURCE_LIVE_VALUES_3100_EVENTS_V1"
 AUDIT="SOURCE_LIVE_VALUES_NATIVE_AUDIT.json"
@@ -104,7 +105,12 @@ def verify_original_live_values(
             or not 1<=len(windows)<=8 or
             summary.get("source_live_values_windows")!=len(windows)):
         raise ValueError("Original WriteValues selected window mismatch")
+    latch_required=summary.get("source_original_tach_gate_schema") is not None
+    if latch_required and (summary["source_original_tach_gate_schema"] != SOURCE_TACH_GATE_SCHEMA or
+                           not summary.get("source_original_tach_gate_sha256")):
+        raise ValueError("Original WriteValues invalid TACH admission proof")
     total_events=0
+    latch_verified=0
     out=[]
     last_tick=0
     last_frame=0
@@ -192,10 +198,15 @@ def verify_original_live_values(
                     event.get("param_payload_sha256")!=
                        b["register_payload_sha256"]):
                 raise ValueError("Original WriteValues source RX event disagrees")
+            if latch_required and not rich:
+                raise ValueError("Original WriteValues TACH latch evidence cannot be downgraded")
             if rich:
                 checked=verify_source_values_prefix_event(
                     event,prefix=b.get("_register_prefix"),
                     channels=channels,spec=spec,values=values)
+                if checked["source_tach_latch_replay_verified"] != latch_required:
+                    raise ValueError("Original WriteValues TACH latch mode differs from run summary")
+                latch_verified += int(checked["source_tach_latch_replay_verified"])
                 prefix_rows.append(checked["raw_line_bytes"])
         layout_evidence=None
         if rich_mode:
@@ -233,5 +244,6 @@ def verify_original_live_values(
         "source_trigger_prefix_registers_verified":bool(total_events) and all(
             not item["events"] or item["source_trigger_prefix_registers_verified"]
             for item in out),
+        "source_tach_latch_replay_verified":bool(total_events) and latch_verified==total_events,
         "original_delphi_get_value_text_parity_verified":False,
     }

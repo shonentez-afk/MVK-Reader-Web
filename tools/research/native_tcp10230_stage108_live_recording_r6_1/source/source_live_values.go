@@ -233,7 +233,7 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
     // Restrict both data and per-tick freshness to the inclusive prefix.
     // Suffix descriptors still update the main image for future frames.
     snapshot,rawLayout,e:=sourceValuesOrderedRawTickFromImage(
-        triggerImage,w.active,blocks[:triggerIndex+1],at)
+        triggerImage,w.active,blocks[:triggerIndex+1],at,m.sourceContract!=nil)
     if e!=nil{return e}
     textCandidate,e:=sourceValuesTextCandidateRow(snapshot)
     if e!=nil{return e}

@@ -18,6 +18,7 @@ import re
 from .original_values_3100_timeline import RegisterPrefixSnapshot
 
 SCHEMA="MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V1"
+LATCH_SCHEMA="MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V2_TACH_LATCH"
 HEX4=re.compile(r"[0-9a-f]{8}\Z")
 HEX64=re.compile(r"[0-9a-f]{64}\Z")
 LOCAL_TIME=re.compile(r"\d\d:\d\d:\d\d\.\d{3}\Z")
@@ -73,7 +74,7 @@ def parse_source_values_3100_event(event:dict)->dict:
     if not isinstance(digest,str) or digest!=sha256(bytes.fromhex(raw)).hexdigest():
         raise ValueError("Source WriteValues original PARAM payload SHA mismatch")
     proof=event.get("source_ordered_raw_tick")
-    if not isinstance(proof,dict) or proof.get("schema")!=SCHEMA:
+    if not isinstance(proof,dict) or proof.get("schema") not in (SCHEMA,LATCH_SCHEMA):
         raise ValueError("Source WriteValues raw tick schema missing")
     for flag in ("original_get_value_text_parity_verified",
                  "original_delphi_local_time_parity_verified",
@@ -159,6 +160,9 @@ def verify_source_values_prefix_event(event, *, prefix, channels, spec, values)-
     if not isinstance(prefix, RegisterPrefixSnapshot):
         raise ValueError("Source WriteValues missing independent trigger-prefix replay")
     parsed = parse_source_values_3100_event(event)
+    latch_mode = event["source_ordered_raw_tick"]["schema"] == LATCH_SCHEMA
+    if latch_mode != prefix.tach_latch:
+        raise ValueError("Source WriteValues TACH latch mode lacks independent replay")
     cells = event["source_ordered_raw_tick"]["original_selected_cell_order"]
     selected = []
     for channel in range(1, 9):
@@ -178,7 +182,7 @@ def verify_source_values_prefix_event(event, *, prefix, channels, spec, values)-
         raise ValueError("Source WriteValues legacy mask count mismatch")
     for cell, (channel, group, index) in zip(cells, selected):
         address, kind = _expected_address(channel, group, index)
-        raw = prefix.dword_hex(address, current=group == "TACH" and index == 5)
+        raw = prefix.dword_hex(address, current=group == "TACH" and index == 5 and not latch_mode)
         if cell.get("raw_dword_le_hex") != raw:
             raise ValueError("Source WriteValues selected value differs from RAW trigger prefix")
         cell_type = (10 if kind == "U32_ADVANCED_UNFORMATTED"
@@ -195,6 +199,7 @@ def verify_source_values_prefix_event(event, *, prefix, channels, spec, values)-
                 raise ValueError("Source WriteValues Advanced selector differs from RAW trigger prefix")
         elif "source_advanced_selected_id" in cell:
             raise ValueError("Source WriteValues unexpected Advanced selector")
+    parsed["source_tach_latch_replay_verified"] = latch_mode
     return parsed
 
 

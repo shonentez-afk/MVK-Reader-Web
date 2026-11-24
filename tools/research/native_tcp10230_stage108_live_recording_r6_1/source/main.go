@@ -108,6 +108,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		if e:=m.sourceTCP.begin(m);e!=nil{return "SOURCE_TCP_SEGMENT_FAILED",e}
 		defer func(){m.sourceTCP.finish(m,reason)}()
 	}
+    if m.sourceContract!=nil {m.sourceContract.newSocket()}
     // New TCP socket means a fresh original Task2 Stage0. Never
     // revive Stage1/error from a previous stream segment or earlier RUN.
     if m.sourceOriginalTask2Stage!=nil {
@@ -497,6 +498,10 @@ func mainInner() int {
             return 2
         }
         m.sourceParamGate=gate
+        tachGate,err:=newSourceTachGateJournal(dir)
+        if err!=nil {fmt.Println("Cannot create source TACH ledger:",err);_=m.CloseFiles();return 2}
+        m.sourceTachGate=tachGate
+        m.sourceContract=newSourceMetadataLatchCandidate()
         if m.sourceOperatorRateChan==nil {
             local:=make(chan string,16)
             m.sourceOperatorRateChan=local
