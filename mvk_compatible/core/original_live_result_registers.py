@@ -25,6 +25,7 @@ from .original_status_workbench import (
 )
 
 SCHEMA="MVK_SOURCE_LIVE_PAGESTATUS_RAW_BANKS_V1"
+from .original_local_tach_latch import SCHEMA as LOCAL_TACH_SCHEMA
 _HEX=re.compile(r"[0-9a-f]{8}\Z")
 _FLOAT_FIELD_KEYS=("bands_43_raw_f32_le","rms_24_raw_f32_le",
                    "peak_24_raw_f32_le","peak_peak_24_raw_f32_le")
@@ -79,6 +80,9 @@ def parse_live_result_registers(status:dict)->dict|None:
     if (data.get("original_get_value_text_parity_verified") is not False or
             data.get("original_delphi_runtime_parity_verified") is not False):
         raise ValueError("Source PageStatus: unverified Delphi text/runtime parity asserted")
+    local_schema=data.get("source_local_tach_projection_schema")
+    if local_schema not in (None,LOCAL_TACH_SCHEMA):
+        raise ValueError("Source PageStatus: unknown local TACH projection")
     incoming_adc=data.get("adc")
     incoming_tach=data.get("tach")
     if (not isinstance(incoming_adc,list) or len(incoming_adc)!=8 or
@@ -128,13 +132,22 @@ def parse_live_result_registers(status:dict)->dict|None:
             raise ValueError("Source PageStatus TACH source register base/order mismatch")
         values=_word_array(raw.get("source_field_0_2_4_6_8_fe_raw_le"),6,
                            "TACH source register fields")
-        # +0xFE may exist from an initial FULL register image, without a
-        # fresh 76B VALUES tick. Do not show a stale pulse as live truth.
-        if values[5] is not None:
+        # Legacy wire +FE remains unknown. Only a source-local
+        # projection with known written words can expose the live flag.
+        mask=raw.get("source_local_tach_word_mask",0)
+        if type(mask) is not int or not 0<=mask<=3 or (mask and local_schema!=LOCAL_TACH_SCHEMA):
+            raise ValueError("Source PageStatus: invalid local TACH word mask")
+        if mask and values[5] is not None:
+            word=bytes.fromhex(values[5])
+            if (mask&1 and word[:2] not in (b"\x00\x00",b"\x01\x00") or
+                    mask&2 and word[2:]!=b"\x00\x00"):
+                raise ValueError("Source PageStatus: invalid local TACH DWORD")
+        if not mask:
             values=(*values[:5],None)
         observed+=sum(v is not None for v in values)
         tachs.append({"tach":index+1,"base_word":base,
-                      "source_field_0_2_4_6_8_fe_raw_le":values})
+                      "source_field_0_2_4_6_8_fe_raw_le":values,
+                      **({"source_local_tach_word_mask":mask} if local_schema else {})})
     if accepted==0 and observed:
         raise ValueError("Source PageStatus values without a received PARAM")
     if status.get("phase") not in ("RECORDING","CONNECTING","VERIFYING","COMPLETED","REFUSED"):

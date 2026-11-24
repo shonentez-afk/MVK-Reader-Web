@@ -46,6 +46,9 @@ func (l *sourceTCPLedger) begin(m *Monitor) error {
   // continuity from the old TCP connection may enter the new session.
   m.f=&Framer{}
   m.image=RegisterImage{}
+  // Until retained original config/retry is accepted, never expose a
+  // previous socket's local TACH value in a new socket's status.
+  if m.sourceTach!=nil {m.sourceTach.state=sourceLocalTachState{}}
   m.liveDSPSeen=[8]bool{}
   m.liveDSPStatus=[8]uint32{}
   m.liveLastAUXUTC=""

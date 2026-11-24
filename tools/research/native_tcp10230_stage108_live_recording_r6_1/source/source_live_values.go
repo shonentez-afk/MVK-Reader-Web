@@ -213,7 +213,7 @@ func anySourceValuesSelected(m frameMarkReceipt)bool{
     // Never arm for historical non-original bits 36..72.
     return false
 }
-func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time,triggerImage *RegisterImage)error{
+func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time,triggerImage *RegisterImage, localTach ...*sourceLocalTachState)error{
     if w==nil || w.closed || w.active==nil{return nil}
     triggerIndex:=-1
     for i:=range blocks{
@@ -233,7 +233,7 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
     // Restrict both data and per-tick freshness to the inclusive prefix.
     // Suffix descriptors still update the main image for future frames.
     snapshot,rawLayout,e:=sourceValuesOrderedRawTickFromImage(
-        triggerImage,w.active,blocks[:triggerIndex+1],at)
+        triggerImage,w.active,blocks[:triggerIndex+1],at,localTach...)
     if e!=nil{return e}
     textCandidate,e:=sourceValuesTextCandidateRow(snapshot)
     if e!=nil{return e}

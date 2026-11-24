@@ -84,6 +84,8 @@ type Summary struct {
     SourceFrozenValuesTicks uint64 `json:"source_original_values_3100_skipped_frozen,omitempty"`
     SourceOriginalParamGateSHA256 string `json:"source_original_param_gate_sha256,omitempty"`
     SourceOriginalParamGateRecords uint64 `json:"source_original_param_gate_records,omitempty"`
+    SourceLocalTachGateSHA256 string `json:"source_local_tach_gate_sha256,omitempty"`
+    SourceLocalTachGateRecords uint64 `json:"source_local_tach_gate_records,omitempty"`
 	RegisterBlocks         uint64            `json:"register_blocks"`
 	Aux4700                uint64            `json:"aux4700_updates"`
 	ValuesTicks            uint64            `json:"values_ticks_address_3100"`
@@ -126,6 +128,7 @@ type Monitor struct {
     sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
     sourceOriginalTask2Stage *sourceOriginalTask2Lifecycle // independent Task2 Stage0/1/3 and DENIED original receive status
     sourceParamGate *sourceOriginalParamGateJournal // original PARAM freeze decisions per actual source TCP frame
+    sourceTach *sourceLocalTachJournal // separate local TACH projection, never mutates wire image
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
@@ -433,6 +436,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // FreezeUpdate is false. No device TX is inferred or performed.
         sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
             m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
+        if typ==typeTach && m.sourceParamGate!=nil && m.sourceOriginalRXGate!=nil {
+            if e:=m.ensureSourceLocalTach();e!=nil{return e}
+            if e:=m.sourceTach.onSample(m,f,*sample,sourceStoreAllowed);e!=nil{return e}
+        }
         var physicalChunk []byte
 		// Original channel 8/9 store the 256 raw payload BYTES, not
         // 64 Float32 samples; FRxPos is byte count for TACH in Delphi.
@@ -496,6 +503,9 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
                 m,*sample,f.Raw[28:],sourceStoreAllowed,physicalChunk);e!=nil {return e}
         }
 	case typeParam:
+        if m.sourceParamGate!=nil && m.sourceOriginalRXGate!=nil {
+            if e:=m.ensureSourceLocalTach();e!=nil{return e}
+        }
         sourceFrozen:=m.sourceOriginalRXGate!=nil && m.sourceOriginalRXGate.frozen
         // A SHA-anchored local ledger records the REAL operator Freeze
         // state per PARAM frame. RAW replay alone cannot recover it.
@@ -537,8 +547,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		// not the end of the PARAM frame. Keep final image and all existing
 		// frame counters, spool validation and RAW handling unchanged.
 		var valuesTriggerImage *RegisterImage
+        var valuesTriggerTach *sourceLocalTachState
 		for _, b := range blocks {
 			m.image.Put(b)
+            if m.sourceTach!=nil {m.sourceTach.state.onBlock(b)}
 			m.summary.RegisterBlocks++
             // Source 00808617..00808682 is inside the descriptor loop.
             m.latchSourceOriginalRanges()
@@ -550,7 +562,14 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 				// value copy cannot alias later updates to m.image.
 				atTrigger := m.image
 				valuesTriggerImage = &atTrigger
+                if m.sourceTach!=nil {
+                    snapshot:=m.sourceTach.state
+                    valuesTriggerTach=&snapshot
+                }
 			}
+            // 008085BD reads the row before 008085D1 clears BOTH local
+            // DWORDs, even with no ValuesFile. Last bytes are retained.
+            if b.Addr==0x3100 && m.sourceTach!=nil {m.sourceTach.state.resetTick()}
 		}
 		m.summary.RegisterUpdates++
 		if m.liveBin != nil {
@@ -571,7 +590,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // Preserve whole-frame validation and the one-tick-per-frame
         // policy; only the row's register source is trigger-prefix bound.
         if m.sourceLiveValuesWriter!=nil {
-            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at,valuesTriggerImage);e!=nil {return e}
+            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at,valuesTriggerImage,valuesTriggerTach);e!=nil {return e}
         }
 		if len(f.Raw) == 4700 {
 			m.summary.Aux4700++
@@ -650,6 +669,7 @@ func (m *Monitor) CloseFiles() error {
     if m.sourceLiveDataWriter!=nil {m.sourceLiveDataWriter.cleanup()}
     if m.sourceLiveValuesWriter!=nil {m.sourceLiveValuesWriter.cleanup()}
     if m.sourceParamGate!=nil {m.sourceParamGate.cleanup()}
+    if m.sourceTach!=nil {m.sourceTach.cleanup()}
 	return first
 }
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
@@ -687,6 +707,13 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
         if m.sourceParamGate!=nil {
             if e:=m.sourceParamGate.finalize(m);e!=nil {
                 m.warn("source PARAM Freeze ledger unavailable: "+e.Error())
+                m.captureOnly=true
+                m.summary.CaptureOnly=true
+            }
+        }
+        if m.sourceTach!=nil {
+            if e:=m.sourceTach.finalize(m);e!=nil {
+                m.warn("source local TACH journal unavailable: "+e.Error())
                 m.captureOnly=true
                 m.summary.CaptureOnly=true
             }

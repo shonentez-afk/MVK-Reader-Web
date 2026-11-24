@@ -17,6 +17,7 @@ from hashlib import sha256
 from contextlib import nullcontext
 from dataclasses import dataclass
 from .original_param_gate_proof import OriginalParamGateReader
+from .original_local_tach_latch import TachGateReader,TACH_TYPE
 from pathlib import Path
 import re
 import struct
@@ -36,8 +37,13 @@ class RegisterPrefixSnapshot:
     data: bytes
     valid: bytes
     current: bytes
+    tach_projection: tuple | None = None
 
     def dword_hex(self, addr: int, *, current: bool = False) -> str | None:
+        if self.tach_projection is not None and addr in (0x30fe,0x31fe):
+            mask,value=self.tach_projection[(addr-0x30fe)//0x100]
+            if mask:
+                return value
         if not 0 <= addr < REGISTER_WORDS - 1:
             return None
         if not self.valid[addr] or not self.valid[addr + 1]:
@@ -91,6 +97,9 @@ def scan_original_values_3100(
     expected_frozen_aux: int = 0,
     expected_frozen_values: int = 0,
     capture_register_prefix: bool = False,
+    tach_gate_path: Path | str | None = None,
+    expected_tach_gate_sha256: str | None = None,
+    expected_tach_gate_records: int = 0,
 ) -> dict[int, list[dict]]:
     """Replay complete frames and collect only the chosen 0x3100 events.
 
@@ -152,7 +161,15 @@ def scan_original_values_3100(
             expected_frames=frames,
         ) if param_gate_path is not None else nullcontext(None)
     )
-    with path.open("rb") as src, gate_context as gate:
+    if tach_gate_path is None and (expected_tach_gate_sha256 is not None or expected_tach_gate_records):
+        raise ValueError("Source local TACH: missing gate path")
+    if tach_gate_path is not None and param_gate_path is None:
+        raise ValueError("Source local TACH: PARAM gate also required")
+    tach_context=TachGateReader(tach_gate_path,
+        expected_sha256=expected_tach_gate_sha256,
+        expected_records=expected_tach_gate_records,
+        expected_frames=frames) if tach_gate_path is not None else nullcontext(None)
+    with path.open("rb") as src, gate_context as gate, tach_context as tach_gate:
         for frame_index in range(frames):
             header = src.read(8)
             if len(header) != 8:
@@ -166,6 +183,8 @@ def scan_original_values_3100(
             frame = header + payload
             digest.update(frame)
             read_total += length
+            if frame_type == TACH_TYPE and tach_gate is not None:
+                tach_gate.consume(frame_index+1,frame)
             if frame_type != PARAM:
                 continue
             blocks = list(_parameter_blocks(frame))
@@ -195,14 +214,20 @@ def scan_original_values_3100(
                 current = bytearray(REGISTER_WORDS) if selected else None
                 for addr, count, block in blocks:
                     end_addr = addr + count
+                    if tach_gate is not None:
+                        tach_gate.state.block(addr,count)
                     register_data[addr * 2:end_addr * 2] = block
                     register_valid[addr:end_addr] = bytes([1]) * count
                     if current is not None:
                         current[addr:end_addr] = bytes([1]) * count
                         if addr == 0x3100:
                             prefix = RegisterPrefixSnapshot(
-                                bytes(register_data), bytes(register_valid), bytes(current))
+                                bytes(register_data), bytes(register_valid), bytes(current),
+                                tach_gate.state.projection(register_data,register_valid)
+                                if tach_gate is not None else None)
                             current = None
+                    if addr==0x3100 and tach_gate is not None:
+                        tach_gate.state.tick()
             if length == 4700:
                 aux += 1
             if triggers:
@@ -232,6 +257,8 @@ def scan_original_values_3100(
         read_total += len(final)
         if gate is not None:
             gate.finish()
+        if tach_gate is not None:
+            tach_gate.finish()
     if (read_total != total or digest.hexdigest() != expected_sha256
             or ticks != final_ticks or aux != final_aux or
             frozen_param != final_frozen_param or

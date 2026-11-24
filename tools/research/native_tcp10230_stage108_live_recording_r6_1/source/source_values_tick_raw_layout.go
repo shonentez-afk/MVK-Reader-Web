@@ -90,6 +90,7 @@ func(m *Monitor) sourceValuesOrderedRawTick(
 // at 0x3100. The wrapper above is retained for independent layout tests.
 func sourceValuesOrderedRawTickFromImage(
     image *RegisterImage, w *sourceLiveValuesWindow, blocks []RegBlock, at time.Time,
+    localTach ...*sourceLocalTachState,
 )(sourceValuesRawTick,[]byte,error){
     if w==nil || image==nil || at.IsZero(){
         return sourceValuesRawTick{},nil,errors.New("source WriteValues tick requires live time and selected window")
@@ -112,6 +113,10 @@ func sourceValuesOrderedRawTickFromImage(
             location:=addr
             field.WordAddr=&location
             if fresh{raw=sourceRegisterImageRawDWORD(image,addr)}
+        }
+        if group=="TACH" && index==5 && len(localTach)==1 && localTach[0]!=nil {
+            state:=localTach[0]
+            if state.mask[channel-9]!=0 {raw=state.projected(image,channel-9)}
         }
         field.RawLE=raw
         field.SourceWordValid=raw!=nil

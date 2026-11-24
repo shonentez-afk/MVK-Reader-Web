@@ -29,9 +29,11 @@ type sourceLiveTachResultBank struct {
     TACH int `json:"tach"`
     BaseWord uint16 `json:"base_word"`
     Fields []*string `json:"source_field_0_2_4_6_8_fe_raw_le"`
+    LocalTachWordMask uint8 `json:"source_local_tach_word_mask,omitempty"`
 }
 type sourceLivePageStatusBanks struct {
     Schema string `json:"schema"`
+    LocalTachProjectionSchema string `json:"source_local_tach_projection_schema,omitempty"`
     AcceptedParamFrames uint64 `json:"accepted_param_frames"`
     TCPConnectionCount uint64 `json:"tcp_connection_count"`
     GetValueTextParityVerified bool `json:"original_get_value_text_parity_verified"`
@@ -90,6 +92,7 @@ func(m *Monitor) snapshotSourceLivePageStatusBanks() sourceLivePageStatusBanks {
         }
         out.ADC[ch]=row
     }
+    if m.sourceTach!=nil {out.LocalTachProjectionSchema=sourceLocalTachSchema}
     for tach:=0;tach<2;tach++{
         base:=0x3000+0x100*tach
         row:=sourceLiveTachResultBank{
@@ -97,6 +100,10 @@ func(m *Monitor) snapshotSourceLivePageStatusBanks() sourceLivePageStatusBanks {
         }
         for j,offset:=range [...]int{0,2,4,6,8,0xFE}{
             row.Fields[j]=m.sourceLiveRawDWORD(base+offset)
+        }
+        if m.sourceTach!=nil && out.AcceptedParamFrames>0 {
+            row.LocalTachWordMask=m.sourceTach.state.mask[tach]
+            if row.LocalTachWordMask!=0 {row.Fields[5]=m.sourceTach.state.projected(&m.image,tach)}
         }
         out.TACH[tach]=row
     }
