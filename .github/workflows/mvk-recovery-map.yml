@@ -33,6 +33,10 @@ jobs:
         run: >-
           python tools/architecture/mvk_stage111_ast.py --repo . --sha "${{ github.sha }}"
           --out docs/architecture/mvkview-recovery/stage111-public-graph.json
+      - name: Build Qt AST event bindings
+        run: >-
+          python tools/architecture/mvk_stage111_qt_signals.py --repo . --sha "${{ github.sha }}"
+          --out docs/architecture/mvkview-recovery/stage111-qt-signals.json
       - name: Build Go AST native call graph
         run: >-
           go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ github.sha }}"
@@ -52,7 +56,12 @@ jobs:
           assert go['counts']['files_scanned'] >= 10
           assert go['counts']['direct_call_sites'] > 0
           assert all(not any(f in n['path'] for f in forbidden) for n in go['nodes'])
-          print(d['counts'], go['counts'])
+          qt=json.loads(Path('docs/architecture/mvkview-recovery/stage111-qt-signals.json').read_text(encoding='utf-8'))
+          assert qt['metadata']['scope']=='PUBLIC_STAGE111_QT_AST_ONLY'
+          assert qt['counts']['bindings'] > 0
+          assert not qt['errors']
+          assert all(not any(f in r['path'] for f in forbidden) for r in qt['bindings'])
+          print(d['counts'], go['counts'], qt['counts'])
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -60,6 +69,7 @@ jobs:
           path: |
             docs/architecture/mvkview-recovery/stage111-public-graph.json
             docs/architecture/mvkview-recovery/stage111-go-callgraph.json
+            docs/architecture/mvkview-recovery/stage111-qt-signals.json
           retention-days: 14
 
   public-likec4-model:
