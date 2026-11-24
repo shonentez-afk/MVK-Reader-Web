@@ -41,7 +41,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      MVK_PREFIX_FIXTURE_DIR: ${{ runner.temp }}/mvk-prefix-fixture
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v6
@@ -54,6 +53,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Set isolated fixture location
+        run: echo "MVK_PREFIX_FIXTURE_DIR=$RUNNER_TEMP/mvk-prefix-fixture" >> "$GITHUB_ENV"
       - name: Generate actual Go writer evidence from synthetic frames
         working-directory: tools/research/native_tcp10230_stage108_live_recording_r6_1/source
         run: |
