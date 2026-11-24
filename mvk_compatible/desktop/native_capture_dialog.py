@@ -56,6 +56,7 @@ class NativeCaptureDialog(QDialog):
     statusReady = Signal(object)
     statusInvalid = Signal(str)
     captureStarted = Signal()
+    captureFinalizing = Signal()  # receiver stopping; verification may still run
     captureEnded = Signal(bool)
     previewReady = Signal(object)
     previewInvalid = Signal(str)
@@ -598,6 +599,9 @@ class NativeCaptureDialog(QDialog):
         mode = self._mode
         self._read_process()
         if mode == "capture":
+            # Go has exited. Close the operator command window BEFORE the
+            # last status poll or the asynchronous independent ZIP check.
+            self.captureFinalizing.emit()
             self._poll_live_status()
             self._timer.stop()
         self._mode = None
@@ -839,6 +843,7 @@ class NativeCaptureDialog(QDialog):
             QMessageBox.warning(self, "Остановка", str(exc))
             return False
         self.stop_button.setEnabled(False)
+        self.captureFinalizing.emit()
         self.status_label.setText(
             "Запрошена штатная остановка. Native проверяет RAW и завершает экспорт. "
             "Принудительное завершение процесса не используется.")

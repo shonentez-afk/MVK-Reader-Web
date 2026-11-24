@@ -2811,14 +2811,14 @@ class MainWindow(QMainWindow):
         elif (page=='PageAdc' and page_changed
                 and self._live_preview is not None
                 and not self._source_live_view_frozen
-                and not self._measurement_exit_requested):
+                and not self._live_capture_stopping()):
             # New verified Go previews already render in their callback.
             # Rebind on page transition, not 50 stale FFTs per second.
             self._render_live_wave()
         elif (page=='PageSpectrum' and page_changed
                 and self._live_preview is not None
                 and not self._source_live_view_frozen
-                and not self._measurement_exit_requested):
+                and not self._live_capture_stopping()):
             self._render_live_spectrum()
         elif page=='PageFile':
             # Original 0084845C dispatches for each active-page tick;
@@ -2910,6 +2910,22 @@ class MainWindow(QMainWindow):
         self._sync_source_mode2_runtime()
         return True
 
+    def _live_capture_stopping(self):
+        writer=getattr(self,"_source_live_writer",None)
+        return bool(self._measurement_exit_requested or
+                    (self._live_active and writer is not None and writer.finalizing))
+
+    def _native_capture_finalizing(self):
+        """No more operator commands during Stop / Go export verification."""
+        if not self._live_active:
+            return
+        self._source_live_writer.begin_finalization()
+        self._invalidate_live_preview("Измерение завершается; проверка RAW/архива")
+        self.original_shell.update_live_file_status(
+            None,reason="Приём завершён; проверяются исходные файлы")
+        self.original_shell.measure_controls.render()
+        self.original_shell.refresh_status()
+
     def request_measurement_stop(self):
         """Source second click requests the same owner's graceful stop.
 
@@ -2921,7 +2937,7 @@ class MainWindow(QMainWindow):
             return self.leave_measurement_mode()
         dlg=self._native_dialog
         if (dlg is None or getattr(dlg,"_mode",None)!="capture"
-                or self._measurement_exit_requested):
+                or self._live_capture_stopping()):
             return False
         if dlg.stop_capture() is not True:
             return False
@@ -2930,9 +2946,7 @@ class MainWindow(QMainWindow):
         self._sync_source_mode2_runtime()
         # Freeze the view on request, not only after QProcess exits.
         # A late queued preview must never repopulate these graphs.
-        self._invalidate_live_preview("Остановка измерения запрошена")
-        self.original_shell.measure_controls.render()
-        self.original_shell.refresh_status()
+        self._native_capture_finalizing()
         return True
 
     def leave_measurement_mode(self):
@@ -2988,7 +3002,7 @@ class MainWindow(QMainWindow):
             capture_started=self._live_active,
             status=self._native_live_status if self._live_active else None,
             failure=self._measurement_connection_error,
-            stop_requested=self._measurement_exit_requested,
+            stop_requested=self._live_capture_stopping(),
             source_system_error_latched=(
                 self._source_mode2_runtime.status_cells.system_error_latched))
 
@@ -3001,7 +3015,7 @@ class MainWindow(QMainWindow):
         """
         if not self._live_active:
             raise ValueError("Исходная запись требует реального активного приёмника")
-        if self._measurement_exit_requested:
+        if self._live_capture_stopping():
             raise ValueError("Новая запись запрещена: измерение завершается")
         if self._source_mode2_runtime.status_cells.system_error_latched:
             raise ValueError(
@@ -3171,7 +3185,7 @@ class MainWindow(QMainWindow):
 
     def _receive_native_live_status(self,snapshot):
         """Display only live transport proof from the already-running Go owner."""
-        if not self._live_active:
+        if not self._live_active or self._live_capture_stopping():
             return
         try:
             evidence=connected_system_status(snapshot)
@@ -3184,6 +3198,9 @@ class MainWindow(QMainWindow):
             self._invalidate_native_live_status("Live status source rejected")
             return
         self._native_live_status=snapshot
+        if snapshot.get("phase") in ("VERIFYING","COMPLETED"):
+            self._native_capture_finalizing()
+            return evidence
         # The shared original popEnvelopeType menu is rate-gated by the
         # actual selected ADC, not the TCP packet rate of another ADC.
         # A new Fs invalidates an incompatible FIR Tag like Delphi
@@ -3231,7 +3248,7 @@ class MainWindow(QMainWindow):
                 "Подтверждена системная ошибка StatusCells[0]")
         # Once the operator requests stop, a later valid Go status must
         # not reactivate the preview or show a green connected indicator.
-        if self._measurement_exit_requested:
+        if self._live_capture_stopping():
             self._invalidate_live_preview("Запрошена остановка измерения")
             self.original_shell.measure_controls.render()
             self.original_shell.refresh_status()
@@ -3257,6 +3274,7 @@ class MainWindow(QMainWindow):
               and not self._source_live_view_frozen
               and not self._live_spectrum_current()):
             self._clear_live_spectrum("Окно спектра больше не соответствует текущему приёму")
+        self.original_shell._render_live_file_plan()
         self.original_shell.measure_controls.render()
         # Original tmInterfaceUpdate dispatches the ACTIVE source page.
         # Go emits an authenticated status event at a slower rate than
@@ -3271,7 +3289,7 @@ class MainWindow(QMainWindow):
         return evidence
 
     def _invalidate_native_live_status(self,reason):
-        if not self._live_active:
+        if not self._live_active or self._live_capture_stopping():
             return
         self._native_live_status=None
         self.original_shell.status_page.setProperty(
@@ -3304,7 +3322,7 @@ class MainWindow(QMainWindow):
 
     def _receive_source_long_window(self, window):
         """Route one SHA-bound Go 2M ring window to GetSignal OR GetSpectrum."""
-        if (not self._live_active or self._measurement_exit_requested or
+        if (not self._live_active or self._live_capture_stopping() or
                 self._source_live_view_frozen or
                 self._source_mode2_runtime.status_cells.system_error_latched):
             return
@@ -3334,7 +3352,7 @@ class MainWindow(QMainWindow):
                 return
             decision=gate_live_preview(
                 self._native_live_status,window.preview,
-                stop_requested=self._measurement_exit_requested)
+                stop_requested=self._live_capture_stopping())
             if not decision.allowed:
                 raise ValueError(decision.reason)
             if req.h_tag in (-1,-2):
@@ -3364,7 +3382,7 @@ class MainWindow(QMainWindow):
         from ..core.original_live_view_gate import gate_live_preview
         decision=gate_live_preview(
             self._native_live_status,preview,
-            stop_requested=self._measurement_exit_requested)
+            stop_requested=self._live_capture_stopping())
         if not decision.allowed:
             self._invalidate_live_preview(decision.reason)
             return
@@ -3451,7 +3469,7 @@ class MainWindow(QMainWindow):
         status=self._native_live_status or {}
         profile=self.envelope_profile
         window=self._live_long_window
-        if (self._source_live_view_frozen or self._measurement_exit_requested
+        if (self._source_live_view_frozen or self._live_capture_stopping()
                 or status.get("phase")!="RECORDING" or
                 status.get("snapshot_stale") is not False or
                 status.get("source_original_storage_verified") is not True or
@@ -3519,7 +3537,7 @@ class MainWindow(QMainWindow):
         """Display only same-run source proof; mouse reads full FIR, not LOD."""
         worker=self._source_fir_worker
         if (worker is None or result.get('job_key')!=worker.job_key or
-                not self._live_active or self._measurement_exit_requested or
+                not self._live_active or self._live_capture_stopping() or
                 self._source_live_view_frozen or
                 self._source_mode2_runtime.status_cells.system_error_latched):
             return
@@ -3534,7 +3552,7 @@ class MainWindow(QMainWindow):
         from ..core.original_live_view_gate import gate_live_preview
         proof=gate_live_preview(
             status,worker.window.preview,
-            stop_requested=self._measurement_exit_requested)
+            stop_requested=self._live_capture_stopping())
         if not proof.allowed:
             self.wave_hint.setText(
                 'FIR результат отклонён после изменения TCP: '+proof.reason)
@@ -3618,7 +3636,7 @@ class MainWindow(QMainWindow):
         pending=self._source_fir_pending
         self._source_fir_pending=None
         if (pending is None or not self._live_active or
-                self._measurement_exit_requested or
+                self._live_capture_stopping() or
                 self._source_live_view_frozen):
             return
         window,profile,tag,code=pending
@@ -3639,7 +3657,7 @@ class MainWindow(QMainWindow):
         basis=self._live_wave_vertical_basis
         valid=(bound is not None and self.wave_line is not None
                and isinstance(pos,QPointF) and self._live_active
-               and not self._measurement_exit_requested
+               and not self._live_capture_stopping()
                and not self._source_live_view_frozen
                and not self._source_mode2_runtime.status_cells.system_error_latched
                and status.get('phase')=='RECORDING'
@@ -3729,7 +3747,7 @@ class MainWindow(QMainWindow):
         status=self._native_live_status or {}
         valid=(isinstance(trace,dict) and self.wave_line is not None
                and isinstance(pos,QPointF) and self._live_active
-               and not self._measurement_exit_requested
+               and not self._live_capture_stopping()
                and not self._source_live_view_frozen
                and not self._source_mode2_runtime.status_cells.system_error_latched
                and status.get('phase')=='RECORDING'
@@ -3987,7 +4005,7 @@ class MainWindow(QMainWindow):
                 and d.get("live_envelope_code")==code)
 
     def _live_spectrum_current(self):
-        if (not self._live_active or self._measurement_exit_requested
+        if (not self._live_active or self._live_capture_stopping()
                 or self._source_live_view_frozen
                 or self._source_mode2_runtime.status_cells.system_error_latched
                 or not self._live_spectrum_selection_matches()):
@@ -4121,7 +4139,7 @@ class MainWindow(QMainWindow):
                 raise ValueError("Нет проверенного окна выбранного АЦП")
             from ..core.original_live_view_gate import gate_live_preview
             decision=gate_live_preview(
-                status,source_preview,stop_requested=self._measurement_exit_requested)
+                status,source_preview,stop_requested=self._live_capture_stopping())
             if not decision.allowed:
                 raise ValueError(decision.reason)
             if ring_selected:
@@ -4395,8 +4413,12 @@ class MainWindow(QMainWindow):
         checkboxes affect only a later explicit local PageFile export.
         A manual File->Open cannot claim the previous live session plan.
         """
+        # Consume BOTH one-shot receipts before opening the accepted result.
+        # A rejected result or a later manual Open must not inherit a writer.
         plan=self._pending_native_pagefile_plan
+        ledger=self._pending_source_write_ledger
         self._pending_native_pagefile_plan=None
+        self._pending_source_write_ledger=None
         self.open_archive(path)
         if (plan is None or self.session is None
                 or self._offline_flow is None):
@@ -4414,8 +4436,6 @@ class MainWindow(QMainWindow):
             "Проверенный Native ZIP открыт; исходный выбор 10/43/73 "
             "применён только к будущему локальному экспорту. "
             f"Выбрано АЦП: {len(receipt['applied_selected_adc'])}.")
-        ledger=self._pending_source_write_ledger
-        self._pending_source_write_ledger=None
         if ledger is not None and ledger.windows:
             self._start_source_write_export(ledger,path)
 
@@ -4499,8 +4519,8 @@ class MainWindow(QMainWindow):
     def source_rate_selected(self,rate:int):
         """Source mRate1Click; same Go socket, only if separately authorized."""
         dlg=self._native_dialog
-        if (dlg is None or not self._live_active or
-                not getattr(dlg,"source_rate_tx_active",lambda:False)()):
+        if (dlg is None or not self._live_active or self._live_capture_stopping()
+                or not getattr(dlg,"source_rate_tx_active",lambda:False)()):
             self.statusBar().showMessage("Источник ЧД доступен только в разрешённом активном измерении")
             return False
         from PySide6.QtWidgets import QMessageBox
@@ -4530,6 +4550,7 @@ class MainWindow(QMainWindow):
         dlg=NativeCaptureDialog(self)
         dlg.archiveReady.connect(self._accept_native_capture_archive)
         dlg.captureStarted.connect(self._begin_live_capture)
+        dlg.captureFinalizing.connect(self._native_capture_finalizing)
         dlg.captureEnded.connect(self._end_live_capture)
         dlg.statusReady.connect(self._receive_native_live_status)
         dlg.statusInvalid.connect(self._invalidate_native_live_status)

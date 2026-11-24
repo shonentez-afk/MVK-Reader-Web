@@ -794,7 +794,7 @@ class OriginalRootShell:
         if mode2:
             status=getattr(self.window,"_native_live_status",None)
             trace=getattr(self.window,"_source_mode2_runtime",None)
-            stopping=bool(self.window._measurement_exit_requested)
+            stopping=bool(self.window._live_capture_stopping())
             source_fault=bool(trace is not None and trace.status_cells.system_error_latched)
             source_cells=trace.status_cells.receipt() if trace is not None else None
             live_evidence=connected_system_status(status)
@@ -1137,7 +1137,7 @@ class OriginalRootShell:
         return source_live_file_edit_policy(
             write_data=bool(flags.get("write_data_requested")),
             write_values=bool(flags.get("write_values_requested")),
-            stopping=bool(self.window._measurement_exit_requested))
+            stopping=bool(self.window._live_capture_stopping()))
 
     def _render_live_file_plan(self):
         plan=self.live_file_plan

@@ -210,3 +210,65 @@ def test_untrusted_stopped_run_does_not_create_local_directories(tmp_path):
     assert ledger.windows==[]
     assert export_source_write_windows(ledger,flow,run)["windows"]==0
     assert not (run/EXPORT_SUBDIR).exists()
+
+
+def test_independent_operator_elapsed_and_immutable_finalize_boundary():
+    from datetime import datetime,timezone,timedelta
+    start=datetime(2026,11,24,1,0,0,tzinfo=timezone.utc)
+    ledger=OriginalLiveWriteLedger()
+    status=source_status()
+    ledger.observe(status)
+    plan=OriginalLiveFilePlan().bind_status(status)
+    ledger.toggle("data",plan,now=start)
+    ledger.toggle("values",plan,now=start+timedelta(seconds=2))
+    times=ledger.elapsed_receipt(now=start+timedelta(seconds=65))
+    assert times["data_elapsed_text"]=="00:01:05"
+    assert times["values_elapsed_text"]=="00:01:03"
+    assert not times["delphi_file_open_time_verified"]
+    ledger.observe(source_status(adc_samples=512,aux=1,frames=30,raw=18000))
+    ledger.begin_finalization(now=start+timedelta(seconds=70))
+    assert ledger.receipt()["source_writer_finalizing"]
+    assert ledger.elapsed_receipt(now=start+timedelta(seconds=999))[
+        "data_elapsed_text"]=="00:01:10"
+    with pytest.raises(ValueError,match="finalizing"):
+        ledger.toggle("data",plan)
+    ledger.observe(source_status(adc_samples=768,aux=2,frames=40,raw=23000))
+    ledger.finish(accepted=True)
+    assert len(ledger.windows)==2
+    assert all(w.operator_end_utc==(start+timedelta(seconds=70)).isoformat()
+               for w in ledger.windows)
+    assert all(w.end_samples[0]==512 for w in ledger.windows)
+    assert ledger.data_stage==ledger.values_stage==STAGE_IDLE
+    assert ledger.elapsed_receipt()["data_elapsed_seconds"] is None
+    ledger.finish(accepted=True)
+    assert len(ledger.windows)==2
+
+
+def test_two_active_writers_reserve_total_window_limit():
+    ledger=OriginalLiveWriteLedger()
+    status=source_status()
+    ledger.observe(status)
+    plan=OriginalLiveFilePlan().bind_status(status)
+    for _ in range(7):
+        ledger.toggle("data",plan)
+        ledger.toggle("data",plan)
+    ledger.toggle("data",plan)
+    with pytest.raises(ValueError,match="eight"):
+        ledger.toggle("values",plan)
+    ledger.begin_finalization()
+    ledger.finish(accepted=True)
+    assert len(ledger.windows)==8
+
+
+def test_failed_mark_finalize_does_not_raise_or_create_active_window():
+    ledger=OriginalLiveWriteLedger()
+    status=source_status()
+    ledger.observe(status)
+    plan=OriginalLiveFilePlan().bind_status(status)
+    ledger.toggle("data",plan)
+    ledger.frame_marks_required=True
+    ledger.frame_marks_failed=True
+    ledger.begin_finalization()
+    ledger.finish(accepted=True)
+    assert ledger.finished and not ledger.windows
+    assert ledger.data_stage==STAGE_IDLE

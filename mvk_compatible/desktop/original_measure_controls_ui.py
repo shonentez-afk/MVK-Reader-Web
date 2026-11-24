@@ -163,6 +163,9 @@ class OriginalMeasureControls:
         self.render()
 
     def _toggle_freeze(self):
+        if self.window._live_capture_stopping():
+            self.render()
+            return
         try:
             self.state=self.state.toggle_freeze()
         except ValueError:
@@ -273,7 +276,7 @@ class OriginalMeasureControls:
             live_table_snapshot_ready, export_live_ru_table_candidate)
         status=self.window._native_live_status
         plan=getattr(self.window.original_shell,"live_file_plan",None)
-        if (not self.window._live_active or self.window._measurement_exit_requested
+        if (not self.window._live_active or self.window._live_capture_stopping()
                 or status is None or plan is None or
                 self.window._source_mode2_runtime.status_cells.system_error_latched
                 or not live_table_snapshot_ready(status)):
@@ -298,7 +301,7 @@ class OriginalMeasureControls:
         current=self.window._native_live_status
         if (current is None or current.get("session_id")!=run_id or
                 not live_table_snapshot_ready(current) or
-                self.window._measurement_exit_requested or
+                self.window._live_capture_stopping() or
                 self.window._source_mode2_runtime.status_cells.system_error_latched):
             self.window.statusBar().showMessage(
                 "TABLE отменена: изменился или закончился источник PARAM")
@@ -346,7 +349,7 @@ class OriginalMeasureControls:
             native_archive_available=bool(
                 flow is not None and not flow.direct_bin),
             has_channels=has_channels,has_values=has_values,
-            stop_requested=bool(self.window._measurement_exit_requested))
+            stop_requested=bool(self.window._live_capture_stopping()))
         self.panel.setVisible(policy.panel_visible)
         self.panel.setProperty(
             "sourceRuntimeMeasurePanelVisible",policy.panel_visible)
@@ -371,7 +374,7 @@ class OriginalMeasureControls:
         dlg=getattr(self.window,"_native_dialog",None)
         tx_enabled=bool(live and dlg is not None and
                         getattr(dlg,"source_rate_tx_active",lambda:False)()
-                        and not self.window._measurement_exit_requested)
+                        and not self.window._live_capture_stopping())
         self.rate.setEnabled(policy.rate_inspection_enabled)
         self.rate.setToolTip(
             "Изменить ЧД прибора через исходную SetRate: отдельное разрешение получено; "
@@ -418,7 +421,7 @@ class OriginalMeasureControls:
         from ..core.original_live_table_snapshot import (
             live_table_snapshot_ready)
         live_table_ready=bool(live and self.window._live_active
-            and not self.window._measurement_exit_requested
+            and not self.window._live_capture_stopping()
             and not self.window._source_mode2_runtime.status_cells.system_error_latched
             and live_table_snapshot_ready(self.window._native_live_status)
             and getattr(self.window.original_shell,"live_file_plan",None)
@@ -434,7 +437,7 @@ class OriginalMeasureControls:
         writer=getattr(self.window,"_source_live_writer",None)
         source_ready=bool(live and writer is not None
                           and writer.trustworthy
-                          and not self.window._measurement_exit_requested
+                          and not self.window._live_capture_stopping()
                           and not (trace is not None and
                                    trace.status_cells.system_error_latched))
         source_plan=getattr(
@@ -454,12 +457,21 @@ class OriginalMeasureControls:
         self.buttons["bWriteValues"].setEnabled(
             policy.local_values_enabled or
             (source_ready and (source_has_values or values_requested)))
-        self.buttons["bWriteAdc"].setText(
-            "Завершить запись сигнала" if live and data_requested
-            else "Запись сигнала")
-        self.buttons["bWriteValues"].setText(
-            "Завершить запись значений" if live and values_requested
-            else "Запись значений")
+        elapsed=writer.elapsed_receipt() if writer is not None else {}
+        for name,kind,requested,label in (
+                ("bWriteAdc","data",data_requested,"сигнала"),
+                ("bWriteValues","values",values_requested,"значений")):
+            text=("Завершить запись "+label+"\n"+
+                  (elapsed.get(kind+"_elapsed_text") or "00:00:00")
+                  if live and requested else "Запись "+label)
+            button=self.buttons[name]
+            if button.text()!=text:
+                button.setText(text)
+            button.setProperty("sourceWriterElapsedSeconds",
+                               elapsed.get(kind+"_elapsed_seconds"))
+            button.setProperty("sourceWriterElapsedTimeBasis",
+                               elapsed.get("time_basis"))
+        self.panel.setProperty("sourceWriterElapsedReceipt",elapsed)
         self.panel.setProperty(
             "sourceOriginalWriteStageReceipt",
             writer.receipt() if writer is not None else None)
@@ -473,7 +485,7 @@ class OriginalMeasureControls:
                 else {})
             denied=bool(
                 read_proof.get("denial_seen") and
-                not self.window._measurement_exit_requested and
+                not self.window._live_capture_stopping() and
                 not self.window._measurement_connection_error)
             source_cells=trace.status_cells.receipt() if trace is not None else {}
             system_error=bool(

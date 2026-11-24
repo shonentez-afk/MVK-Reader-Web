@@ -185,6 +185,8 @@ class OriginalLiveWriteLedger:
         self.windows=[]
         self.errors=[]
         self.finished=False
+        self.finalizing=False
+        self._finalizing_utc=None
         self.frame_marks_required=False
         self.frame_marks_verified=False
         self.frame_marks_failed=False
@@ -202,6 +204,10 @@ class OriginalLiveWriteLedger:
                 and not self.frame_marks_failed)
 
     def observe(self,payload):
+        # The final verified Go archive/mark audit owns the true final
+        # counters. A late periodic JSON status cannot re-arm a writer.
+        if self.finalizing or self.finished:
+            return self.receipt()
         try:
             proof=_status_proof(payload)
             sid,counters,aux,frames,raw=proof
@@ -258,6 +264,40 @@ class OriginalLiveWriteLedger:
         self.data_stage=STAGE_IDLE
         self.values_stage=STAGE_IDLE
 
+    @staticmethod
+    def _utc(now=None):
+        value=now if now is not None else datetime.now(timezone.utc)
+        if not isinstance(value,datetime) or value.tzinfo is None:
+            raise ValueError("Operator write time must include timezone")
+        return value.astimezone(timezone.utc)
+
+    def begin_finalization(self,*,now=None):
+        """Stop accepting operator marks; keep pending intervals for SHA audit."""
+        if not self.finished and not self.finalizing:
+            self._finalizing_utc=self._utc(now)
+            self.finalizing=True
+        return self.receipt()
+
+    def elapsed_receipt(self,*,now=None):
+        """Independent source-style hh:nn:ss timers.
+
+        These are operator-request durations, frozen at the stop/finalize
+        boundary. Delphi also resets its timer at actual file open; do not
+        claim that runtime timestamp from a pending local Go mark.
+        """
+        stamp=self._finalizing_utc if self.finalizing else self._utc(now)
+        result={"time_basis":"OPERATOR_REQUEST_UTC_NOT_DELPHI_FILE_OPEN",
+                "delphi_file_open_time_verified":False}
+        for kind,active in (("data",self._active_data),("values",self._active_values)):
+            elapsed=None
+            if active is not None:
+                start=datetime.fromisoformat(active[4])
+                elapsed=max(0,int((stamp-start).total_seconds()))
+            result[kind+"_elapsed_seconds"]=elapsed
+            result[kind+"_elapsed_text"]=(None if elapsed is None else
+                f"{elapsed//3600%24:02d}:{elapsed//60%60:02d}:{elapsed%60:02d}")
+        return result
+
     def plan_for_frame_mark(self,kind:str,plan:OriginalLiveFilePlan):
         """Use the BEGIN mask for END, even if the other writer's flags changed."""
         if kind not in ("data","values") or not isinstance(plan,OriginalLiveFilePlan):
@@ -274,14 +314,13 @@ class OriginalLiveWriteLedger:
         if (file_options is not None and
                 not isinstance(file_options,OriginalFileNameOptions)):
             raise ValueError("Source PageFile recording options invalid")
+        if self.finalizing:
+            raise ValueError("Source recording is finalizing; new operator marks forbidden")
         if not self.trustworthy:
             raise ValueError("Source recording requires verified active Go status")
         if plan.session_id is not None and plan.session_id!=self.session_id:
             raise ValueError("Operator checkboxes belong to another Native run")
-        now=now or datetime.now(timezone.utc)
-        if not isinstance(now,datetime) or now.tzinfo is None:
-            raise ValueError("Operator write time must include timezone")
-        stamp=now.astimezone(timezone.utc).isoformat()
+        stamp=self._utc(now).isoformat()
         attr="_active_data" if kind=="data" else "_active_values"
         active=getattr(self,attr)
         if active is None:
@@ -292,7 +331,8 @@ class OriginalLiveWriteLedger:
                 raise ValueError("Source shared channels locked by another writer")
             if kind=="values" and plan.effective_values_count()==0:
                 raise ValueError("Original VALUES has zero selected result flags for selected channels")
-            if len(self.windows)>=MAX_WINDOWS:
+            if (len(self.windows)+int(self._active_data is not None)
+                    +int(self._active_values is not None)>=MAX_WINDOWS):
                 raise ValueError("At most eight checked local write intervals")
             _,samples,aux,frames,_=self._last
             setattr(self,attr,(
@@ -305,6 +345,13 @@ class OriginalLiveWriteLedger:
                 # Source 00809977 opens VALUES file directly into stage1.
                 self.values_stage=STAGE_STREAMING
             return self.receipt()
+        return self._close_active(kind,stamp)
+
+    def _close_active(self,kind,stamp):
+        attr="_active_data" if kind=="data" else "_active_values"
+        active=getattr(self,attr)
+        if active is None or self._last is None:
+            raise ValueError("Source active writer/last accepted counters missing")
         (plan_open,start_samples,start_aux,start_frames,start_stamp,
          start_source_tick,start_tx_commands,start_file_options)=active
         _,end_samples,end_aux,end_frames,_=self._last
@@ -330,7 +377,7 @@ class OriginalLiveWriteLedger:
 
     def register_native_frame_mark(self,receipt,plan):
         """Bind ONE actually queued GUI event to this authenticated run."""
-        if (not self.trustworthy or
+        if (not self.trustworthy or self.finalizing or
                 not isinstance(plan,OriginalLiveFilePlan) or
                 not isinstance(receipt,dict) or
                 receipt.get("session_id")!=self.session_id or
@@ -353,15 +400,16 @@ class OriginalLiveWriteLedger:
         if type(accepted) is not bool:
             raise ValueError("Native completion proof must be Boolean")
         if not self.finished:
-            if accepted and self._last is not None:
+            self.begin_finalization()
+            if accepted and self._last is not None and not self.frame_marks_failed:
                 for kind in ("data","values"):
                     attr="_active_data" if kind=="data" else "_active_values"
                     if getattr(self,attr) is not None:
-                        # Finalization only knows the last Go status; it does
-                        # not invent packets after the last status poll.
-                        self.toggle(kind,getattr(self,attr)[0])
+                        # Provisional status-poll endpoint; the final
+                        # SHA-bound Go frame audit replaces these counters.
+                        self._close_active(kind,self._finalizing_utc.isoformat())
             else:
-                self.invalidate("Capture ended without a verified ZIP")
+                self.invalidate("Capture ended without a verified writer source")
             self.finished=True
             self.data_stage=STAGE_IDLE
             self.values_stage=STAGE_IDLE
@@ -379,7 +427,9 @@ class OriginalLiveWriteLedger:
             "write_data_requested":self._active_data is not None,
             "write_values_requested":self._active_values is not None,
             "completed_window_count":len(self.windows),
-            "has_verifiable_live_status":self.trustworthy,
+            "source_writer_finalizing":self.finalizing and not self.finished,
+            "source_writer_finished":self.finished,
+            "has_verifiable_live_status":self.trustworthy and not self.finalizing,
             "errors":list(self.errors),
             "hardware_commands_sent":self.source_setrate_commands_seen,
             "original_source_values_ticks_0x3100":self.source_values_ticks,

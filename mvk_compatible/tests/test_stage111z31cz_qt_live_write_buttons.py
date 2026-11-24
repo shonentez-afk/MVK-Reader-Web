@@ -188,3 +188,54 @@ def test_live_pagefile_real_writer_locks_and_independent_channel_selector(qt_app
             win._end_live_capture(False)
         win.close()
         qt_app.processEvents()
+
+
+def test_receiver_finalization_locks_operator_until_verified_archive(qt_app):
+    from PySide6.QtCore import Qt
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        win._begin_live_capture()
+        win._receive_native_live_status(source_status())
+        panel=win.original_measure_controls
+        shell=win.original_shell
+        panel.buttons["bWriteAdc"].click()
+        panel.buttons["bWriteValues"].click()
+        assert panel.buttons["bWriteAdc"].property("sourceWriterElapsedSeconds")>=0
+        assert panel.buttons["bWriteValues"].text().count(":")==2
+        win._receive_native_live_status(source_status(
+            adc_samples=512,aux=1,frames=30,raw=19000))
+        # A normally completed receiver is no longer an active command
+        # owner, even though captureEnded(True) awaits ZIP verification.
+        terminal=source_status(adc_samples=512,aux=1,frames=30,raw=19000)
+        terminal["phase"]="VERIFYING"
+        win._receive_native_live_status(terminal)
+        assert win._live_active and win._live_capture_stopping()
+        assert not win._measurement_exit_requested
+        assert not panel.buttons["bWriteAdc"].isEnabled()
+        assert not panel.buttons["bWriteValues"].isEnabled()
+        assert not panel.freeze.isEnabled()
+        assert not shell.file_spec.item(0).flags() & Qt.ItemIsEnabled
+        assert not shell.file_record_flags["cbFileWriteXml"].isEnabled()
+        assert win._source_live_writer.receipt()["source_writer_finalizing"]
+        with pytest.raises(ValueError):
+            win.source_write_toggle("data")
+        # A late status or missing terminal JSON cannot reopen the
+        # commands or discard the pending valid BEGIN intervals.
+        win._receive_native_live_status(source_status(
+            adc_samples=768,aux=2,frames=40,raw=24000))
+        win._invalidate_native_live_status("terminal status file not present")
+        assert win._source_live_writer.receipt()["write_data_requested"]
+        assert win._source_live_writer.receipt()["write_values_requested"]
+        assert not panel.buttons["bWriteAdc"].isEnabled()
+        win._end_live_capture(True)
+        assert win._pending_source_write_ledger is not None
+        assert len(win._pending_source_write_ledger.windows)==2
+        assert not win._live_active
+    finally:
+        if win._live_active:
+            win._end_live_capture(False)
+        win.close()
+        qt_app.processEvents()
