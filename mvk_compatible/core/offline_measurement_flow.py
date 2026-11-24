@@ -165,6 +165,7 @@ class OfflineMeasurementFlow:
             "original_runtime_parity_verified": False,
             "data_file_label": label,  # filename only, NEVER absolute path
             "source_bin_sha256": fingerprint.lower(),
+            "source_tsxml_sha256": source.tsxml_sha256 if self.direct_bin else None,
             "sample_count": int(len(src)),
             "sample_rate_hz": float(fs),
             "fft_or_signal_recomputed_by_flow": False,

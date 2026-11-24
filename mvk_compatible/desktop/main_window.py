@@ -7756,7 +7756,7 @@ class MainWindow(QMainWindow):
             if action.direct_bin_uncalibrated:
                 confirmed=QMessageBox.question(
                     self,'Некалиброванные значения BIN/TSXML',
-                    'Физическая калибровка BIN не подтверждена. Копировать '
+                    'Метаданные или спектр не подходят для штатного экспорта MVKView; калибровка не подтверждена. Копировать '
                     'локальные значения с предупреждением об условных единицах?',
                     QMessageBox.Yes | QMessageBox.No,QMessageBox.No)
                 if confirmed!=QMessageBox.Yes:return
@@ -7873,7 +7873,9 @@ class MainWindow(QMainWindow):
                 +('добавлена строка' if report['appended_existing_candidate']
                   else 'создан исходный 3-столбцовый CSV')+
                 f" · SHA {report['full_csv_sha256'][:12]}… "
-                "(русский SPEC-FREQ, Windows-1251)")
+                "(русский SPEC-FREQ, Windows-1251)"
+                + (' · сохранена шапка первого экспорта; единицы строки отличаются'
+                   if report['retained_first_header_after_unit_change'] else ''))
             return report
         except (OSError,UnicodeError,KeyError,TypeError,ValueError) as exc:
             self.statusBar().showMessage('bSpecSaveValue отклонён: '+str(exc))

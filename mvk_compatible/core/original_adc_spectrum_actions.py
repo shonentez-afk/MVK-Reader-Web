@@ -30,6 +30,9 @@ import numpy as np
 
 from .offline_measurement_flow import OfflineMeasurementFlow
 from .spectrum_summary_export_candidate import spectrum_triplet_text
+from .storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
+from .direct_bin_session import TACH_INPUT_DOMAIN
+from .mvk_original_scale_tables_idr_candidate import source_derived_units
 
 SOURCE="ORIGINAL_IDR_ADC_SPEC_ACTIONS_STAGE111Z31BV"
 SPECTRUM_COPY_SOURCE="PRIVATE_UNIT128_0084BC28"
@@ -38,16 +41,17 @@ WAVE_CURSOR_SOURCE="PRIVATE_UNIT128_0084B4AC"
 SPEC_CSV_ENCODING="cp1251"
 
 
-def spectrum_source_ru_header(mode:int)->str:
-    """Russian bSpecSaveValue header for Native ZIP acceleration.
+def spectrum_source_ru_header(mode:int, source_units:str="м/с2")->str:
+    """Russian bSpecSaveValue header for the selected source channel.
 
     Format is lbSpecMeanX, Units | xFrequency, XName | xParamValue, Units.
     Russian resource keys and XName are from MVKView 1.0.47. In log mode
     this is the original *summary* unit, not the chart's dB Y-axis.
-    Native ZIP exposes acceleration, never an unproven Direct BIN unit.
+    Native ZIP defaults to acceleration; saved archives use actual FUnits.
     """
-    from .mvk_original_scale_tables_idr_candidate import source_derived_units
-    unit=source_derived_units(mode,"м/с2")
+    unit=source_derived_units(mode,source_units)
+    if unit is None or "|" in unit or any(not c.isprintable() for c in unit):
+        raise ValueError("Некорректные единицы оригинального SPEC-FREQ")
     return f"СКЗ спектра, {unit}|Частота, Гц|Значение, {unit}"
 
 
@@ -78,7 +82,13 @@ def _source_summary(flow,spectrum):
     if spectrum.get("channel")!=adc:
         raise ValueError("PageSpectrum ADC does not match current source channel")
     n=spectrum.get("n_fft")
-    if type(n) is not int or not 1024<=n<=262144 or n&(n-1):
+    # The original selected bSpecLines sample count is BEFORE decimation.
+    # Tiny post-FIR FFT is allowed only on the explicitly validated source route.
+    pre=spectrum.get("source_bspec_lines_before_fir")
+    source_fir=(spectrum.get("source_bspec_lines_interpretation")=="ORIGINAL_SELECTED_PRE_FIR"
+                and type(pre) is int and 1024<=pre<=262144 and not pre&(pre-1)
+                and type(n) is int and n<=pre)
+    if type(n) is not int or not (8 if source_fir else 1024)<=n<=262144 or n&(n-1):
         raise ValueError("Original spectrum must have power-of-two FFT size")
     ys=spectrum.get("amplitude")
     xs=spectrum.get("frequency_hz")
@@ -122,15 +132,57 @@ class OriginalSpectrumAction:
     values:tuple[float,float,float]
     direct_bin_uncalibrated:bool
     source:str=SOURCE
+    source_tsxml_sha256:str|None=None
+    source_units:str="м/с2"
+    original_saved_archive_metadata:bool=False
+    window_signature:tuple|None=None
 
     @classmethod
     def from_view(cls,flow:OfflineMeasurementFlow,spectrum:dict):
         record,n,mode,values,_=_source_summary(flow,spectrum)
+        window=spectrum.get("input_source_window")
+        signature=(tuple(window.get(k) for k in (
+            "first_archive_sample_index","last_archive_sample_exclusive",
+            "source_float32_le_sha256","sample_rate_hz"))
+            if isinstance(window,dict) else None)
+        units="м/с2"
+        saved=False
+        if flow.direct_bin:
+            entry=flow.session.mode1_export_source(flow.channel)
+            if entry is not None:
+                meta=entry.source_metadata
+                indicated=meta.channel_units_text
+                channel_units=("" if indicated=="Count" else
+                               "м/с2" if indicated=="1" else indicated)
+                if (signature is not None and window.get("channel")==flow.channel
+                        and window.get("no_zero_padding") is True
+                        and type(signature[0]) is int and type(signature[1]) is int
+                        and 0<=signature[0]<signature[1]<=record["sample_count"]
+                        and window.get("source_sample_count")==signature[1]-signature[0]
+                        and isinstance(signature[2],str)
+                        and re.fullmatch(r"[a-f0-9]{64}",signature[2])
+                        and signature[3]==float(meta.sample_rate_hz)
+                        and spectrum.get("f_range_used")==meta.original_f_range_single_candidate
+                        and spectrum.get("input_domain")==(
+                            TACH_INPUT_DOMAIN if entry.tach_byte else DOMAIN_ORIGINAL_STORAGE)
+                        and (not entry.tach_byte or (
+                            window.get("source_tach_normalized_byte_window") is True
+                            and spectrum.get("source_tach_byte_normalization_divisor")==255))):
+                    try:
+                        spectrum_source_ru_header(
+                            mode,channel_units).encode(SPEC_CSV_ENCODING)
+                    except (UnicodeError,ValueError):
+                        pass  # remain clearly labelled local research
+                    else:
+                        units=channel_units
+                        saved=True
         return cls(
             source_bin_sha256=record["source_bin_sha256"],
             adc=flow.channel,n_fft=n,spectrum_mode=mode,
             current_dsp_tick_index=None if flow.direct_bin else flow.tick_index,
-            values=values,direct_bin_uncalibrated=flow.direct_bin)
+            values=values,direct_bin_uncalibrated=flow.direct_bin and not saved,
+            source_tsxml_sha256=record["source_tsxml_sha256"],source_units=units,
+            original_saved_archive_metadata=saved,window_signature=signature)
 
     def validate_flow(self,flow:OfflineMeasurementFlow,spectrum:dict|None=None):
         if not isinstance(flow,OfflineMeasurementFlow):
@@ -139,7 +191,8 @@ class OriginalSpectrumAction:
         if (record["source_bin_sha256"]!=self.source_bin_sha256 or
                 flow.channel!=self.adc or
                 (None if flow.direct_bin else flow.tick_index)!=self.current_dsp_tick_index
-                or flow.direct_bin!=self.direct_bin_uncalibrated):
+                or record["source_tsxml_sha256"]!=self.source_tsxml_sha256
+                or flow.direct_bin!=(self.source_tsxml_sha256 is not None)):
             raise ValueError("Spectrum Copy/Save state is stale or from another ADC/tick")
         if spectrum is not None:
             other=OriginalSpectrumAction.from_view(flow,spectrum)
@@ -148,7 +201,7 @@ class OriginalSpectrumAction:
         return True
 
     def clipboard_text(self,*,decimal_separator=","):
-        """Original 0084BC28 tab triplet, labelled as local for Direct BIN."""
+        """Original 0084BC28 tab triplet; mark unsupported local BIN sources."""
         if decimal_separator not in (",","."):
             raise ValueError("Numeric locale must be explicitly selected")
         # Reuse one existing source-formatter with original digit positions
@@ -185,6 +238,9 @@ class OriginalSpectrumAction:
             "source_tick_index":self.current_dsp_tick_index,
             "original_triplet_columns":3,
             "uncalibrated_direct_bin":self.direct_bin_uncalibrated,
+            "source_tsxml_sha256":self.source_tsxml_sha256,
+            "source_units":self.source_units,
+            "original_saved_archive_metadata":self.original_saved_archive_metadata,
             "original_clipboard_handler":SPECTRUM_COPY_SOURCE,
             "original_csv_handler":SPECTRUM_SAVE_SOURCE,
             "actual_source_fft_used":True,
@@ -211,8 +267,9 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
     """Mirror 0084BD7C with Russian ANSI, exact units, and validated append.
 
     Every write revalidates the source and checks the full output.
-    An incompatible header, units or locale is refused, not converted.
-    A failed append is rolled
+    Native ZIP keeps its strict header check. A saved original archive
+    can retain its recognizable first daily header after a unit change.
+    A foreign header or mixed numeric locale is refused. A failed append is rolled
     back to the original verified byte length.
     """
     if not isinstance(action,OriginalSpectrumAction):
@@ -234,17 +291,33 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
     row=action.pipe_row(decimal_separator=decimal_separator)
     if len(row.split("|"))!=3 or "\r" in row or "\n" in row:
         raise ValueError("Original source triplet must be exactly three safe numbers")
-    header=("sep=|\r\n"+spectrum_source_ru_header(action.spectrum_mode)
+    header=("sep=|\r\n"+spectrum_source_ru_header(action.spectrum_mode, action.source_units)
             +"\r\n").encode(SPEC_CSV_ENCODING)
     before=b""
+    retained_first_header=False
     if dest.exists():
         if (not dest.is_file() or
                 dest.stat().st_size>MAX_SPEC_CSV_BYTES):
             raise ValueError("Source SPEC-FREQ file invalid or oversized")
         before=dest.read_bytes()
+        old_header=header
         if not before.startswith(header):
-            raise ValueError("Existing vendor/unverified SPEC-FREQ: different header, encoding or units")
-        tail=before[len(header):]
+            # The original writes a daily header once, then only numeric rows
+            # even after a change of mode/channel/unit. In saved Mode1 reproduce
+            # this for recognizable original headers; never rewrite old bytes.
+            fields=before.split(b"\r\n",2)
+            if not action.original_saved_archive_metadata or len(fields)!=3 or fields[0]!=b"sep=|":
+                raise ValueError("Existing vendor/unverified SPEC-FREQ: different header, encoding or units")
+            try:
+                old_text=fields[1].decode(SPEC_CSV_ENCODING)
+                m=re.fullmatch(r"СКЗ спектра, ([^|]{0,66})\|Частота, Гц\|Значение, \1",old_text)
+                if not m or spectrum_source_ru_header(0,m[1])!=old_text:
+                    raise ValueError("Unrecognized Russian header")
+            except (UnicodeError,ValueError) as exc:
+                raise ValueError("Existing vendor/unverified SPEC-FREQ: different header, encoding or units") from exc
+            old_header=b"sep=|\r\n"+fields[1]+b"\r\n"
+            retained_first_header=True
+        tail=before[len(old_header):]
         if not tail or not tail.endswith(b"\r\n"):
             raise ValueError("Existing candidate SPEC-FREQ rows malformed")
         number=rb"[+-]?(?:[0-9]+(?:"+re.escape(decimal_separator.encode("ascii"))+rb"[0-9]*)?)(?:[eE][+-]?[0-9]+)?"
@@ -276,6 +349,7 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
             "local_source_grammar":"sep=| + 3-column header + pipe rows + CRLF",
             "current_saved_row":row,
             "appended_existing_candidate":bool(before),
+            "retained_first_header_after_unit_change":retained_first_header,
             "full_csv_sha256":sha256(on_disk).hexdigest(),
             "independent_roundtrip_verified":True,
             "source_file_untouched":True,

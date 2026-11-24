@@ -177,7 +177,7 @@ class DirectBinSession(OfflineSession):
     def is_tach(self, channel: int) -> bool:
         return any(entry.adc == channel and entry.tach_byte for entry in self.channel_files)
 
-    def mode1_adc_range(self, channel: int) -> float | None:
+    def mode1_adc_source(self, channel: int) -> DirectBinChannel | None:
         """Recognize the saved Mode1 writer structure, not physical calibration.
 
         Bare/mismatched/partial TSXML and research BINs keep their previous
@@ -193,7 +193,28 @@ class DirectBinSession(OfflineSession):
                 or meta.file_name_declared is None or meta.channel_number != channel
                 or meta.sample_rate_hz not in TACH_MODE1_SAMPLE_RATES):
             return None
-        return meta.original_f_range_single_candidate
+        return entry if meta.original_f_range_single_candidate is not None else None
+
+    def mode1_export_source(self, channel: int) -> DirectBinChannel | None:
+        """A complete saved ADC or an explicitly typed original TACH Byte."""
+        adc = self.mode1_adc_source(channel)
+        if adc is not None:
+            return adc
+        entry = next((item for item in self.channel_files if item.adc == channel), None)
+        if entry is None or not entry.tach_byte:
+            return None
+        meta = entry.source_metadata
+        name = _CHANNEL_NAME.fullmatch(entry.bin_path.name)
+        if (name is None or name.group(2) != f"TACH{channel-8}"
+                or not meta.source_meta_complete or meta.internal_gain_single!=1.0
+                or not meta.original_writer_offset_zero or meta.channel_number!=channel
+                or meta.channel_units_text!="Count" or meta.file_name_declared is None):
+            return None
+        return entry
+
+    def mode1_adc_range(self, channel: int) -> float | None:
+        entry = self.mode1_adc_source(channel)
+        return entry.source_metadata.original_f_range_single_candidate if entry else None
 
     @classmethod
     def open(cls, file: str | Path) -> "DirectBinSession":

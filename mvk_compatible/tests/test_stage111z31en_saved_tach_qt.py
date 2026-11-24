@@ -86,15 +86,16 @@ def test_mode1_opens_selected_tach_and_safely_reopens_adc(tmp_path,qt_app,monkey
         assert win.source_view_state.channel==10
         assert win.source_view_state.saved_byte_channel
 
-        monkeypatch.setattr(QMessageBox,"question",lambda *args: QMessageBox.Yes)
+        monkeypatch.setattr(QMessageBox,"question",lambda *args: pytest.fail("Full saved TACH is eligible for SPEC-FREQ"))
         win._copy_spec_summary()
-        assert "НЕ КАЛИБРОВАНО" in QApplication.clipboard().text()
+        assert "\n" not in QApplication.clipboard().text()
         assert len(QApplication.clipboard().text().splitlines()[-1].split("\t"))==3
-        local_csv=tmp_path/"local_tach.csv"
+        from datetime import date
+        local_csv=tmp_path/f"SPEC-FREQ-{date.today():%Y-%m-%d}.csv"
         monkeypatch.setattr(QFileDialog,"getSaveFileName",
                             lambda *args: (str(local_csv),"CSV"))
         win._save_spec_summary()
-        assert "НЕ КАЛИБРОВАНО" in local_csv.read_text(encoding="utf-8")
+        assert "СКЗ спектра, ~~|Частота, Гц|Значение, ~~" in local_csv.read_text(encoding="cp1251")
 
         stale_csv=tmp_path/"must_not_be_created.csv"
         errors=[]
