@@ -36,3 +36,5 @@
 1. Проверить CI EC и устранить фактические регрессии, затем сверить source file names (008069EC/007B1FA4 и channel names) с подлинными BIN/TSXML/VALUES из одной сессии; не менять безопасные имена Go и SHA-привязку без доказательства. Точное время фактического открытия Delphi остаётся открытым.
 2. Проверить PageStatus third-octave scale, единицы/курсор и оставшиеся режимы PageConfig/Calib, включая конфигурационное владение, отдельный Task0 и безопасную локальную калибровку. Не включать физические записи конфигурации/генератор без независимой проверки и отдельного разрешения.
 3. Финальная физическая приёмка IP -> Измерить -> Task2 -> same-RX -> GetSignal/GetSpectrum -> WriteData/WriteValues -> Stop и x87/FRange/GDI/byte parity с оригинальным MVKView 1.0.47 НЕ выполнена. main, Go RX/DSP и приватные файлы не изменялись.
+
+**Промежуточный факт CI EC:** Linux Core 2705 passed, 149 skipped, 30 subtests passed; Go RX/export SUCCESS. Windows Core/Qt и QPA ещё выполнялись на момент обновления; новый EXE не подтверждён.
