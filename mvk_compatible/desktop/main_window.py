@@ -36,6 +36,9 @@ from ..core.original_measurement_mode import (
     source_connection_display,capture_completion_policy,
 )
 from ..core.native_r6_live_preview import provisional_waveform, provisional_spectrum
+from ..core.original_live_spectrum_view import (
+    bind_live_spectrum_view, live_spectrum_plot_points,
+)
 from ..core.original_live_envelope_provenance import active_live_envelope_gate
 from ..core.envelope_spectrum_idr_candidate import (
     source_selected_envelope_spectrum_candidate,
@@ -159,6 +162,9 @@ class MainWindow(QMainWindow):
         self._live_preview=None  # only provisional, bounded, same-run calibrated bytes
         self._live_long_window=None  # SHA verified source-ring bAdcHScale
         self._live_fft_window=None  # SHA verified source-ring bSpecLines
+        self._live_spectrum_input=None
+        self._live_spectrum_curve=None
+        self._live_spectrum_curve_busy=False
         self._live_long_rendered_key=None  # never replay the same 5MiB window per Qt tick
         self._live_wave_vertical_basis=None  # Current SHA-verified live ADC snapshot
         self._live_wave_scale_model=None  # Y-view only; never a TCP/GetSignal command
@@ -1824,6 +1830,10 @@ class MainWindow(QMainWindow):
         self.spec_vscroll.valueChanged.connect(lambda v:self._spec_scroll_changed(1,v))
         self.spec_plot.getViewBox().sigRangeChanged.connect(self._sync_spec_scroll)
         self.spec_plot.getViewBox().sigRangeChanged.connect(
+            self._sync_live_spectrum_curve)
+        self.spec_plot.getViewBox().sigResized.connect(
+            self._sync_live_spectrum_curve)
+        self.spec_plot.getViewBox().sigRangeChanged.connect(
             self._sync_source_tqgrapher_grid_candidate)
         self.spec_plot.getViewBox().sigResized.connect(
             self._sync_source_tqgrapher_grid_candidate)
@@ -2041,7 +2051,7 @@ class MainWindow(QMainWindow):
                  source_scope['f_range_single'] if (source_scope is not None and
                      source_scope['f_range_single'] is not None) else
                  source_evidence.frange_single if source_tsxml else
-                 self.spec_f_range.value())
+                 1.0 if self._live_active else self.spec_f_range.value())
         local_native=source_spectrum_v_scr(
             choice['delphi_position'],choice['page'],choice['full'],
             db_mode=db,graph_default_v_scale=default_scale,
@@ -2292,7 +2302,9 @@ class MainWindow(QMainWindow):
                 # Original 0084819A..00848200 uses the selected Tag→N,
                 # not the nearest available FFT window. We do not pad.
                 self._sync_spec_lines_presentation()
-                if self._live_preview is not None and not self._source_live_view_frozen:
+                if (self._live_preview is not None or
+                        self._live_fft_window is not None or
+                        self._live_spectrum_input is not None):
                     self._render_live_spectrum()
             return
         requested=int(self.spec_n.currentData())
@@ -3071,6 +3083,8 @@ class MainWindow(QMainWindow):
         self._live_preview=None
         self._live_long_window=None
         self._live_fft_window=None
+        self._live_spectrum_input=None
+        self._live_spectrum_curve=None
         self._live_long_rendered_key=None
         self._live_wave_vertical_basis=None
         self._live_wave_scale_model=None
@@ -3235,6 +3249,10 @@ class MainWindow(QMainWindow):
             # A successful TCP JSON update does not make an old preview
             # current; fail closed on silence, stale or invalid frames.
             self._invalidate_live_preview("Live transport not trustworthy")
+        elif (self._live_spectrum_input is not None
+              and not self._source_live_view_frozen
+              and not self._live_spectrum_current()):
+            self._clear_live_spectrum("Окно спектра больше не соответствует текущему приёму")
         self.original_shell.measure_controls.render()
         # Original tmInterfaceUpdate dispatches the ACTIVE source page.
         # Go emits an authenticated status event at a slower rate than
@@ -3374,7 +3392,8 @@ class MainWindow(QMainWindow):
         self._cancel_source_live_fir()
         self.original_shell.measure_controls.invalidate_preview()
         had_source=(self._live_long_window is not None or
-                    self._live_fft_window is not None)
+                    self._live_fft_window is not None or
+                    self._live_spectrum_input is not None)
         self._live_long_window=None
         self._live_fft_window=None
         self._live_long_rendered_key=None
@@ -3393,11 +3412,8 @@ class MainWindow(QMainWindow):
         self._source_large_fft_at=0.0
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
-        self.spec_plot.clear_source_tqgr_series()
-        self.spec_plot.clear()
+        self._clear_live_spectrum(str(reason))
         self.wave_line=None
-        self._full_spectrum=None
-        self._spectrum_summary=None
         self.wave_hint.setText('LIVE preview отклонён: '+str(reason))
         self.spec_hint.setText('LIVE FFT скрыт: '+str(reason))
         self.wave_mean_primary.setText('LIVE · недостоверное окно')
@@ -3954,9 +3970,87 @@ class MainWindow(QMainWindow):
                 'LIVE GetSignal: ожидание реальных отсчётов')
             self.wave_hint.setText('Live signal недоступен: '+str(exc))
 
+    def _live_spectrum_selection_matches(self):
+        d=self._full_spectrum
+        if not isinstance(d,dict) or d.get("live_measurement_view") is not True:
+            return False
+        code=(int(self.spec_envelope_code.currentData() or 0)
+              if self.spec_envelope_button.isChecked() else 0)
+        return (d.get("channel")==self._ch()
+                and d.get("mode")==self.spec_mode.currentIndex()
+                and d.get("live_selected_bspec_lines")==int(self.spec_n.currentData())
+                and d.get("live_envelope_code")==code)
+
+    def _live_spectrum_current(self):
+        if (not self._live_active or self._measurement_exit_requested
+                or self._source_live_view_frozen
+                or self._source_mode2_runtime.status_cells.system_error_latched
+                or not self._live_spectrum_selection_matches()):
+            return False
+        preview=self._live_spectrum_input
+        from ..core.original_live_view_gate import gate_live_preview
+        if not gate_live_preview(self._native_live_status,preview).allowed:
+            return False
+        status=self._native_live_status
+        if status.get("source_original_storage_verified") is True:
+            rows=status["source_original_storage"]["channels"]
+            row=rows[self._ch()-1]
+            return (preview.source_ring_provenance_verified is True
+                    and row.get("last_sample_rate_hz",
+                                preview.channels[self._ch()].rate_hz)
+                    ==preview.channels[self._ch()].rate_hz)
+        return True
+
+    def _clear_live_spectrum(self,reason):
+        # Invalidate before range-change callbacks during clear().
+        self._full_spectrum=None
+        self._spectrum_summary=None
+        self._live_spectrum_input=None
+        self._live_spectrum_curve=None
+        self._spec_display_contract=None
+        self._source_large_fft_key=None
+        self._invalidate_graph_cursor("spectrum")
+        self.spec_plot.clear_source_tqgr_series()
+        self.spec_plot.clear()
+        self.spec_line=None
+        self.spec_hline=None
+        self.spec_xor_crosshair=None
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
+        self.spec_original_copy_compare.setEnabled(False)
+        self.spec_canvas_geometry_button.setEnabled(False)
+        self.spec_core_triplet.setText("LIVE: нет текущего полного спектра")
+        self._sync_spectrum_summary_primary()
+        self.spec_hint.setText("Live FFT недоступен: "+str(reason))
+
+    def _sync_live_spectrum_curve(self,*_):
+        if (not self._live_active or self._live_spectrum_curve_busy
+                or self._live_spectrum_curve is None
+                or not self._live_spectrum_selection_matches()):
+            return
+        self._live_spectrum_curve_busy=True
+        try:
+            x,y=live_spectrum_plot_points(
+                self._full_spectrum,
+                x_bounds=self.spec_plot.getViewBox().viewRange()[0])
+            self._live_spectrum_curve.setData(x,y)
+        except (ValueError,TypeError,KeyError):
+            return
+        finally:
+            self._live_spectrum_curve_busy=False
+
     def _render_live_spectrum(self):
-        if not self._live_active or (
-                self._live_preview is None and self._live_fft_window is None):
+        if not self._live_active:
+            return
+        if self._source_live_view_frozen:
+            self._invalidate_graph_cursor("spectrum")
+            if (self._live_spectrum_input is not None
+                    and not self._live_spectrum_selection_matches()):
+                self._clear_live_spectrum("Пауза: изменён АЦП или режим спектра")
+            return
+        if self._live_preview is None and self._live_fft_window is None:
+            if self._live_spectrum_input is not None:
+                self._clear_live_spectrum("Нет текущего окна")
             return
         try:
             ch=self._ch()
@@ -4020,10 +4114,20 @@ class MainWindow(QMainWindow):
             channel=source_preview.channels.get(ch) if source_preview else None
             if channel is None:
                 raise ValueError("Нет проверенного окна выбранного АЦП")
+            from ..core.original_live_view_gate import gate_live_preview
+            decision=gate_live_preview(
+                status,source_preview,stop_requested=self._measurement_exit_requested)
+            if not decision.allowed:
+                raise ValueError(decision.reason)
+            if ring_selected:
+                row=status["source_original_storage"]["channels"][ch-1]
+                if (source_preview.source_ring_provenance_verified is not True
+                        or row.get("last_sample_rate_hz",channel.rate_hz)!=channel.rate_hz):
+                    raise ValueError("Изменилась исходная частота АЦП")
             self._sync_spec_lines_presentation(channel.rate_hz)
             clock=time.monotonic()
             key=(source_preview.session_id,ch,selected_n,code,
-                 self.spec_mode.currentIndex(),request_id)
+                 self.spec_mode.currentIndex(),request_id,channel.sha256)
             if selected_n < 131072:
                 self._source_large_fft_key=None
             elif (key==self._source_large_fft_key
@@ -4039,37 +4143,89 @@ class MainWindow(QMainWindow):
                     backend="idr_float32",f_range=1.0,
                     input_domain="calibrated_bin")
                 d["source_ring_sha256"]=channel.sha256
+                d["channel"]=ch
             else:
                 d=provisional_spectrum(
                     source_preview,ch,mode=self.spec_mode.currentIndex(),
-                    n_fft=selected_n)
+                    n_fft=selected_n,full_bins=True)
             d["source_ring_verified_input"]=ring_selected
+            d=bind_live_spectrum_view(
+                source_preview,ch,d,selected_n=selected_n,code=code,
+                mode=self.spec_mode.currentIndex())
             if selected_n>=131072:
                 self._source_large_fft_key=key
                 self._source_large_fft_at=clock
-            xs=np.asarray(d['frequency_hz'],dtype=float)
-            ys=np.asarray(d['amplitude'],dtype=float)
-            if filtered and len(xs)>5000:
-                # Only draw-time peak preservation; FULL post-FIR FFT
-                # bins, summary and SHA stay untouched in local result.
-                step=max(1,(len(xs)+4999)//5000)
-                picked=[i+int(np.argmax(ys[i:i+step]))
-                        for i in range(0,len(xs),step)]
-                xs=xs[picked]
-                ys=ys[picked]
+            # Original controls reference ONE complete current FFT.
+            # Only drawing is reduced, with real bins restored on zoom.
+            previous_h=self._spec_original_hscale_selected
+            previous_pos=(int(self.spec_hscroll.value())
+                          if previous_h in HORIZONTAL_HZ else 0)
+            self._spec_original_hscale_selected=None
+            self._spec_source_h_view=None
+            self._source_spectrum_gain=None
+            self._source_spectrum_readout=None
+            self._source_adc_spectrum_joint_receipt=None
+            self._full_spectrum=None
+            self._live_spectrum_curve=None
+            self._invalidate_graph_cursor("spectrum")
             self.spec_plot.clear_source_tqgr_series()
             self.spec_plot.clear()
-            # Preserve four existing mode selectors, but keep this DATA
-            # separate from all original TQGrapher pointer/cursor acceptance.
-            self.spec_plot.setLabel(
-                'bottom','Частота, Гц · LIVE FIR/IQ кандидат'
-                if filtered else 'Частота, Гц · Live FFT кандидат')
+            self.spec_plot.getViewBox().disableAutoRange()
+            self._spec_display_contract=d["live_display_contract"]
+            self._spec_visible_max_hz=min(
+                float(HORIZONTAL_HZ[0]),
+                self._spec_display_contract["grapher_axis_end_frequency_hz"])
+            xs,ys=live_spectrum_plot_points(d)
+            self._live_spectrum_curve=self.spec_plot.plot(
+                xs,ys,pen=pg.mkPen('#000000'))
+            self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen(None))
+            self.spec_line.setVisible(False)
+            self.spec_plot.addItem(self.spec_line,ignoreBounds=True)
+            self.spec_hline=pg.InfiniteLine(angle=0,pen=pg.mkPen(None))
+            self.spec_hline.setVisible(False)
+            self.spec_plot.addItem(self.spec_hline,ignoreBounds=True)
+            self.spec_xor_crosshair=QtSpectrumXorCursor(
+                self.spec_plot.getViewBox())
+            self.spec_plot.addItem(self.spec_xor_crosshair,ignoreBounds=True)
+            self.spec_plot.setLabel('bottom','Гц')
             self.spec_plot.setLabel('left',d['unit'])
-            self.spec_plot.plot(xs,ys,pen=pg.mkPen('#000000'))
-            self.spec_plot.getViewBox().setLimits(xMin=0,xMax=d['df_hz']*d['n_fft']/2)
-            self.spec_plot.enableAutoRange()
-            self._full_spectrum=None
-            self._spectrum_summary=None
+            self._full_spectrum=d
+            self._live_spectrum_input=source_preview
+            self._spectrum_summary=d["spectrum_summary"]
+            full_y=d["amplitude"][:d["grapher_series_bins"]]
+            self._spec_data_ymin=float(np.min(full_y))
+            self._spec_data_ymax=float(np.max(full_y))
+            if d["mode"]==0:
+                self._spec_data_ymin=min(-150.,self._spec_data_ymin)
+                self._spec_data_ymax=0.
+            if self._spec_data_ymax<=self._spec_data_ymin:
+                self._spec_data_ymax=self._spec_data_ymin+1.
+            vb=self.spec_plot.getViewBox()
+            vb.setLimits(xMin=0.,xMax=float(self._spec_visible_max_hz))
+            vb.setXRange(0.,self._spec_visible_max_hz,padding=0)
+            flags=self._sync_original_hscale_data_availability()
+            if (previous_h in HORIZONTAL_HZ and
+                    flags[HORIZONTAL_HZ.index(previous_h)]):
+                self._select_original_hscale(previous_h,position_hz=previous_pos)
+            else:
+                self.spec_hscale_button.setText(f'{self._spec_visible_max_hz:g} Гц')
+                for action in self._spec_hscale_actions:
+                    action.setChecked(False)
+            mode=self.spec_mode.currentIndex()
+            tag=(self._spec_original_vscale_tag
+                 if self._spec_original_vscale_mode==mode
+                 and self._spec_original_vscale_tag is not None
+                 else source_default_vertical_tag(mode))
+            self._select_original_vscale(tag)
+            self._sync_spec_scroll()
+            self._sync_live_spectrum_curve()
+            self._sync_spectrum_summary_primary()
+            summary=self._spectrum_summary
+            self.spec_core_triplet.setText(
+                f"LIVE АЦП{ch} · N={d['n_fft']} · СКЗ "
+                f"{summary['output_mean']:.6g} · пик "
+                f"{summary['output_peak_frequency_hz']:.7g} Гц · "
+                "локальный результат, не приборный DSP")
             self.spec_copy_button.setEnabled(False)
             self.spec_save_button.setEnabled(False)
             self.spec_original_copy_compare.setEnabled(False)
@@ -4081,8 +4237,7 @@ class MainWindow(QMainWindow):
                     f'шаг {d["df_hz"]:.6g} Гц\n'
                     'Реальные SHA-отсчёты Go + локальный исходный IDP; '
                     'численный Delphi/x87 паритет не подтверждён')
-                self.spec_mean_primary.setText(
-                    'LIVE ОГИБАЮЩАЯ · локальный FIR/IQ расчёт, НЕ Delphi 1:1')
+                # Keep the complete local GetSpectrum summary visible.
                 self.spec_hint.setText(
                     f'Кольцо 2M SHA={channel.sha256[:12]}… · '
                     f'история {proof["source_get_adjusted_envelope_length_samples"]} '
@@ -4095,8 +4250,7 @@ class MainWindow(QMainWindow):
                     + ('Источник: кольцо Go 2M; ' if ring_selected
                        else 'Источник: Preview (не оригинальное кольцо); ')
                     + 'FFT локальный, не Delphi/x87 1:1')
-                self.spec_mean_primary.setText(
-                    'LIVE PREVIEW · численный паритет не подтверждён')
+                # Keep the complete local GetSpectrum summary visible.
                 self.spec_hint.setText(
                     ('SHA исходного окна Go 2M · '
                      if ring_selected else 'Непроверенный исходный Preview · ')
@@ -4104,15 +4258,9 @@ class MainWindow(QMainWindow):
                     'в локальной FFT FRange=1; FRange повторно НЕ применялся; '
                     'оригинальный коэффициент не установлен · '
                     'результат не для оригинального Copy/Save')
-            self.spec_cursor_primary.setText('Live: курсор оригинала недоступен')
-        except (ValueError,OSError,KeyError) as exc:
-            self._source_large_fft_key=None
-            # No stale 8192-point FFT may remain on screen when the
-            # operator explicitly requested N=65536/131072/262144.
-            self.spec_plot.clear_source_tqgr_series()
-            self.spec_plot.clear()
-            self._full_spectrum=None
-            self._spectrum_summary=None
+            self.spec_cursor_primary.setText(self._idle_spectrum_cursor_label())
+        except (ValueError,OSError,KeyError,TypeError,OverflowError) as exc:
+            self._clear_live_spectrum(str(exc))
             # Source ring / FIR provenance was rejected: old research
             # Copy/Save and cursor controls must NOT expose a stale FFT.
             self.spec_copy_button.setEnabled(False)
@@ -4134,6 +4282,7 @@ class MainWindow(QMainWindow):
         if not self._live_active:
             return
         self._cancel_source_live_fir()
+        self._clear_live_spectrum("Измерение завершено")
         self._source_interface_qtimer.stop()
         self._source_interface_clock.stop()
         self._source_interface_last_page=None
@@ -4777,9 +4926,20 @@ class MainWindow(QMainWindow):
 
     def refresh_all(self,*_):
         if self._live_active:
+            status=self._native_live_status or {}
+            rows=(status.get("source_original_storage") or {}).get("channels") or []
+            adc=self._ch()
+            seen=(self._live_preview.channels.get(adc)
+                  if self._live_preview is not None else None)
+            rate=(rows[adc-1].get("last_sample_rate_hz")
+                  if status.get("source_original_storage_verified") is True
+                  and len(rows)>=adc else seen.rate_hz if seen else None)
+            self._source_envelope_menu_fs=rate if type(rate) is int and rate>0 else None
+            self._rebind_original_envelope_for_selected_channel()
+            self._sync_original_envelope_menu_ui()
             if not self._source_live_view_frozen:
                 self._render_live_wave()
-                self._render_live_spectrum()
+            self._render_live_spectrum()
             return
         if self.session is None:return
         flow=self._current_offline_flow()  # same source/ADC/tick
@@ -6761,8 +6921,13 @@ class MainWindow(QMainWindow):
         self._spec_at_scene_pos(scene_pos,force=False)
 
     def _spec_at_scene_pos(self,pos,*,force=False):
-        if ((self.session is None and self._spectrum_reference is None)
-                or self._full_spectrum is None or not isinstance(pos,QPointF)):
+        if self._live_active:
+            if not self._live_spectrum_current():
+                self._invalidate_graph_cursor("spectrum")
+                return
+        elif self.session is None and self._spectrum_reference is None:
+            return
+        if self._full_spectrum is None or not isinstance(pos,QPointF):
             return
         try:
             vb=self.spec_plot.getViewBox()
@@ -6868,6 +7033,10 @@ class MainWindow(QMainWindow):
                 self.spec_line.setVisible(True)
                 self.spec_hline.setVisible(True)
                 self.spec_xor_crosshair.set_cursor(cursor_x,cursor_y)
+            if self._live_active:
+                found["live_session_id"]=self._full_spectrum["live_session_id"]
+                found["live_window_sha256"]=self._full_spectrum["live_window_sha256"]
+                found["live_provisional_not_audited"]=True
             self._spec_last_cursor=found
             y_name=source_spectrum_y_unit(found['mode'])
             cursor_unit=y_name

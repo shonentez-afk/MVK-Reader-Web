@@ -400,3 +400,28 @@ def test_continuous_measure_go_uint64_raw_and_frame_counters_do_not_truncate(
     root2,status2,_=make_preview(other,modify=source_invalid_index)
     with pytest.raises(ValueError,match="invalid next_index"):
         load_live_preview(root2,status2,now=now())
+
+def test_live_spectrum_full_result_and_zoom_projection_same_fft(tmp_path):
+    from ..core.original_live_spectrum_view import (
+        bind_live_spectrum_view, live_spectrum_plot_points)
+    root,status,_=make_preview(tmp_path)
+    preview=load_live_preview(root,status,now=now())
+    for mode in range(4):
+        d=provisional_spectrum(preview,1,mode=mode,n_fft=65536,full_bins=True)
+        view=bind_live_spectrum_view(preview,1,d,selected_n=65536,code=0,mode=mode)
+        assert len(view["amplitude"])==32768
+        assert view["live_window_sha256"]==preview.channels[1].sha256
+        assert view["grapher_series_bins"]==25600
+        assert not view["original_delphi_numerical_parity_verified"]
+        xs,ys=live_spectrum_plot_points(view)
+        assert len(xs)<=5000
+        assert len(xs)==len(ys)
+        x2,y2=live_spectrum_plot_points(view,x_bounds=(990.,1010.))
+        assert np.array_equal(x2,np.arange(989.,1012.))
+        np.testing.assert_array_equal(y2,view["amplitude"][989:1012])
+        assert not view["amplitude"].flags.writeable
+        with pytest.raises(ValueError):
+            bind_live_spectrum_view(preview,2,d,selected_n=65536,code=0,mode=mode)
+        damaged={**d,"amplitude":d["amplitude"][:-1]}
+        with pytest.raises(ValueError):
+            bind_live_spectrum_view(preview,1,damaged,selected_n=65536,code=0,mode=mode)
