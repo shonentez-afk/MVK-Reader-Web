@@ -942,3 +942,12 @@ User correctly emphasized that MVK Reader Web uses **TCP/10230**, not Modbus/502
 Исторические 641 пары v15 остаются *кандидатами*. Независимая повторная индексация другим классификатором дала 232 поля, 1538 обращений и 679 пар, **не подменять** этим v15: без исходного CSV нельзя сделать надёжное 1:1 соответствие пар. Полный original Win32/MVK01 same-session parity не подтверждён; хронология нескольких потоков и dynamic VMT требуют отдельного доказательства.
 
 Локальный архив передачи (приватно, не загружать в GitHub): `MVK_ALIAS_V16_PRIVATE_HANDOFF.zip` — HTML v16, MD-аудит, JSON доказательств, CSV-кандидаты, скрипт пересборки, QA. Статическая целостность HTML проверена, JS прошёл `node --check`; **Chromium runtime проверку v16 не удалось выполнить в данной среде**. Существующая v15 карта сохраняется отдельно: v16 — доказательный слой, а не восстановление предыдущего приватного полноформатного HTML. Не публиковать 7z/IDP/SQLite/приватные CSV и адреса.
+
+
+## Atlas v28 — 24.11.2026 (последнее продолжение)
+
+[Отчёт о расчётном контракте, TX/reconnect и завершении потоков](docs/architecture/mvkview-recovery/STAGE111_ORIGINAL_CALC_TX_COMPLETION_V28_RU.md).
+
+Приватное самостоятельное дополнение: 26 карточек, 34 направленных отношения, 6 маршрутов, 17 членов Params (15 общих + 2 narrowband), 231 static/source/analytic + 107 browser checks PASS. Восстановлен явный synchronized calibration completion callback из IDP и две статические VMT цели. Уточнены ADC/SPEC summaries, units, FIFO, retry и условный exception path. Это не runtime parity. Рабочий код и PR #14 не изменялись. Приватные файлы не публиковались.
+
+**Важно для нового чата:** получить предыдущий полный приватный v27 ZIP/HTML/CSV и локальный пакет MVK_ALIAS_V28_SUPPLEMENT_PRIVATE_HANDOFF.zip. V28 — дополнение, не полный Atlas; не заменять исторические 641 IDs. После объединения продолжить procedural pointers/RTTI, OnTerminate assignment, background producer, 33 reader routes, 7 GetRawSignal и Stop/exception interleavings.
