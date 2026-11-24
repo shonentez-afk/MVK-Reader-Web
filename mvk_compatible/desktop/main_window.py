@@ -1499,7 +1499,7 @@ class MainWindow(QMainWindow):
         self.spec_save_button.setToolTip(
             'Исходный bSpecSaveValueClick 0084BD7C: SPEC-FREQ-YYYY-MM-DD.csv, '
             'sep=|, три поля, добавление строк в выбранном edLibraryPath. '
-            'Исходный Win32 кодировочный/локализованный заголовок не аттестован. '
+            'Русская шапка оригинала: Windows-1251, без BOM. '
             'Никаких команд прибору и перезаписи чужого файла.')
         self.spec_save_button.clicked.connect(self._save_spec_summary)
         stack.addWidget(self.spec_save_button)
@@ -7782,7 +7782,7 @@ class MainWindow(QMainWindow):
         Original uses edLibraryPath and a localized 3-column header.
         In our safe app, a known operator-selected directory enables
         original daily name/append; an unknown directory asks for Save As.
-        Unknown Win32 localization/ANSI bytes are never claimed exact.
+        Russian SPEC-FREQ uses Windows-1251; numeric locale is independent.
         """
         if self._spectrum_summary is None:return
         try:
@@ -7846,7 +7846,7 @@ class MainWindow(QMainWindow):
                 proposed='SPEC-FREQ-'+date.today().strftime('%Y-%m-%d')+'.csv'
                 target,_=QFileDialog.getSaveFileName(
                     self,
-                    'SPEC-FREQ · локальная запись текущего GetSpectrum (не Win32 codepage)',
+                    'SPEC-FREQ · русская шапка, Windows-1251',
                     proposed,'SPEC-FREQ CSV (*.csv)')
                 if not target:return
                 current_flow,new_action=self._current_original_spectrum_action()
@@ -7873,7 +7873,7 @@ class MainWindow(QMainWindow):
                 +('добавлена строка' if report['appended_existing_candidate']
                   else 'создан исходный 3-столбцовый CSV')+
                 f" · SHA {report['full_csv_sha256'][:12]}… "
-                "(UTF-8 кандидат, Delphi codepage не аттестован)")
+                "(русский SPEC-FREQ, Windows-1251)")
             return report
         except (OSError,UnicodeError,KeyError,TypeError,ValueError) as exc:
             self.statusBar().showMessage('bSpecSaveValue отклонён: '+str(exc))

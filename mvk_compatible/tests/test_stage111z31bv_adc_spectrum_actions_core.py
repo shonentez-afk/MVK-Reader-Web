@@ -23,7 +23,7 @@ from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from ..core.original_adc_spectrum_actions import (
     OriginalSpectrumAction,OriginalEnvelopeCursor,
     spectrum_source_daily_path,append_source_spec_freq_csv,
-    SPEC_CSV_HEADER,SPEC_CSV_PREFIX,SPECTRUM_COPY_SOURCE,
+    SPEC_CSV_HEADER,SPEC_CSV_PREFIX,SPECTRUM_COPY_SOURCE,SPEC_CSV_ENCODING,
     SPECTRUM_SAVE_SOURCE,WAVE_CURSOR_SOURCE,
 )
 
@@ -68,7 +68,7 @@ def test_spec_freq_original_daily_pipe_header_first_write_append_roundtrip(tmp_p
     assert SPEC_CSV_PREFIX=="SPEC-FREQ-"
     first=append_source_spec_freq_csv(action,flow,daily,spectrum=spectrum)
     raw=daily.read_bytes()
-    assert raw.startswith(("sep=|\r\n"+SPEC_CSV_HEADER+"\r\n").encode("utf-8"))
+    assert raw.startswith(("sep=|\r\n"+SPEC_CSV_HEADER+"\r\n").encode(SPEC_CSV_ENCODING))
     assert raw.count(b"sep=|")==1
     assert len(raw.splitlines())==3
     assert raw.splitlines()[2].decode("utf-8")==action.pipe_row()
@@ -77,7 +77,8 @@ def test_spec_freq_original_daily_pipe_header_first_write_append_roundtrip(tmp_p
     assert first["current_saved_row"]==action.pipe_row()
     assert first["appended_existing_candidate"] is False
     assert first["full_csv_sha256"]==sha256(raw).hexdigest()
-    assert not first["original_csv_codepage_and_header_parity_verified"]
+    assert first["source_csv_encoding"]=="cp1251"
+    assert not first["original_csv_full_file_numeric_parity_verified"]
 
     second=append_source_spec_freq_csv(action,flow,daily,spectrum=spectrum)
     assert second["appended_existing_candidate"] is True
@@ -183,3 +184,36 @@ def test_source_fir_cursor_rejects_tampered_trace_or_wrong_selected_adc(tmp_path
     bad["cursor_full_samples_float32"]=np.asarray([np.nan],dtype=np.float32)
     with pytest.raises(ValueError,match="Exact full"):
         OriginalEnvelopeCursor.from_trace(flow,bad)
+
+
+@pytest.mark.parametrize("mode,units", [(0,"м/с2"), (1,"м/с2"), (2,"мм/с"), (3,"мкм")])
+def test_spec_freq_reproduces_russian_windows_ansi_header_exactly(tmp_path,mode,units):
+    _,flow,_=_native(tmp_path)
+    d=flow.spectrum(1024,mode,0.,max_hz=1e9,max_points=512,backend="numpy")
+    action=OriginalSpectrumAction.from_view(flow,d)
+    file=tmp_path/"SPEC-FREQ-2026-11-13.csv"
+    r=append_source_spec_freq_csv(action,flow,file,spectrum=d)
+    expected=("sep=|\r\n"
+              f"СКЗ спектра, {units}|Частота, Гц|Значение, {units}\r\n").encode("cp1251")
+    assert file.read_bytes()==expected+(action.pipe_row()+"\r\n").encode("ascii")
+    assert r["source_csv_ru_header_from_executable"]
+    assert not file.read_bytes().startswith(b"\xef\xbb\xbf")
+
+
+def test_spec_freq_cannot_append_other_units_or_migrate_old_utf8(tmp_path):
+    _,flow,d=_native(tmp_path)
+    action=OriginalSpectrumAction.from_view(flow,d)
+    file=tmp_path/"SPEC-FREQ-2026-11-13.csv"
+    file.write_bytes(("sep=|\r\n"+SPEC_CSV_HEADER+"\r\n1|2|3\r\n").encode("utf-8"))
+    old=file.read_bytes()
+    with pytest.raises(ValueError,match="encoding"):
+        append_source_spec_freq_csv(action,flow,file,spectrum=d)
+    assert file.read_bytes()==old
+    file.unlink()
+    append_source_spec_freq_csv(action,flow,file,spectrum=d)
+    old=file.read_bytes()
+    velocity=flow.spectrum(1024,2,0.,max_hz=1e9,max_points=512,backend="numpy")
+    with pytest.raises(ValueError,match="units"):
+        append_source_spec_freq_csv(OriginalSpectrumAction.from_view(flow,velocity),
+                                    flow,file,spectrum=velocity)
+    assert file.read_bytes()==old

@@ -9,12 +9,12 @@ Source: operator-owned Projects/_Unit128.pas and mvkform.dfm.
   OutputPeakY(+0x38), not an arbitrary chart pixel;
 - 0084BD7C bSpecSaveValue: append one 3-value pipe-delimited row to
   SPEC-FREQ-yyyy-mm-dd.csv under edLibraryPath; first write starts
-  with sep=| and source-localized labels. Win32 codepage/localizations
-  and FloatToStr source formatting are not certified.
+  with sep=| and source-localized labels. This exporter targets the
+  original Russian Windows ANSI profile. Numeric RTL parity is separate.
 
 The uploaded Delphi sources and user data remain private. This module
-never touches a device, the original config, or a vendor CSV. Unknown
-locale strings are represented with EXPLICIT compatible headers.
+never touches a device or the original config. Only files with the same
+header, units and numeric format can be appended to.
 """
 from __future__ import annotations
 
@@ -35,11 +35,23 @@ SOURCE="ORIGINAL_IDR_ADC_SPEC_ACTIONS_STAGE111Z31BV"
 SPECTRUM_COPY_SOURCE="PRIVATE_UNIT128_0084BC28"
 SPECTRUM_SAVE_SOURCE="PRIVATE_UNIT128_0084BD7C"
 WAVE_CURSOR_SOURCE="PRIVATE_UNIT128_0084B4AC"
-SPEC_CSV_HEADER=(
-    "СКЗ спектра (ЛОКАЛЬНЫЙ GetSpectrum, не Win32 parity)|"
-    "Частота пика, Гц (ЛОКАЛЬНЫЙ)|"
-    "Амплитуда пика (ЛОКАЛЬНЫЙ, не аппаратный DSP)"
-)
+SPEC_CSV_ENCODING="cp1251"
+
+
+def spectrum_source_ru_header(mode:int)->str:
+    """Russian bSpecSaveValue header for Native ZIP acceleration.
+
+    Format is lbSpecMeanX, Units | xFrequency, XName | xParamValue, Units.
+    Russian resource keys and XName are from MVKView 1.0.47. In log mode
+    this is the original *summary* unit, not the chart's dB Y-axis.
+    Native ZIP exposes acceleration, never an unproven Direct BIN unit.
+    """
+    from .mvk_original_scale_tables_idr_candidate import source_derived_units
+    unit=source_derived_units(mode,"м/с2")
+    return f"СКЗ спектра, {unit}|Частота, Гц|Значение, {unit}"
+
+
+SPEC_CSV_HEADER=spectrum_source_ru_header(0)
 SPEC_CSV_PREFIX="SPEC-FREQ-"
 MAX_SPEC_CSV_BYTES=2_000_000
 MAX_ENVELOPE_SAMPLES=2_000_000
@@ -196,10 +208,11 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
                                 flow:OfflineMeasurementFlow,
                                 destination,*,spectrum:dict|None=None,
                                 decimal_separator=","):
-    """Mirror source 0084BD7C layout; refuse foreign/original CSV.
+    """Mirror 0084BD7C with Russian ANSI, exact units, and validated append.
 
-    Every write revalidates the source, never overwrites original vendor
-    files, and reads back the entire output. A failed append is rolled
+    Every write revalidates the source and checks the full output.
+    An incompatible header, units or locale is refused, not converted.
+    A failed append is rolled
     back to the original verified byte length.
     """
     if not isinstance(action,OriginalSpectrumAction):
@@ -221,24 +234,28 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
     row=action.pipe_row(decimal_separator=decimal_separator)
     if len(row.split("|"))!=3 or "\r" in row or "\n" in row:
         raise ValueError("Original source triplet must be exactly three safe numbers")
-    header="sep=|\r\n"+SPEC_CSV_HEADER+"\r\n"
+    header=("sep=|\r\n"+spectrum_source_ru_header(action.spectrum_mode)
+            +"\r\n").encode(SPEC_CSV_ENCODING)
     before=b""
     if dest.exists():
         if (not dest.is_file() or
                 dest.stat().st_size>MAX_SPEC_CSV_BYTES):
             raise ValueError("Source SPEC-FREQ file invalid or oversized")
         before=dest.read_bytes()
-        if not before.startswith(header.encode("utf-8")):
-            raise ValueError("Existing vendor/unverified SPEC-FREQ CSV: append refused")
-        tail=before.decode("utf-8")
-        if not tail.endswith("\r\n") or any(len(line.split("|"))!=3
-                for line in tail.split("\r\n")[2:] if line):
+        if not before.startswith(header):
+            raise ValueError("Existing vendor/unverified SPEC-FREQ: different header, encoding or units")
+        tail=before[len(header):]
+        if not tail or not tail.endswith(b"\r\n"):
             raise ValueError("Existing candidate SPEC-FREQ rows malformed")
-    if before and any(("." if decimal_separator=="," else ",") in old
-                      for old in tail.split("\r\n")[2:] if old):
-        raise ValueError("Existing SPEC-FREQ has a different decimal separator")
-    payload=(row+"\r\n").encode("utf-8")
-    output=(before or header.encode("utf-8"))+payload
+        number=rb"[+-]?(?:[0-9]+(?:"+re.escape(decimal_separator.encode("ascii"))+rb"[0-9]*)?)(?:[eE][+-]?[0-9]+)?"
+        numeric_row=re.compile(rb"\|".join((number,)*3))
+        rows=tail[:-2].split(b"\r\n")
+        if any((b"." if decimal_separator=="," else b",") in old for old in rows):
+            raise ValueError("Existing SPEC-FREQ has a different decimal separator")
+        if not all(numeric_row.fullmatch(old) for old in rows):
+            raise ValueError("Existing candidate SPEC-FREQ rows malformed")
+    payload=(row+"\r\n").encode("ascii")
+    output=(before or header)+payload
     if len(output)>MAX_SPEC_CSV_BYTES:
         raise ValueError("Source SPEC-FREQ CSV exceeds safe size")
     created=False
@@ -262,7 +279,9 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
             "full_csv_sha256":sha256(on_disk).hexdigest(),
             "independent_roundtrip_verified":True,
             "source_file_untouched":True,
-            "original_csv_codepage_and_header_parity_verified":False,
+            "source_csv_encoding":SPEC_CSV_ENCODING,
+            "source_csv_ru_header_from_executable":True,
+            "original_csv_full_file_numeric_parity_verified":False,
             "hardware_commands_sent":False,
         }
     except Exception:

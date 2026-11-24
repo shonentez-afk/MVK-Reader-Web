@@ -5,6 +5,7 @@ from hashlib import sha256
 
 import pytest
 pytest.importorskip("PySide6")
+from PySide6.QtCore import QLocale
 
 from PySide6.QtWidgets import QApplication,QTableWidget
 
@@ -117,7 +118,8 @@ def test_one_native_session_full_seven_page_route_with_readbacks(
         assert len(w._full_spectrum["amplitude"])==w._full_spectrum["n_fft"]//2
         w.spec_copy_button.click()
         qt_app.processEvents()
-        assert QApplication.clipboard().text()==action.clipboard_text(decimal_separator=",")
+        expected="." if QLocale().decimalPoint()=="." else ","
+        assert QApplication.clipboard().text()==action.clipboard_text(decimal_separator=expected)
         # PageFile: source selection tied to same open ZIP, not synthetic placeholder.
         w.original_root_tabs.setCurrentIndex(5)
         qt_app.processEvents()
