@@ -83,3 +83,32 @@ def source_derived_units(metadata, mode=None):
     if unit == "м/с2":
         return "мм/с" if mode == 2 else "мкм"
     return unit + ("~" if mode == 2 else "~~")
+
+
+def current_adc_close_metadata(data, valid, channel):
+    """Read ConfigADC from accepted register words at the writer close."""
+    base=0x100+(channel-1)*0x100
+    addr=base+0x0e
+    bits=None
+    gain=None
+    if valid[addr] and valid[addr+1]:
+        bits=int.from_bytes(data[2*addr:2*(addr+2)],"little")
+        f=struct.unpack("<f",struct.pack("<I",bits))[0]
+        if f == 0:
+            f=1.0
+        if math.isfinite(f) and f>0:
+            gain=f
+    units=None
+    chars=[]
+    for j in range(32):
+        addr=base+0x10+j//2
+        if not valid[addr]:
+            break
+        byte=data[2*(base+0x10)+j]
+        if byte==0:
+            units="".join(chars)
+            break
+        chars.append(chr(byte))
+        if j==31:
+            units="".join(chars)
+    return dict(range_raw_bits=bits,effective_gain=gain,units=units)

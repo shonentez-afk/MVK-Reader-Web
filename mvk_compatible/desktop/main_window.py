@@ -88,6 +88,8 @@ from ..core.mvk_original_scale_tables_idr_candidate import (
     original_fft_resolution_caption,original_physical_y_caption,
     source_spectrum_y_unit,research_spectrum_vscale_auto_basis,
     source_spectrum_h_available)
+from ..core.original_live_adc_metadata import source_derived_units
+from ..core.storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
 from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
     RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
     source_vertical_selection,source_vertical_mode_transition,
@@ -1060,7 +1062,7 @@ class MainWindow(QMainWindow):
 
     def _sync_original_wave_vertical_popup(self,baseline:float=1000.,
                                             *,source_bound:bool=False,
-                                            live_source:bool=False):
+                                            live_source:bool=False,live_factor=None,unit='м/с2'):
         """Numeric PageAdc Y menu, source Tag0..12 and checked state.
 
         The screenshot has Tag0=1000 m/s2. When an actual current GetSignal
@@ -1070,12 +1072,13 @@ class MainWindow(QMainWindow):
         """
         for action in self.wave_vscale_menu.actions():
             tag=int(action.data())
-            action.setText(original_adc_vertical_physical_caption(tag,baseline))
+            action.setText(original_adc_vertical_physical_caption(tag,baseline,unit=unit))
             action.setChecked(tag==self._wave_vscale_tag)
         selected=original_adc_vertical_physical_caption(
-            self._wave_vscale_tag,baseline)
+            self._wave_vscale_tag,baseline,unit=unit)
         self.wave_vscale_button.setText(selected)
-        origin=('LIVE FRange=1 по подтверждённому Go-кольцу; '
+        origin=(f'LIVE FRange={live_factor:g} по метаданным Go; x87 не подтверждён' if live_factor is not None else
+                'LIVE FRange=1 по подтверждённому Go-кольцу; '
                 'оригинальный x87 и калибровка не подтверждены' if live_source
                 else 'TSXML FRange текущего канала (исходная формула, '
                      'физическая калибровка не подтверждена)' if source_bound
@@ -1102,13 +1105,14 @@ class MainWindow(QMainWindow):
             return
         model=source_live_adc_vertical_view(
             full_peak=bound['full_peak'],tag=self._wave_vscale_tag,
-            source_frange1=bound['source_frange1'])
+            source_frange1=bound['source_frange1'],source_range=bound.get('source_range'))
         self.wave_plot.getViewBox().setYRange(
             model['y_min'],model['y_max'],padding=0)
         self._live_wave_scale_model=model
         self._sync_original_wave_vertical_popup(
             baseline=float(model['axis_baseline_m_s2_nominal']),
-            live_source=model['source_f_range1_verified'])
+            live_source=model['source_f_range1_verified'],
+            live_factor=model['live_metadata_f_range'],unit=bound.get('unit','м/с2'))
 
     def _apply_original_wave_vscale(self):
         '''One SHA-bound post-GetSignal Y axis, without reading drawn LOD samples.'''
@@ -2051,7 +2055,9 @@ class MainWindow(QMainWindow):
                 self._current_offline_flow(),self._full_spectrum,choice,
                 source_gain=source_evidence,
                 visible_pair=self._visible_original_pair)
-        f_range=(reference.f_range if exact_operator_frange else
+        live_factor=(self._full_spectrum.get('live_original_f_range_single')
+                     if self._live_active and self._full_spectrum is not None and self._full_spectrum.get('source_adc_metadata') is not None else None)
+        f_range=(live_factor if live_factor is not None else reference.f_range if exact_operator_frange else
                  source_scope['f_range_single'] if (source_scope is not None and
                      source_scope['f_range_single'] is not None) else
                  source_evidence.frange_single if source_tsxml else
@@ -2069,7 +2075,7 @@ class MainWindow(QMainWindow):
         self._spec_graph_default_vscale_candidate=source_scale
         self._update_original_vscale_candidate_label(
             source_scale,source_view=source_scope)
-        if exact_operator_frange:
+        if exact_operator_frange or live_factor is not None:
             native=native_with_source_frange_candidate
             offset=0.
         elif source_scope is not None:
@@ -2089,7 +2095,7 @@ class MainWindow(QMainWindow):
         # UNCALIBRATED research fallback only, present the mathematical
         # zero without fabricating a modified original Single/Win32 state.
         research_zero_anchor=bool(
-            not db and not exact_operator_frange and source_scope is None
+            not db and not exact_operator_frange and source_scope is None and live_factor is None
             and choice['delphi_position']==choice['full']-choice['page'])
         if research_zero_anchor:
             lower=0.
@@ -2139,7 +2145,7 @@ class MainWindow(QMainWindow):
             choice,lower=lower,upper=upper,
             source_graph_default=source_scale['candidate_graph_default_vscale_single'],
             local_graph_default=default_scale,
-            source_bound=(exact_operator_frange or
+            source_bound=(live_factor is not None or exact_operator_frange or
                 (source_scope is not None and
                  source_scope['graph_default_vscale_candidate'] is not None)))
 
@@ -2176,7 +2182,10 @@ class MainWindow(QMainWindow):
                 # Without FRange, captions correspond to actual LOCAL
                 # auto-fit graph heights, not meaningless "÷1000" labels.
                 # Units are NOMINAL: BIN calibration remains unverified.
-                caption=original_physical_y_caption(mode,absolute)
+                if self._live_active and self._full_spectrum is not None and self._full_spectrum.get('source_adc_metadata') is not None:
+                    caption=(f'{absolute:.6g}'.replace('.',',')+' '+self._full_spectrum['unit']).rstrip()
+                else:
+                    caption=original_physical_y_caption(mode,absolute)
             action.setText(caption)
             action.setToolTip(
                 f"Delphi Tag{current}, "
@@ -3577,7 +3586,7 @@ class MainWindow(QMainWindow):
         self.wave_plot.getViewBox().invertX(True)
         self.wave_plot.setLabel(
             'bottom',result.get('source_cursor_axis_unit','мс'))
-        self.wave_plot.setLabel('left','Огибающая, м/с² · не Delphi 1:1')
+        self.wave_plot.setLabel('left',f"Огибающая, {result.get('unit','м/с²')} · не Delphi 1:1")
         self.wave_plot.plot(
             result.get('source_cursor_plot_x',result['plot_x_ms']),
             result['plot_y'],pen=pg.mkPen('#176c92'))
@@ -3587,7 +3596,9 @@ class MainWindow(QMainWindow):
         self._live_wave_vertical_basis=dict(
             adc=result['adc'],session_id=result['source_session_id'],
             full_peak=float(np.max(np.abs(result['full_reversed_getsignal']))),
-            source_frange1=True,
+            source_frange1=result.get('source_adc_metadata') is None,
+            source_range=result['live_original_f_range_single'] if result.get('source_adc_metadata') is not None else None,
+            unit=result.get('unit','м/с2'),
             source_sha256=result['output_float32_sha256'])
         self._apply_live_wave_vscale()
         self.wave_line=pg.InfiniteLine(angle=90,movable=False,
@@ -3601,7 +3612,7 @@ class MainWindow(QMainWindow):
         self.wave_cursor_primary.setText('Курсор: —')
         self.wave_mean_primary.setText(
             f"LIVE АЦП{result['adc']} · FIR Code{result['envelope_code']} · "
-            f"СКЗ-кандидат {result['rms_m_s2']:.5g} м/с²\n"
+            f"СКЗ-кандидат {result['rms_m_s2']:.5g} {result.get('unit','м/с²')}\n"
             "Оригинальный Delphi/x87 GetSignal ещё не принят")
         self.wave_hint.setText(
             f"Go 2²¹ SHA={result['source_float32_sha256'][:12]} · "
@@ -3609,7 +3620,7 @@ class MainWindow(QMainWindow):
             f"post-FIR {result['output_samples']} · "
             f"Fs={result['output_rate_hz']} Гц · "
             f"LOD {result['plot_points']} точек; "
-            "курсор по полному обратному Float32 · FRange=1; "
+            f"курсор по полному обратному Float32 · FRange={result['live_original_f_range_single']:g}; "
             "Win32 паритет не доказан")
         self._live_long_rendered_key=result['job_key']
 
@@ -3941,7 +3952,7 @@ class MainWindow(QMainWindow):
                 else 'Индекс отсчёта/Fs, с · НЕ часы ПК')
             self.wave_plot.setLabel(
                 'left',
-                'Go · проверенное кольцо 2M, м/с²' if ring_selected
+                f"Go · проверенное кольцо 2M, {d.get('unit','м/с²')}" if ring_selected
                 else 'Native R6.1 · preview, НЕ кольцо MVKView, м/с²')
             if current_cursor is not None:
                 self.wave_plot.plot(
@@ -3967,12 +3978,13 @@ class MainWindow(QMainWindow):
                 full_peak=float(d['peak_m_s2']),
                 source_frange1=(
                     d.get('input_domain')=='original_live_f_range1'),
+                source_range=d.get('live_original_f_range_single'),unit=d.get('unit','м/с2'),
                 source_sha256=preview.channels[ch].sha256)
             self._apply_live_wave_vscale()
             if rendered_sig is not None:
                 self._live_long_rendered_key=rendered_sig
             self.wave_mean_primary.setText(
-                f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} м/с²\n'
+                f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} {d.get("unit","м/с²")}\n'
                 'Не сверено с оригинальной MVKView')
             source_scale=(
                 f'bAdcHScale={d["original_bAdcHScale_milliseconds"]} мс · '
@@ -4169,8 +4181,11 @@ class MainWindow(QMainWindow):
                     channel.samples,channel.rate_hz,code,profile,
                     selected_bspec_lines_n=selected_n,
                     mode=self.spec_mode.currentIndex(),
-                    backend="idr_float32",f_range=1.0,
-                    input_domain="calibrated_bin")
+                    backend="idr_float32",f_range=channel.source_metadata.factor if channel.source_metadata is not None else 1.0,
+                    input_domain=DOMAIN_ORIGINAL_STORAGE if channel.source_metadata is not None else "calibrated_bin")
+                if channel.source_metadata is not None:
+                    d["source_adc_metadata"]=channel.source_metadata.wire()
+                    d["live_original_f_range_single"]=channel.source_metadata.factor
                 d["source_ring_sha256"]=channel.sha256
                 d["channel"]=ch
             else:
@@ -4272,7 +4287,7 @@ class MainWindow(QMainWindow):
                     f'Кольцо 2M SHA={channel.sha256[:12]}… · '
                     f'история {proof["source_get_adjusted_envelope_length_samples"]} '
                     f'Float32 · post-IQ FFT N={d["n_fft"]} · '
-                    'FRange=1; повторный коэффициент не применялся; '
+                    f'FRange={d.get("f_range_used",1.0):g}; повторный коэффициент не применялся; '
                     'Copy/Save как оригинальный результат запрещён')
             else:
                 self.spec_mean.setText(
@@ -4284,9 +4299,11 @@ class MainWindow(QMainWindow):
                 self.spec_hint.setText(
                     ('SHA исходного окна Go 2M · '
                      if ring_selected else 'Непроверенный исходный Preview · ')
-                    + f'{d["source"]} · Native Go BIN уже калиброван; '
-                    'в локальной FFT FRange=1; FRange повторно НЕ применялся; '
-                    'оригинальный коэффициент не установлен · '
+                    + f'{d["source"]} · '
+                    + (f'FRange={d["live_original_f_range_single"]:g} · нормализация и выходной масштаб по метаданным Go; '
+                       if d.get('source_adc_metadata') is not None else
+                       'Native Go BIN уже калиброван; в локальной FFT FRange=1; FRange повторно НЕ применялся; оригинальный коэффициент не установлен · ')
+                    + 
                     'результат не для оригинального Copy/Save')
             self.spec_cursor_primary.setText(self._idle_spectrum_cursor_label())
         except (ValueError,OSError,KeyError,TypeError,OverflowError) as exc:
@@ -7071,7 +7088,7 @@ class MainWindow(QMainWindow):
                 found["live_window_sha256"]=self._full_spectrum["live_window_sha256"]
                 found["live_provisional_not_audited"]=True
             self._spec_last_cursor=found
-            y_name=source_spectrum_y_unit(found['mode'])
+            y_name=(self._full_spectrum['unit'] if self._live_active and self._full_spectrum is not None and self._full_spectrum.get('source_adc_metadata') is not None else source_spectrum_y_unit(found['mode']))
             cursor_unit=y_name
             local_calibration_warning=(
                 ' · исходный BIN без подтверждённой физической калибровки'

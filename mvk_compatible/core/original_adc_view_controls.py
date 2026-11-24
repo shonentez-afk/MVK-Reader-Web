@@ -45,7 +45,7 @@ def original_adc_horizontal_options():
     } for tag,ms in enumerate(ADC_HORIZONTAL_MS))
 
 
-def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float)->str:
+def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float, *, unit:str='м/с2')->str:
     """Original PageAdc Y popup: nominal physical height, not a divisor.
 
     Original IDP 008D33F4 holds 13 Y divisors; the screen captions are
@@ -65,7 +65,7 @@ def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float)->str:
         raise ValueError("ADC Y caption cannot represent current height")
     # Exactly original operator text unit "м/с2" (not a fictitious
     # dimensionless menu "1/N диапазона Y"). Russian decimal comma.
-    return f"{height:.9g}".replace(".",",")+" м/с2"
+    return (f"{height:.9g}".replace(".",",")+" "+unit).rstrip()
 
 
 def original_adc_vertical_options(*, baseline_m_s2:float|None=None):
@@ -104,7 +104,7 @@ def local_adc_vertical_peak_fit(peak:float)->float:
 
 
 def source_live_adc_vertical_view(*,full_peak:float,tag:int,
-                                  source_frange1:bool)->dict:
+                                  source_frange1:bool,source_range:float|None=None)->dict:
     """Pure live Y view over accepted Go Float32; no TX or new GetSignal.
 
     Source original TMvkChannelStorage.FRange=1 is allowed only when the
@@ -119,7 +119,13 @@ def source_live_adc_vertical_view(*,full_peak:float,tag:int,
     if (isinstance(full_peak,bool) or not isinstance(full_peak,(int,float))
             or not math.isfinite(float(full_peak)) or float(full_peak)<0):
         raise ValueError("Live ADC full peak must be finite/nonnegative")
-    if source_frange1:
+    if source_range is not None:
+        if not math.isfinite(source_range) or source_range<=0:
+            raise ValueError("Invalid live source FRange")
+        graph=spectrum_graph_default_vscale(source_range,1)
+        baseline=float(graph["candidate_graph_default_vscale_single"])
+        origin="SOURCE_LIVE_LATCHED_FRANGE_GRAPH_DEFAULT_X87_UNATTESTED"
+    elif source_frange1:
         graph=spectrum_graph_default_vscale(1.0,1)
         baseline=float(graph["candidate_graph_default_vscale_single"])
         origin="SOURCE_LIVE_FRANGE1_GRAPH_DEFAULT_X87_UNATTESTED"
@@ -134,6 +140,7 @@ def source_live_adc_vertical_view(*,full_peak:float,tag:int,
         "source":SOURCE,"tag":tag,"divisor":divisor,
         "axis_baseline_m_s2_nominal":baseline,
         "source_f_range1_verified":source_frange1,
+        "live_metadata_f_range":source_range,
         "axis_baseline_origin":origin,
         "window_peak_from_full_source":float(full_peak),
         "local_half_height":half,"y_min":-half,"y_max":half,

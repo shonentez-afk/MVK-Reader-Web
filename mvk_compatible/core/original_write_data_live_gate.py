@@ -9,6 +9,9 @@ No Delphi file-name / click-microsecond / tsxml parity is claimed.
 from __future__ import annotations
 
 from contextlib import ExitStack
+from .original_param_gate_proof import OriginalParamGateReader, SOURCE_PARAM_GATE_NAME
+from .original_values_3100_timeline import PARAM, REGISTER_WORDS, _parameter_blocks
+from .original_live_adc_metadata import current_adc_close_metadata
 from hashlib import sha256
 from pathlib import Path
 import json
@@ -170,7 +173,28 @@ def verify_native_live_write_data(
     actual_packet_records=0
     window_pointer=0
     results=[]
+    config_data=bytearray(REGISTER_WORDS*2)
+    config_valid=bytearray(REGISTER_WORDS)
+    close_metadata={}
+    close_windows={}
+    for check in checks:
+        close_windows.setdefault(check['end'],[]).append(check)
+    def capture_close(frame):
+        for check in close_windows.get(frame,()):
+            for channel in check['by_channel']:
+                if channel<=8:
+                    close_metadata[(check['window']['window'],channel)]={
+                        **current_adc_close_metadata(config_data,config_valid,channel),
+                        'end_after_frame':frame,
+                        'source':'RAW_ACCEPTED_PARAM_AT_WRITER_CLOSE_00806A8C'}
     with ExitStack() as resources:
+        param_gate=None
+        if summary.get('source_original_param_gate_sha256') is not None:
+            param_gate=resources.enter_context(OriginalParamGateReader(
+                folder/SOURCE_PARAM_GATE_NAME,
+                expected_sha256=summary['source_original_param_gate_sha256'],
+                expected_records=summary.get('source_original_param_gate_records',0),
+                expected_frames=raw_frames))
         for check in checks:
             for channel,item in check["by_channel"].items():
                 file=_local_file(folder,item["name"],max_bytes=raw_len)
@@ -183,6 +207,8 @@ def verify_native_live_write_data(
         data=resources.enter_context(raw_path.open("rb"))
         receipts=resources.enter_context(packet_path.open("rb"))
         for frame_index in range(1,raw_frames+1):
+            if param_gate is not None:
+                capture_close(frame_index-1)
             header=data.read(8)
             if len(header)!=8:
                 raise ValueError("Original native WriteData: early frame EOF")
@@ -199,6 +225,15 @@ def verify_native_live_write_data(
             selected=(checks[window_pointer]
                       if window_pointer<len(checks) and
                       frame_index>checks[window_pointer]["start"] else None)
+            if typ==PARAM and param_gate is not None:
+                frame=header+body
+                blocks=list(_parameter_blocks(frame))
+                frozen=param_gate.consume(frame_index=frame_index,frame=frame,
+                    descriptors=len(blocks),values3100=any(a==0x3100 for a,_,_ in blocks))
+                if not frozen:
+                    for addr,words,payload in blocks:
+                        config_data[2*addr:2*(addr+words)]=payload
+                        config_valid[addr:addr+words]=b'\x01'*words
             if typ not in TYPES:
                 continue
             if n<28:
@@ -271,6 +306,9 @@ def verify_native_live_write_data(
                 h.update(copied)
                 file_checks[key]=(handle,h,total+len(copied),packets+1,item)
                 packet_rates[key].add(rate)
+        if param_gate is not None:
+            capture_close(raw_frames)
+            param_gate.finish()
         final=data.read(MAX_FRAME)
         if len(final)!=raw_tail or data.read(1):
             raise ValueError("Original native WriteData: source terminal tail changed")
@@ -302,6 +340,8 @@ def verify_native_live_write_data(
                     "original_live_source_rate_freeze_gate_verified":True,
                     "verified_packet_rates_hz":sorted(packet_rates[
                         (window["window"],channel)]),
+                    **({"source_close_adc_metadata":close_metadata[(window["window"],channel)]}
+                       if (window["window"],channel) in close_metadata else {}),
                     "original_delphi_file_parity_verified":False,
                 })
     return {

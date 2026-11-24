@@ -317,7 +317,7 @@ def load_source_long_window(root:str|Path,status:dict,
                     meta.get("first_sample_index")!=
                         ((request.device_end_index-count)&0xffffffff) or
                     meta.get("input_domain")!=row["input_domain"] or
-                    meta.get("source_adc_metadata")!=(request.source_metadata.wire() if request.source_metadata is not None else None) or
+                    (parse_source_adc_metadata(meta["source_adc_metadata"]) if meta.get("source_adc_metadata") is not None else None)!=request.source_metadata or
                     meta.get("calibration_already_applied") is not True or
                     meta.get("provisional_not_audited") is not True):
                 raise ValueError("Source GetSignal: foreign or malformed source window")

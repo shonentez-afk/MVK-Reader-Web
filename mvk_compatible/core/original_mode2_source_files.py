@@ -350,10 +350,27 @@ def write_verified_source_tsxml_sidecars(
                     and isinstance(getattr(opts,"custom_name",None),str)
                     and opts.custom_name.strip())
         device=opts.custom_name.strip() if custom else "MVK"
+        meta=proof.get('source_close_adc_metadata') if channel<=8 else None
+        kwargs={}
+        if meta is not None:
+            if (not isinstance(meta,dict) or meta.get('source')!='RAW_ACCEPTED_PARAM_AT_WRITER_CLOSE_00806A8C'):
+                raise ValueError('Invalid source TSXML close metadata proof')
+            if meta.get('effective_gain') is None or meta.get('units') is None:
+                emitted.append(dict(name=name,channel=channel,window=number,sidecar_created=False,
+                    reason='SOURCE_ADC_CLOSE_METADATA_UNAVAILABLE',source_close_adc_metadata=meta))
+                continue
+            try:
+                _xml_text(meta['units'])
+                _float_text(meta['effective_gain'])
+            except (ValueError,UnicodeError):
+                emitted.append(dict(name=name,channel=channel,window=number,sidecar_created=False,
+                    reason='SOURCE_ADC_CLOSE_METADATA_UNREPRESENTABLE',source_close_adc_metadata=meta))
+                continue
+            kwargs=dict(adc_units=meta['units'],adc_gain=meta['effective_gain'])
         xml,details=build_original_tsxml_compatible(
             channel=channel,binary_basename=name,size_bytes=size,
             rate_hz=rates[0],local_time=when,
-            device_label=device,channel_label=label)
+            device_label=device,channel_label=label,**kwargs)
         sidecar=name+".tsxml"
         sidecar_path=folder/sidecar
         with sidecar_path.open("xb") as dest:
@@ -368,6 +385,7 @@ def write_verified_source_tsxml_sidecars(
                                   else "PROVISIONAL_MVK_DEVICE_NAME"),
             "channel_name_source":"IDP_008D2F54_VERIFIED_CHANNEL_TABLE",
             "source_raw_sha256":live_proof["source_raw_sha256"],
+            **({"source_close_adc_metadata":meta} if meta is not None else {}),
             **details,
         })
     return emitted
