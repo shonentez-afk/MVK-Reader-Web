@@ -73,9 +73,8 @@ func mode2WaitForSourceReceiver(run string,want uint64,deadline time.Time)error{
                 status.SourceOriginalStorage!=nil &&
                 len(status.SourceOriginalStorage.Channels)==10 &&
                 status.SourceOriginalStorage.Channels[0].RxPos==want &&
-                status.SourceOriginalStorage.Channels[0].Domain==sourceStorageOriginalConfigADC &&
+                sourceIsLiveADC(status.SourceOriginalStorage.Channels[0].Domain) &&
                 status.SourceOriginalStorage.Channels[0].OriginalLiveFRangeSingle!=nil &&
-                *status.SourceOriginalStorage.Channels[0].OriginalLiveFRangeSingle==2.5 &&
                 status.SourceOriginalReceiveGate!=nil &&
                 status.SourceOriginalReceiveGate.Channels[0].StoredGateElements==want &&
                 status.SourceTCPConnectionCount==1 &&

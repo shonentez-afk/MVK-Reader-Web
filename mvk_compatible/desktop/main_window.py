@@ -4305,7 +4305,7 @@ class MainWindow(QMainWindow):
                      if ring_selected else 'Непроверенный исходный Preview · ')
                     + f'{d["source"]} · FRange={channel.source_f_range_single:g}; '
                     + ('нормализация исходного кольца и возврат масштаба · '
-                       if ring_selected else 'Native preview, без второго gain · ')
+                       if ring_selected else 'Native preview; FRange повторно НЕ применялся · ')
                     + 
                     'результат не для оригинального Copy/Save')
             self.spec_cursor_primary.setText(self._idle_spectrum_cursor_label())
