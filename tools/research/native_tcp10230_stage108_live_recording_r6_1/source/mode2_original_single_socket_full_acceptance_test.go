@@ -16,6 +16,7 @@ import (
     "encoding/binary"
     "fmt"
     "io"
+    "math"
     "net"
     "os"
     "path/filepath"
@@ -72,7 +73,9 @@ func mode2WaitForSourceReceiver(run string,want uint64,deadline time.Time)error{
                 status.SourceOriginalStorage!=nil &&
                 len(status.SourceOriginalStorage.Channels)==10 &&
                 status.SourceOriginalStorage.Channels[0].RxPos==want &&
-                status.SourceOriginalStorage.Channels[0].Domain==sourceStorageOriginalLiveADC &&
+                status.SourceOriginalStorage.Channels[0].Domain==sourceStorageOriginalConfigADC &&
+                status.SourceOriginalStorage.Channels[0].OriginalLiveFRangeSingle!=nil &&
+                *status.SourceOriginalStorage.Channels[0].OriginalLiveFRangeSingle==2.5 &&
                 status.SourceOriginalReceiveGate!=nil &&
                 status.SourceOriginalReceiveGate.Channels[0].StoredGateElements==want &&
                 status.SourceTCPConnectionCount==1 &&
@@ -100,6 +103,13 @@ func mode2WriteSourceWindowRequest(run string,id string,hTag int,count uint32,en
         RequestID:id,ADC:1,HTag:hTag,Samples:count,
         CaptureEnd:end,SampleRateHz:65536,DeviceEnd:uint32(end),
     }
+    raw,e:=os.ReadFile(filepath.Join(run,liveStatusName))
+    if e!=nil{return e}
+    var status LiveStatus
+    if e=json.Unmarshal(raw,&status);e!=nil{return e}
+    if status.SourceOriginalStorage==nil{return fmt.Errorf("missing original range state")}
+    req.SourceRangeState=status.SourceOriginalStorage.Channels[0].SourceRangeState
+    if req.SourceRangeState==nil{return fmt.Errorf("missing latched range state")}
     content,e:=json.Marshal(req)
     if e!=nil{return e}
     return os.WriteFile(filepath.Join(run,sourceLongWindowRequestName),content,0600)
@@ -149,7 +159,13 @@ func TestMode2OneRealLoopbackSocketSignalSpectrumWritersStopSourceProof(t *testi
     mode2QueueMark(t,marks,run,1,"data_begin")
     mode2QueueMark(t,marks,run,2,"values_begin")
 
-    first:=task2Status0Param(0).Raw
+    // First descriptor includes ADC1 range, units and system Status0.
+    // Stage0->1 must see 2.5; later PARAM may alter configuration
+    // without altering the already-latched live storage range.
+    config:=make([]byte,(0x1008-0x10e)*2)
+    binary.LittleEndian.PutUint32(config,math.Float32bits(2.5))
+    copy(config[4:],[]byte("m/s2"))
+    first:=makeParam([]RegBlock{{Addr:0x10e,Words:uint16(len(config)/2),Payload:config}})
     wire:=append([]byte{},first...)
     accepted:=make([]byte,0,1536*4)
     burst:=make([][]byte,0,17)
@@ -169,6 +185,10 @@ func TestMode2OneRealLoopbackSocketSignalSpectrumWritersStopSourceProof(t *testi
         burst=append(burst,frame)
         wire=append(wire,frame...)
     }
+    changed:=make([]byte,4)
+    binary.LittleEndian.PutUint32(changed,math.Float32bits(4))
+    update:=makeParam([]RegBlock{{Addr:0x10e,Words:2,Payload:changed}})
+    burst=append(burst,update);wire=append(wire,update...)
     values:=makeParam([]RegBlock{{Addr:0x3100,Words:2,
         Payload:[]byte{0x11,0x22,0x33,0x44}}})
     burst=append(burst,values)
@@ -237,12 +257,15 @@ func TestMode2OneRealLoopbackSocketSignalSpectrumWritersStopSourceProof(t *testi
         {proof.fftWindow,"abcdefabcdefabcdefabcdefabcdefab",-1,1024},
     }{
         r:=item.proof.receipt
-        expected:=accepted[(1536-int(item.count))*4:]
+        expected,scaleErr:=sourceApplyOriginalFRange(accepted[(1536-int(item.count))*4:],2.5)
+        if scaleErr!=nil{t.Fatal(scaleErr)}
         if r.Schema!=sourceLongWindowResultSchema ||
            r.RequestID!=item.id || r.HTag!=item.tag ||
            r.Samples!=item.count || r.CaptureEnd!=1536 ||
            r.NextIndex!=1536 || r.FirstIndex!=1536-item.count ||
-           r.InputDomain!=sourceStorageOriginalLiveADC ||
+           r.InputDomain!=sourceStorageOriginalConfigADC ||
+           r.SourceRangeState==nil || r.SourceRangeState.Single!=2.5 ||
+           r.SourceRangeState.RegisterRawLE!="00002040" ||
            r.SampleRateHz!=65536 || !r.CalibrationAlreadyApplied ||
            len(item.proof.source)!=len(expected) ||
            !bytes.Equal(item.proof.source,expected){

@@ -195,3 +195,12 @@ def validate_original_storage_receipt(
         "original_delphi_memory_parity_verified":False,
         "device_commands_issued":False,
     }
+
+
+def source_live_units_text(state):
+    """ConfigUnits type 9 (32 bytes). Never infer Windows ANSI code page."""
+    if not isinstance(state,dict) or not state.get("units_raw_le"):
+        return None
+    from .original_get_value_text_30 import get_value_text_30
+    out=get_value_text_30(9,bytes.fromhex(state["units_raw_le"]))
+    return out.text if out.available else None

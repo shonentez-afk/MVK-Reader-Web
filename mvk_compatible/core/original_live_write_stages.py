@@ -576,8 +576,10 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     # closing each channel file. Use the source tag order,
                     # types, Windows-1251, byte count and verified Fs; never
                     # replace original metadata such as custom device name,
-                    # final Win32 local clock, FRange or units with a claim
-                    # of physical parity. A multi-Fs file has no single
+                    # final Win32 local clock with a claim of physical
+                    # parity. EF close metadata is independently replayed
+                    # from RAW/PARAM Freeze ledger per DATA boundary.
+                    # A multi-Fs file has no single
                     # correct <FrequencyPerChannel> and is reported only.
                     # Source Go DATA window numbers are independent of
                     # interleaved Qt VALUES intervals. Match by DATA order.

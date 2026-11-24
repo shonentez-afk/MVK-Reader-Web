@@ -195,9 +195,11 @@ def _rate(value:int)->int:
 def _float_text(value:float)->str:
     if type(value) not in (int,float) or not math.isfinite(value) or value<=0:
         raise ValueError("Invalid original gain/FRange")
-    # Delphi writes Float32 textual gain through _Unit114:007B2090.
-    # Deterministic decimal fallback is a STRUCTURAL reproduction only.
-    return format(float(value),".9g")
+    # 00807075 calls 007B2090 with FormatSpec=4; use the existing
+    # source-derived decimal algorithm (Win32 rounding still unattested).
+    import struct
+    from .original_get_value_text_30 import get_value_text_30
+    return get_value_text_30(0,struct.pack("<f",value),format_spec=4).text
 
 
 def build_original_tsxml_compatible(
@@ -350,10 +352,23 @@ def write_verified_source_tsxml_sidecars(
                     and isinstance(getattr(opts,"custom_name",None),str)
                     and opts.custom_name.strip())
         device=opts.custom_name.strip() if custom else "MVK"
+        close=proof.get("source_close_config")
+        if close is not None and (not isinstance(close,dict) or
+                close.get("channel")!=channel or
+                close.get("source")!="VERIFIED_RAW_PARAM_FREEZE_REPLAY_AT_DATA_CLOSE"):
+            raise ValueError("Original TSXML: invalid close configuration receipt")
+        if channel<=8 and close is not None and (close.get("gain") is None or
+                close.get("units") is None):
+            emitted.append({"name":name,"channel":channel,"window":number,
+                "sidecar_created":False,"reason":"UNKNOWN_OR_INVALID_CLOSE_GAIN_OR_UNITS",
+                "source_close_config":close})
+            continue
         xml,details=build_original_tsxml_compatible(
             channel=channel,binary_basename=name,size_bytes=size,
             rate_hz=rates[0],local_time=when,
-            device_label=device,channel_label=label)
+            device_label=device,channel_label=label,
+            adc_gain=close.get("gain") if close is not None and channel<=8 else None,
+            adc_units=close.get("units") if close is not None and channel<=8 else None)
         sidecar=name+".tsxml"
         sidecar_path=folder/sidecar
         with sidecar_path.open("xb") as dest:
@@ -368,6 +383,8 @@ def write_verified_source_tsxml_sidecars(
                                   else "PROVISIONAL_MVK_DEVICE_NAME"),
             "channel_name_source":"IDP_008D2F54_VERIFIED_CHANNEL_TABLE",
             "source_raw_sha256":live_proof["source_raw_sha256"],
+            "source_close_config":close,
+            "close_register_values_verified":close is not None,
             **details,
         })
     return emitted

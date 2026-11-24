@@ -15,6 +15,10 @@ import json
 import re
 import struct
 
+from .original_param_gate_proof import OriginalParamGateReader,SOURCE_PARAM_GATE_NAME
+from .original_values_3100_timeline import _parameter_blocks,PARAM
+from .original_mode2_close_metadata import CloseConfigReplay
+
 SCHEMA="MVK_SOURCE_TMVKTHREAD_LIVE_WRITEDATA_V1"
 AUDIT="SOURCE_LIVE_WRITEDATA_NATIVE_AUDIT.json"
 PACKETS="SOURCE_LIVE_WRITEDATA_PACKET_GATE.jsonl"
@@ -170,7 +174,31 @@ def verify_native_live_write_data(
     actual_packet_records=0
     window_pointer=0
     results=[]
+    # Replay the exact PARAM freeze ledger while authenticating RAW and
+    # actual writer packets. Snapshot at each DATA close boundary,
+    # NOT at end of capture or first Stage0->1.
+    close_config={}
+    closes={}
+    for check in checks:
+        closes.setdefault(check["end"],[]).append(check)
+    config=CloseConfigReplay()
+    param_sha=summary.get("source_original_param_gate_sha256")
+    param_count=summary.get("source_original_param_gate_records",0)
     with ExitStack() as resources:
+        param_gate=None
+        if param_sha is not None:
+            param_gate=resources.enter_context(OriginalParamGateReader(
+                _local_file(folder,SOURCE_PARAM_GATE_NAME),
+                expected_sha256=param_sha,expected_records=param_count,
+                expected_frames=raw_frames))
+        elif param_count:
+            raise ValueError("Source close metadata: PARAM ledger SHA absent")
+        def snapshot(boundary):
+            if param_gate is not None:
+                for check in closes.get(boundary,()):
+                    for channel in check["by_channel"]:
+                        close_config[(check["window"]["window"],channel)]=config.snapshot(channel,boundary)
+        snapshot(0)
         for check in checks:
             for channel,item in check["by_channel"].items():
                 file=_local_file(folder,item["name"],max_bytes=raw_len)
@@ -193,6 +221,15 @@ def verify_native_live_write_data(
             if len(body)!=n-8:
                 raise ValueError("Original native WriteData: truncated frame")
             raw_sum.update(header);raw_sum.update(body)
+            if param_gate is not None:
+                if typ==PARAM:
+                    frame=header+body
+                    blocks=list(_parameter_blocks(frame))
+                    frozen=param_gate.consume(frame_index=frame_index,frame=frame,
+                        descriptors=len(blocks),values3100=any(a==0x3100 for a,_,_ in blocks))
+                    if not frozen:
+                        config.put(blocks)
+                snapshot(frame_index)
             while (window_pointer<len(checks) and
                    frame_index>checks[window_pointer]["end"]):
                 window_pointer+=1
@@ -277,6 +314,8 @@ def verify_native_live_write_data(
         raw_sum.update(final)
         if raw_sum.hexdigest()!=source_digest or actual_samples!=expected_counts:
             raise ValueError("Original native WriteData: source SHA/channel counts mismatch")
+        if param_gate is not None:
+            param_gate.finish()
         if (actual_packet_records!=packet_total or
                 receipts.read(1) or packet_sum.hexdigest()!=packet_digest):
             raise ValueError("Original native WriteData: packet audit SHA/length mismatch")
@@ -303,6 +342,8 @@ def verify_native_live_write_data(
                     "verified_packet_rates_hz":sorted(packet_rates[
                         (window["window"],channel)]),
                     "original_delphi_file_parity_verified":False,
+                    **({"source_close_config":close_config[(window["window"],channel)]}
+                       if (window["window"],channel) in close_config else {}),
                 })
     return {
         "source":"STAGE111Z31FS_ORIGINAL_LIVE_WRITEDATA_GATE_V1",
