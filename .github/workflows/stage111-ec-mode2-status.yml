@@ -1,0 +1,49 @@
+name: Stage111 EC Mode2 status regression
+on:
+  push:
+    branches: [fix/stage111-ec-mode2-status-20261124]
+    paths:
+      - 'mvk_compatible/**'
+      - '.github/workflows/stage111-ec-mode2-status.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  windows-core:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r mvk_compatible/requirements-desktop.txt pytest pytest-timeout
+      - run: python -m compileall -q mvk_compatible
+      - name: Complete Windows core and Qt-enabled regression
+        run: python -m pytest -q mvk_compatible/tests --ignore=mvk_compatible/tests/test_desktop_qt.py --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py --timeout=180 --timeout-method=thread
+  windows-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        scale: ['1', '1.5']
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: windows
+      QT_SCALE_FACTOR: ${{ matrix.scale }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r mvk_compatible/requirements-desktop.txt pytest pytest-timeout
+      - name: Exact Mode2 and writer regression on real Windows QPA
+        run: python -m pytest -q mvk_compatible/tests/test_stage111z31bs_qt_pnmeasure_source_live.py mvk_compatible/tests/test_stage111z31cr_qt_operator_runtime.py mvk_compatible/tests/test_stage111z31cs_qt_measurement_mode.py mvk_compatible/tests/test_stage111z31cv_qt_mode2_health.py mvk_compatible/tests/test_stage111z31cz_qt_live_write_buttons.py mvk_compatible/tests/test_stage111z31da_qt_marked_write_buttons.py --timeout=180 --timeout-method=thread

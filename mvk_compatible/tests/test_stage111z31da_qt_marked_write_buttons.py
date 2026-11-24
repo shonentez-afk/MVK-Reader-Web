@@ -62,8 +62,17 @@ def test_original_qt_buttons_queue_true_next_frame_marks_not_status_counters(
         panel.buttons["bWriteValues"].click()
         assert win._source_live_writer.frame_marks_required
         assert len(win._source_live_writer.frame_mark_actions)==2
-        assert panel.buttons["bWriteAdc"].text()=="Завершить запись сигнала"
-        assert panel.buttons["bWriteValues"].text()=="Завершить запись значений"
+        # EC intentionally added an independent elapsed clock to each
+        # caption. Assert the complete caption, not just a permissive prefix.
+        for name,label in (("bWriteAdc","сигнала"),("bWriteValues","значений")):
+            button=panel.buttons[name]
+            elapsed=button.property("sourceWriterElapsedSeconds")
+            assert type(elapsed) is int and elapsed>=0
+            expected=f"{elapsed//3600%24:02d}:{elapsed//60%60:02d}:{elapsed%60:02d}"
+            assert button.text()=="Завершить запись "+label+"\n"+expected
+            assert button.property("sourceWriterElapsedTimeBasis")==(
+                "OPERATOR_REQUEST_UTC_NOT_DELPHI_FILE_OPEN")
+        assert panel.status.text()==win.measurement_connection_display().text
         src=(json.loads((inbox/"0001.json").read_text()),
              json.loads((inbox/"0002.json").read_text()))
         assert [x["event"] for x in src]==["data_begin","values_begin"]
@@ -128,6 +137,40 @@ def test_frame_marker_inbox_failure_stops_source_buttons_fail_closed(
         assert win._source_live_writer.frame_marks_failed
         win._end_live_capture(False)
         assert win._pending_source_write_ledger is None
+    finally:
+        win.close()
+        qt_app.processEvents()
+
+
+def test_mode2_waiting_and_failure_do_not_depend_on_writer_requests(qt_app):
+    """A source writer caption must never overwrite Mode2 selection."""
+    from ..desktop.main_window import MainWindow
+    win=MainWindow()
+    win.show()
+    qt_app.processEvents()
+    try:
+        panel=win.original_measure_controls
+        assert win.enter_measurement_mode()
+        qt_app.processEvents()
+        for name in ("bWriteAdc","bWriteValues"):
+            assert not panel.buttons[name].isEnabled()
+        assert not win._source_live_writer.receipt()["write_data_requested"]
+        assert not win._source_live_writer.receipt()["write_values_requested"]
+        assert panel.panel.isVisible()
+        assert panel.status.text()=="Ожидание подключения к прибору"
+        assert not panel.bad_indicator.isVisible()
+        win._begin_live_capture()
+        win._end_live_capture(False)
+        qt_app.processEvents()
+        assert win._measurement_mode_selected
+        assert not win._live_active
+        assert panel.panel.isVisible()
+        assert panel.status.text()=="Ошибка соединения с прибором"
+        assert panel.bad_indicator.isVisible()
+        assert not panel.indicator.isVisible()
+        assert win.leave_measurement_mode()
+        qt_app.processEvents()
+        assert not panel.panel.isVisible()
     finally:
         win.close()
         qt_app.processEvents()
