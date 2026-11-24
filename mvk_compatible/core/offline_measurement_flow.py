@@ -203,7 +203,8 @@ class OfflineMeasurementFlow:
 
     def envelope(self, code: int, start_s: float, seconds: float,
                  profile, *, display_order: str = "chronological",
-                 points: int = 4000) -> dict:
+                 points: int = 4000, f_range: float = 1.,
+                 input_domain: str = DOMAIN_CALIBRATED_BIN) -> dict:
         """One verified FIR/ADC, with independent visual LOD size.
 
         The user-visible plot may reduce to points samples but the
@@ -214,7 +215,8 @@ class OfflineMeasurementFlow:
         checked_points = _integer("FIR display points", points, 2, 100_000)
         return self.session.envelope(
             self.channel, code, start_s, seconds, profile,
-            display_order=display_order, points=checked_points)
+            display_order=display_order, points=checked_points,
+            f_range=f_range,input_domain=input_domain)
 
     def spectrum(self, n_fft: int = 65536, mode: int = 1,
                  start_s: float | None = None, max_hz: float = 10000.,

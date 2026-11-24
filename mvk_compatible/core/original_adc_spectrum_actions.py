@@ -194,7 +194,8 @@ def spectrum_source_daily_path(directory,day:date):
 
 def append_source_spec_freq_csv(action:OriginalSpectrumAction,
                                 flow:OfflineMeasurementFlow,
-                                destination,*,spectrum:dict|None=None):
+                                destination,*,spectrum:dict|None=None,
+                                decimal_separator=","):
     """Mirror source 0084BD7C layout; refuse foreign/original CSV.
 
     Every write revalidates the source, never overwrites original vendor
@@ -215,7 +216,9 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
         # sensor calibration. Keep the existing clearly labelled
         # research export for BIN-only sources.
         raise ValueError("Direct BIN calibration not verified: original SPEC-FREQ export blocked")
-    row=action.pipe_row()
+    if decimal_separator not in (",","."):
+        raise ValueError("Numeric locale must be explicitly selected")
+    row=action.pipe_row(decimal_separator=decimal_separator)
     if len(row.split("|"))!=3 or "\r" in row or "\n" in row:
         raise ValueError("Original source triplet must be exactly three safe numbers")
     header="sep=|\r\n"+SPEC_CSV_HEADER+"\r\n"
@@ -231,6 +234,9 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
         if not tail.endswith("\r\n") or any(len(line.split("|"))!=3
                 for line in tail.split("\r\n")[2:] if line):
             raise ValueError("Existing candidate SPEC-FREQ rows malformed")
+    if before and any(("." if decimal_separator=="," else ",") in old
+                      for old in tail.split("\r\n")[2:] if old):
+        raise ValueError("Existing SPEC-FREQ has a different decimal separator")
     payload=(row+"\r\n").encode("utf-8")
     output=(before or header.encode("utf-8"))+payload
     if len(output)>MAX_SPEC_CSV_BYTES:

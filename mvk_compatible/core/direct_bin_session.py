@@ -177,6 +177,24 @@ class DirectBinSession(OfflineSession):
     def is_tach(self, channel: int) -> bool:
         return any(entry.adc == channel and entry.tach_byte for entry in self.channel_files)
 
+    def mode1_adc_range(self, channel: int) -> float | None:
+        """Recognize the saved Mode1 writer structure, not physical calibration.
+
+        Bare/mismatched/partial TSXML and research BINs keep their previous
+        neutral interpretation. Every subsequent samples() read validates hashes.
+        """
+        entry = next((item for item in self.channel_files if item.adc == channel), None)
+        if entry is None or entry.tach_byte:
+            return None
+        meta = entry.source_metadata
+        name = _CHANNEL_NAME.fullmatch(entry.bin_path.name)
+        if (name is None or name.group(2) != f"ADC{channel}"
+                or not meta.source_meta_complete or not meta.original_writer_offset_zero
+                or meta.file_name_declared is None or meta.channel_number != channel
+                or meta.sample_rate_hz not in TACH_MODE1_SAMPLE_RATES):
+            return None
+        return meta.original_f_range_single_candidate
+
     @classmethod
     def open(cls, file: str | Path) -> "DirectBinSession":
         selected = Path(file).absolute()

@@ -14,7 +14,7 @@ import math
 import time
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QTimer
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QTimer, QLocale
 from PySide6.QtGui import QAction, QFont, QFontMetrics, QPainterPath, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
@@ -608,6 +608,7 @@ class MainWindow(QMainWindow):
         # These existing models stay available to all former callbacks,
         # tests and original code-derived GetSignal implementations.
         self.wave_start=self._float(0,300,0)
+        self.wave_time_label=QLabel("Начало, с")
         self.wave_seconds=self._float(.001,30,1)
         self.wave_mode=QComboBox()
         self.wave_mode.addItems([
@@ -783,7 +784,7 @@ class MainWindow(QMainWindow):
             ('Режим GetSignal',self.wave_mode),
             ('Порядок исходных отсчётов',self.wave_order),
         ):
-            label=QLabel(name)
+            label=self.wave_time_label if field is self.wave_start else QLabel(name)
             label.setWordWrap(True)
             form.addWidget(label)
             form.addWidget(field)
@@ -2376,8 +2377,52 @@ class MainWindow(QMainWindow):
             f"исходное CW={candidate['original_idr_static_initial_x87_cw_hex']} "
             "(PC64, runtime не измерен)" + warning)
 
+    def _saved_mode1_range(self):
+        if isinstance(self.session, DirectBinSession) and not self._live_active:
+            return self.session.mode1_adc_range(self._ch())
+        return None
+
+    def _offline_fft_domain(self):
+        gain=self._saved_mode1_range()
+        if gain is not None:
+            return {'f_range':gain, 'input_domain':'original_float_storage'}
+        return {'f_range':self.spec_f_range.value(),
+                'input_domain':self.spec_input_domain.currentData()}
+
+    def _offline_fft_research_start(self,n_fft):
+        if self.spec_last.isChecked():
+            return None
+        if self._saved_mode1_range() is None:
+            return self._effective_source_start_seconds()
+        record=self._current_offline_flow().source_record()
+        fs=record['sample_rate_hz']
+        end=self._saved_mode1_fft_end(record['sample_count'],fs)
+        if end<n_fft:
+            raise ValueError('Недостаточно реальных отсчётов до выбранной отметки FFT')
+        return (end-n_fft)/fs
+
+    def _saved_mode1_fft_end(self, total_samples, fs):
+        if self._saved_mode1_range() is None or self.spec_last.isChecked():
+            return None
+        return min(total_samples, round(self._effective_source_start_seconds()*fs))
+
+    def _mode1_wave_window(self, duration, time=None, *, require_full=False):
+        if self._saved_mode1_range() is None:
+            return self._effective_source_start_seconds(), duration
+        time=time or self._source_view_time
+        if time is None:
+            time=self._sync_source_time_from_wave_start(self._current_offline_flow())
+        fs=time.sample_rate_hz
+        end=time.selected_start_sample
+        count=max(1,round(duration*fs))
+        if not end or (require_full and end<count):
+            raise ValueError('Недостаточно предыстории BIN для временного сигнала')
+        count=min(count,end)
+        return (end-count)/fs,count/fs
+
     def _spec_history_gate(self,n_fft:int,total_samples:int,fs:float)->dict:
         """Validate source FIR or plain FFT history before any recomputation."""
+        source_end=self._saved_mode1_fft_end(total_samples,fs)
         if self.spec_envelope_button.isChecked():
             code=int(self.spec_envelope_code.currentData() or 0)
             if not code or self.envelope_profile is None:
@@ -2391,11 +2436,14 @@ class MainWindow(QMainWindow):
             if plan['post_fir_fft_n']<8:
                 raise ValueError('Исходный FFT после FIR слишком мал для полной сводки')
             required=plan['source_getadjusted_length_samples']
-            end=(total_samples if self.spec_last.isChecked() else
+            end=(source_end if source_end is not None else
+                 total_samples if self.spec_last.isChecked() else
                  round((self._effective_source_start_seconds()+self.wave_seconds.value())*fs))
             return fft_source_archive_gate(
                 n_fft,total_samples,end_sample=end,
                 required_input_samples=required)
+        if source_end is not None:
+            return fft_source_archive_gate(n_fft,total_samples,end_sample=source_end)
         remaining=(total_samples if self.spec_last.isChecked() else
                    max(0,total_samples-round(self._effective_source_start_seconds()*fs)))
         return fft_source_archive_gate(n_fft,remaining)
@@ -2502,6 +2550,8 @@ class MainWindow(QMainWindow):
         maximum=info.get('grapher_axis_end_frequency_hz')
         if not isinstance(maximum,(float,int)) or not math.isfinite(maximum) or maximum<=0:
             return None
+        if self._saved_mode1_range() is not None:
+            return float(HORIZONTAL_HZ[0])
         return min(float(HORIZONTAL_HZ[0]),float(maximum))
 
     def _sync_original_hscale_data_availability(self):
@@ -4938,13 +4988,28 @@ class MainWindow(QMainWindow):
         blocked=self.wave_start.blockSignals(True)
         try:
             self.wave_start.setRange(0.,max(300.,len(samples)/float(fs)))
-            self.wave_start.setValue(0.)
+            self.wave_start.setValue(len(samples)/float(fs) if direct and s.mode1_adc_range(primary) is not None else 0.)
         finally:
             self.wave_start.blockSignals(blocked)
         # Source data, selected combo ADC and both DFM tab bars move as
         # ONE transaction. A BIN-only ADC4 never selects stale ADC1/2.
         self._bind_only_verified_channels(channels,selected_channel=primary)
         self._rebind_original_envelope_for_selected_channel()
+        original_saved=self._saved_mode1_range() is not None
+        self.wave_time_label.setText('Конец, с' if original_saved else 'Начало, с')
+        was_blocked=self.spec_last.blockSignals(True)
+        try:
+            self.spec_last.setChecked(not original_saved)
+        finally:
+            self.spec_last.blockSignals(was_blocked)
+        if original_saved:
+            was_blocked=self.wave_seconds.blockSignals(True)
+            try:
+                self.wave_seconds.setValue(.5)
+                self._wave_hscale_tag=ADC_HORIZONTAL_MS.index(500)
+            finally:
+                self.wave_seconds.blockSignals(was_blocked)
+            self._sync_wave_primary_labels()
         self._spec_last_valid_fft_n=None
         self._spec_original_vscale_tag=None
         self._spec_original_vscale_mode=None
@@ -4954,7 +5019,12 @@ class MainWindow(QMainWindow):
         for action in self._spec_vscale_actions:
             action.setChecked(False)
         self.spec_n.blockSignals(True)
-        if valid_sizes and int(self.spec_n.currentText())>len(samples):
+        if valid_sizes and original_saved:
+            model=self._sync_source_time_from_wave_start(flow)
+            reachable=[n for n in valid_sizes if n<=model.selected_start_sample]
+            if reachable:
+                self.spec_n.setCurrentText(str(max(reachable)))
+        elif valid_sizes and int(self.spec_n.currentText())>len(samples):
             self.spec_n.setCurrentText(str(max(valid_sizes)))
         self.spec_n.blockSignals(False)
         self._sync_fft_menu_availability(samples_count=len(samples),
@@ -5076,8 +5146,10 @@ class MainWindow(QMainWindow):
             gain=f'{info.original_f_range_single_candidate:.9g}'
             label=(
                 'TSXML InternalChannelGain='+gain+
-                ' · IDR source candidate FRange='+gain+
-                ' · исходное значение НЕ применено повторно к BIN.')
+                ' · IDR source candidate FRange='+gain
+                + (' · используется для исходного чтения FFT; BIN не меняется.'
+                 if self._saved_mode1_range() is not None else
+                 ' · исходное значение НЕ применено повторно к BIN.'))
         else:
             label=(
                 'TSXML InternalChannelGain отсутствует или не положителен; '
@@ -5135,7 +5207,7 @@ class MainWindow(QMainWindow):
                 self.wave_start.setValue(model.selected_start_seconds)
             finally:
                 self.wave_start.blockSignals(blocked)
-            self.refresh_wave()
+            self.refresh_wave(quiet=self._saved_mode1_range() is not None)
             if not self.spec_last.isChecked():
                 self.refresh_spec()
             else:
@@ -5220,7 +5292,7 @@ class MainWindow(QMainWindow):
             self.original_shell.clear_source_view_time()
         self._update_original_gain_inspector()
         self.refresh_calc()
-        self.refresh_wave()
+        self.refresh_wave(quiet=self._saved_mode1_range() is not None)
         self.refresh_spec()
 
     def _reset_dsp_tach_panel(self,reason):
@@ -5428,6 +5500,7 @@ class MainWindow(QMainWindow):
         if not self.session:return
         flow=self._current_offline_flow()
         try:
+            at_mode1_zero=False
             time=self._sync_source_time_from_wave_start(flow)
             tach=flow.tach_byte
             mode='ac' if self.wave_mode.currentIndex()==0 and not tach else 'acdc'
@@ -5444,13 +5517,17 @@ class MainWindow(QMainWindow):
                 self._source_wave_hscale_model=source_adc_horizontal_view(
                     flow,self._wave_hscale_tag)
                 duration=self._source_wave_hscale_model['getsignal_seconds']
+            saved_gain=self._saved_mode1_range()
+            at_mode1_zero=saved_gain is not None and time.selected_start_sample==0
+            start_s,duration=self._mode1_wave_window(duration,time,require_full=bool(code))
             if code:
                 if self.envelope_profile is None:
                     raise ValueError('Требуются оригинальные локальные коэффициенты IDP')
                 d=flow.envelope(
-                    code,self._effective_source_start_seconds(),
+                    code,start_s,
                     duration,self.envelope_profile,
-                    display_order=order)
+                    display_order=order,**({'f_range':saved_gain,
+                    'input_domain':'original_float_storage'} if saved_gain is not None else {}))
                 self.wave_plot.setLabel('bottom',
                     'Позиция буфера огибающей, с — НЕ время оригинальной MVKView')
                 descr=(f"Огибающая IDR (эксперимент) код {code} · "
@@ -5460,7 +5537,7 @@ class MainWindow(QMainWindow):
                     f"{'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'}"
                     " · оригинальный формат/время/курсор НЕ приняты")
             else:
-                d=flow.waveform(self._effective_source_start_seconds(),
+                d=flow.waveform(start_s,
                                         duration,mode,
                                         display_order=order)
                 self.wave_plot.setLabel('bottom','Время BIN, с' if order=='chronological'
@@ -5484,10 +5561,14 @@ class MainWindow(QMainWindow):
             self._source_wave_readout=verified_wave
             self._source_wave_trace=d
             self._source_wave_trace_digest=flow.source_record()['source_bin_sha256']
-            if self._source_wave_hscale_model is not None and not code:
+            if (self._source_wave_hscale_model is not None and not code and
+                    (self._saved_mode1_range() is None or
+                     time.selected_start_sample >= round(self.wave_seconds.value()*time.sample_rate_hz))):
                 self._source_wave_hscale_model=validate_source_adc_horizontal_trace(
                     flow,d,self._source_wave_hscale_model)
             if (self.wave_order.currentIndex()==2
+                    and (self._saved_mode1_range() is None or
+                         time.selected_start_sample >= round(self.wave_seconds.value()*time.sample_rate_hz))
                     and self._wave_hscale_tag is not None
                     and self._source_wave_hscale_model is not None):
                 # Both original raw GetSignal and filtered GetSignal use
@@ -5547,7 +5628,7 @@ class MainWindow(QMainWindow):
                                 'bounded full-buffer pixel budget')
                         hover=prepare_waveform_hover_window(
                             self.session,self._ch(),
-                            start_s=self._effective_source_start_seconds(),
+                            start_s=start_s,
                             seconds=duration,mode=mode,
                             display_order='getsignal_buffer')
                         if (hover.end_index_exclusive-hover.start_index
@@ -5640,7 +5721,12 @@ class MainWindow(QMainWindow):
             self.wave_hint.setText('Нет действительного сигнала: '+str(e))
             self.wave_mean_primary.setText('Сигнал не рассчитан')
             self.wave_cursor_primary.setText('Курсор: —')
-            if quiet:
+            if at_mode1_zero:
+                self.wave_plot.getViewBox().invertX(False)
+                self.wave_plot.plot([0.,self.wave_seconds.value()],[0.,0.],
+                                    pen=pg.mkPen('#000000'))
+                self.wave_hint.setText('Нулевая предыстория · только отображение, отсчётов BIN нет')
+            if quiet or at_mode1_zero:
                 # Never block the offscreen UI or user while changing
                 # source EnvelopeCode and recomputing hidden pages.
                 self.statusBar().showMessage(
@@ -6701,11 +6787,15 @@ class MainWindow(QMainWindow):
         for action in self._spec_hscale_actions:
             action.setChecked(False)
         insufficient_history=False
+        source_end=None
         tach=flow.tach_byte
         try:
             start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
             n_fft=int(self.spec_n.currentText())
             samples,fs,_,_=flow.samples()
+            source_end=self._saved_mode1_fft_end(len(samples),fs)
+            if source_end is not None:
+                start=max(0,source_end-n_fft)/fs
             self._sync_spec_lines_presentation(fs)
             gate=self._spec_history_gate(n_fft,len(samples),fs)
             if not gate['can_compute_without_padding']:
@@ -6728,20 +6818,19 @@ class MainWindow(QMainWindow):
                     raise ValueError('Для спектра огибающей требуется локальный mvkview.idp')
                 code=int(self.spec_envelope_code.currentData() or 0)
                 # Explicit archive-end choice; original Delphi pointer parity unknown.
-                end_s=None if self.spec_last.isChecked() else (
-                    self._effective_source_start_seconds()+self.wave_seconds.value())
+                end_s=(source_end/fs if source_end is not None else
+                       None if self.spec_last.isChecked() else
+                       self._effective_source_start_seconds()+self.wave_seconds.value())
                 d=flow.spectrum_envelope(code,n_fft,
                        self.envelope_profile,end_s=end_s,
                        mode=self.spec_mode.currentIndex(),
-                       backend=self._fft_backend(),f_range=self.spec_f_range.value(),
-                       input_domain=self.spec_input_domain.currentData(),
+                       backend=self._fft_backend(),**self._offline_fft_domain(),
                        source_selected_bspec_lines=True)
             else:
                 d=flow.spectrum(n_fft,self.spec_mode.currentIndex(),
                                         start,max_hz=1e9,max_points=n_fft//2,
                                         backend=self._fft_backend(),
-                                        f_range=self.spec_f_range.value(),
-                                        input_domain=self.spec_input_domain.currentData())
+                                        **self._offline_fft_domain())
             actual_fft_n=int(d['n_fft'])
             if self.spec_envelope_button.isChecked():
                 if (d.get('source_bspec_lines_before_fir')!=n_fft or
@@ -6760,7 +6849,8 @@ class MainWindow(QMainWindow):
             # last stored series bin is one df earlier (25599.75 vs 25600
             # Hz at N262144/Fs65536). Never invent a final data sample.
             self._spec_visible_max_hz=min(self.spec_hz.value(),
-                                           display_contract['grapher_axis_end_frequency_hz'])
+                    float(HORIZONTAL_HZ[0]) if self._saved_mode1_range() is not None
+                    else display_contract['grapher_axis_end_frequency_hz'])
             self._full_spectrum=d
             self._sync_original_hscale_data_availability()
             self._spectrum_summary=d.get('spectrum_summary')
@@ -6860,7 +6950,7 @@ class MainWindow(QMainWindow):
             self._spec_data_ymax=float(np.max(yy[visible])) if np.any(visible) else 1.
             if self._spec_data_ymax<=self._spec_data_ymin:
                 self._spec_data_ymax=self._spec_data_ymin+1.
-            self.spec_plot.enableAutoRange()
+            self.spec_plot.getViewBox().enableAutoRange(axis=1)
             if self.spec_mode.currentIndex()==0:
                 # Source default vertical log scale: 150 dB. The original
                 # screenshot confirms 0..-150 for the same Tag0 case.
@@ -6873,6 +6963,7 @@ class MainWindow(QMainWindow):
                         original_v_scale_options(0)[0]['caption'])
             elif self._spec_original_vscale_tag is None:
                 self.spec_vscale_button.setText('Шкала Y · авто')
+            self.spec_plot.getViewBox().setLimits(xMin=0,xMax=float(self._spec_visible_max_hz))
             self.spec_plot.setXRange(0,self._spec_visible_max_hz,padding=0)
             if self._spec_original_hscale_selected is None:
                 self.spec_hscale_button.setText(f'{self._spec_visible_max_hz:g} Гц')
@@ -6881,7 +6972,7 @@ class MainWindow(QMainWindow):
             self._sync_spec_scroll()
             if (previous_h in HORIZONTAL_HZ and
                     source_spectrum_h_available(
-                        display_contract['grapher_axis_end_frequency_hz'])[
+                        self._real_spectrum_axis_end_hz())[
                         HORIZONTAL_HZ.index(previous_h)]):
                 self._select_original_hscale(
                     previous_h,position_hz=previous_pos)
@@ -6930,8 +7021,7 @@ class MainWindow(QMainWindow):
                   "фактическая калибровка НЕ доказана · "
                   "пиксельный курсор TQGrapher — кандидат (Delphi parity НЕ доказан)")
             self._spec_graph_default_vscale_candidate=spectrum_graph_default_vscale(
-                1.0 if tach else self.spec_f_range.value(),
-                self.spec_mode.currentIndex())
+                d.get('f_range_used',1.),self.spec_mode.currentIndex())
             self._update_original_vscale_candidate_label(
                 self._spec_graph_default_vscale_candidate)
             self._spec_last_valid_fft_n=n_fft
@@ -7022,6 +7112,17 @@ class MainWindow(QMainWindow):
             self.spec_cursor_primary.setText('Курсор: —')
             self.spec_mean.setText('Спектр не рассчитан: '+str(e))
             self.spec_hint.setText('Нет действительного спектра: '+str(e))
+            if insufficient_history and source_end==0:
+                zero_y=-180. if self.spec_mode.currentIndex()==0 else 0.
+                self.spec_plot.getViewBox().setLimits(xMin=0.,xMax=float(HORIZONTAL_HZ[0]))
+                self.spec_plot.setXRange(0.,float(HORIZONTAL_HZ[0]),padding=0)
+                # An empty source history is visual only, never a valid
+                # FFT, accepted cursor series, or exportable summary.
+                self.spec_plot.plot([0.,float(HORIZONTAL_HZ[0])],[zero_y,zero_y],
+                                    pen=pg.mkPen('#000000'))
+                if zero_y==-180.:
+                    self.spec_plot.setYRange(-180.,0.,padding=0)
+                self.spec_hint.setText('Нулевая предыстория · только отображение, экспорт недоступен')
             if not insufficient_history:
                 self._error(e)
 
@@ -7153,11 +7254,11 @@ class MainWindow(QMainWindow):
             if self._wave_hover_window is None:
                 # Do not re-read the complete ZIP and recompute GetSignal at
                 # every mouse event; retain the exact existing sample candidate.
+                duration=(self._source_wave_hscale_model['getsignal_seconds']
+                          if self._source_wave_hscale_model is not None else self.wave_seconds.value())
+                start_s,duration=self._mode1_wave_window(duration)
                 self._wave_hover_window=prepare_waveform_hover_window(
-                    self.session,self._ch(),start_s=self._effective_source_start_seconds(),
-                    seconds=(self._source_wave_hscale_model['getsignal_seconds']
-                             if self._source_wave_hscale_model is not None
-                             else self.wave_seconds.value()),
+                    self.session,self._ch(),start_s=start_s,seconds=duration,
                     mode=('ac' if self.wave_mode.currentIndex()==0 else 'acdc'),
                     display_order=self._signal_order())
             x=float(vb.mapSceneToView(pos).x())
@@ -7352,12 +7453,11 @@ class MainWindow(QMainWindow):
         if not self.session or self._offline_tach_channel():return
         try:
             n_fft=int(self.spec_n.currentText())
-            start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
+            start=self._offline_fft_research_start(n_fft)
             result=self.session.narrowband(
                 self._ch(),self.narrow_frequency.value(),n_fft=n_fft,
                 start_s=start,get_noise_peak=self.narrow_noise.isChecked(),
-                backend=self._fft_backend(),f_range=self.spec_f_range.value(),
-                input_domain=self.spec_input_domain.currentData())
+                backend=self._fft_backend(),**self._offline_fft_domain())
             label=(f"IDR узкополосный (не приборный DSP) · {result['center_bin']} ±"
                   f"{result['radius_bins']} FFT-бин · значение {result['output_value']:.8g}"
                   f" (FRange={result['f_range_used']:.6g}, "
@@ -7663,7 +7763,7 @@ class MainWindow(QMainWindow):
                 flow,new_action=self._current_original_spectrum_action()
                 if flow.session is not opened_session or new_action!=action:
                     raise ValueError('Источник сменился до копирования')
-            text=action.clipboard_text(decimal_separator=',')
+            text=action.clipboard_text(decimal_separator=self._source_csv_decimal())
             QApplication.clipboard().setText(text)
             self.statusBar().showMessage(
                 f"bSpecCopyValue: {self._source_channel_label(action.adc)}, режим "
@@ -7671,6 +7771,10 @@ class MainWindow(QMainWindow):
                 "три числа из текущего GetSpectrum, не приборный DSP")
         except (OSError,KeyError,TypeError,ValueError) as exc:
             self.statusBar().showMessage('bSpecCopyValue отклонён: '+str(exc))
+
+    @staticmethod
+    def _source_csv_decimal():
+        return '.' if QLocale().decimalPoint()=='.' else ','
 
     def _save_spec_summary(self):
         """bSpecSaveValueClick 0084BD7C: real SPEC-FREQ day/append semantics.
@@ -7745,6 +7849,9 @@ class MainWindow(QMainWindow):
                     'SPEC-FREQ · локальная запись текущего GetSpectrum (не Win32 codepage)',
                     proposed,'SPEC-FREQ CSV (*.csv)')
                 if not target:return
+                current_flow,new_action=self._current_original_spectrum_action()
+                if current_flow.session is not flow.session or new_action!=action:
+                    raise ValueError('Источник сменился до сохранения')
                 # Backward-compatible explicit research Save As retains
                 # the existing synthetic workflow and DOES NOT impersonate
                 # the original SPEC-FREQ daily file. The original handler
@@ -7759,7 +7866,8 @@ class MainWindow(QMainWindow):
                         "это НЕ исходный bSpecSaveValue/Win32 заголовок")
                     return report
             report=append_source_spec_freq_csv(
-                action,flow,target,spectrum=self._full_spectrum)
+                action,flow,target,spectrum=self._full_spectrum,
+                decimal_separator=self._source_csv_decimal())
             self.statusBar().showMessage(
                 f"bSpecSaveValue: АЦП{action.adc} · "
                 +('добавлена строка' if report['appended_existing_candidate']
@@ -7777,10 +7885,11 @@ class MainWindow(QMainWindow):
     def compare_fft(self):
         if not self.session or self._offline_tach_channel():return
         try:
-            start=None if self.spec_last.isChecked() else self._effective_source_start_seconds()
-            d=self.session.compare_fft_backends(self._ch(),int(self.spec_n.currentText()),
+            n_fft=int(self.spec_n.currentText())
+            start=self._offline_fft_research_start(n_fft)
+            d=self.session.compare_fft_backends(self._ch(),n_fft,
                                                  self.spec_mode.currentIndex(),start,
-                                                 f_range=self.spec_f_range.value())
+                                                 **self._offline_fft_domain())
             QMessageBox.information(self,'Сравнение двух расчётов приложения',
                 f"Численный паритет с оригинальным Delphi НЕ доказан.\n"
                 f"IDR float32 vs NumPy, FFT N={d['n_fft']}, режим {d['mode']}\n"

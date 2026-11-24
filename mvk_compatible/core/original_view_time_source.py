@@ -124,7 +124,9 @@ def source_view_time(
         p = minimum
     # _Unit128:0084F81B..0084F8B6 first maps Tag+position to a 64-bit
     # REAL source sample offset using the original sampling frequency.
-    index = min(n - 1, max(0, int(round(p * step * fs))))
+    is_mode1 = (flow.direct_bin and
+                flow.session.mode1_adc_range(flow.channel) is not None)
+    index = min(n if is_mode1 else n - 1, max(0, int(round(p * step * fs))))
     actual_seconds = index / fs
     return SourceViewTime(
         adc=flow.channel, bin_sha256=evidence["source_bin_sha256"],

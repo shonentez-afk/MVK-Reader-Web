@@ -26,7 +26,8 @@ from .tqgrapher_cursor_candidate import CursorGeometry, cursor_from_spectrum
 from .spectrum_metrics_idr_candidate import original_spectrum_summary
 from .narrowband_idr_candidate import narrowband_from_samples
 from .calibration_candidate import resolve_f_range
-from .storage_f_range_idr_candidate import (prepare_original_fft_input,DOMAIN_CALIBRATED_BIN)
+from .storage_f_range_idr_candidate import (prepare_original_fft_input,DOMAIN_CALIBRATED_BIN,
+    DOMAIN_ORIGINAL_STORAGE)
 from .envelope_idr_candidate import EnvelopeProfile,envelope_plan,process_original_envelope_candidate
 from .envelope_spectrum_idr_candidate import (
     required_original_history, envelope_spectrum_idr_candidate,
@@ -598,7 +599,7 @@ class OfflineSession:
 
     def envelope(self,channel:int,code:int,start_s:float,seconds:float,
                  profile:EnvelopeProfile,*,f_range:float=1.0,
-                 display_order:str='getsignal_buffer',points:int=4000)->dict:
+                 input_domain:str=DOMAIN_CALIBRATED_BIN,display_order:str='getsignal_buffer',points:int=4000)->dict:
         """Only with explicit private local FIR profile; no fabricated envelope.
 
         For offline BIN the requested time window must include the *entire*
@@ -627,8 +628,14 @@ class OfflineSession:
                 audit.get('instrument_serial') and audit.get('output_file_sha256')),
             channel=channel,
             source_raw_sha256=audit.get('source_raw_sha256') if isinstance(audit,dict) else None)
+        fir_input=samples[begin:end]
+        if input_domain==DOMAIN_ORIGINAL_STORAGE:
+            fir_input=prepare_original_fft_input(
+                fir_input,f_range=f_range,input_domain=input_domain)['samples_before_dc_removal']
+        elif input_domain!=DOMAIN_CALIBRATED_BIN:
+            raise ValueError('Unknown FIR input domain')
         processed=process_original_envelope_candidate(
-            samples[begin:end],rate,code,profile,f_range=f_range)
+            fir_input,rate,code,profile,f_range=f_range)
         raw=(processed['chronological'] if display_order=='chronological'
              else processed['getsignal_buffer'])
         # x is output *buffer position*, not yet an original Delphi graph time.
