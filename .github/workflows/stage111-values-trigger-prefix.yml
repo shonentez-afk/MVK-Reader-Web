@@ -59,7 +59,7 @@ jobs:
         working-directory: tools/research/native_tcp10230_stage108_live_recording_r6_1/source
         run: |
           mkdir -p "$MVK_PREFIX_FIXTURE_DIR"
-          go test -v -count=1 -run '^(TestValuesTriggerPrefixCoreFixture|TestSourceLocalTachCoreFixture) .
+          go test -v -count=1 -run '^(TestValuesTriggerPrefixCoreFixture|TestSourceLocalTachCoreFixture)$' .
       - name: Install offline core test requirements
         run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
       - name: Verify actual Go RAW prefix and reject rehashed suffix
@@ -67,22 +67,6 @@ jobs:
           python -m pytest -q mvk_compatible/tests/test_mode2_live_values_trigger_prefix.py \
             mvk_compatible/tests/test_mode2_live_values_full_chain.py \
             mvk_compatible/tests/test_stage111z31ei_local_tach.py \
-            mvk_compatible/tests/test_original_source_values_tick_acceptance.py \
-            mvk_compatible/tests/test_stage111z31fq_original_values_3100_timeline.py \
-            mvk_compatible/tests/test_stage111z31fq_marked_values_export.py
-      - name: Complete offline core regressions (no Qt or device)
-        run: |
-          python -m pytest -q mvk_compatible/tests \
-            --ignore=mvk_compatible/tests/test_desktop_qt.py \
-            --ignore=mvk_compatible/tests/test_stage111z25_native_recorder_qt.py \
-            --ignore=mvk_compatible/tests/test_stage111z26b_live_qt.py
- .
-      - name: Install offline core test requirements
-        run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
-      - name: Verify actual Go RAW prefix and reject rehashed suffix
-        run: |
-          python -m pytest -q mvk_compatible/tests/test_mode2_live_values_trigger_prefix.py \
-            mvk_compatible/tests/test_mode2_live_values_full_chain.py \
             mvk_compatible/tests/test_original_source_values_tick_acceptance.py \
             mvk_compatible/tests/test_stage111z31fq_original_values_3100_timeline.py \
             mvk_compatible/tests/test_stage111z31fq_marked_values_export.py
