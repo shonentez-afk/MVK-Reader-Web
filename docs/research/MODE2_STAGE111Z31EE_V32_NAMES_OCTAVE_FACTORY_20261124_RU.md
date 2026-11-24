@@ -1,0 +1,17 @@
+# Stage111Z31EE — V32: имена файлов, PageStatus, FactoryMode
+
+24.11.2026. Основа ED f3273bdc974ca0e0ab937b1a53f5a192fe0d2986. На момент подготовки отдельный prefix CI #45362896746 3/3 SUCCESS; ED Linux/Go RX/native Windows QPA SUCCESS, Windows Core и EXE еще не подтверждены. Проверять по SHA.
+
+## Имена
+Сверены локальные PAS/DFM Atlas v32, SQLite и машинный образ IDP (SHA256 77e59f98febdd7df94e71cb538a2df69ea4de4624f15b088a81c86e61bb5a438). _Unit125 008069EC: cbFileMvkName выбирает точный edFileMvkName, иначе MVK + StatusCellList.GetValueText(0). 0080954A..008095ED: преобразование общего edFilePrefix+device через 007B1FA4, затем имя из десятистрочной таблицы. 008D4A48 -> 008D2F54 содержит ADC1..ADC8,TACH1,TACH2 (декодированы указатели IDP). 00809857..008098DB: только преобразованный prefix + VALUES- + время, без device и папки RunUp. _Unit114 007B1FA4 обрабатывает UTF16 code units, включая замену обеих половин surrogate pair. Пустой prefix законен. В PageFile снимок скрытого edFilePrefix и параметров теперь берется для обоих BEGIN. Финальный audit содержит структурные candidates для каждого окна. Не переименовывать проверенный Go RAW, BIN, VALUES, sidecars: время operator UTC != оригинальный локальный момент FileStream.Create, произвольный FormatDateTime не закрыт, серийный GetValueText(0) зависит от реальных байтов/ANSI, не подставлять IP/серийный номер архива. Настоящая файловая аттестация остается открытой. 
+
+## Третьоктавный график
+00847A6D..00847B78: initial Single 0x3A83126F, 43 значения GetFloat, если значение больше текущего max, Single(10^(Trunc(Log10(v*1000))-2)). 00447DC8 содержит fldlg2/fyl2x, 00447EF8 power. IDP 008D2F90: 43 Float32 частоты 0.63..10000. Qt применяет рассчитанный yMax, не AutoRange; при отсутствии/ошибке source snapshot удаляет свойство и график. 0084AA20 nearest ROUND index 0..42, 007B2090 format spec3, сброс --- за пределами. Original left axis caption = TMvkChannelStorage.FUnits +8, а не универсальное м/с²; пока единица канала не подтверждена, показывается явное ограничение (табличные единицы GetUnits не изменены). Формат и границы x87/GDI не аттестованы.
+
+## Config / Calib
++628 Tmvkform.FactoryMode, 00848EF0 три модификатора + UserQuery. Воспроизведен локальный выбор через logo, default false. Mode2 PageCalib добавляется только при factory_mode по 00846D64. Mode5 открывается после отдельного подтверждения, local Basic grid; Mode4/5 Basic, Mode6 Channels/Alarms (008472D0). Не запускать новый config при выбранном Mode2. В оригинале смена Mode вызывает teardown и download; совместимая программа требует отдельной безопасной остановки, Task0 только разрешенный read Mode4. Не включены Reset/Upload/физическая калибровка. FactoryMode не записывается в прибор/реестр.
+
+## Проверки
+Новые Core и Qt тесты, дополнена Qt проверка реального yMax и сброса после stale. Полный CI EE нужен по новому SHA. Никаких приватных исходных файлов, команд прибору, Go RX/DSP изменений. Последний проверенный EXE до полной ED/EE приемки — EB artifact 14881884515. Для закрытия SAME-RX требуются реальные исходные файлы одной сессии, локальные Win32 времена, динамические вызовы и сравнение.
+
+Дополнение: тип StatusSerial доказан по 00802707..00802722 (type11, 0x1000), снимок ASCII GetValueText candidate при BEGIN; отсутствующие/не-ASCII данные не заменяются IP/HEX. Qt выводит chResult title при наведении непосредственно в графике, а не только скрытую диагностическую строку. Переполнение source Single axis обрабатывается без отображения выдуманного масштаба.

@@ -39,8 +39,12 @@ def delphi_file_part(value:str)->str:
     if not isinstance(value,str) or len(value)>180:
         raise ValueError("Original PageFile name text is missing/oversized")
     result=[]
-    for ch in value:
-        cp=ord(ch)
+    units=value.encode("utf-16-le",errors="surrogatepass")
+    if len(units)//2>180:
+        raise ValueError("Original PageFile UTF-16 text oversized")
+    for pos in range(0,len(units),2):
+        cp=int.from_bytes(units[pos:pos+2],"little")
+        ch=chr(cp)
         result.append(ch if (
             ch in _ALLOWED_OLD_PUNCT or
             "0"<=ch<="9" or "A"<=ch<="Z" or "a"<=ch<="z" or
@@ -59,12 +63,12 @@ def source_data_filename(*, device:str, channel_label:str,
     """
     if not isinstance(when,datetime) or when.tzinfo is None:
         raise ValueError("Original timestamp needs an explicit timezone")
-    device_part=delphi_file_part(device)
+    # The source concatenates edFilePrefix and 008069EC BEFORE 007B1FA4.
+    combined_part=delphi_file_part(user_prefix+device)
     channel_part=delphi_file_part(channel_label)
-    prefix_part=delphi_file_part(user_prefix)
-    if not device_part or not channel_part:
+    if not device or not channel_part:
         raise ValueError("Original PageFile device/channel label absent")
-    name=(prefix_part+device_part+"-"+channel_part+"-"+
+    name=(combined_part+"-"+channel_part+"-"+
           when.strftime(_SOURCE_NAME_TSFORMAT)+".bin")
     if len(name)>240 or "/" in name or "\\" in name:
         raise ValueError("Source PageFile basename too long")
@@ -75,9 +79,99 @@ def source_values_filename(*, prefix:str, when:datetime)->str:
     if not isinstance(when,datetime) or when.tzinfo is None:
         raise ValueError("Original VALUES time needs a timezone")
     token=delphi_file_part(prefix)
-    if not token:
-        raise ValueError("Original VALUES prefix unavailable")
+    # Hidden edFilePrefix defaults to empty; Delphi does not insert a device name.
     return token+"VALUES-"+when.strftime(_SOURCE_NAME_TSFORMAT)+".csv"
+
+
+
+# IDP 008D4A48 -> 008D2F54: ten UnicodeString pointers, independently
+# decoded in the local IDP; _Unit125:0080958D reads this exact table.
+SOURCE_WRITER_CHANNEL_NAMES=tuple(f"ADC{i}" for i in range(1,9))+("TACH1","TACH2")
+SOURCE_FOLDER_TEMPLATE='"RunUp"dd-mm-yyyy hh-nn-ss'
+
+
+def source_device_label(*, use_custom_name, custom_name, status_serial_text=None):
+    """008069EC: checked -> exact edit text; unchecked -> MVK + cell0 text."""
+    if type(use_custom_name) is not bool or not isinstance(custom_name,str):
+        raise ValueError("Original device name options invalid")
+    if use_custom_name:
+        return custom_name
+    if status_serial_text is None:
+        return None
+    if not isinstance(status_serial_text,str):
+        raise ValueError("Original serial cell text invalid")
+    return "MVK"+status_serial_text
+
+
+def source_serial_cell0_text(status):
+    """_Unit125:00802707..00802722: StatusSerial type 11, address 0x1000.
+
+    Decode only a validated four-byte field. ANSI-dependent non-ASCII
+    bytes remain unknown; no guessed archive serial/IP substitutes.
+    """
+    if status is None:
+        return None
+    from .original_system_register_fields import parse_source_system_registers
+    from .original_get_value_text_30 import get_value_text_30
+    fields=parse_source_system_registers(status)
+    if fields is None or not fields[0].valid:
+        return None
+    result=get_value_text_30(11,fields[0].raw)
+    return result.text if result.available and result.text else None
+
+
+def source_writer_name_candidates(window, *, serial_text=None):
+    """Name reconstruction, deliberately NOT a rename or a physical open stamp.
+
+    00809483..00809511 folder FormatDateTime and sanitize only DATA;
+    0080954A..008095ED BIN uses prefix+device+channel; VALUES 00809857..
+    008098DB uses only prefix. The original reads form state at open;
+    our options and UTC are captured at operator request. Missing serial,
+    arbitrary Delphi folder templates and real file-open clock stay unknown.
+    """
+    opts=window.file_options
+    base={"kind":window.kind,"candidate_only":True,
+          "original_file_open_time_verified":False,
+          "original_local_wall_clock_verified":False,
+          "timestamp_basis":"OPERATOR_REQUEST_UTC_NOT_DELPHI_FILE_OPEN",
+          "actual_go_filenames_unchanged":True,"files":[]}
+    if opts is None:
+        return {**base,"reason":"PAGEFILE_OPTIONS_NOT_CAPTURED"}
+    try:
+        when=datetime.fromisoformat(window.operator_begin_utc)
+        if when.tzinfo is None:
+            raise ValueError("Missing operator clock")
+        if window.kind=="values":
+            return {**base,"folder":"","files":[source_values_filename(
+                prefix=opts.file_prefix,when=when)]}
+        if window.kind!="data":
+            raise ValueError("Unknown writer kind")
+        if not opts.use_folder_prefix:
+            folder=""
+        elif opts.folder_prefix==SOURCE_FOLDER_TEMPLATE:
+            folder=delphi_file_part("RunUp"+when.strftime("%d-%m-%Y %H-%M-%S"))
+        else:
+            # The arbitrary Delphi FormatDateTime grammar is not a literal.
+            folder=None
+        device=source_device_label(use_custom_name=opts.use_custom_name,
+            custom_name=opts.custom_name,status_serial_text=(
+                serial_text if serial_text is not None else opts.serial_text_candidate))
+        if device is None:
+            return {**base,"folder":folder,"reason":"ORIGINAL_SERIAL_CELL_TEXT_UNKNOWN"}
+        if not device:
+            return {**base,"folder":folder,"reason":"EMPTY_ORIGINAL_DEVICE_LABEL"}
+        files=[source_data_filename(device=device,channel_label=label,
+                    when=when,user_prefix=opts.file_prefix)
+               for label,selected in zip(SOURCE_WRITER_CHANNEL_NAMES,window.channels)
+               if selected]
+        return {**base,"folder":folder,"folder_template_supported":folder is not None,
+                "files":files,
+                "device_name_source":"OPERATOR_CUSTOM_NAME" if opts.use_custom_name
+                  else "SOURCE_STATUS_CELL0_TEXT_CANDIDATE"}
+    except (ValueError,TypeError,OverflowError):
+        # The compatible RAW export cannot be destroyed by an unrepresentable
+        # source label or unsupported original time format.
+        return {**base,"reason":"SOURCE_NAME_INPUT_UNREPRESENTABLE"}
 
 
 def _xml_text(value:str)->str:
@@ -251,8 +345,7 @@ def write_verified_source_tsxml_sidecars(
                 path.stat().st_size!=size or
                 sha256(path.read_bytes()).hexdigest()!=proof["sha256"]):
             raise ValueError("Selected native Go file changed before TSXML")
-        kind=("ADC" if channel<=8 else "TACH")
-        label=f"{kind}{channel if channel<=8 else channel-8}"
+        label=SOURCE_WRITER_CHANNEL_NAMES[channel-1]
         custom=bool(opts is not None and opts.use_custom_name
                     and isinstance(getattr(opts,"custom_name",None),str)
                     and opts.custom_name.strip())
@@ -273,7 +366,7 @@ def write_verified_source_tsxml_sidecars(
                 opts.write_tsxml if opts is not None else None),
             "device_name_source":("OPERATOR_CBFILEMVKNAME" if custom
                                   else "PROVISIONAL_MVK_DEVICE_NAME"),
-            "channel_name_source":"PROVISIONAL_ADC_TACH_LABEL",
+            "channel_name_source":"IDP_008D2F54_VERIFIED_CHANNEL_TABLE",
             "source_raw_sha256":live_proof["source_raw_sha256"],
             **details,
         })

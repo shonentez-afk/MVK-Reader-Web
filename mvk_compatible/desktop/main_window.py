@@ -3025,9 +3025,15 @@ class MainWindow(QMainWindow):
         was_active=bool(writer.receipt()[
             "write_data_requested" if kind=="data"
             else "write_values_requested"])
-        # Original cbFileWriteXml / name flags are captured at BEGIN.
+        # Independent PageFile name inputs at each writer BEGIN. Device
+        # serial comes only from validated source type11, not archive/IP.
         options=(self.original_shell._file_names_option_state()
-                 if kind=="data" and not was_active else None)
+                 if not was_active else None)
+        if options is not None and kind=="data":
+            from dataclasses import replace
+            from ..core.original_mode2_source_files import source_serial_cell0_text
+            options=replace(options,serial_text_candidate=source_serial_cell0_text(
+                self._native_live_status))
         receipt=writer.toggle(kind,plan,file_options=options)
         self.original_shell._render_live_file_plan()
         dlg=self._native_dialog

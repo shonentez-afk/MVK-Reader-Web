@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QRect, QPoint
+from PySide6.QtCore import QSize, Qt, QRect, QPoint, QEvent, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog, QLabel, QPushButton, QStyle, QWidget, QToolButton,
@@ -102,6 +102,7 @@ class SourceStartBackdrop(QWidget):
         self.logo.setProperty("originalDfmLogicalRect",_START_LOGO_RECT)
         self.logo.setProperty("originalAssetLoadedPrivately",False)
         self.logo.lower()
+        self.logo.installEventFilter(self)
         self.setProperty("sourceBlueReferenceCandidate",True)
         self.setProperty("sourceLogoResponsiveToShortWindow",True)
         self.setProperty("sourceOperatorScreenshotPixelParityVerified",False)
@@ -115,6 +116,16 @@ class SourceStartBackdrop(QWidget):
                 self.load_private_original_dfm(candidate)
             except (OSError,ValueError):
                 pass
+
+    factoryRequested=Signal()
+
+    def eventFilter(self,obj,event):
+        if obj is self.logo and event.type()==QEvent.MouseButtonPress:
+            required=Qt.ShiftModifier|Qt.ControlModifier|Qt.AltModifier
+            if event.modifiers() & required == required:
+                self.factoryRequested.emit()
+                return True
+        return super().eventFilter(obj,event)
 
     @staticmethod
     def _make_fallback_logo():
@@ -480,7 +491,8 @@ class OriginalVisualSkin:
         requested=bool(self.window._measurement_mode_selected)
         expected=original_runtime_visible_pages(
             has_measurement=ready,technical=self.technical,
-            current_page=page,live=live,measurement_requested=requested)
+            current_page=page,live=live,measurement_requested=requested,
+            factory_mode=bool(self.start.factory_mode))
         self._visibility_guard=True
         try:
             for i in range(self.root.count()):
@@ -490,7 +502,8 @@ class OriginalVisualSkin:
             self._visibility_guard=False
         receipt=original_runtime_tab_contract(
             has_measurement=ready,technical=self.technical,
-            current_page=page,live=live,measurement_requested=requested)
+            current_page=page,live=live,measurement_requested=requested,
+            factory_mode=bool(self.start.factory_mode))
         self.root.setProperty("sourceRuntimeVisibilityReceipt",receipt)
         return current_index
 

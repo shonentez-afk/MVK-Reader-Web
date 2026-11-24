@@ -72,6 +72,10 @@ def test_qt_mode2_source_live_four_grid_modes_and_stale_stop_gate(qt_app):
         assert [grid.item(6,i).text() for i in (1,2,3)]==["1,5","2,5","3,5"]
         assert grid.item(6,4).text()=="м/с2"
         assert w.original_shell.status_plot.isVisible()
+        from ..core.original_status_workbench import source_octave_y_max
+        expected_max=source_octave_y_max(w.original_shell._source_status_projection.model.bands_for_plot)
+        assert w.original_shell.status_page.property("sourceOctaveYMaximum")==expected_max
+        assert w.original_shell.status_plot.viewRange()[1]==pytest.approx([0.0,expected_max])
         assert w.original_shell._source_status_projection.cursor(0)[
             "verified_source_band_value"]==0.25
         # tcStatus has its own ADC selector; changing waveform ADC must
@@ -88,6 +92,7 @@ def test_qt_mode2_source_live_four_grid_modes_and_stale_stop_gate(qt_app):
         w._receive_native_live_status(bad)
         w.original_shell.refresh_status()
         assert not w.original_shell.status_plot.isVisible()
+        assert w.original_shell.status_page.property("sourceOctaveYMaximum") is None
         assert w.original_shell.status_table.item(0,1).text()=="—"
         w._end_live_capture(False)
         assert w.original_shell.status_page.property(

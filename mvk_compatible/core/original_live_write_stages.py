@@ -39,7 +39,9 @@ from .original_values_3100_timeline import scan_original_values_3100
 from .original_param_gate_proof import SOURCE_PARAM_GATE_NAME
 from .original_write_data_wire_replay import export_source_wire_write_intervals
 from .original_write_data_live_gate import verify_native_live_write_data
-from .original_mode2_source_files import write_verified_source_tsxml_sidecars
+from .original_mode2_source_files import (
+    write_verified_source_tsxml_sidecars, source_writer_name_candidates,
+)
 from .original_live_values_proof import verify_original_live_values
 
 SOURCE="SOURCE_IDR_00809414_008099CF_LIVE_WRITE_STAGES_COMPAT_V1"
@@ -137,7 +139,7 @@ class OriginalSourceWriteWindow:
     start_source_values_ticks:int|None=None
     end_source_values_ticks:int|None=None
     source_setrate_commands_seen:int=0
-    # Immutable original PageFile choices captured at DATA begin.
+    # Immutable original PageFile choices captured at each writer BEGIN.
     file_options:OriginalFileNameOptions|None=None
 
     def receipt(self):
@@ -863,6 +865,9 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "run_id":ledger.session_id,
             "source_raw_sha256":audit.get("source_raw_sha256"),
             "windows":[w.receipt() for w in ledger.windows],
+            "source_original_writer_name_candidates":[
+                source_writer_name_candidates(w) for w in ledger.windows],
+            "source_original_runtime_filenames_verified":False,
             "files":emitted,
             "missing_source_channels":skipped,
             "source_segment_boundaries_are_last_native_status_poll":

@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QFileDialog,QLabel,QLineEdit,QListWidget,QListWidgetItem,
-    QPushButton,QSizePolicy,QWidget,
+    QPushButton,QSizePolicy,QWidget,QMessageBox,
 )
 
 from ..core.original_start_workbench import (
@@ -47,6 +47,7 @@ class OriginalStartController:
     def __init__(self,window,navigation):
         self.window=window
         self.navigation=navigation
+        self.factory_mode=False
         source_ip,self._settings_origin=startup_device_address()
         self.workspace=OriginalStartWorkspace(device_ipv4=source_ip)
         self._saved_device_ip=source_ip
@@ -56,6 +57,7 @@ class OriginalStartController:
         # shifted all five DFM buttons below research headers. Use a fully
         # expandable source client with in-memory optional original TImages.
         self.host=SourceStartBackdrop(home)
+        self.host.factoryRequested.connect(self.request_factory_mode)
         self.host.setMinimumWidth(0)
         self.host.setMinimumHeight(494)
         self.host.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
@@ -87,6 +89,7 @@ class OriginalStartController:
             if name=="bTaskConfigCalib":
                 b.setEnabled(False)
                 b.hide()  # source design-time Visible=False
+                b.clicked.connect(lambda _=False:self.open_config_mode(5))
             elif name=="bTaskView":
                 b.clicked.connect(self.open_file_page)
             elif name=="bTaskConnect":
@@ -320,8 +323,41 @@ class OriginalStartController:
             " · прибор не опрашивался")
         return True
 
+    def request_factory_mode(self):
+        """Source imLogo 00848EF0: Shift+Alt+Ctrl then explicit confirmation.
+
+        Compatible factory workspace is local only; never enables calibration,
+        configuration reset/upload or an additional TCP owner.
+        """
+        if self.factory_mode:
+            return True
+        if QMessageBox.question(self.window,"Заводской режим",
+                "Показать локальный заводской режим? Команды калибровки, сброса и записи в прибор останутся запрещены.",
+                QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:
+            return False
+        self.factory_mode=True
+        button=self.buttons["bTaskConfigCalib"]
+        button.setEnabled(True)
+        button.show()
+        skin=getattr(self.window,"original_visual_skin",None)
+        if skin is not None:
+            skin.update_runtime_tabs()
+        return True
+
     def open_config_mode(self,mode):
-        if mode not in (4,6):raise ValueError("Original local config mode")
+        if mode not in (4,5,6):raise ValueError("Original local config mode")
+        if mode==5:
+            if not self.factory_mode:
+                return False
+            if QMessageBox.question(self.window,"Калибровка",
+                    "Открыть локальные параметры калибровки без записи в прибор?",
+                    QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:
+                return False
+        # A separate Task0 socket or a Mode2 capture must not coexist with
+        # a new configuration task. Require a deliberate orderly stop first.
+        if self.window._measurement_mode_selected or self.window._live_active:
+            self.status.setText("Сначала завершите измерение.")
+            return False
         self.window.original_config_panel.set_source_mode(mode)
         skin=getattr(self.window,"original_visual_skin",None)
         if skin is not None:

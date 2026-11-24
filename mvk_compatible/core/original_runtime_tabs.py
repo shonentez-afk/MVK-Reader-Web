@@ -29,10 +29,11 @@ _SOURCE_ROUTE_PAGES=frozenset(PAGES)
 def original_runtime_visible_pages(
         *, has_measurement:bool, technical:bool=False,
         current_page:str="PageStart",live:bool=False,
-        measurement_requested:bool=False) -> tuple[str,...]:
+        measurement_requested:bool=False,factory_mode:bool=False) -> tuple[str,...]:
     if (type(has_measurement) is not bool
             or type(technical) is not bool or type(live) is not bool
-            or type(measurement_requested) is not bool):
+            or type(measurement_requested) is not bool
+            or type(factory_mode) is not bool):
         raise ValueError("Runtime tab visibility needs strict booleans")
     if not isinstance(current_page,str) or current_page not in PAGES:
         raise ValueError("Current original DFM page is required")
@@ -44,6 +45,9 @@ def original_runtime_visible_pages(
     visible=set(ORIGINAL_LIVE_VISIBLE if mode2 else (
         ORIGINAL_ARCHIVE_VISIBLE if has_measurement
         else ORIGINAL_IDLE_VISIBLE))
+    # _Unit128:00846D64 reads FactoryMode +628, not ordinary Mode2.
+    if mode2 and factory_mode:
+        visible.add("PageCalib")
     # An EXPLICIT source PageStart operation can enter e.g. Config or
     # PageFile without making unrelated internal TTabSheets visible.
     # This is compatible navigation, not a native runtime claim.
@@ -55,11 +59,11 @@ def original_runtime_visible_pages(
 def original_runtime_tab_contract(
         *,has_measurement:bool,technical:bool=False,
         current_page:str="PageStart",live:bool=False,
-        measurement_requested:bool=False)->dict:
+        measurement_requested:bool=False,factory_mode:bool=False)->dict:
     visible=original_runtime_visible_pages(
         has_measurement=has_measurement,technical=technical,
         current_page=current_page,live=live,
-        measurement_requested=measurement_requested)
+        measurement_requested=measurement_requested,factory_mode=factory_mode)
     mode2=live or measurement_requested
     return {
         "source":SOURCE,"all_form_pages":PAGES,
@@ -72,6 +76,9 @@ def original_runtime_tab_contract(
         "connected_original_five_tabs":mode2 and not technical
             and current_page in ORIGINAL_LIVE_VISIBLE,
         "mode2_selected_before_connection":measurement_requested,
+        "source_factory_mode_local_only":factory_mode,
+        "source_mode2_factory_calib_visible":mode2 and factory_mode,
+        "source_factory_device_commands_enabled":False,
         "native_recorder_started":live,
         "measurement_toolbar_visible_from_source_mode2":mode2,
         "device_connection_verified_by_tabs":False,

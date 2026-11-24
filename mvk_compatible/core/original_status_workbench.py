@@ -21,6 +21,7 @@ import csv
 from dataclasses import dataclass
 from hashlib import sha256
 import math
+import struct
 from pathlib import Path
 
 from .offline_measurement_flow import OfflineMeasurementFlow
@@ -41,6 +42,45 @@ MODE_GRID=(
     +("tabAllResult",)*3
     +("tabResult",)*10
 )
+
+
+
+def _source_f32(value):
+    if isinstance(value,bool) or not isinstance(value,(int,float)):
+        raise ValueError("Source band must be a finite Float32")
+    try:
+        v=struct.unpack("<f",struct.pack("<f",value))[0]
+    except (OverflowError,struct.error):
+        raise ValueError("Source band outside Float32") from None
+    if not math.isfinite(v):
+        raise ValueError("Source band must be finite")
+    return v
+
+
+def source_octave_y_max(values):
+    """00847A6D..00847B78; log10 helper 00447DC8, power helper 00447EF8.
+    Source uses Single initial 0x3A83126F, then for each band above
+    the current limit computes Single(10**(Trunc(Log10(v*1000))-2)).
+    Portable math is not an x87 boundary attestation.
+    """
+    if len(values)!=43:
+        raise ValueError("Source chart requires 43 bands")
+    limit=_source_f32(0.001)
+    for value in values:
+        v=_source_f32(value)
+        if v>limit:
+            try:
+                limit=_source_f32(10.0**(math.trunc(math.log10(v*1000.0))-2))
+            except (OverflowError,ValueError):
+                raise ValueError("Source chart maximum outside Float32") from None
+    return limit
+
+
+def source_octave_chart_text(value):
+    """Same 007B2090 Float32 3-digit candidate used by source cursor."""
+    from .original_get_value_text_30 import get_value_text_30
+    return get_value_text_30(0,struct.pack("<f",_source_f32(value)),
+                             format_spec=3).text.replace(".",",")
 
 
 @dataclass(frozen=True)
@@ -90,9 +130,19 @@ class OriginalStatusProjection:
             "band_index":position,
             "nominal_hz_float32":SOURCE_FREQUENCIES[position],
             "verified_source_band_value":float(y),
+            "source_frequency_text_candidate":source_octave_chart_text(SOURCE_FREQUENCIES[position]),
+            "source_band_text_candidate":source_octave_chart_text(y),
             "source_tick_index":self.tick_index,
             "original_canvas_mouse_pixel_parity_verified":False,
         }
+
+    def chart_maximum(self):
+        if not self.chart_visible:
+            return None
+        try:
+            return source_octave_y_max(self.model.bands_for_plot)
+        except ValueError:
+            return None  # source Single overflow: never display an invented scale
 
     def receipt(self):
         return {
@@ -100,6 +150,9 @@ class OriginalStatusProjection:
             "mode":self.mode,
             "original_grid_name":self.table_name,
             "verified_bins":43 if self.chart_visible else 0,
+            "source_chart_y_max":self.chart_maximum(),
+            "source_chart_top_axis_max":43.5 if self.chart_visible else None,
+            "source_chart_win32_x87_parity_verified":False,
             "rows":len(self.model.rows),
             "columns":len(self.model.headers),
             "source_digest":self.source_digest,

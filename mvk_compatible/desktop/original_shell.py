@@ -934,13 +934,18 @@ class OriginalRootShell:
         verified_chart=result.chart_visible and error is None
         axis=self.status_plot.getAxis("bottom")
         if result.provenance==LIVE_OPERATOR_STATUS_SOURCE:
-            self.status_plot.setLabel("bottom","Частота, Гц")
-            self.status_plot.setLabel("left","СКЗ, м/с²")
+            self.status_plot.setLabel("bottom","Гц")
+            # Source FUnits is runtime channel storage, not a universal constant.
+            # Current PARAM evidence does not carry a proven FUnits string.
+            self.status_plot.setLabel("left","СКЗ (единица канала не подтверждена)")
             axis.setTicks([[(i,SOURCE_OCTAVE_TITLES[i]) for i in range(0,43,3)]])
         else:
             self.status_plot.setLabel("bottom","Полоса, индекс")
             self.status_plot.setLabel("left","СКЗ (только источник)")
             axis.setTicks(None)
+        self.status_page.setProperty("sourceOctaveYMaximum",None)
+        y_max=result.chart_maximum() if verified_chart else None
+        verified_chart=verified_chart and y_max is not None
         if verified_chart:
             values=list(result.model.bands_for_plot)
             colors=("#306090","#3468a0","#3870b0")
@@ -950,7 +955,10 @@ class OriginalRootShell:
                    if result.provenance==LIVE_OPERATOR_STATUS_SOURCE
                    else {"brush":"#147b91"})))
             self.status_plot.setXRange(-0.5,42.5,padding=0)
-            self.status_plot.enableAutoRange(axis="y")
+            self.status_plot.disableAutoRange(axis="y")
+            self.status_plot.setYRange(0.0,y_max,padding=0)
+            self.status_page.setProperty("sourceOctaveYMaximum",y_max)
+        self.status_plot.setTitle("---" if verified_chart else "")
         self.status_plot.setVisible(bool(verified_chart))
         # Source DFM splResult.Width=8 for ALL modes. Hide chResult
         # when its 43 source bars are absent, but never mutate the
@@ -960,8 +968,7 @@ class OriginalRootShell:
         if verified_chart:
             self.status_splitter.setSizes([ORIGINAL_STATUS_CHART[2],580])
         self.status_cursor.setText(
-            "Подведите курсор к исходной полосе (43 номинальных частоты)"
-            if verified_chart else
+            "---" if verified_chart else
             "Нет подтверждённого источника спектра для текущего режима")
         self.status_export.setEnabled(
             bool(error is None and flow is not None
@@ -970,27 +977,26 @@ class OriginalRootShell:
     def _status_chart_moved(self,scene_pos) -> None:
         """Source _Unit128:0084AA20 TChartAxis.CalcPosPoint → ROUND → 0..42."""
         source=self._source_status_projection
-        if source is None or not source.chart_visible:
+        if source is None or not source.chart_visible or not self.status_plot.isVisible():
             return
         try:
             box=self.status_plot.getPlotItem().vb
             if not box.sceneBoundingRect().contains(scene_pos):
+                self.status_cursor.setText("---")
+                self.status_plot.setTitle("---")
                 return
             x=box.mapSceneToView(scene_pos).x()
             index=int(round(x))
             cursor=source.cursor(index)
         except (ValueError,OverflowError,TypeError,AttributeError):
+            self.status_cursor.setText("---")
+            self.status_plot.setTitle("---")
             return
-        self.status_cursor.setText(
-            f"АЦП{cursor['adc']}: "
-            f"{cursor['nominal_hz_float32']:.6g} Гц · "
-            f"{cursor['verified_source_band_value']:.8g} м/с² "
-            + ("(PARAM текущего сеанса; пауза)" if
-               source.provenance==LIVE_OPERATOR_STATUS_SOURCE
-               and self._live_status_binding.paused else
-               "(PARAM текущего сеанса, без новых расчётов)" if
-               source.provenance==LIVE_OPERATOR_STATUS_SOURCE else
-               "(по проверенному VALUES, без новых расчётов)"))
+        text=(cursor["source_frequency_text_candidate"]+" Гц - "+
+              cursor["source_band_text_candidate"]+
+              " (единица канала не подтверждена)")
+        self.status_cursor.setText(text)
+        self.status_plot.setTitle(text)
 
     def _export_selected_status(self) -> None:
         if (self.window._live_active or self.window.session is None
@@ -1371,6 +1377,7 @@ class OriginalRootShell:
                 "cbFileMvkName"].isChecked(),
             folder_prefix=self.file_record_names["edFolderPrefix"].text(),
             custom_name=self.file_record_names["edFileMvkName"].text(),
+            file_prefix=self.file_record_names["edFilePrefix"].text(),
         )
 
     def _export_selected_file_source(self):

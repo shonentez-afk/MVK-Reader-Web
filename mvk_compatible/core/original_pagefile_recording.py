@@ -165,6 +165,8 @@ class OriginalFileNameOptions:
     use_custom_name:bool=True
     folder_prefix:str=ORIGINAL_SOURCE_DEFAULT_FOLDER_TEMPLATE
     custom_name:str=""
+    file_prefix:str=""
+    serial_text_candidate:str|None=None
 
     def __post_init__(self):
         if any(type(x) is not bool for x in (
