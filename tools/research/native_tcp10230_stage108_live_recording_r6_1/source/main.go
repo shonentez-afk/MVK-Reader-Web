@@ -108,7 +108,7 @@ func liveCaptureAddressOnNIC(ctx context.Context, m *Monitor, addr string, secon
 		if e:=m.sourceTCP.begin(m);e!=nil{return "SOURCE_TCP_SEGMENT_FAILED",e}
 		defer func(){m.sourceTCP.finish(m,reason)}()
 	}
-    if m.sourceContract!=nil {m.sourceContract.newSocket()}
+    if m.sourceContract!=nil {m.sourceContract.newSocket();m.syncSourceADCMetadata()}
     // New TCP socket means a fresh original Task2 Stage0. Never
     // revive Stage1/error from a previous stream segment or earlier RUN.
     if m.sourceOriginalTask2Stage!=nil {

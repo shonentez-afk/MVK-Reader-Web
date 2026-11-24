@@ -109,7 +109,7 @@ type sourceMetadataObservation struct{
 func(s *sourceMetadataLatchCandidate) observation()*sourceMetadataObservation{
  if s==nil{return nil}
  out:=&sourceMetadataObservation{Schema:"MVK_SOURCE_ADC_METADATA_OBSERVATION_V1",SocketEpoch:s.epoch,
-  FirstDescriptorSeen:s.firstDescriptor,ADC:make([]sourceMetadataObservationChannel,0,8)}
+  FirstDescriptorSeen:s.firstDescriptor,NumericScalingApplied:s.numericScalingApplied,ADC:make([]sourceMetadataObservationChannel,0,8)}
  for i,c:=range s.channel{
   row:=sourceMetadataObservationChannel{Channel:i+1,RangeKnown:c.RangeKnown,RangeCurrentSocket:c.RangeCurrentSocket,
    Units:c.Units,UnitsKnown:c.UnitsKnown,UnitsCurrentSocket:c.UnitsCurrentSocket,FromDescriptor:c.FromDescriptor}

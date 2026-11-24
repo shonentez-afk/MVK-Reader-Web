@@ -19,6 +19,8 @@ from .envelope_idr_candidate import (
 )
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
 from .original_source_long_window import SourceLongWindow
+from .original_live_adc_metadata import source_derived_units, METADATA_DOMAIN
+from .storage_f_range_idr_candidate import prepare_original_fft_input, DOMAIN_ORIGINAL_STORAGE
 
 
 def source_live_fir_job_key(window, tag, code, mode=0):
@@ -73,9 +75,14 @@ def source_live_filtered_getsignal(
     digest=hashlib.sha256(input_values.tobytes()).hexdigest()
     if digest!=channel.sha256:
         raise ValueError("Filtered GetSignal: original Go ring SHA mismatch")
+    meta=channel.source_metadata
+    if meta!=req.source_metadata or (window.preview.input_domain==METADATA_DOMAIN and meta is None):
+        raise ValueError("Filtered GetSignal: foreign source metadata")
+    factor=meta.factor if meta is not None else 1.0
+    normalized=prepare_original_fft_input(input_values,f_range=factor,input_domain=DOMAIN_ORIGINAL_STORAGE)["samples_before_dc_removal"]
     dsp=process_original_envelope_candidate(
-        input_values,req.sample_rate_hz,code,profile,
-        f_range=1.0,cancelled=cancelled)
+        normalized,req.sample_rate_hz,code,profile,
+        f_range=factor,cancelled=cancelled)
     full=np.asarray(dsp['getsignal_buffer'],dtype='<f4')
     if (len(full)==0 or not np.all(np.isfinite(full)) or
             not np.array_equal(full,dsp['chronological'][::-1])):
@@ -132,9 +139,11 @@ def source_live_filtered_getsignal(
         plot_points=len(indices),
         rms_m_s2=dsp['rms_m_s2'],
         f_range_applied_to_calibrated_input=1.0,
+        source_adc_metadata=meta.wire() if meta is not None else None,
+        unit=source_derived_units(meta),
         calibration_already_applied=True,
-        live_original_f_range_single=1.0,
-        live_original_f_range_source="TmvkChannelStorage.Create_007D0A61",
+        live_original_f_range_single=factor,
+        live_original_f_range_source=("first_PARAM_descriptor_00808617" if meta is not None else "TmvkChannelStorage.Create_007D0A61"),
         native_bin_exporter_gain_applied=False,
         original_delphi_numerical_parity_verified=False,
         original_canvas_cursor_parity_verified=False,

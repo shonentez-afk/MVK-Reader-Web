@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from .native_r6_live_preview import LivePreview
 from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
+from .original_live_adc_metadata import metadata_for_ring_row
 from .original_sample_cursor32 import u32_preview_bounds,u32_matches_go_status
 from .original_connected_status import connected_system_status
 
@@ -120,9 +121,12 @@ def gate_live_preview(status: dict | None, preview: LivePreview | None, *,
                         "SOURCE_RING_UNVERIFIED")
         if from_source_ring:
             row=full_ring["channels"][number-1]
+            try:
+                current_metadata=metadata_for_ring_row(row)
+            except ValueError:
+                return deny("Нет действительного FRange текущего АЦП", "SOURCE_RING_METADATA")
             if (source_gate is not None and source_gate["freeze_update"] or
-                    row["input_domain"]!=SOURCE_LIVE_ADC_DOMAIN or
-                     row.get("original_live_f_range_single")!=1.0 or
+                    (ch.source_metadata!=current_metadata or preview.input_domain!=row["input_domain"]) or
                     ch.captured_samples is None or
                     ch.captured_samples<len(ch.samples) or
                     ch.captured_samples>row["rx_pos_64"] or

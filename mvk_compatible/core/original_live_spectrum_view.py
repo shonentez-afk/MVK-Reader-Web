@@ -11,6 +11,7 @@ import numpy as np
 from .native_r6_live_preview import LivePreview
 from .tqgrapher_display_idr_candidate import spectrum_display_contract
 from .mvk_original_scale_tables_idr_candidate import source_spectrum_y_unit
+from .original_live_adc_metadata import source_derived_units, METADATA_DOMAIN
 
 
 def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
@@ -49,6 +50,10 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
                 channel.sha256):
             raise ValueError("Live PageSpectrum source/window mismatch")
         output_fs = channel.rate_hz
+    meta=channel.source_metadata
+    if preview.input_domain==METADATA_DOMAIN:
+        if meta is None or result.get("source_adc_metadata")!=meta.wire() or result.get("f_range_used",result.get("f_range"))!=meta.factor:
+            raise ValueError("Live PageSpectrum metadata/factor differs from current ring")
     display = spectrum_display_contract(n, output_fs)
     x = np.asarray(result["frequency_hz"], dtype=np.float64)
     y = np.asarray(result["amplitude"], dtype=np.float64)
@@ -66,7 +71,7 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
     y.setflags(write=False)
     return {**result,
             "frequency_hz": x, "amplitude": y,
-            "unit": source_spectrum_y_unit(mode),
+            "unit": source_derived_units(meta,mode) if meta is not None else source_spectrum_y_unit(mode),
             "grapher_series_bins": display["grapher_series_bins"],
             "live_display_contract": display,
             "live_measurement_view": True,

@@ -1,6 +1,6 @@
 package main
 
-// Passive source state used by Monitor. Numeric scaling observed, not yet activated.
+// Passive source state used by Monitor and the metadata-aware numeric ring.
 // Input order is accepted descriptor/chunk order, not a fabricated whole-frame
 // image. Unknown register words are not treated as observed zero values.
 import (
@@ -33,6 +33,7 @@ type sourceMetadataLatchCandidate struct {
 	epochOfWord     [metadataWords]uint64
 	epoch           uint64
 	firstDescriptor bool
+	numericScalingApplied bool
 	channel         [8]sourceMetadataValue
 	last            [2]byte
 }

@@ -29,7 +29,7 @@ func sourceApplyOriginalFRange(payload []byte, scale float32)([]byte,error){
         return nil,errors.New("source FRange: invalid Float32 bytes/range")
     }
     if scale==1.0 {
-        // In live Task2 the source constructor initializes FRange=1.
+        // The constructor or a zero-fallback descriptor may give FRange=1.
         // Avoid another Float32 conversion (especially NaN payload
         // canonicalization). These ARE the original RX payload bits.
         return payload,nil

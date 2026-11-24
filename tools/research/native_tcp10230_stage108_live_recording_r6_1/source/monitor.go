@@ -483,21 +483,19 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         }
         // Original _Unit125 00808284/0080828C calls ProcessBufferChunk
         // with ApplyRange=true for every admitted ADC. Source
-        // bTaskConnectClick instantiates each live storage via
-        // TMvkChannelStorage.Create, which sets FRange:Single=1.0.
-        // Only the ARCHIVE viewer assigns the separate sensor ratio.
-        // Thus source live ring must contain the WIRE Float32 values,
-        // not Native BIN * gain. The ring is the sole GetSignal source.
+        // Live metadata: constructor 1, then the first accepted/frozen
+        // PARAM descriptor latches the actual FRange/Units. Store physical
+        // samples once, independently of Native BIN and raw WriteData.
         if typ==typeADC && sourceStoreAllowed && m.sourceOriginalStorage!=nil {
-            domain:=sourceStorageUnscaledADC
-            if m.sourceOriginalRXGate!=nil {
-                domain=sourceStorageOriginalLiveADC
+            if m.sourceContract!=nil {
+                if e:=m.appendMetadataADC(*sample,f.Raw[28:]);e!=nil{return e}
+            }else{
+                domain:=sourceStorageUnscaledADC
+                if m.sourceOriginalRXGate!=nil {domain=sourceStorageOriginalLiveADC}
+                aligned,e:=sourceApplyOriginalFRange(f.Raw[28:],sourceOriginalLiveFRange)
+                if e!=nil{return e}
+                if e=m.sourceOriginalStorage.appendFrame(*sample,aligned,domain);e!=nil{return e}
             }
-            aligned,e:=sourceApplyOriginalFRange(
-                f.Raw[28:],sourceOriginalLiveFRange)
-            if e!=nil{return e}
-            if e=m.sourceOriginalStorage.appendFrame(
-                *sample,aligned,domain);e!=nil{return e}
         }
 	case typeParam:
         sourceFrozen:=m.sourceOriginalRXGate!=nil && m.sourceOriginalRXGate.frozen
@@ -527,7 +525,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // The immutable forensic incoming.raw retains those exact bytes.
         if sourceFrozen {
             // Stage0 metadata still latches; Freeze skips mutation/reset.
-            if m.sourceContract!=nil {for _,b:=range blocks {if _,err:=m.sourceContract.param(int(b.Addr),b.Payload,true);err!=nil{return err}}}
+            if m.sourceContract!=nil {for _,b:=range blocks {if _,err:=m.sourceContractParam(b,true);err!=nil{return err}}}
             m.summary.SourceFrozenParamFrames++
             m.summary.SourceFrozenParamBlocks+=uint64(len(blocks))
             if len(f.Raw)==4700 {m.summary.SourceFrozenAux4700++}
@@ -545,7 +543,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 			m.image.Put(b)
 			m.summary.RegisterBlocks++
             var sourceTick *[2]sourceImpulseValue
-            if m.sourceContract!=nil {var err error;sourceTick,err=m.sourceContract.param(int(b.Addr),b.Payload,false);if err!=nil{return err}}
+            if m.sourceContract!=nil {var err error;sourceTick,err=m.sourceContractParam(b,false);if err!=nil{return err}}
 			if b.Addr == 0x3100 && valuesTriggerImage == nil &&
 				m.sourceLiveValuesWriter != nil &&
 				!m.sourceLiveValuesWriter.closed &&

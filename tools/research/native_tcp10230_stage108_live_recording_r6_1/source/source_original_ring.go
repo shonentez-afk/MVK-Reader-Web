@@ -16,8 +16,8 @@ package main
 // storage is BYTE (data type 2): RxPos advances by 256 bytes, while its
 // device sample Index advances by 64. Those positions are NOT interchangeable.
 // Original live Float32 comes ONLY from the admitted wire payload after
-// ProcessBufferChunk(FRange=1.0). The separately reconstructed BIN exporter
-// may use device register gain but cannot write this source GetSignal ring.
+// ProcessBufferChunk with the storage's current FRange. The separately
+// reconstructed BIN exporter cannot write this source GetSignal ring.
 // No TCP, device commands, periodic 64 MiB GUI snapshots or extra disk writes.
 import (
     "errors"
@@ -34,8 +34,8 @@ const (
     // Original live Mode2: FRange Single is initialized to 1.0 in
     // TMvkChannelStorage.Create 007D0A61; ProcessBufferChunk at
     // 007D23D1..007D23E1 applies it in-place BEFORE FRxPos advances.
-    // Unlike the reconstructed exporter gain, this is not sourced
-    // from 0x100+ADC*0x100 + 0x0E register data.
+    // Legacy constructor-only domain remains readable for old fixtures.
+    // Real Task2 uses the latched range metadata domain.
     sourceOriginalLiveFRange float32=1.0
     sourceStorageOriginalLiveADC = "ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
     sourceStorageTachBytes = "TACH_EXACT_DEVICE_PAYLOAD_BYTES"
@@ -52,6 +52,8 @@ type sourceOriginalChannelRing struct {
     sequenceGaps uint64
     rateChanges uint64
     rejectedNonfinite uint64
+    metadata *sourceADCWindowMetadata
+    rejectedScalingElements uint64
 }
 
 type sourceOriginalStorageRing struct {
@@ -90,7 +92,7 @@ func (r *sourceOriginalStorageRing) appendFrame(
     }
     if h.Channel < 8 {
         if domain != expectDomain && domain != sourceStorageUnscaledADC &&
-            domain != sourceStorageOriginalLiveADC {
+            domain != sourceStorageOriginalLiveADC && domain != sourceStorageMetadataADC {
             return errors.New("unknown original ADC storage input domain")
         }
     } else if domain != expectDomain {
@@ -181,6 +183,8 @@ type sourceOriginalChannelReceipt struct {
     SequenceGaps uint64 `json:"sequence_gaps"`
     RateChanges uint64 `json:"rate_changes"`
     RejectedNonfinite uint64 `json:"rejected_nonfinite_frames"`
+    Metadata *sourceADCWindowMetadata `json:"source_adc_metadata,omitempty"`
+    RejectedScalingElements uint64 `json:"rejected_scaling_elements,omitempty"`
 }
 
 type sourceOriginalStorageReceipt struct {
@@ -208,6 +212,7 @@ func (r *sourceOriginalStorageRing) receipt() sourceOriginalStorageReceipt {
             SampleRate:c.sampleRate,Domain:c.domain,
             SequenceGaps:c.sequenceGaps,RateChanges:c.rateChanges,
             RejectedNonfinite:c.rejectedNonfinite,
+            Metadata:c.metadata,RejectedScalingElements:c.rejectedScalingElements,
         }
         if c.seen {
             next:=c.nextDeviceIndex

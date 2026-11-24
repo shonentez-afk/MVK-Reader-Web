@@ -47,6 +47,7 @@ type sourceLongWindowRequest struct {
     EnvelopeCode int `json:"envelope_code,omitempty"`
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
     OriginalHTag int `json:"original_h_tag,omitempty"`
+    Metadata *sourceADCWindowMetadata `json:"source_adc_metadata,omitempty"`
 }
 type sourceLongWindowResult struct {
     Schema string `json:"schema"`
@@ -71,6 +72,7 @@ type sourceLongWindowResult struct {
     EnvelopeCode int `json:"envelope_code,omitempty"`
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
     OriginalHTag int `json:"original_h_tag,omitempty"`
+    Metadata *sourceADCWindowMetadata `json:"source_adc_metadata,omitempty"`
 }
 
 func sourceLongWindowLength(rate uint32,tag int) (uint32,error) {
@@ -269,7 +271,9 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
             return errors.New("source original gate not ready for long GetSignal")
         }
     }
-    if !channel.seen || channel.domain!=sourceStorageOriginalLiveADC ||
+    sourceDomainOK:=channel.domain==sourceStorageOriginalLiveADC && req.Metadata==nil
+    if channel.domain==sourceStorageMetadataADC {sourceDomainOK=channel.metadata!=nil && sameSourceADCMetadata(channel.metadata,req.Metadata)}
+    if !channel.seen || !sourceDomainOK ||
        channel.sampleRate!=req.SampleRateHz ||
        channel.rxPos!=allowedCount {
         // Do NOT use the all-TCP rates/sequence/nonfinite counters here.
@@ -277,7 +281,7 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         // GetSignal reads ONLY the original gated ring. Ring.validPos
         // and ring.window reject gaps/nonfinite/overwritten history.
 
-        return errors.New("source long window not confirmed original live FRange1 ADC")
+        return errors.New("source long window not confirmed original live ADC / current metadata")
     }
     if req.CaptureEnd<uint64(req.Samples) ||
        req.CaptureEnd>channel.rxPos {
@@ -305,7 +309,7 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         Samples:req.Samples,CaptureEnd:req.CaptureEnd,
         SampleRateHz:req.SampleRateHz,
         FirstIndex:req.DeviceEnd-req.Samples,NextIndex:req.DeviceEnd,
-        InputDomain:sourceStorageOriginalLiveADC,
+        InputDomain:channel.domain,Metadata:channel.metadata,
         CalibrationAlreadyApplied:true,Provisional:true,
         RawBytes:m.summary.RawBytes,FramesDecoded:m.summary.TotalFrames,
         SHA256:hex.EncodeToString(sum[:]),

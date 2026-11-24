@@ -24,6 +24,7 @@ import numpy as np
 
 from .native_r6_live_preview import LivePreview, PreviewADC, MAX_SAMPLES
 from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
+from .original_live_adc_metadata import SourceADCMetadata, METADATA_DOMAIN, metadata_for_ring_row, parse_source_adc_metadata
 from .native_r6_live_status import _utc_stamp
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
 from .original_source_ring_receipt import BUFFER_ELEMENTS
@@ -53,6 +54,7 @@ class SourceWindowRequest:
     envelope_code: int = 0
     original_bspec_lines: int = 0
     original_h_tag: int = 0
+    source_metadata: SourceADCMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -133,9 +135,8 @@ def _trusted_source(status:dict,adc:int,h_tag:int,
         admissible=g["accepted_elements"]
         if admissible+skipped!=live["samples"]:
             raise ValueError("Source GetSignal: source gate/native RX mismatch")
-    if (row["input_domain"]!=SOURCE_LIVE_ADC_DOMAIN or
-            row.get("original_live_f_range_single")!=1.0 or
-            rate==0 or
+    metadata_for_ring_row(row)
+    if (rate==0 or
             rate not in live["sample_rates_hz"] or
             live["sequence_discontinuities"] or live["nonfinite_samples"] or
             row["rate_changes"] or row["rejected_nonfinite_frames"] or
@@ -190,7 +191,7 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         status["session_id"],rid,adc,h_tag,count,end,rate,
         row["next_device_sample_index"],envelope_code,
         fft_n if h_tag==-2 else 0,
-        source_h_tag if h_tag==-3 else 0)
+        source_h_tag if h_tag==-3 else 0,metadata_for_ring_row(row))
     data={
         "schema":REQUEST_SCHEMA,"session_id":req.session_id,
         "request_id":req.request_id,"adc":req.adc,
@@ -198,6 +199,8 @@ def submit_source_long_window(root: str|Path,status:dict,adc:int,h_tag:int,
         "capture_end":req.capture_end,"sample_rate_hz":req.sample_rate_hz,
         "device_end_index":req.device_end_index,
     }
+    if req.source_metadata is not None:
+        data["source_adc_metadata"]=req.source_metadata.wire()
     if h_tag==-2:
         data["envelope_code"]=req.envelope_code
         data["original_bspec_lines"]=req.original_bspec_lines
@@ -272,6 +275,8 @@ def load_source_long_window(root:str|Path,status:dict,
     if settings is None:
         raise ValueError("Source GetSignal/GetSpectrum: real source history not resident")
     row,live,rate,count=settings
+    if metadata_for_ring_row(row)!=request.source_metadata:
+        raise ValueError("Source GetSignal: current ADC metadata changed")
     if rate!=request.sample_rate_hz or count!=request.samples:
         raise ValueError("Source GetSignal: selected source rate changed")
     path=_root(root,status)/RESULT_NAME
@@ -311,7 +316,8 @@ def load_source_long_window(root:str|Path,status:dict,
                     meta.get("next_sample_index")!=request.device_end_index or
                     meta.get("first_sample_index")!=
                         ((request.device_end_index-count)&0xffffffff) or
-                    meta.get("input_domain")!=SOURCE_LIVE_ADC_DOMAIN or
+                    meta.get("input_domain")!=row["input_domain"] or
+                    meta.get("source_adc_metadata")!=(request.source_metadata.wire() if request.source_metadata is not None else None) or
                     meta.get("calibration_already_applied") is not True or
                     meta.get("provisional_not_audited") is not True):
                 raise ValueError("Source GetSignal: foreign or malformed source window")
@@ -355,8 +361,8 @@ def load_source_long_window(root:str|Path,status:dict,
                 {request.adc:PreviewADC(
                     request.adc,rate,meta["first_sample_index"],
                     meta["next_sample_index"],values,digest,
-                    request.capture_end)},
-                input_domain=SOURCE_LIVE_ADC_DOMAIN,
+                    request.capture_end,request.source_metadata)},
+                input_domain=row["input_domain"],
                 source_ring_provenance_verified=True,
             )
             return SourceLongWindow(request,preview)

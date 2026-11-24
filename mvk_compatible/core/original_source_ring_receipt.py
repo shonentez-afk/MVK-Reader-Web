@@ -10,9 +10,10 @@ from __future__ import annotations
 SCHEMA="MVK_SOURCE_CHANNEL_STORAGE_V1"
 BUFFER_ELEMENTS=1<<21
 # Exact original LIVE FRange source; never mix with Native exporter gain.
+from .original_live_adc_metadata import METADATA_DOMAIN, parse_source_adc_metadata
 SOURCE_LIVE_ADC_DOMAIN="ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
 ADC_DOMAIN=frozenset((
-    SOURCE_LIVE_ADC_DOMAIN,
+    SOURCE_LIVE_ADC_DOMAIN, METADATA_DOMAIN,
     "RAW_DEVICE_FLOAT32_NOT_YET_CALIBRATED",
     "CALIBRATED_NATIVE_R6_BIN_SPOOL_FLOAT32",
 ))
@@ -61,6 +62,7 @@ def validate_original_storage_receipt(
         gap=_bounded_int(row,"sequence_gaps")
         rate_changes=_bounded_int(row,"rate_changes")
         dropped=_bounded_int(row,"rejected_nonfinite_frames")
+        rejected_scale=_bounded_int({"count":row.get("rejected_scaling_elements",0)},"count")
         if (valid>rx or
                 first!=max(valid,rx-BUFFER_ELEMENTS if rx>BUFFER_ELEMENTS else 0)
                 or available!=rx-first or available>BUFFER_ELEMENTS):
@@ -84,12 +86,20 @@ def validate_original_storage_receipt(
                    if gate_row is not None else 0)
         if (type(source_samples) is not int or source_samples<0
                 or rx>expected_upper or rx>admitted or
-                rx+skipped>expected_upper or
+                rx+skipped>expected_upper or rx+rejected_scale>admitted or
                 gap>channels[i].get("sequence_discontinuities",-1)+1+gate_gaps or
                 dropped>channels[i].get("nonfinite_samples",-1)):
             raise ValueError("Original storage: source RX counters disagree")
         domain=row.get("input_domain")
         live_range=row.get("original_live_f_range_single")
+        meta=row.get("source_adc_metadata")
+        if domain==METADATA_DOMAIN:
+            if i>=8 or live_range is not None:
+                raise ValueError("Source ADC metadata: wrong ring domain")
+            if meta is not None:
+                meta=parse_source_adc_metadata(meta).wire()
+        elif meta is not None or rejected_scale:
+            raise ValueError("Source ADC metadata: foreign ring evidence")
         if domain==SOURCE_LIVE_ADC_DOMAIN:
             if type(live_range) not in (int,float) or live_range!=1.0:
                 raise ValueError(
@@ -128,6 +138,7 @@ def validate_original_storage_receipt(
             "original_live_f_range_single":live_range,
             "sequence_gaps":gap,"rate_changes":rate_changes,
             "rejected_nonfinite_frames":dropped,
+            **({"source_adc_metadata":meta,"rejected_scaling_elements":rejected_scale} if domain==METADATA_DOMAIN else {}),
         })
     return {
         "schema":SCHEMA,"buffer_elements_per_channel":BUFFER_ELEMENTS,
