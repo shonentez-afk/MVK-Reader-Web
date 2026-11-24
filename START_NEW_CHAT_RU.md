@@ -951,3 +951,10 @@ User correctly emphasized that MVK Reader Web uses **TCP/10230**, not Modbus/502
 Приватное самостоятельное дополнение: 26 карточек, 34 направленных отношения, 6 маршрутов, 17 членов Params (15 общих + 2 narrowband), 231 static/source/analytic + 107 browser checks PASS. Восстановлен явный synchronized calibration completion callback из IDP и две статические VMT цели. Уточнены ADC/SPEC summaries, units, FIFO, retry и условный exception path. Это не runtime parity. Рабочий код и PR #14 не изменялись. Приватные файлы не публиковались.
 
 **Важно для нового чата:** получить предыдущий полный приватный v27 ZIP/HTML/CSV и локальный пакет MVK_ALIAS_V28_SUPPLEMENT_PRIVATE_HANDOFF.zip. V28 — дополнение, не полный Atlas; не заменять исторические 641 IDs. После объединения продолжить procedural pointers/RTTI, OnTerminate assignment, background producer, 33 reader routes, 7 GetRawSignal и Stop/exception interleavings.
+
+
+## Atlas v29 — 24.11.2026 (актуальное продолжение)
+
+[Отчёт v29](docs/architecture/mvkview-recovery/STAGE111_ORIGINAL_THREAD_RTTI_LIFECYCLE_V29_RU.md). Полная приватная карта v27 объединена с v28/v29, сохранены исходный интерфейс и 641 исторический ID. 177 карточек, 48 маршрутов, 324 отображаемых ребра, 289 static + 497 browser checks PASS, JS errors=0. Подтверждены наследование и VMT трёх классов потоков, машинные цели конструкторов, разграничены normal/exception lifecycle и OnTerminate. 40 candidate ID остаются caller-open (22 SetAddr, 11 GetDwordRaw, 7 GetRawSignal); extended RTTI не равнозначен actual Invoke. Producer Background, назначение OnTerminate, внешний cleanup и runtime межпоточные условия ещё открыты. Рабочий код, PR #14, main и приборный обмен не менялись.
+
+**Передача:** использовать полный локальный архив `MVK_ALIAS_V29_FULL_PRIVATE_HANDOFF.zip`, внутри прежние версии, полная карта, исходники для локальных ссылок, реестры и QA. Не публиковать приватные файлы. Следующий крупный пакет: resolver вычисляемых процедурных указателей/RTTI, receiver lineage и доказательства фактических caller, producer Background, OnTerminate и cleanup; не закрывать статически неподтверждённые связи.
