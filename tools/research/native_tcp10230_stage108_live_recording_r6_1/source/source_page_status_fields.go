@@ -5,7 +5,8 @@ package main
 import "encoding/hex"
 type SourcePageStatusSpec struct { Key string; Address uint16; Words int }
 var sourcePageStatusSpecs=[15]SourcePageStatusSpec{
- {"serial",0x1000,2},{"firmware",0x1004,2},{"errors",0x1006,2},
+ // StatusSerial uses type 11 (8 ANSI bytes; four register words).
+ {"serial",0x1000,4},{"firmware",0x1004,2},{"errors",0x1006,2},
  {"uptime",0x1008,2},{"memory_kib",0x100A,2},{"dsp_md5",0x100C,8},
  {"control_group1",0x1014,2},{"unack_group1",0x1014,2},
  {"control_group2",0x1016,2},{"unack_group2",0x1016,2},

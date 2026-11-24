@@ -18,7 +18,7 @@ def test_qt_page_status_15_real_registers_without_fake_dsp(qt_app):
         win._begin_live_capture()
         snapshot=inbound(value=0)
         snapshot[SOURCE_FIELD_KEY]=visible_field_rows({
-            0:struct.pack("<I",0xAABBCCDD),
+            0:b"AB123456",
             2:struct.pack("<I",0),
             3:struct.pack("<I",3661),
             11:struct.pack("<I",72),
@@ -27,7 +27,7 @@ def test_qt_page_status_15_real_registers_without_fake_dsp(qt_app):
         qt_app.processEvents()
         grid=win.original_shell.status_table
         assert grid.rowCount()==15
-        assert grid.item(0,1).text()=="0xAABBCCDD"
+        assert grid.item(0,1).text()=="AB123456"
         assert grid.item(2,1).text()=="0"
         assert grid.item(3,1).text()=="01:01:01"
         assert grid.item(11,1).text()=="72"

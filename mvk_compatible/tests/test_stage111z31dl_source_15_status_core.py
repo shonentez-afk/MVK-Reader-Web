@@ -35,7 +35,7 @@ def test_original_system_15_offsets_and_unknowns():
 
 
 def test_actual_register_bytes_render_and_do_not_invent_delphi_enums():
-    values={0:struct.pack("<I",0x12345678),2:struct.pack("<I",0),
+    values={0:b"12345678",2:struct.pack("<I",0),
             3:struct.pack("<I",3661),4:struct.pack("<I",4096),
             5:bytes.fromhex("00112233445566778899aabbccddeeff"),
             6:struct.pack("<I",3),7:struct.pack("<I",3),
@@ -43,7 +43,7 @@ def test_actual_register_bytes_render_and_do_not_invent_delphi_enums():
     snapshot=source_status(session=RUN,adc_samples=512,aux=2,frames=90,raw=53000)
     snapshot[SOURCE_FIELD_KEY]=visible_field_rows(values)
     result=connected_system_status(snapshot)
-    assert result.rows[0][1]=="0x12345678"
+    assert result.rows[0][1]=="12345678"
     assert result.rows[1][1]=="—"
     assert result.rows[2][1]=="0"
     assert result.rows[3][1]=="01:01:01"
@@ -87,3 +87,14 @@ def test_incomplete_misordered_and_false_shared_evidence_rejected():
     broken[5]["raw_hex_le"]="00"*14
     with pytest.raises(ValueError,match="incomplete|invalid|Partial"):
         parse_source_system_registers({SOURCE_FIELD_KEY:broken})
+
+
+def test_legacy_two_word_serial_is_unknown_without_losing_other_rows():
+    rows=visible_field_rows({2:struct.pack("<I",0)})
+    rows[0].update(word_count=2,valid=True,raw_hex_le=b"1234".hex())
+    parsed=parse_source_system_registers({SOURCE_FIELD_KEY:rows})
+    assert not parsed[0].valid and parsed[0].raw is None and parsed[0].value()=="—"
+    assert parsed[2].valid and parsed[2].value()=="0"
+    rows[0]["word_count"]=4
+    with pytest.raises(ValueError,match="Partial"):
+        parse_source_system_registers({SOURCE_FIELD_KEY:rows})

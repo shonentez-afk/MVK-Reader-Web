@@ -11,7 +11,8 @@ import re
 import struct
 
 SYSTEM_SOURCE_FIELDS=(
- ("serial",0x1000,2),("firmware",0x1004,2),("errors",0x1006,2),
+ # StatusSerial: _Unit125:00802707..00802722, type 11 = 8 ANSI bytes.
+ ("serial",0x1000,4),("firmware",0x1004,2),("errors",0x1006,2),
  ("uptime",0x1008,2),("memory_kib",0x100A,2),("dsp_md5",0x100C,8),
  ("control_group1",0x1014,2),("unack_group1",0x1014,2),
  ("control_group2",0x1016,2),("unack_group2",0x1016,2),
@@ -33,6 +34,10 @@ class SourceSystemRegister:
  raw:bytes|None
  def value(self)->str:
   if not self.valid or self.raw is None:return "—"
+  if self.key=="serial":
+   from .original_get_value_text_30 import get_value_text_30
+   result=get_value_text_30(11,self.raw)
+   return result.text if result.available else "RAW "+self.raw.hex().upper()
   if self.key=="dsp_md5":return self.raw.hex().upper()
   n=struct.unpack("<I",self.raw)[0]
   if self.key=="uptime":return f"{n//3600:02d}:{(n//60)%60:02d}:{n%60:02d}"
@@ -51,17 +56,23 @@ def parse_source_system_registers(status:dict)->tuple[SourceSystemRegister,...]|
   if not isinstance(entry,dict) or (type(entry.get("index")) is not int or entry["index"]!=i or
     entry.get("key")!=key or type(entry.get("register_address")) is not int or
     entry["register_address"]!=addr or type(entry.get("word_count")) is not int or
-    entry["word_count"]!=words or type(entry.get("valid")) is not bool):
+    (entry["word_count"]!=words and not (key=="serial" and entry["word_count"]==2)) or
+    type(entry.get("valid")) is not bool):
    raise ValueError("Wrong original PageStatus index, key, register or width")
+  legacy_serial=key=="serial" and entry["word_count"]==2
+  received_words=entry["word_count"]
   hex_le=entry.get("raw_hex_le")
   if entry["valid"]:
-   if not isinstance(hex_le,str) or len(hex_le)!=words*4 or not _HEX.fullmatch(hex_le):
+   if not isinstance(hex_le,str) or len(hex_le)!=received_words*4 or not _HEX.fullmatch(hex_le):
     raise ValueError("Partial/invalid PageStatus source bytes")
    raw=bytes.fromhex(hex_le)
   else:
    if hex_le is not None:raise ValueError("Unknown PageStatus field is not null")
    raw=None
-  out.append(SourceSystemRegister(i,key,addr,words,entry["valid"],raw))
+  # Older captures carried only the first two words. Preserve all other
+  # rows, but never present the truncated serial as verified or name a file with it.
+  out.append(SourceSystemRegister(i,key,addr,words,entry["valid"] and not legacy_serial,
+                                 None if legacy_serial else raw))
  for a,b in ((6,7),(8,9)):
   if out[a].valid!=out[b].valid or (out[a].valid and out[a].raw!=out[b].raw):
    raise ValueError("Shared source State/Alert register mismatch")

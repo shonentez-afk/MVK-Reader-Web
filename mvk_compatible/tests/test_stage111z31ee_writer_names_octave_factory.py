@@ -70,7 +70,9 @@ def test_serial_name_uses_source_type11_ascii_not_ip_or_raw_hex():
             for i,(key,addr,words) in enumerate(SYSTEM_SOURCE_FIELDS)]
     status={SOURCE_FIELD_KEY:fields}
     assert source_serial_cell0_text(status) is None
-    fields[0].update(valid=True,raw_hex_le=b"0123".hex())
+    fields[0].update(valid=True,raw_hex_le=b"0123\x00\x00\x00\x00".hex())
     assert source_serial_cell0_text(status)=="0123"
-    fields[0]["raw_hex_le"]=b"01\xff\x00".hex()
+    fields[0]["raw_hex_le"]=b"01\xff\x00\x00\x00\x00\x00".hex()
+    assert source_serial_cell0_text(status) is None
+    fields[0].update(word_count=2,raw_hex_le=b"0123".hex())
     assert source_serial_cell0_text(status) is None

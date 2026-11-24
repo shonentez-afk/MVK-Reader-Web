@@ -106,7 +106,7 @@ def source_device_label(*, use_custom_name, custom_name, status_serial_text=None
 def source_serial_cell0_text(status):
     """_Unit125:00802707..00802722: StatusSerial type 11, address 0x1000.
 
-    Decode only a validated four-byte field. ANSI-dependent non-ASCII
+    Decode only a validated eight-byte field (four register words). ANSI-dependent non-ASCII
     bytes remain unknown; no guessed archive serial/IP substitutes.
     """
     if status is None:
@@ -114,7 +114,7 @@ def source_serial_cell0_text(status):
     from .original_system_register_fields import parse_source_system_registers
     from .original_get_value_text_30 import get_value_text_30
     fields=parse_source_system_registers(status)
-    if fields is None or not fields[0].valid:
+    if fields is None or not fields[0].valid or fields[0].words!=4:
         return None
     result=get_value_text_30(11,fields[0].raw)
     return result.text if result.available and result.text else None
