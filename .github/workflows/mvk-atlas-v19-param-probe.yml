@@ -1,0 +1,41 @@
+name: Atlas v19 - synthetic Go PARAM order observation
+on:
+  push:
+    branches: [docs/stage111-recovery-architecture-audit-20261124]
+    paths:
+      - 'tools/architecture/atlas_v19_param_probe.go.txt'
+      - '.github/workflows/mvk-atlas-v19-param-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: 'e073d165852cddc2b82f90b518ae945658ee6c30'
+          path: atlas-probe-src
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Run observation against exact public EC Go source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C atlas-probe-src rev-parse HEAD)" = 'e073d165852cddc2b82f90b518ae945658ee6c30'
+          dir=atlas-probe-src/tools/research/native_tcp10230_stage108_live_recording_r6_1/source
+          cp tools/architecture/atlas_v19_param_probe.go.txt "$dir/atlas_v19_param_probe_test.go"
+          cd "$dir"
+          go test -v -count=1 -run '^TestAtlasV19Actual' . | tee "$GITHUB_WORKSPACE/atlas-v19-go-probe.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atlas-v19-go-observation
+          path: atlas-v19-go-probe.log
