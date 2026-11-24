@@ -433,10 +433,7 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // FreezeUpdate is false. No device TX is inferred or performed.
         sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
             m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
-        if m.sourceLiveDataWriter!=nil {
-            if e:=m.sourceLiveDataWriter.onSample(
-                m,*sample,f.Raw[28:],sourceStoreAllowed);e!=nil {return e}
-        }
+        var physicalChunk []byte
 		// Original channel 8/9 store the 256 raw payload BYTES, not
         // 64 Float32 samples; FRxPos is byte count for TACH in Delphi.
         if typ==typeTach && sourceStoreAllowed &&
@@ -476,7 +473,8 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // Original _Unit125 00808284/0080828C calls ProcessBufferChunk
         // with ApplyRange=true for every admitted ADC. Constructor=1,
         // then Stage0->1 latches the independent per-channel config range.
-        // WriteData above still writes the original TmpStream wire bytes.
+        // The physical companion receives this SAME processed chunk.
+        // The forensic wire file remains separate and immutable.
         if typ==typeADC && sourceStoreAllowed && m.sourceOriginalStorage!=nil {
             domain:=sourceStorageUnscaledADC
             scale:=sourceOriginalLiveFRange
@@ -487,6 +485,15 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e!=nil{return e}
             if e=m.sourceOriginalStorage.appendFrame(
                 *sample,aligned,domain);e!=nil{return e}
+            state:=m.sourceOriginalStorage.channels[sample.Channel].rangeState
+            if m.sourceLiveDataWriter!=nil && sourcePhysicalRangeKnown(state) &&
+                sample.NonFinite==0 && sourcePhysicalFinite(aligned) {
+                physicalChunk=aligned
+            }
+        }
+        if m.sourceLiveDataWriter!=nil {
+            if e:=m.sourceLiveDataWriter.onSample(
+                m,*sample,f.Raw[28:],sourceStoreAllowed,physicalChunk);e!=nil {return e}
         }
 	case typeParam:
         sourceFrozen:=m.sourceOriginalRXGate!=nil && m.sourceOriginalRXGate.frozen

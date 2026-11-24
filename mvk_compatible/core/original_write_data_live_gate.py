@@ -18,6 +18,7 @@ import struct
 from .original_param_gate_proof import OriginalParamGateReader,SOURCE_PARAM_GATE_NAME
 from .original_values_3100_timeline import _parameter_blocks,PARAM
 from .original_mode2_close_metadata import CloseConfigReplay
+from .original_physical_write_replay import PhysicalWriteReplay, PHYSICAL_SCHEMA
 
 SCHEMA="MVK_SOURCE_TMVKTHREAD_LIVE_WRITEDATA_V1"
 AUDIT="SOURCE_LIVE_WRITEDATA_NATIVE_AUDIT.json"
@@ -94,6 +95,10 @@ def verify_native_live_write_data(
             or summary.get("source_tcp_multi_socket",False) is True
             or summary.get("capture_only_after_parser_error",False) is True):
         raise ValueError("Original native WriteData: Go run/provenance mismatch")
+    physical_schema=audit.get("physical_writer_schema")
+    if physical_schema not in (None,PHYSICAL_SCHEMA):
+        raise ValueError("Source physical WriteData: unknown schema")
+    physical_enabled=physical_schema==PHYSICAL_SCHEMA
     raw_len=_integer(summary.get("raw_bytes"),"RAW byte count",MAX_RAW)
     raw_frames=_integer(summary.get("frames_decoded"),"frame count",raw_len//8)
     raw_tail=_integer(summary.get("incomplete_final_frame_bytes"),"RAW tail",MAX_FRAME-1)
@@ -159,6 +164,19 @@ def verify_native_live_write_data(
             _digest(item.get("sha256"),"channel payload")
             _integer(item.get("bytes"),"channel bytes",raw_len)
             _integer(item.get("packets"),"channel packets",raw_frames)
+            physical=item.get("physical_candidate")
+            if physical_enabled and ch<=8:
+                if not isinstance(physical,dict):
+                    raise ValueError("Source physical WriteData: missing companion")
+                expected_name=f"SOURCE_W{i:02d}_ADC{ch}_LIVE_PHYSICAL_CANDIDATE.bin"
+                if physical.get("name")!=expected_name:
+                    raise ValueError("Source physical WriteData: companion name mismatch")
+                _digest(physical.get("sha256"),"physical candidate")
+                _integer(physical.get("bytes"),"physical candidate bytes",raw_len)
+                _integer(physical.get("packets"),"physical candidate packets",raw_frames)
+                _integer(physical.get("skipped_packets"),"physical candidate skipped packets",raw_frames)
+            elif physical is not None:
+                raise ValueError("Source physical WriteData: unexpected companion")
             by_channel[ch]=item
         checks.append(dict(window=window,masks=masks,by_channel=by_channel,
                            start=start,end=end,stage=0,first=0,wrote=0,
@@ -182,6 +200,10 @@ def verify_native_live_write_data(
     for check in checks:
         closes.setdefault(check["end"],[]).append(check)
     config=CloseConfigReplay()
+    physical_replay=PhysicalWriteReplay()
+    physical_checks={}
+    physical_results=[]
+    physical_skipped=[]
     param_sha=summary.get("source_original_param_gate_sha256")
     param_count=summary.get("source_original_param_gate_records",0)
     with ExitStack() as resources:
@@ -193,6 +215,8 @@ def verify_native_live_write_data(
                 expected_frames=raw_frames))
         elif param_count:
             raise ValueError("Source close metadata: PARAM ledger SHA absent")
+        if physical_enabled and param_gate is None:
+            raise ValueError("Source physical WriteData: PARAM gate evidence required")
         def snapshot(boundary):
             if param_gate is not None:
                 for check in closes.get(boundary,()):
@@ -208,6 +232,13 @@ def verify_native_live_write_data(
                 key=(check["window"]["window"],channel)
                 file_checks[key]=(handle,sha256(),0,0,item)
                 packet_rates[key]=set()
+                if item.get("physical_candidate") is not None:
+                    part=item["physical_candidate"]
+                    path=_local_file(folder,part["name"],max_bytes=raw_len)
+                    if path.stat().st_size!=part["bytes"]:
+                        raise ValueError("Source physical WriteData: companion length mismatch")
+                    physical_checks[key]=dict(handle=resources.enter_context(path.open("rb")),
+                        digest=sha256(),size=0,packets=0,skipped=0,proof=part)
         data=resources.enter_context(raw_path.open("rb"))
         receipts=resources.enter_context(packet_path.open("rb"))
         for frame_index in range(1,raw_frames+1):
@@ -227,6 +258,8 @@ def verify_native_live_write_data(
                     blocks=list(_parameter_blocks(frame))
                     frozen=param_gate.consume(frame_index=frame_index,frame=frame,
                         descriptors=len(blocks),values3100=any(a==0x3100 for a,_,_ in blocks))
+                    if physical_enabled:
+                        physical_replay.on_param(blocks,frozen)
                     if not frozen:
                         config.put(blocks)
                 snapshot(frame_index)
@@ -308,6 +341,18 @@ def verify_native_live_write_data(
                 h.update(copied)
                 file_checks[key]=(handle,h,total+len(copied),packets+1,item)
                 packet_rates[key].add(rate)
+                if key in physical_checks:
+                    part=physical_checks[key]
+                    expected_physical=physical_replay.chunk(channel+1,payload)
+                    if expected_physical is None:
+                        part["skipped"]+=1
+                    else:
+                        got=part["handle"].read(len(expected_physical))
+                        if got!=expected_physical:
+                            raise ValueError("Source physical WriteData: processed bytes differ from RAW/FRange replay")
+                        part["digest"].update(got)
+                        part["size"]+=len(got)
+                        part["packets"]+=1
         final=data.read(MAX_FRAME)
         if len(final)!=raw_tail or data.read(1):
             raise ValueError("Original native WriteData: source terminal tail changed")
@@ -334,6 +379,29 @@ def verify_native_live_write_data(
                         packets!=item["packets"] or
                         h.hexdigest()!=item["sha256"]):
                     raise ValueError("Original native WriteData: unverified channel file bytes")
+                key=(window["window"],channel)
+                if key in physical_checks:
+                    part=physical_checks[key]
+                    candidate=part["proof"]
+                    if (part["handle"].read(1) or part["size"]!=candidate["bytes"]
+                            or part["packets"]!=candidate["packets"]
+                            or part["skipped"]!=candidate["skipped_packets"]
+                            or part["packets"]+part["skipped"]!=packets
+                            or part["digest"].hexdigest()!=candidate["sha256"]):
+                        raise ValueError("Source physical WriteData: companion receipt mismatch")
+                    record=dict(window=window["window"],channel=channel,
+                        name=candidate["name"],bytes=part["size"],packets=part["packets"],
+                        sha256=candidate["sha256"],source_raw_sha256=source_digest,
+                        wire_name=item["name"],wire_sha256=item["sha256"],
+                        verified_packet_rates_hz=sorted(packet_rates[key]),
+                        input_domain="ORIGINAL_STORAGE_FRANGE_FLOAT32_CANDIDATE",
+                        original_delphi_file_parity_verified=False,
+                        source_close_config=close_config[key])
+                    if part["skipped"] or not part["packets"]:
+                        physical_skipped.append(dict(record,skipped_packets=part["skipped"],
+                            reason="UNKNOWN_RANGE_NONFINITE_OR_EMPTY_PHYSICAL_WINDOW"))
+                    else:
+                        physical_results.append(dict(record,physical_raw_replay_verified=True))
                 results.append({
                     "window":window["window"],"channel":channel,
                     "name":item["name"],"bytes":total,"packets":packets,
@@ -353,6 +421,9 @@ def verify_native_live_write_data(
         "verified_source_packet_records":actual_packet_records,
         "verified_source_windows":len(checks),
         "verified_channel_files":results,
+        "physical_writer_schema":physical_schema,
+        "verified_physical_channel_files":physical_results,
+        "skipped_physical_channel_files":physical_skipped,
         "original_delphi_file_parity_verified":False,
         "original_win32_click_timing_verified":False,
     }

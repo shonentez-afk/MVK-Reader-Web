@@ -550,7 +550,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                             data_windows):
                         raise ValueError(
                             "Original live Go WriteData window count not agreed with Qt")
-                    for proof in source_live_data_evidence["verified_channel_files"]:
+                    physical_files=source_live_data_evidence.get("verified_physical_channel_files",[])
+                    for proof in (source_live_data_evidence["verified_channel_files"]+physical_files):
                         original=directory/proof["name"]
                         copied=target/proof["name"]
                         if (original.is_symlink() or not original.is_file()
@@ -570,7 +571,9 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                 raise ValueError(
                                     "Source live WriteData changed during local copy")
                         emitted.append({
-                            "kind":"source_live_original_rate_freeze_adc1_gated",
+                            "kind":("source_live_adc_physical_candidate" if
+                                     proof.get("physical_raw_replay_verified") else
+                                     "source_live_original_rate_freeze_adc1_gated"),
                             **proof})
                     # Original Delphi 00806A8C writes a sidecar TSXML on
                     # closing each channel file. Use the source tag order,
@@ -586,8 +589,18 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     xml_options={i:w.file_options for i,w in enumerate(
                         (entry for entry in ledger.windows
                          if entry.kind=="data"),1)}
+                    # New physical schema: wire remains forensic. Old captures
+                    # retain their existing structural sidecar behavior.
+                    sidecar_proof=source_live_data_evidence
+                    if source_live_data_evidence.get("physical_writer_schema"):
+                        sidecar_proof=dict(source_live_data_evidence,
+                            verified_channel_files=[
+                                x for x in source_live_data_evidence["verified_channel_files"]
+                                if x["channel"]>=9]+physical_files)
+                        skipped.extend(dict(x,kind="source_live_adc_physical_candidate")
+                            for x in source_live_data_evidence.get("skipped_physical_channel_files",[]))
                     source_tsxml_receipts=write_verified_source_tsxml_sidecars(
-                        target,live_proof=source_live_data_evidence,
+                        target,live_proof=sidecar_proof,
                         source_run_end_utc=raw_summary.get("ended_utc"),
                         window_options=xml_options)
                     for part in source_tsxml_receipts:
@@ -904,6 +917,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_live_original_writer_files":
                 len(source_live_data_evidence["verified_channel_files"]) if
                 source_live_data_evidence is not None else 0,
+            "source_live_physical_candidate_files":len(
+                (source_live_data_evidence or {}).get("verified_physical_channel_files",[])),
             "source_original_tsxml_structural_sidecars":
                 sum(item.get("sidecar_created",False) for item in
                     source_tsxml_receipts),
@@ -957,6 +972,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "source_live_original_packet_gate_records":
                     source_live_data_evidence["verified_source_packet_records"] if
                     source_live_data_evidence is not None else 0,
+                "source_live_physical_candidate_files":len(
+                    (source_live_data_evidence or {}).get("verified_physical_channel_files",[])),
                 "source_original_tsxml_structural_sidecars":
                     sum(item.get("sidecar_created",False) for item in
                         source_tsxml_receipts),
