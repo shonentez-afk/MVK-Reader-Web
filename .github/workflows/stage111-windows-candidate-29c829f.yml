@@ -78,7 +78,7 @@ jobs:
           $name = 'MVKViewCompatible_Stage111_UNOFFICIAL_CANDIDATE_29c829f'
           $tmp = Join-Path $env:RUNNER_TEMP 'mvk-candidate-29c829f-smoke'
           New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --runtime-tmpdir "$tmp" --paths . --add-binary 'mvk_compatible/native_payload/MVK_Native_R6_1_Stage108_Windows_x64.exe;mvk_native' --add-data 'mvk_compatible/native_payload/NATIVE_SHA256SUMS.txt;mvk_native' --name $name mvk_compatible/windows_launcher.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --add-binary 'mvk_compatible/native_payload/MVK_Native_R6_1_Stage108_Windows_x64.exe;mvk_native' --add-data 'mvk_compatible/native_payload/NATIVE_SHA256SUMS.txt;mvk_native' --name $name mvk_compatible/windows_launcher.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $app = (Resolve-Path "dist/$name.exe").Path
           $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($app))
@@ -88,7 +88,12 @@ jobs:
             $reader.BaseStream.Position = $reader.ReadUInt32()
             if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { throw 'Not a Windows x64 PE' }
           } finally { $reader.Dispose() }
-          $proc = Start-Process -FilePath $app -PassThru
+          $oldTemp = $env:TEMP
+          $oldTmp = $env:TMP
+          $env:TEMP = $tmp
+          $env:TMP = $tmp
+          try { $proc = Start-Process -FilePath $app -PassThru }
+          finally { $env:TEMP = $oldTemp; $env:TMP = $oldTmp }
           try {
             $nativeName = 'MVK_Native_R6_1_Stage108_Windows_x64.exe'
             $embedded = $null
@@ -128,7 +133,7 @@ jobs:
       - name: Upload unofficial short-lived Windows candidate
         uses: actions/upload-artifact@v6
         with:
-          name: MVKView_Stage111_UNOFFICIAL_WINDOWS_CANDIDATE_29c829f
+          name: MVKView_Stage111_UNOFFICIAL_WINDOWS_CANDIDATE_29c829f_portable
           path: candidate-output/
           if-no-files-found: error
           retention-days: 7
