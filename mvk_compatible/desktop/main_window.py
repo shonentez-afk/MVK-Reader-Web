@@ -1060,7 +1060,7 @@ class MainWindow(QMainWindow):
 
     def _sync_original_wave_vertical_popup(self,baseline:float=1000.,
                                             *,source_bound:bool=False,
-                                            live_source:bool=False):
+                                            live_source:bool=False,units:str='м/с2'):
         """Numeric PageAdc Y menu, source Tag0..12 and checked state.
 
         The screenshot has Tag0=1000 m/s2. When an actual current GetSignal
@@ -1070,10 +1070,10 @@ class MainWindow(QMainWindow):
         """
         for action in self.wave_vscale_menu.actions():
             tag=int(action.data())
-            action.setText(original_adc_vertical_physical_caption(tag,baseline))
+            action.setText(original_adc_vertical_physical_caption(tag,baseline,units=units))
             action.setChecked(tag==self._wave_vscale_tag)
         selected=original_adc_vertical_physical_caption(
-            self._wave_vscale_tag,baseline)
+            self._wave_vscale_tag,baseline,units=units)
         self.wave_vscale_button.setText(selected)
         origin=('LIVE FRange текущего канала по подтверждённому Go-кольцу; '
                 'оригинальный x87 и калибровка не подтверждены' if live_source
@@ -1108,7 +1108,12 @@ class MainWindow(QMainWindow):
         self._live_wave_scale_model=model
         self._sync_original_wave_vertical_popup(
             baseline=float(model['axis_baseline_m_s2_nominal']),
-            live_source=model['source_f_range_verified'])
+            live_source=model['source_f_range_verified'],
+            units=bound.get('source_units','м/с2').replace('м/с²','м/с2'))
+
+    def _current_live_wave_units(self):
+        basis=self._live_wave_vertical_basis or {}
+        return basis.get('source_units','м/с²')
 
     def _apply_original_wave_vscale(self):
         '''One SHA-bound post-GetSignal Y axis, without reading drawn LOD samples.'''
@@ -3582,7 +3587,9 @@ class MainWindow(QMainWindow):
         self.wave_plot.getViewBox().invertX(True)
         self.wave_plot.setLabel(
             'bottom',result.get('source_cursor_axis_unit','мс'))
-        self.wave_plot.setLabel('left','Огибающая, м/с² · не Delphi 1:1')
+        units=(result.get('source_live_units') if result.get('source_range_state') is not None else 'м/с²')
+        units='ед. не подтверждены' if units is None else units
+        self.wave_plot.setLabel('left',f'Огибающая, {units} · не Delphi 1:1')
         self.wave_plot.plot(
             result.get('source_cursor_plot_x',result['plot_x_ms']),
             result['plot_y'],pen=pg.mkPen('#176c92'))
@@ -3594,6 +3601,7 @@ class MainWindow(QMainWindow):
             full_peak=float(np.max(np.abs(result['full_reversed_getsignal']))),
             source_frange1=result['live_original_f_range_single']==1.0,
             source_f_range=result['live_original_f_range_single'],
+            source_units=units,
             source_sha256=result['output_float32_sha256'])
         self._apply_live_wave_vscale()
         self.wave_line=pg.InfiniteLine(angle=90,movable=False,
@@ -3607,7 +3615,7 @@ class MainWindow(QMainWindow):
         self.wave_cursor_primary.setText('Курсор: —')
         self.wave_mean_primary.setText(
             f"LIVE АЦП{result['adc']} · FIR Code{result['envelope_code']} · "
-            f"СКЗ-кандидат {result['rms_m_s2']:.5g} м/с²\n"
+            f"СКЗ-кандидат {result['rms_m_s2']:.5g} {units}\n"
             "Оригинальный Delphi/x87 GetSignal ещё не принят")
         self.wave_hint.setText(
             f"Go 2²¹ SHA={result['source_float32_sha256'][:12]} · "
@@ -3734,9 +3742,9 @@ class MainWindow(QMainWindow):
             index=selected['original_uint64_adc_sample_index']
             self.wave_cursor_primary.setText(
                 f"{selected['plot_x']:.6g} {selected['axis_unit']}\n"
-                f"{value:.7g} м/с²")
+                f"{value:.7g} {self._current_live_wave_units()}")
             self.wave_hint.setText(
-                f"GetSignal[{selected['output_index']}] = {value:.8g} м/с²"
+                f"GetSignal[{selected['output_index']}] = {value:.8g} {self._current_live_wave_units()}"
                 f" · исходный АЦП#{index}"
                 f" · Go SHA={selected['source_input_sha256'][:12]}"
                 " · полный Float32, НЕ LOD; Win32 пиксели не аттестованы")
@@ -3820,11 +3828,11 @@ class MainWindow(QMainWindow):
                     graph_x,selected['value_from_full_filtered_float32'])
             self.wave_cursor_primary.setText(
                 f"{graph_x:.6g} {unit}\n"
-                f"{selected['value_from_full_filtered_float32']:.7g} м/с²")
+                f"{selected['value_from_full_filtered_float32']:.7g} {self._current_live_wave_units()}")
             self.wave_hint.setText(
                 f"Go SHA={selected['source_float32_sha256'][:12]} · "
                 f"GetSignal FIR[{selected['output_index']}] "
-                f"= {selected['value_from_full_filtered_float32']:.8g} м/с² · "
+                f"= {selected['value_from_full_filtered_float32']:.8g} {self._current_live_wave_units()} · "
                 "полный Float32, НЕ LOD; Win32 пиксели не аттестованы")
         except (ValueError,KeyError,TypeError,OverflowError) as exc:
             self._source_live_cursor_last=None
@@ -3945,9 +3953,12 @@ class MainWindow(QMainWindow):
             self.wave_plot.setLabel(
                 'bottom',current_cursor.axis_unit if current_cursor is not None
                 else 'Индекс отсчёта/Fs, с · НЕ часы ПК')
+            units=(d.get('source_live_units') if ring_selected and
+                d.get('source_range_state') is not None else 'м/с²')
+            units='ед. не подтверждены' if units is None else units
             self.wave_plot.setLabel(
                 'left',
-                'Go · проверенное кольцо 2M, м/с²' if ring_selected
+                f'Go · проверенное кольцо 2M, {units}' if ring_selected
                 else 'Native R6.1 · preview, НЕ кольцо MVKView, м/с²')
             if current_cursor is not None:
                 self.wave_plot.plot(
@@ -3974,12 +3985,13 @@ class MainWindow(QMainWindow):
                 source_frange1=(
                     d.get('input_domain')=='original_live_f_range1'),
                 source_f_range=d.get('source_live_f_range_single'),
+                source_units=units,
                 source_sha256=preview.channels[ch].sha256)
             self._apply_live_wave_vscale()
             if rendered_sig is not None:
                 self._live_long_rendered_key=rendered_sig
             self.wave_mean_primary.setText(
-                f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} м/с²\n'
+                f'LIVE АЦП{ch} · локальное СКЗ: {d["rms_m_s2"]:.5g} {units}\n'
                 'Не сверено с оригинальной MVKView')
             source_scale=(
                 f'bAdcHScale={d["original_bAdcHScale_milliseconds"]} мс · '

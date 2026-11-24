@@ -210,3 +210,50 @@ def test_intentionally_interrupted_thread_is_not_accepted_writer(tmp_path):
     with pytest.raises(ValueError,match="interrupted"):
         verify_native_live_write_data(
             run,summary=summary,source_raw_sha256=summary["raw_sha256"])
+
+def test_close_metadata_replays_only_through_actual_writer_end_and_ignores_frozen_param(tmp_path):
+    from ..core.original_param_gate_proof import SOURCE_PARAM_GATE_NAME,SOURCE_PARAM_GATE_SCHEMA
+    from ..core.original_values_3100_timeline import PARAM
+    run,flow,ledger=with_live_writer(tmp_path)
+    original=(run/"incoming.raw").read_bytes()
+    frames=[]
+    pos=0
+    while pos<len(original):
+        n=struct.unpack_from("<I",original,pos+4)[0]
+        frames.append(original[pos:pos+n]);pos+=n
+    def cfg(value):
+        payload=struct.pack("<f",value)+b"V".ljust(32,b"\x00")
+        block=struct.pack("<HH",0x10e,18)+payload
+        return struct.pack("<II",PARAM,28+len(block))+b"\x00"*16+struct.pack("<I",1)+block
+    frames[0]=cfg(2.5)
+    frames[9]=cfg(9.0) # frozen
+    frames[18]=cfg(4.0) # close after frame 19
+    frames[19]=cfg(8.0) # after close, must not leak backwards
+    raw=b"".join(frames);digest=sha256(raw).hexdigest()
+    (run/"incoming.raw").write_bytes(raw)
+    events=[]
+    for idx in (0,9,18,19):
+        events.append(dict(schema=SOURCE_PARAM_GATE_SCHEMA,
+            frame_index_one_based=idx+1,frame_sha256=sha256(frames[idx]).hexdigest(),
+            descriptor_count=1,freeze_update=idx==9,is_aux4700=False,
+            contains_values_3100=False))
+    gate=b"".join((json.dumps(x)+"\n").encode() for x in events)
+    (run/SOURCE_PARAM_GATE_NAME).write_bytes(gate)
+    audit=json.loads((run/AUDIT).read_text())
+    audit["source_raw_sha256"]=digest
+    encoded=json.dumps(audit).encode()
+    (run/AUDIT).write_bytes(encoded)
+    summary=json.loads((run/"summary.json").read_text())
+    summary.update(raw_sha256=digest,raw_bytes=len(raw),
+        source_live_write_data_audit_sha256=sha256(encoded).hexdigest(),
+        source_original_param_gate_sha256=sha256(gate).hexdigest(),
+        source_original_param_gate_records=len(events))
+    proof=verify_native_live_write_data(run,summary=summary,source_raw_sha256=digest)
+    meta=proof["verified_channel_files"][0]["source_close_config"]
+    assert meta["gain"]==4.0 and meta["units"]=="V"
+    assert meta["end_after_frame"]==19
+    assert proof["verified_channel_files"][1]["source_close_config"]["gain"] is None
+    # Change the Freeze ledger without changing its authenticated SHA.
+    (run/SOURCE_PARAM_GATE_NAME).write_bytes(gate.replace(b'"freeze_update": true',b'"freeze_update":false'))
+    with pytest.raises(ValueError):
+        verify_native_live_write_data(run,summary=summary,source_raw_sha256=digest)

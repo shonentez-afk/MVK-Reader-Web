@@ -17,7 +17,8 @@ import zipfile
 import numpy as np
 
 from .native_r6_live_status import _utc_stamp
-from .original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN, SOURCE_LIVE_ADC_DOMAINS
+from .original_source_ring_receipt import (SOURCE_LIVE_ADC_DOMAIN, SOURCE_LIVE_ADC_DOMAINS,
+    source_live_units_text)
 from .storage_f_range_idr_candidate import DOMAIN_ORIGINAL_STORAGE
 from .offline_export import waveform_for_zip, spectrum_for_zip, reduce_minmax
 from .original_getsignal_live_source import (
@@ -312,6 +313,7 @@ def provisional_waveform(
          "original_live_config_f_range") if is_source else DOMAIN)
     out["source_live_f_range_single"]=channel.source_f_range_single if is_source else None
     out["source_range_state"]=channel.source_range_state if is_source else None
+    out["source_live_units"]=source_live_units_text(channel.source_range_state) if is_source else None
     out["provisional_not_audited"] = True
     out["source_waveform_latest_real_samples"] = visible
     out["source_waveform_max_display_seconds"] = 30

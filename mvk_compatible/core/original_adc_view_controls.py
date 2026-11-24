@@ -45,7 +45,7 @@ def original_adc_horizontal_options():
     } for tag,ms in enumerate(ADC_HORIZONTAL_MS))
 
 
-def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float)->str:
+def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float, *, units:str='м/с2')->str:
     """Original PageAdc Y popup: nominal physical height, not a divisor.
 
     Original IDP 008D33F4 holds 13 Y divisors; the screen captions are
@@ -65,7 +65,9 @@ def original_adc_vertical_physical_caption(tag:int, baseline_m_s2:float)->str:
         raise ValueError("ADC Y caption cannot represent current height")
     # Exactly original operator text unit "м/с2" (not a fictitious
     # dimensionless menu "1/N диапазона Y"). Russian decimal comma.
-    return f"{height:.9g}".replace(".",",")+" м/с2"
+    if not isinstance(units,str) or len(units)>64 or any(ord(c)<32 for c in units):
+        raise ValueError("ADC Y caption: invalid channel units")
+    return f"{height:.9g}".replace(".",",")+(" "+units if units else "")
 
 
 def original_adc_vertical_options(*, baseline_m_s2:float|None=None):

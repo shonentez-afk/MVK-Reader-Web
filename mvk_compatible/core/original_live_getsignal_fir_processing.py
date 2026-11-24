@@ -18,6 +18,7 @@ from .envelope_idr_candidate import (
     EnvelopeProfile, envelope_plan, process_original_envelope_candidate,
 )
 from .original_adc_view_controls import ADC_HORIZONTAL_MS
+from .original_source_ring_receipt import source_live_units_text
 from .storage_f_range_idr_candidate import prepare_original_fft_input,DOMAIN_ORIGINAL_STORAGE
 from .original_source_long_window import SourceLongWindow
 
@@ -140,6 +141,7 @@ def source_live_filtered_getsignal(
         live_original_f_range_single=scale,
         live_original_f_range_source=(channel.source_range_state or {}).get("origin","TmvkChannelStorage.Create_007D0A61"),
         source_range_state=channel.source_range_state,
+        source_live_units=source_live_units_text(channel.source_range_state),
         native_bin_exporter_gain_applied=False,
         original_delphi_numerical_parity_verified=False,
         original_canvas_cursor_parity_verified=False,

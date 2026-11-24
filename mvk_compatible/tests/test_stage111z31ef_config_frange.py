@@ -68,3 +68,13 @@ def test_close_sidecar_uses_verified_values_not_one(tmp_path):
         actual_bin_filename=name)
     assert xml.internal_gain_single==3.25 and xml.channel_units_text=="m/s2"
     assert (tmp_path/name).read_bytes()==raw
+
+def test_units_are_channel_scoped_not_fixed_acceleration():
+    from mvk_compatible.core.original_source_ring_receipt import source_live_units_text
+    from mvk_compatible.core.original_adc_view_controls import original_adc_vertical_physical_caption
+    s=state()
+    s["units_raw_le"]=b"V".ljust(32,b"\x00").hex()
+    assert source_live_units_text(s)=="V"
+    assert original_adc_vertical_physical_caption(0,10,units="V")=="10 V"
+    s["units_raw_le"]=bytes([0xCC,0x00]+[0]*30).hex()
+    assert source_live_units_text(s) is None
