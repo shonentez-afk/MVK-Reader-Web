@@ -41,6 +41,8 @@ jobs:
         run: >-
           go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ github.sha }}"
           --out docs/architecture/mvkview-recovery/stage111-go-callgraph.json
+      - name: Assemble unified Python Go Qt graph
+        run: python tools/architecture/mvk_stage111_merge_graphs.py
       - name: Verify public-only graph
         run: |
           python - <<'PY'
@@ -61,7 +63,13 @@ jobs:
           assert qt['counts']['bindings'] > 0
           assert not qt['errors']
           assert all(not any(f in r['path'] for f in forbidden) for r in qt['bindings'])
-          print(d['counts'], go['counts'], qt['counts'])
+          unified=json.loads(Path('docs/architecture/mvkview-recovery/stage111-unified-graph.json').read_text(encoding='utf-8'))
+          assert unified['metadata']['scope']=='PUBLIC_STAGE111_UNIFIED_AST_ONLY'
+          assert unified['metadata']['sha']==d['metadata']['sha']==go['metadata']['sha']==qt['metadata']['sha']
+          assert unified['counts']['qt_signal_bindings']==qt['counts']['bindings']
+          assert unified['counts']['qt_targets_resolved'] > 0
+          assert all(not any(f in n['path'] for f in forbidden) for n in unified['nodes'])
+          print(d['counts'], go['counts'], qt['counts'], unified['counts'])
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -70,6 +78,7 @@ jobs:
             docs/architecture/mvkview-recovery/stage111-public-graph.json
             docs/architecture/mvkview-recovery/stage111-go-callgraph.json
             docs/architecture/mvkview-recovery/stage111-qt-signals.json
+            docs/architecture/mvkview-recovery/stage111-unified-graph.json
           retention-days: 14
 
   public-likec4-model:
