@@ -1928,6 +1928,10 @@ class MainWindow(QMainWindow):
         else:
             unit=summary_unit+' (расч.)'
             calibration='Расчётный спектр · оригинал не аттестован'
+        if self._live_active:
+            calibration=('LIVE · локальный FIR/IQ расчёт, НЕ Delphi 1:1'
+                         if self.spec_envelope_button.isChecked() else
+                         'LIVE · локальный FFT, НЕ Delphi 1:1')
         linked=self._source_spectrum_readout
         if linked is not None:
             frame=('конец архива' if linked['archive_end_selected']
@@ -3261,8 +3265,9 @@ class MainWindow(QMainWindow):
         # from unverified original DSP/firmware fields.
         # Source PageStatus (008475BC) suppresses painting on
         # FreezeUpdate. Still surface a newly latched system error.
-        if not self._source_live_view_frozen or system_latched:
-            self.original_shell.refresh_status()
+        # PageStatus owns a held accepted snapshot on Freeze, but
+        # must still immediately invalidate it on silence/fault/Stop.
+        self.original_shell.refresh_status()
         return evidence
 
     def _invalidate_native_live_status(self,reason):

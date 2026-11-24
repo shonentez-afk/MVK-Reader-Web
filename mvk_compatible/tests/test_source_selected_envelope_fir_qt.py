@@ -23,6 +23,8 @@ from mvk_compatible.core.native_r6_live_preview import (
 from mvk_compatible.core.original_source_long_window import (
     SourceWindowRequest,SourceLongWindow,
 )
+from mvk_compatible.core.original_source_ring_receipt import SOURCE_LIVE_ADC_DOMAIN
+from mvk_compatible.core.original_live_view_gate import gate_live_preview
 
 
 def _qa_idp_double():
@@ -65,7 +67,12 @@ def test_qt_live_fir_iq_from_exact_2m_source_ring_not_plain_fft(qt_app,tmp_path)
             "source_original_storage_verified":True,
             "source_original_storage":{"channels":[
                 {"last_sample_rate_hz":65536,
-                 "available_elements":ring_count} for _ in range(10)]},
+                 "available_elements":ring_count,
+                 "input_domain":SOURCE_LIVE_ADC_DOMAIN,
+                 "original_live_f_range_single":1.0,
+                 "rx_pos_64":ring_count,
+                 "first_readable_pos_64":0,
+                 "next_device_sample_index":ring_count} for _ in range(10)]},
         })
         win._native_live_status=ring
         win._live_fft_window=None
@@ -84,19 +91,32 @@ def test_qt_live_fir_iq_from_exact_2m_source_ring_not_plain_fft(qt_app,tmp_path)
         selected_window=LivePreview(
             status["session_id"],datetime.now(timezone.utc),
             status["raw_bytes"],status["frames_decoded"],
-            {1:ch},source_ring_provenance_verified=True)
+            {1:ch},input_domain=SOURCE_LIVE_ADC_DOMAIN,
+            source_ring_provenance_verified=True)
+        decision=gate_live_preview(ring,selected_window)
+        assert decision.allowed,decision.reason
+        # Verify the production gate is NOT weakened for old/foreign rings.
+        assert not gate_live_preview(
+            {**ring,"source_original_storage_verified":False},
+            selected_window).allowed
         req=SourceWindowRequest(
             status["session_id"],"f0"*16,1,-2,n,ring_count,65536,
             ring_count,20,4096)
         win._live_fft_window=SourceLongWindow(req,selected_window)
         win._render_live_spectrum()
-        assert win.spec_plot.listDataItems()
+        assert win.spec_plot.listDataItems(),win.spec_hint.text()
         assert "FIR Code20" in win.spec_mean.text()
         assert "FFT 2048" in win.spec_mean.text()
         assert "16" in win.spec_mean.text()
         assert "локальный FIR/IQ" in win.spec_mean_primary.text()
         assert "FRange=1" in win.spec_hint.text()
-        assert win._full_spectrum is None
+        assert win._full_spectrum["live_measurement_view"] is True
+        assert win._full_spectrum["source"]=="SOURCE_SELECTED_GETSPECTRUM_FIR_IQ_IDR_CANDIDATE"
+        assert win._full_spectrum["live_window_sha256"]==ch.sha256
+        assert win._full_spectrum["live_selected_bspec_lines"]==4096
+        assert win._full_spectrum["n_fft"]==2048
+        assert len(win._full_spectrum["amplitude"])==1024
+        assert win._full_spectrum["df_hz"]==16
         assert not win.spec_copy_button.isEnabled()
         assert not win.spec_save_button.isEnabled()
         # A stale response tagged for the wrong filter can NOT be

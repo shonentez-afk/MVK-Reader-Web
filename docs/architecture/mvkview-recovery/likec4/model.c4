@@ -1,6 +1,6 @@
 // Public architecture only. Original MVKView 1.0.47 and its IDR/Pascal
 // evidence are private and are NOT represented in this public model.
-// Code snapshot: 9f6a3a74535408253f883ae9b49903363c77a69d; no runtime or hardware parity claimed.
+// Code snapshot: abbbe63f1a5a4c00382c480b3e1947935790c788; no runtime or hardware parity claimed.
 specification {
   element system
   element component
@@ -13,13 +13,13 @@ model {
 
     entry = component 'Desktop/CLI entrypoint' {
       description 'Запускает Qt desktop или локальную проверку архива по явному флагу CLI. Источник: mvk_compatible/__main__.py.'
-      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/__main__.py#L5
+      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/__main__.py#L5
       technology 'Python'
     }
 
     desktop = component 'Qt desktop and original shell' {
       description 'MainWindow, вкладки, события измерения и интерфейсные представления. Выполняет вызовы Core и управляет локальным native helper.'
-      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/desktop/main_window.py#L151
+      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/desktop/main_window.py#L151
       technology 'PySide6'
     }
 
@@ -28,38 +28,44 @@ model {
 
       measurement = component 'Measurement/Task2 source model' {
         description 'Модель состояний original Mode2 и проверяемые события Task2. Не подменяет передачу команд реальному прибору.'
-        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/core/original_mode2_task2_exchange.py#L42
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/core/original_mode2_task2_exchange.py#L42
         technology 'Python'
       }
 
       signal = component 'GetSignal and spectral processing' {
         description 'Модули расчётов временного сигнала и спектра, в том числе FIR, FFT, режимы амплитуды. Некоторые части source-derived или кандидаты и не являются Win32 runtime oracle.'
-        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/core/original_getsignal_live_source.py#L23
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/core/original_getsignal_live_source.py#L23
         technology 'Python/NumPy'
       }
 
       livespectrum = component 'LIVE full spectrum view and LOD' {
         description 'Проверяет ADC/mode/window SHA, PRE/POST-FIR N/Fs и сохраняет полный неизменяемый N/2 массив. Отдельная отрисовка min/max LOD не является источником курсора или summary. Исходный Win32 паритет не доказан.'
-        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/core/original_live_spectrum_view.py#L16
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/core/original_live_spectrum_view.py#L16
         technology 'Python/NumPy'
+      }
+
+      livestatus = component 'LIVE operator PageStatus' {
+        description 'Единый принятый PARAM snapshot; RESULT/BAND/TACH таблицы и отдельный SPEC chart, Freeze/Stop binding. Win32 parity not attested.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/core/original_live_operator_status.py#L69
+        technology 'Python'
       }
 
       filecontracts = component 'TSXML and output contracts' {
         description 'Формирование и проверка имен, структур TSXML и локальных экспортов по верифицированным данным.'
-        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/core/original_mode2_source_files.py#L109
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/core/original_mode2_source_files.py#L109
         technology 'Python'
       }
 
       parity = component 'Same-RAW evidence checks' {
         description 'Сопоставляет переданные файлы и стадии расчётов; строгий file-gate не подтверждает физическую Win32/MVK01 сессию.'
-        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/core/original_mode2_paired_acceptance.py#L166
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/core/original_mode2_paired_acceptance.py#L166
         technology 'Python'
       }
     }
 
     native = component 'Native R6.1 Go receiver' {
       description 'Локальный TCP/10230 приёмник и Go экспорт с применением разрешённых оператором сетевых действий. Тесты и симуляции не доказывают реальную аппаратную совместимость.'
-      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/tools/research/native_tcp10230_stage108_live_recording_r6_1/source/main.go
+      link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/tools/research/native_tcp10230_stage108_live_recording_r6_1/source/main.go
       technology 'Go'
     }
 
@@ -72,6 +78,7 @@ model {
     desktop -> core.signal 'Запрашивает обработку данных и представления графиков'
     desktop -> core.livespectrum 'Привязывает полный LIVE FFT к ADC/window/mode; получает массив для X/Y и курсора'
     core.livespectrum -> core.signal 'Проверяет контракт результата спектрального расчёта'
+    desktop -> core.livestatus 'Отображает принятые PARAM значения и связывает Freeze/Stop с таблицами'
     desktop -> native 'Управляет разрешённой локальной записью'
     native -> localfiles 'Сохраняет измерительные и служебные данные'
     core.filecontracts -> localfiles 'Формирует/проверяет локальные контракты'
@@ -83,7 +90,7 @@ model {
   }
   quality = component 'CI and research tests' {
     description 'Проверяет synthetic contracts, статические зависимости и десктопные тесты. Тестовые результаты не являются подтверждением original 1:1.'
-    link https://github.com/shonentez-afk/MVK-Reader-Web/blob/9f6a3a74535408253f883ae9b49903363c77a69d/mvk_compatible/tests/test_desktop_qt.py
+    link https://github.com/shonentez-afk/MVK-Reader-Web/blob/abbbe63f1a5a4c00382c480b3e1947935790c788/mvk_compatible/tests/test_desktop_qt.py
   }
 
   stage111.native -> mvk01 'TCP/10230; только с разрешения оператора'

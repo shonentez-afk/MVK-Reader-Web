@@ -193,6 +193,12 @@ class OriginalMeasureControls:
             trace.set_source_preview_freeze(self.state.frozen)
             self.window._sync_source_mode2_runtime()
         self.render()
+        if self.window._live_active:
+            self.window._invalidate_graph_cursor("adc")
+            self.window._invalidate_graph_cursor("spectrum")
+            # PageStatus uses the same accepted pre-freeze PARAM snapshot
+            # across tcStatus modes and clears it on transport faults.
+            self.window.original_shell.refresh_status()
         if not self.state.frozen and self.window._live_active:
             # Render the NEWEST verified ring after thaw; never replay
             # stale source pointer or reset live recorder.

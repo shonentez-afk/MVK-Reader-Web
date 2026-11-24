@@ -11,11 +11,11 @@ LINK=re.compile(r"^\s*link\s+https://github\.com/shonentez-afk/MVK-Reader-Web/bl
 class LikeC4SourceContractTest(unittest.TestCase):
     def test_pinned_links_are_local_sources(self):
         text=MODEL.read_text(encoding="utf-8")
-        self.assertIn("9f6a3a74535408253f883ae9b49903363c77a69d",text)
+        self.assertIn("abbbe63f1a5a4c00382c480b3e1947935790c788",text)
         refs=LINK.findall(text)
         self.assertGreaterEqual(len(refs),6)
         for sha,fragment in refs:
-            self.assertEqual(sha,"9f6a3a74535408253f883ae9b49903363c77a69d")
+            self.assertEqual(sha,"abbbe63f1a5a4c00382c480b3e1947935790c788")
             path,_,anchor=fragment.partition("#")
             src=REPO/path
             self.assertTrue(src.is_file(),f"Broken pinned LikeC4 source path: {path}")
