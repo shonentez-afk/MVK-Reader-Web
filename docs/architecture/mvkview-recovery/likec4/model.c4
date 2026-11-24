@@ -56,6 +56,18 @@ model {
         technology 'Python'
       }
 
+      preview = component 'Native preview / provenance' {
+        description 'Проверяет локальный RX/PARAM snapshot и источник live данных. Не аппаратный эталон или подтверждённый Win32 DSP.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/dd020c4a8c1cd9d80440031730b7c4ee28bf8cef/mvk_compatible/core/native_r6_live_preview.py#L25
+        technology 'Python'
+      }
+
+      valueformat = component 'GetValueText format candidate' {
+        description '30 независимых типов форматирования параметров; это не 15 режимов PageStatus. Точный оригинальный Win32 вывод не аттестован.'
+        link https://github.com/shonentez-afk/MVK-Reader-Web/blob/dd020c4a8c1cd9d80440031730b7c4ee28bf8cef/mvk_compatible/core/original_get_value_text_30.py#L183
+        technology 'Python'
+      }
+
       filecontracts = component 'TSXML and output contracts' {
         description 'Формирование и проверка имен, структур TSXML и локальных экспортов по верифицированным данным.'
         link https://github.com/shonentez-afk/MVK-Reader-Web/blob/dd020c4a8c1cd9d80440031730b7c4ee28bf8cef/mvk_compatible/core/original_mode2_source_files.py#L109
@@ -81,6 +93,8 @@ model {
 
     entry -> desktop 'Запускает реальную Qt-оболочку'
     desktop -> core.measurement 'Вызывает модели состояния Mode2'
+    desktop -> core.preview 'Проверяет происхождение текущего RX/ADC/PARAM snapshot'
+    localfiles -> desktop 'Читает локальный проверяемый статус и архивы, не прямой Go call'
     desktop -> core.signal 'Запрашивает обработку данных и представления графиков'
     desktop -> core.livespectrum 'Привязывает полный LIVE FFT к ADC/window/mode; получает массив для X/Y и курсора'
     core.livespectrum -> core.signal 'Проверяет контракт результата спектрального расчёта'

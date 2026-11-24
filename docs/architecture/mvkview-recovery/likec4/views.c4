@@ -19,4 +19,17 @@ views {
     description 'Модель измерений, сигнал, экспорт и проверка same-RAW; не все внутренние реализации считаются активным production.'
     include *
   }
+  view stateflow of stage111 {
+    title 'Stage111 — границы RX, DSP, вывода и сохранения'
+    description 'Статические и документированные границы между Qt, Python Core, Native RX и файлами. Не схема динамического оригинального исполнения.'
+    include desktop
+    include core.preview
+    include core.signal
+    include core.livespectrum
+    include core.livestatus
+    include core.pagefile
+    include core.valueformat
+    include native
+    include localfiles
+  }
 }
