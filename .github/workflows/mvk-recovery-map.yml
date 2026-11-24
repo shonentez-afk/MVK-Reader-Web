@@ -41,6 +41,10 @@ jobs:
         run: >-
           go run tools/architecture/mvk_stage111_go_ast.go --repo . --sha "${{ github.sha }}"
           --out docs/architecture/mvkview-recovery/stage111-go-callgraph.json
+      - name: Index public original-address references in Stage111
+        run: >-
+          python tools/architecture/mvk_stage111_address_refs.py --repo . --sha "${{ github.sha }}"
+          --out docs/architecture/mvkview-recovery/stage111-address-references.json
       - name: Assemble unified Python Go Qt graph
         run: python tools/architecture/mvk_stage111_merge_graphs.py
       - name: Verify public-only graph
@@ -69,7 +73,11 @@ jobs:
           assert unified['counts']['qt_signal_bindings']==qt['counts']['bindings']
           assert unified['counts']['qt_targets_resolved'] > 0
           assert all(not any(f in n['path'] for f in forbidden) for n in unified['nodes'])
-          print(d['counts'], go['counts'], qt['counts'], unified['counts'])
+          address=json.loads(Path('docs/architecture/mvkview-recovery/stage111-address-references.json').read_text(encoding='utf-8'))
+          assert address['metadata']['scope']=='PUBLIC_STAGE111_ADDRESS_LITERALS_ONLY'
+          assert address['metadata']['sha']==unified['metadata']['sha']
+          assert all(not any(f in x['path'] for f in forbidden) for x in address['references'])
+          print(d['counts'], go['counts'], qt['counts'], unified['counts'], address['counts'])
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -79,6 +87,7 @@ jobs:
             docs/architecture/mvkview-recovery/stage111-go-callgraph.json
             docs/architecture/mvkview-recovery/stage111-qt-signals.json
             docs/architecture/mvkview-recovery/stage111-unified-graph.json
+            docs/architecture/mvkview-recovery/stage111-address-references.json
           retention-days: 14
 
   public-likec4-model:
