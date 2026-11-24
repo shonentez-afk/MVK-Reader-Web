@@ -1,0 +1,9 @@
+# Stage111 Z31EE — source metadata and TACH latch candidate
+
+Baseline: 8ebddeedb40d7a7f84738db4d09552a467686479. This directory is a standalone, locally tested Go reference candidate, not connected to the actual receiver. Run from this directory: GO111MODULE=off go test -v -count=1 . ; GO111MODULE=off go vet .
+
+Source-derived contracts: first PARAM descriptor latches per-ADC Range and Units; Freeze skips register writes but not the initial stage transition. Zero Range falls back to 1; unknown words are never inferred to be received zeros. Reconnect retains register/Storage state until the first descriptor of the new socket. Plain GetSignal copies physical data; normalized paths divide by the current factor and apply the factor at the original output boundary. The local TACH change indicator uses accepted raw bytes, persists until 0x3100, and snapshots before resetting both latches, including when no VALUES writer is open. Reset does not reset the previous byte. These are not pulse counts or RPM.
+
+Local Go tests: 6 top-level tests, 8 named subtests, 972 exhaustive synthetic TACH cases, PASS; go vet PASS. Source and test blob SHA match locally tested files. No real hardware, no original runtime execution, no private vendor files included. Existing ED/EE receiver, RAW, VALUES prefix verification and Stop are unchanged. Full native integration requires independently verifiable admission decisions for TACH, per-channel metadata provenance across socket epochs, and consistent normalization/units through ring/Qt/exports. The reference rejects unknown/nonfinite numeric inputs; this safety policy is not proof of exceptional x87 behavior.
+
+Current full CI for EE: https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45364186556 5/5 SUCCESS; Windows artifact 14905444970. Do not attribute this full build to the standalone candidate.
