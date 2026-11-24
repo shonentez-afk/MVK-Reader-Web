@@ -4526,9 +4526,13 @@ class MainWindow(QMainWindow):
             else "")
         live_files=report.get("source_live_original_writer_files",0)
         source_gate_note=(
-            f"Go WriteData: {live_files} файлов с реальным допуском "
+            f"Go WriteData wire: {live_files} файлов с реальным допуском "
             "MvkSampleRate/FreezeUpdate/первым АЦП1; "
             if report.get("source_live_source_gate_verified") else "")
+        physical_count=report.get("source_live_physical_candidate_files",0)
+        if physical_count:
+            source_gate_note+=(
+                f"Physical ADC: {physical_count} файлов, проверены по RAW/FRange; ")
         self.statusBar().showMessage(
             "Запись MVKView: проверенные локальные интервалы сохранены "
             f"({report['files_written']} файлов, {report['windows']} окон). "
