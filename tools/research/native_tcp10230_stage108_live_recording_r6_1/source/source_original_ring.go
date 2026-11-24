@@ -16,7 +16,7 @@ package main
 // storage is BYTE (data type 2): RxPos advances by 256 bytes, while its
 // device sample Index advances by 64. Those positions are NOT interchangeable.
 // Original live Float32 comes ONLY from the admitted wire payload after
-// ProcessBufferChunk(FRange=1.0). The separately reconstructed BIN exporter
+// ProcessBufferChunk(current latched FRange). The separately reconstructed BIN exporter
 // may use device register gain but cannot write this source GetSignal ring.
 // No TCP, device commands, periodic 64 MiB GUI snapshots or extra disk writes.
 import (
@@ -34,10 +34,10 @@ const (
     // Original live Mode2: FRange Single is initialized to 1.0 in
     // TMvkChannelStorage.Create 007D0A61; ProcessBufferChunk at
     // 007D23D1..007D23E1 applies it in-place BEFORE FRxPos advances.
-    // Unlike the reconstructed exporter gain, this is not sourced
-    // from 0x100+ADC*0x100 + 0x0E register data.
+    // Stage0->1 assigns the per-channel config word +0x0E (00808653).
     sourceOriginalLiveFRange float32=1.0
     sourceStorageOriginalLiveADC = "ORIGINAL_LIVE_ADC_FRANGE1_FLOAT32"
+    sourceStorageOriginalConfigADC = "ORIGINAL_LIVE_ADC_CONFIG_FRANGE_FLOAT32"
     sourceStorageTachBytes = "TACH_EXACT_DEVICE_PAYLOAD_BYTES"
 )
 
@@ -52,10 +52,12 @@ type sourceOriginalChannelRing struct {
     sequenceGaps uint64
     rateChanges uint64
     rejectedNonfinite uint64
+    rangeState *sourceOriginalRangeState
 }
 
 type sourceOriginalStorageRing struct {
     channels [10]sourceOriginalChannelRing
+    rangeLatchAttempt uint64
 }
 
 func newSourceOriginalStorageRing() *sourceOriginalStorageRing {
@@ -90,7 +92,7 @@ func (r *sourceOriginalStorageRing) appendFrame(
     }
     if h.Channel < 8 {
         if domain != expectDomain && domain != sourceStorageUnscaledADC &&
-            domain != sourceStorageOriginalLiveADC {
+            !sourceIsLiveADC(domain) {
             return errors.New("unknown original ADC storage input domain")
         }
     } else if domain != expectDomain {
@@ -112,7 +114,7 @@ func (r *sourceOriginalStorageRing) appendFrame(
             c.rateChanges++
             c.validPos=c.rxPos
         }
-        if domain!=c.domain {
+        if domain!=c.domain && !(sourceIsLiveADC(domain)&&sourceIsLiveADC(c.domain)) {
             c.validPos=c.rxPos
         }
     }
@@ -178,6 +180,7 @@ type sourceOriginalChannelReceipt struct {
     NextDeviceIndex *uint32 `json:"next_device_sample_index,omitempty"`
     Domain string `json:"input_domain"`
     OriginalLiveFRangeSingle *float32 `json:"original_live_f_range_single,omitempty"`
+    SourceRangeState *sourceOriginalRangeState `json:"source_range_state,omitempty"`
     SequenceGaps uint64 `json:"sequence_gaps"`
     RateChanges uint64 `json:"rate_changes"`
     RejectedNonfinite uint64 `json:"rejected_nonfinite_frames"`
@@ -213,8 +216,9 @@ func (r *sourceOriginalStorageRing) receipt() sourceOriginalStorageReceipt {
             next:=c.nextDeviceIndex
             row.NextDeviceIndex=&next
         }
-        if c.domain==sourceStorageOriginalLiveADC && c.rxPos>0 {
-            sourceFRange:=sourceOriginalLiveFRange
+        row.SourceRangeState=c.rangeState
+        if sourceIsLiveADC(c.domain) && c.rxPos>0 {
+            sourceFRange,_:=c.liveRange()
             row.OriginalLiveFRangeSingle=&sourceFRange
         }
         result.Channels=append(result.Channels,row)

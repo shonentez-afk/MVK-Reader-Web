@@ -7,7 +7,8 @@ package main
 //  Projects.7z: _Unit115.pas 007D0A61 and 007D2398..007D23E1;
 //               _Unit125.pas 0080827F..0080828C, cl=1;
 //               _Unit128.pas 00846C7A..00846CB2 creates live ADC;
-//                            archive-only 0084655E assigns a V/S factor.
+//               _Unit125 00806964, 008085FA..00808682 assigns LIVE range/units.
+//               _Unit128 0084655E separately assigns archive factor.
 //  mvk_idr(1).sqlite: GetChannelStorage/ProcessBufferChunk call graph;
 //  mvkview.idp: TMvkChannelStorage.FRange:Single +4,
 //               PAdcFloatData +34, FRxPos +20.
@@ -20,6 +21,7 @@ package main
 // Subnormal/Inf/NaN and non-default x87 CW parity require separate proof.
 import (
     "encoding/binary"
+    "encoding/hex"
     "errors"
     "math"
 )
@@ -42,4 +44,70 @@ func sourceApplyOriginalFRange(payload []byte, scale float32)([]byte,error){
         binary.LittleEndian.PutUint32(out[j:j+4],math.Float32bits(result))
     }
     return out,nil
+}
+
+
+// Source Stage0->1 latch is inside the PARAM descriptor loop.
+// A zero config Single maps to 1; missing input is explicitly provisional.
+// Negative/nonfinite range cannot authorize compatible calculation.
+type sourceOriginalRangeState struct {
+    Single float32 `json:"single"`
+    Origin string `json:"origin"`
+    RegisterWord int `json:"register_word"`
+    RegisterRawLE string `json:"register_raw_le"`
+    UnitsRawLE string `json:"units_raw_le"`
+    LatchedFrame uint64 `json:"latched_frame"`
+    SocketAttempt uint64 `json:"socket_attempt"`
+    Usable bool `json:"usable"`
+}
+func readSourceOriginalRange(image *RegisterImage,ch int) sourceOriginalRangeState {
+    addr:=0x100+ch*0x100+0x0e
+    s:=sourceOriginalRangeState{Single:1,Origin:"UNOBSERVED_REGISTER_PROVISIONAL_ONE",RegisterWord:addr,Usable:true}
+    if bits,err:=image.Uint32(addr);err==nil {
+        s.RegisterRawLE=hex.EncodeToString(image.Data[addr*2:(addr+2)*2])
+        v:=math.Float32frombits(bits)
+        switch {
+        case v==0:
+            s.Origin="REGISTER_ZERO_FALLBACK_ONE"
+        case finiteF32(v)&&v>0:
+            s.Single=v;s.Origin="REGISTER_FLOAT32"
+        default:
+            s.Single=0;s.Origin="INVALID_REGISTER_NO_CALCULATION";s.Usable=false
+        }
+    }
+    units:=addr+2
+    valid:=true
+    for i:=units;i<units+16;i++ {if !image.Valid[i]{valid=false;break}}
+    if valid {s.UnitsRawLE=hex.EncodeToString(image.Data[units*2:(units+16)*2])}
+    return s
+}
+func sourceIsLiveADC(domain string)bool {
+    return domain==sourceStorageOriginalLiveADC||domain==sourceStorageOriginalConfigADC
+}
+func (c *sourceOriginalChannelRing) liveRange() (float32,string) {
+    if c.rangeState==nil {return 1,sourceStorageOriginalLiveADC}
+    if !c.rangeState.Usable{return 1,sourceStorageUnscaledADC}
+    if c.rangeState.Single==1{return 1,sourceStorageOriginalLiveADC}
+    return c.rangeState.Single,sourceStorageOriginalConfigADC
+}
+func (m *Monitor) latchSourceOriginalRanges(){
+    r:=m.sourceOriginalStorage
+    if r==nil||m.sourceOriginalRXGate==nil{return}
+    attempt:=uint64(1)
+    if m.sourceOriginalTask2Stage!=nil&&m.sourceOriginalTask2Stage.attempts>0 {
+        attempt=m.sourceOriginalTask2Stage.attempts
+    }
+    if r.rangeLatchAttempt==attempt{return}
+    r.rangeLatchAttempt=attempt
+    for ch:=0;ch<8;ch++ {
+        s:=readSourceOriginalRange(&m.image,ch)
+        s.LatchedFrame=m.summary.TotalFrames;s.SocketAttempt=attempt
+        c:=&r.channels[ch];c.rangeState=&s
+        // Retain pre-latch samples exactly as stored, without rescaling.
+        if sourceIsLiveADC(c.domain) {
+            _,domain:=c.liveRange()
+            c.domain=domain
+            if !s.Usable {c.validPos=c.rxPos}
+        }
+    }
 }

@@ -21,7 +21,7 @@ import (
     "time"
 )
 
-func TestSourceOriginalLiveFRange1IsNotNativeBINGain(t *testing.T){
+func TestSourceOriginalLiveFRangeConfigIndependentOfNativeBIN(t *testing.T){
     dir:=filepath.Join(t.TempDir(),"source_frange_separated")
     m,e:=NewMonitor(dir,"LIVE_SOURCE_SET_RATE_APPROVED","127.0.0.1")
     if e!=nil{t.Fatal(e)}
@@ -33,7 +33,7 @@ func TestSourceOriginalLiveFRange1IsNotNativeBINGain(t *testing.T){
     }
     frames:=makeFixture()
     // Initial all-register PARAM has ADC1 gain=510, not FRange=1.
-    // This must start only the reconstructed BIN sidecar.
+    // Stage0->1 must latch it independently of the reconstructed BIN.
     if e=m.ProcessChunk(frames[1].Raw,time.Now());e!=nil{t.Fatal(e)}
     if !m.liveBin.begun || m.liveBin.gain[0]!=510 {
         t.Fatal("synthetic gain fixture not initialized")
@@ -42,13 +42,15 @@ func TestSourceOriginalLiveFRange1IsNotNativeBINGain(t *testing.T){
     if e=m.ProcessChunk(f.Raw,time.Now());e!=nil{t.Fatal(e)}
     ring,e:=m.sourceOriginalStorage.window(0,0,256)
     if e!=nil{t.Fatal(e)}
-    if !bytes.Equal(ring,f.Raw[28:]) {
-        t.Fatal("live original 2M ring incorrectly used Native gain")
+    expected,e:=sourceApplyOriginalFRange(f.Raw[28:],510)
+    if e!=nil||!bytes.Equal(ring,expected)||bytes.Equal(ring,f.Raw[28:]){
+        t.Fatal("source live ring must use latched 510 exactly once")
     }
     c:=m.sourceOriginalStorage.receipt().Channels[0]
-    if c.Domain!=sourceStorageOriginalLiveADC ||
+    if c.Domain!=sourceStorageOriginalConfigADC ||
        c.OriginalLiveFRangeSingle==nil ||
-       *c.OriginalLiveFRangeSingle!=1 ||
+       *c.OriginalLiveFRangeSingle!=510 || c.SourceRangeState==nil ||
+       c.SourceRangeState.RegisterWord!=0x10e ||
        c.RxPos!=256 || c.Available!=256 ||
        m.liveBin.samples[0]!=256{
         t.Fatalf("source FRange input proof: %+v",c)
@@ -61,8 +63,8 @@ func TestSourceOriginalLiveFRange1IsNotNativeBINGain(t *testing.T){
        math.Float32frombits(binary.LittleEndian.Uint32(calibrated[:4]))!=63.75 {
         t.Fatal("separate forensic exporter lost its unchanged ADC1 gain")
     }
-    if bytes.Equal(ring,calibrated) {
-        t.Fatal("two numerically distinct paths silently merged")
+    if !bytes.Equal(ring,calibrated) {
+        t.Fatal("both independent paths use the same fixture range here")
     }
     // READ-ONLY source ring is still complete before the second PARAM;
     // GetSignal must never wait for forensic calibrated BIN.
@@ -79,8 +81,7 @@ func TestSourceFRangeFloat32MultiplyMatchesOriginalX87StoreOnce(t *testing.T){
     if e!=nil||!bytes.Equal(identity,original) {
         t.Fatal("live original FRange1 changed Float32 bits")
     }
-    // A real non-one FRange occurs in the ARCHIVE viewer, not
-    // when clicking Measure. Check *one* x87 fmul/stp rounding stage.
+    // Check one x87 fmul/stp rounding stage for any non-unit range.
     scale:=float32(2.0)
     result,e:=sourceApplyOriginalFRange(raw,scale)
     if e!=nil{t.Fatal(e)}
@@ -104,4 +105,36 @@ func TestSourceFRangeFloat32MultiplyMatchesOriginalX87StoreOnce(t *testing.T){
     if _,e=sourceApplyOriginalFRange(raw,float32(math.Inf(1)));e==nil{
         t.Fatal("nonfinite original FRange invented")
     }
+}
+
+func TestSourceRangeLatchIndependentChannelsAndDescriptorSuffix(t *testing.T){
+    m,e:=NewMonitor(filepath.Join(t.TempDir(),"latch"),"LIVE_SOURCE_SET_RATE_APPROVED","127.0.0.1")
+    if e!=nil{t.Fatal(e)}
+    defer m.CloseFiles()
+    m.sourceOriginalRXGate=newSourceOriginalReceiveGate()
+    if m.sourceOriginalStorage==nil{m.sourceOriginalStorage=newSourceOriginalStorageRing()}
+    r:=m.sourceOriginalStorage
+    b:=make([]byte,4)
+    binary.LittleEndian.PutUint32(b,math.Float32bits(2.5))
+    m.image.Put(RegBlock{Addr:0x10e,Words:2,Payload:b})
+    binary.LittleEndian.PutUint32(b,math.Float32bits(4))
+    m.image.Put(RegBlock{Addr:0x20e,Words:2,Payload:b})
+    binary.LittleEndian.PutUint32(b,0)
+    m.image.Put(RegBlock{Addr:0x30e,Words:2,Payload:b})
+    binary.LittleEndian.PutUint32(b,math.Float32bits(-2))
+    m.image.Put(RegBlock{Addr:0x40e,Words:2,Payload:b})
+    m.latchSourceOriginalRanges()
+    for i,want:=range []float32{2.5,4,1,0,1} {
+        s:=r.channels[i].rangeState
+        if s==nil||s.Single!=want||s.Usable!=(i!=3){t.Fatalf("ADC%d %+v",i+1,s)}
+    }
+    binary.LittleEndian.PutUint32(b,math.Float32bits(999))
+    m.image.Put(RegBlock{Addr:0x10e,Words:2,Payload:b})
+    m.latchSourceOriginalRanges()
+    if r.channels[0].rangeState.Single!=2.5 {t.Fatal("later descriptor changed latched range")}
+    if r.channels[2].rangeState.Origin!="REGISTER_ZERO_FALLBACK_ONE"||
+       r.channels[4].rangeState.Origin!="UNOBSERVED_REGISTER_PROVISIONAL_ONE" {
+        t.Fatal("lost zero/missing distinction")
+    }
+    if r.channels[8].rangeState!=nil {t.Fatal("TACH must remain byte storage")}
 }

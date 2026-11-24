@@ -474,19 +474,16 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             }
         }
         // Original _Unit125 00808284/0080828C calls ProcessBufferChunk
-        // with ApplyRange=true for every admitted ADC. Source
-        // bTaskConnectClick instantiates each live storage via
-        // TMvkChannelStorage.Create, which sets FRange:Single=1.0.
-        // Only the ARCHIVE viewer assigns the separate sensor ratio.
-        // Thus source live ring must contain the WIRE Float32 values,
-        // not Native BIN * gain. The ring is the sole GetSignal source.
+        // with ApplyRange=true for every admitted ADC. Constructor=1,
+        // then Stage0->1 latches the independent per-channel config range.
+        // WriteData above still writes the original TmpStream wire bytes.
         if typ==typeADC && sourceStoreAllowed && m.sourceOriginalStorage!=nil {
             domain:=sourceStorageUnscaledADC
+            scale:=sourceOriginalLiveFRange
             if m.sourceOriginalRXGate!=nil {
-                domain=sourceStorageOriginalLiveADC
+                scale,domain=m.sourceOriginalStorage.channels[sample.Channel].liveRange()
             }
-            aligned,e:=sourceApplyOriginalFRange(
-                f.Raw[28:],sourceOriginalLiveFRange)
+            aligned,e:=sourceApplyOriginalFRange(f.Raw[28:],scale)
             if e!=nil{return e}
             if e=m.sourceOriginalStorage.appendFrame(
                 *sample,aligned,domain);e!=nil{return e}
@@ -518,6 +515,8 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // readings or write an event just because RAW contains 0x3100.
         // The immutable forensic incoming.raw retains those exact bytes.
         if sourceFrozen {
+            // Nonempty frozen PARAM still transitions Stage0; image is unchanged.
+            m.latchSourceOriginalRanges()
             m.summary.SourceFrozenParamFrames++
             m.summary.SourceFrozenParamBlocks+=uint64(len(blocks))
             if len(f.Raw)==4700 {m.summary.SourceFrozenAux4700++}
@@ -534,6 +533,8 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
 		for _, b := range blocks {
 			m.image.Put(b)
 			m.summary.RegisterBlocks++
+            // Source 00808617..00808682 is inside the descriptor loop.
+            m.latchSourceOriginalRanges()
 			if b.Addr == 0x3100 && valuesTriggerImage == nil &&
 				m.sourceLiveValuesWriter != nil &&
 				!m.sourceLiveValuesWriter.closed &&
