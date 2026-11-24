@@ -23,7 +23,7 @@ func TestSourceFIRGetSignalHistoryFromOriginalTimeHTag(t *testing.T){
         wantOut uint32
         wantFs uint32
     }{{20,9,1361,655,32768},{1,9,1407,327,16384},
-      {26,9,1359,1310,65536}} {
+      {26,9,1359,1310,65536},{24,9,2479,40,2048}} {
         n,out,fs,e:=sourceFIRGetSignalWindowLength(65536,tc.code,tc.tag)
         if e!=nil || n!=tc.wantIn || out!=tc.wantOut || fs!=tc.wantFs {
             t.Fatalf("GetSignal Code%d HTag%d: got %d/%d/%d: %v",
@@ -32,7 +32,7 @@ func TestSourceFIRGetSignalHistoryFromOriginalTimeHTag(t *testing.T){
     }
     for _,tc:=range []struct{rate uint32;code,tag int}{
         {65536,0,9},{65536,32,9},{65536,20,-1},
-        {65536,20,14},{65536,24,9},{512,20,9},
+        {65536,20,14},{10*65536,20,9},{512,20,9},
     }{
         if _,_,_,e:=sourceFIRGetSignalWindowLength(
                 tc.rate,tc.code,tc.tag);e==nil {

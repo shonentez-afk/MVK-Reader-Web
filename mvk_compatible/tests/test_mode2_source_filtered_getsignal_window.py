@@ -22,7 +22,7 @@ from .test_stage111z31fj_original_long_window import (
 )
 
 @pytest.mark.parametrize("code,expected,post,fs",[
-    (20,1361,655,32768),(1,1407,327,16384),(26,1359,1310,65536)])
+    (20,1361,655,32768),(1,1407,327,16384),(26,1359,1310,65536),(24,2479,40,2048)])
 def test_filtered_getsignal_uses_original_hscale_extra_history(
         tmp_path,code,expected,post,fs):
     root,status=long_source_status(tmp_path)
@@ -69,5 +69,6 @@ def test_filtered_getsignal_refuses_forged_htag_short_history(tmp_path):
         submit_source_getsignal_envelope_window(root,status,1,14,20)
     with pytest.raises(ValueError):
         submit_source_getsignal_envelope_window(root,status,1,9,0)
-    with pytest.raises(ValueError):
-        submit_source_getsignal_envelope_window(root,status,1,9,24)
+    # Code24 at Fs=65536 is q=0x10 (16), not invalid.
+    # This deliberately short history must still be refused.
+    assert submit_source_getsignal_envelope_window(root,status,1,9,24) is None
