@@ -158,6 +158,7 @@ def parse_live_result_registers(status:dict)->dict|None:
         "tcp_connection_count":socket,
         "adc":tuple(adcs),"tach":tuple(tachs),
         "known_complete_dwords":observed,
+        **({"source_local_tach_projection_schema":local_schema} if local_schema else {}),
         "get_value_text_parity_verified":False,
         "original_delphi_runtime_parity_verified":False,
     }
