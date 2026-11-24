@@ -1,3 +1,83 @@
+# MVKView Compatible Stage111Z31EN — актуальное состояние на 25.11.2026
+
+> **Читать этот раздел первым.** Ниже сохранён исторический журнал Stage111; старые отметки «A05 открыта», «EJ — последний этап», «offline восемь каналов», «Windows CI ещё не завершён» относятся к прежним SHA и не являются текущим статусом. Не повторять уже реализованные этапы EK–EN.
+
+## 1. Точная точка продолжения
+
+- Репозиторий: [MVK-Reader-Web](https://github.com/shonentez-afk/MVK-Reader-Web).
+- Актуальная проверочная ветка: [`fix/stage111-eg-computation-links-20261124`](https://github.com/shonentez-afk/MVK-Reader-Web/tree/fix/stage111-eg-computation-links-20261124), [PR #17](https://github.com/shonentez-afk/MVK-Reader-Web/pull/17), открыт, Draft, не объединён.
+- Последний кодовый SHA: [`8d95bf01a7727f14d055991330c372c27b0bdd8a`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/8d95bf01a7727f14d055991330c372c27b0bdd8a) — Stage111Z31EN (24.11.2026, 18:35 UTC). Последующие правки этих двух документов не меняют проверенный код.
+- Рабочая desktop-ветка `research/stage111-mvkview-desktop-20261029` остаётся на EF `071e0c9dd7310851660da7e4d53c5521899d5a3f`. Main не менять. Документационный PR #13 с картой архитектуры — отдельно, не смешивать с PR #17.
+- Объект разработки — MVKView Compatible Stage111, оригинал MVKView 1.0.47; не перепутать с MVK Live Standalone, Native R6.1 как самостоятельным продуктом или web reader.
+
+## 2. Что уже реализовано (A01–A05 и следующие улучшения)
+
+| Этап | Изменение | Доказательства и границы |
+|---|---|---|
+| EG | FIR: правильные hex-коэффициенты 16/32/64/128/256, 608 планов; GetDerivedUnits привязан к выбранному окну и PageStatus | Source/model и CI; реальные Win32 ANSI/x87 не аттестованы |
+| EH (A01) | WriteData: отдельный физический ADC BIN из того же обработанного блока, что ring; FRange фиксируется на приёме, close-time Gain отдельно; immutable RAW и wire BIN сохранены | Независимый RAW/PARAM/Freeze replay, отказ неизвестного диапазона, подмены и неполного физического окна |
+| EI (A03) | TACH local latch 30FE/31FE: Byte сравнивается с предыдущим последним байтом, snapshot до reset на 3100, reset даже без writer; PageStatus/TABLE и VALUES согласованы | Actual Go synthetic -> независимый Python replay; локальные маски отдельно от wire image; совмещённый многосокетный экспорт не сертифицирован |
+| EJ (A02) | TACH1/2 live: typed Byte ring/IPC, /255, без NoDC/FIR для GetSignal; FFT после удаления среднего, курсоры и 10 каналов в Mode2 | Go/Python/Qt regression, отдельные Byte и word cursor; не выдавать локальную позицию за аппаратные часы |
+| EK (A05) | Сохраняемые ADC Range/Units отдельно от per-socket forensic image; latch на первом непустом PARAM нового подключения, в том числе Freeze; старые отсчёты не пересчитываются | Локальные TCP и partial/Frozen PARAM tests; Status0/PageStatus/VALUES сохраняют требования свежести по сокету; не считать многосокетный поток единым сертифицированным замером |
+| EL | Новый непрерывный display epoch после Fs/reconnect, включая A→B→A; корректный каталог IPC; LIVE Copy/Save трёх значений спектра только текущего SHA-окна | Старые запросы отклоняются; после reconnect требуется непустой PARAM и полное реальное окно; отдельный локальный CSV не оригинальный формат |
+| EM | Strict SAME-RX требует BIN+TSXML каждого выбранного канала; проверяет тип, номер, длину, Fs, длительность, offset, имя и отдельные open/close clocks | Компаратор, а не доказательство соответствия настоящих файлов; служебные Go имена не переименованы |
+| EN | Mode1: открытие сохранённых ADC1–8 Single и TACH1/2 Byte BIN/TSXML; Byte/255, AC+DC без FIR, FFT и курсоры, корректные единицы; локальная побайтовая копия | Согласно отчёту EN проверены реальные ADC1/3/6 (по 2 124 800 Single, Fs=65536), TACH — синтетические тесты; реальной исходной TACH-пары не было |
+
+**A01–A05 реализованы в коде и покрыты автоматическими тестами. Это НЕ полная приёмка оригинального MVKView.** Защитные отличия A06–A10 (реальные окна без фиктивной истории, отдельные сегменты и отказ смешанной файловой аттестации, неоднозначный 3100, Freeze, ограничения TX/очереди) не отменять ради формальной паритетности. EL разрешает только доказанное текущее окно для отображения, а не объединённый экспорт. A04: неизвестная ANSI-кодировка остаётся явно неизвестной.
+
+### Отчёты и коммиты EK–EN
+
+| Отчёт | Кодовый коммит |
+|---|---|
+| [EK — reconnect и Range/Units](docs/research/MODE2_STAGE111Z31EK_RETAINED_ADC_RECONNECT_20261124_RU.md) | [1eb5227](https://github.com/shonentez-afk/MVK-Reader-Web/commit/1eb5227652fe59030a53964ac7785342f1a7038a) |
+| [EL — display epoch и Copy/Save](docs/research/MODE2_STAGE111Z31EL_LIVE_WINDOW_TRIPLET_20261124_RU.md) | [04aeb82](https://github.com/shonentez-afk/MVK-Reader-Web/commit/04aeb8293d45d83ccaf3b6948b2f6cd88f7366ab), [29c829f](https://github.com/shonentez-afk/MVK-Reader-Web/commit/29c829f5d8236c6a73ddd1df456a72dd7c635f0e) (UTF-8 Windows и fixture) |
+| [EM — channel-file parity](docs/research/MODE2_STAGE111Z31EM_WRITEDATA_CHANNEL_FILE_PARITY_20261124_RU.md) | [93470f2](https://github.com/shonentez-afk/MVK-Reader-Web/commit/93470f200a886234b30920671cc2d3d576af199d) |
+| [EN — Mode1 saved TACH](docs/research/MODE2_STAGE111Z31EN_MODE1_SAVED_TACH_BIN_20261124_RU.md) | [8d95bf0](https://github.com/shonentez-afk/MVK-Reader-Web/commit/8d95bf01a7727f14d055991330c372c27b0bdd8a) |
+
+## 3. Проверенный CI именно по кодовому SHA EN
+
+| Проверка | Фактический результат |
+|---|---|
+| [Основной CI #45461219412](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45461219412) | SUCCESS: четыре тестовых задания успешны, официальный EXE job SKIPPED по provenance guard |
+| Linux Core | 2851 passed, 159 skipped, 30 subtests passed |
+| Windows Core | 3107 passed, 20 skipped, 30 subtests passed |
+| Windows Qt | Дополнительные наборы 60 / 53 / 197 passed |
+| Windows native QPA / DPI | SUCCESS (100%/150%) |
+| Linux Go RX / export | SUCCESS |
+| [Prefix CI #45461219292](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45461219292) | 3/3 SUCCESS: Go Linux, Go Windows и Core; 50 focused passed, 2856 passed / 154 skipped / 30 subtests passed |
+| [Offline syntax/calibration #45461233707](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45461233707) | SUCCESS |
+| [Отдельный candidate build #45461329861](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45461329861) | SUCCESS; исходный код точно EN, packaging/startup smoke и embedded Go SHA check |
+
+Не писать «5/5 official EXE» для EN: официальный артефакт research-ветки не создавался. Отдельный candidate workflow успешно собрал проверочную portable-версию; это не принятая официальная Preview и не подтверждение работы с прибором.
+
+### Последняя сборка для ручной проверки
+
+- [Windows x64 Portable EN — ZIP](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45461329861/artifacts/14953515663)
+- Artifact ID: `14953515663`, размер 69 660 518 байт, доступен до 01.12.2026 18:40:08 UTC (при обновлении статуса проверить expiry).
+- Имя: `MVKView_Stage111_UNOFFICIAL_WINDOWS_CANDIDATE_8d95bf0_portable`.
+- SHA-256 ZIP по GitHub: `83496053a53dacdcec9f9126a5ee285fae9f9059e9d01dce708ed7b5d2eb8bb0`.
+- Packaging ref `qa/stage111-windows-candidate-8d95bf0`, SHA `db4ccdbfd0a9`; workflow явно checkout `8d95bf01a7727f14d055991330c372c27b0bdd8a` как SOURCE_SHA. Не путать упаковочный SHA с исходным кодом.
+
+## 4. Что действительно осталось
+
+1. **Финальный аудит связей EN относительно Atlas v32 и оригинала.** Одним крупным проходом проверить фактические consumers/callers и вычислительные цепочки, 15 расчётных полей, 7 страниц/3 формы, TQGrapher/TCo2Draw, Graph/Status/PageFile handlers, Stop и освобождение ресурсов. Не считать исторические 40 caller-open и 8 косвенных вызовов автоматически закрытыми; сначала пересчитать их по текущей карте и трём первичным источникам, затем закрывать только подтверждённые расхождения.
+2. **Строгая SAME-RX приёмка** `IP → Измерить → Task2 → RX → GetSignal/GetSpectrum → WriteData/WriteValues → Stop` на идентичном доказанном потоке обеих реализаций. Сверить Float32/x87, Hann/FFT/Power, Y Tag0…3 и postmode Power2/3, FRange/Units, курсоры, VALUES/TABLE, Freeze, изменение Fs, reconnect, обычный/ошибочный Stop. Отдельно проверить реальные имена, timestamps, ANSI и байты файлов. В EM manifest обязательно указывать фактический `write_data_channels` и BIN/TSXML с `source_writer_channel` по каждому выбранному каналу; неполный строгий пакет не PASS.
+3. **Реальная проверка MVK01 и оригинального процесса Win32.** Пока не проведена/не подтверждена актуальным пакетом. CI, synthetic fixtures, локальное чтение ранее сохранённых ADC и кандидат EXE не являются аппаратным результатом. Не утверждать 1:1 original Win32/x87/GDI/ANSI без сравнительных артефактов. Отдельно остаются расширенные словари GetValueText, реальная кодировка FUnits, исходное zero-fill/timing поведение и аппаратные сервисные функции; не ослаблять доказанные защитные политики и не выполнять непроверенные сетевые команды.
+4. После аудита и успешных необходимых проверок — согласовать PR #17, интегрировать в рабочую research-ветку и создать официальный проверенный EXE по её точному SHA. Не сливать main и не отключать provenance guard. В текущем состоянии PR Draft, официальная интеграция не выполнена.
+
+## 5. Правила безопасности и передачи
+
+- Для исходного анализа использовать совместно локальные `Projects.7z`, `mvkview.idp`, `mvk_idr(1).sqlite` и приватный Atlas v32. Если исходники недоступны, прямо указать предел доказательств. Не загружать эти файлы, оригинальный EXE, приватный HTML/CSV, RAW/PCAP/BIN/TSXML/VALUES/TABLE или скриншоты пользователя в GitHub/CI. Допустимы производный код, безопасные синтетические тесты и краткие технические отчёты.
+- RAW, forensic wire и physical storage — разные домены; не заменять исходные байты нормализованными и не считать проверку SHA заменой численной аттестации. Mode1 не должен умножать сохранённый физический ADC на Gain повторно; TACH — Byte, а не Float32 word. При недостаточной истории не создавать фальшивые отсчёты.
+- Работа крупными связанными пакетами, с проверкой CI по точному SHA; не повторять EG–EN без найденного расхождения. Обновлять оба документа при изменении состояния. Перед любым коммитом проверять текущий head (dot также работает с репозиторием), не перезаписывать его изменения.
+
+## Решение по статусу
+
+Кодовый кандидат EN: автоматическая регрессия зелёная; все A01–A05 реализованы. Официальный релиз/интеграция и полная аппаратная приёмка остаются открытыми. Последние тестовые результаты и артефакты подтверждены GitHub Actions, а сведения о реальных сохранённых ADC-парах — отчётом EN; сами приватные пары в этом документационном проходе повторно не проверялись. Дальнейшая разработка только по фактическим результатам финального аудита.
+
+---
+
+# Исторические записи (сохранены без изменений)
 
 > **24.11.2026 — STAGE111Z31EJ: A02 TACH BYTE GETSIGNAL/GETSPECTRUM + A03 GO→PYTHON PASS.** Код [3432086f](https://github.com/shonentez-afk/MVK-Reader-Web/commit/3432086fba21e7e00bfe5b397193155d7264cc3f), PR #17. Byte ring IPC для TACH1/2 (width=1, SHA, отдельный wire word index и byte FRxPos), Byte/255, без NoDC/FIR для GetSignal, обычный спектр, FRange=1/FUnits="", cursor по локальным Byte. Mode2 десять каналов, offline восемь. EI fixture изолирован. [Prefix CI #45376321458](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45376321458) 3/3 SUCCESS; 50 focused PASS, 2832 PASS/151 skip/30 subtests, actual Go local TACH + byte windows -> independent Core. [Main CI #45376321281](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45376321281) Linux 2827 PASS/156 skip/30 subtests, Go RX SUCCESS; Windows Core/Qt, QPA, EXE проверять отдельно, не считать 5/5. [Отчёт EJ](docs/research/MODE2_STAGE111Z31EJ_TACH_BYTE_GRAPHS_20261124_RU.md). Далее A05 retained config/storage на reconnect отдельно от per-socket forensic image; защитные A06–A10 сохранять. Main и приватные материалы не менять/публиковать. Физическая и Win32 приёмка не проведена.
 
