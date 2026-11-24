@@ -10,7 +10,8 @@ import numpy as np
 
 from .native_r6_live_preview import LivePreview
 from .tqgrapher_display_idr_candidate import spectrum_display_contract
-from .mvk_original_scale_tables_idr_candidate import source_spectrum_y_unit
+from .mvk_original_scale_tables_idr_candidate import source_spectrum_unit_contract
+from .original_source_ring_receipt import source_live_units_text
 
 
 def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
@@ -60,13 +61,22 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
         raise ValueError("Live PageSpectrum requires complete contiguous N/2")
     if not isinstance(result.get("spectrum_summary"), dict):
         raise ValueError("Live PageSpectrum summary missing")
+    # Range/units receipt belongs to the same ADC/window epoch.
+    if preview.source_ring_provenance_verified and channel.source_range_state is not None:
+        actual=result["spectrum_summary"].get("f_range")
+        if actual!=channel.source_f_range_single:
+            raise ValueError("Live PageSpectrum stale FRange in result")
+    units=source_live_units_text(channel.source_range_state)
+    unit_contract=source_spectrum_unit_contract(mode,units,
+        source_bound=(preview.source_ring_provenance_verified and channel.source_range_state is not None))
     x = x.copy()
     y = y.copy()
     x.setflags(write=False)
     y.setflags(write=False)
     return {**result,
             "frequency_hz": x, "amplitude": y,
-            "unit": source_spectrum_y_unit(mode),
+            **unit_contract,
+            "source_live_units":units,
             "grapher_series_bins": display["grapher_series_bins"],
             "live_display_contract": display,
             "live_measurement_view": True,

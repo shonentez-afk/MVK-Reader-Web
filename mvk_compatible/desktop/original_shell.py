@@ -858,6 +858,11 @@ class OriginalRootShell:
                 # never the selected waveform ADC's local FFT.
                 result=source_live_operator_status_projection(
                     index,self._live_status_binding.banks)
+                if result.chart_visible:
+                    from dataclasses import replace
+                    from ..core.original_source_ring_receipt import source_status_channel_units
+                    result=replace(result,source_chart_units=
+                        source_status_channel_units(snapshot,index-4))
         else:
             self._live_status_binding.reset()
             self._status_render_key=self._status_render_snapshot=None
@@ -935,9 +940,9 @@ class OriginalRootShell:
         axis=self.status_plot.getAxis("bottom")
         if result.provenance==LIVE_OPERATOR_STATUS_SOURCE:
             self.status_plot.setLabel("bottom","Гц")
-            # Source FUnits is runtime channel storage, not a universal constant.
-            # Current PARAM evidence does not carry a proven FUnits string.
-            self.status_plot.setLabel("left","СКЗ (единица канала не подтверждена)")
+            # 00847B5A: selected tcStatus channel's FUnits, same held snapshot.
+            self.status_plot.setLabel("left",result.source_chart_units
+                if result.source_chart_units is not None else "СКЗ (единица канала не подтверждена)")
             axis.setTicks([[(i,SOURCE_OCTAVE_TITLES[i]) for i in range(0,43,3)]])
         else:
             self.status_plot.setLabel("bottom","Полоса, индекс")
@@ -992,9 +997,10 @@ class OriginalRootShell:
             self.status_cursor.setText("---")
             self.status_plot.setTitle("---")
             return
+        units=cursor["source_chart_units"]
         text=(cursor["source_frequency_text_candidate"]+" Гц - "+
               cursor["source_band_text_candidate"]+
-              " (единица канала не подтверждена)")
+              (" "+units if units is not None else " (единица канала не подтверждена)"))
         self.status_cursor.setText(text)
         self.status_plot.setTitle(text)
 

@@ -99,7 +99,7 @@ def original_fft_resolution_caption(n_fft:int,sample_rate_hz:int|float)->str:
     return value+" Гц/лин"
 
 
-def original_physical_y_caption(mode:int,visible_height:float)->str:
+def original_physical_y_caption(mode:int,visible_height:float,*,units:str|None=None)->str:
     """Nominal source-mode units, not a hardware calibration attestation."""
     if (isinstance(mode,bool) or not isinstance(mode,numbers.Integral)
             or int(mode) not in (1,2,3)):
@@ -109,8 +109,11 @@ def original_physical_y_caption(mode:int,visible_height:float)->str:
             or not math.isfinite(float(visible_height))
             or visible_height<=0):
         raise ValueError("Physical source Y height must be positive finite")
-    units={1:"м/с²",2:"мм/с",3:"мкм"}
-    return f"{float(visible_height):.6g}".replace(".",",")+" "+units[int(mode)]
+    if units is None:
+        units={1:"м/с²",2:"мм/с",3:"мкм"}[int(mode)]
+    if not isinstance(units,str) or len(units)>64 or any(ord(c)<32 for c in units):
+        raise ValueError("Invalid original Y unit text")
+    return f"{float(visible_height):.6g}".replace(".",",")+(" "+units if units else "")
 
 
 # Stage111Z31CQ: extra screenshot-grounded LABEL and DATA-VIEW adaptation.
@@ -123,6 +126,35 @@ def source_spectrum_y_unit(mode:int)->str:
     if type(mode) is not int or mode not in range(4):
         raise ValueError("Original spectrum mode must be Tag0..3")
     return SPECTRUM_Y_UNITS[mode]
+
+
+def source_derived_units(mode:int,units:str|None)->str|None:
+    """007D1268..007D1355. 0042AA10 folds ASCII A-Z only."""
+    if type(mode) is not int or mode not in range(4):
+        raise ValueError("Original spectrum mode must be Tag0..3")
+    if units is None:
+        return None
+    if not isinstance(units,str) or len(units)>64 or any(ord(c)<32 for c in units):
+        raise ValueError("Invalid source FUnits")
+    if mode in (0,1):
+        return units
+    ascii_fold=units.translate(str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"))
+    if ascii_fold=="м/с2":
+        return "мм/с" if mode==2 else "мкм"
+    return "~"*(mode-1)+units
+
+
+def source_spectrum_unit_contract(mode:int,units:str|None,*,source_bound:bool)->dict:
+    derived=source_derived_units(mode,units)
+    if source_bound:
+        summary=derived if derived is not None else "ед. не подтверждены"
+    else:
+        summary=SPECTRUM_Y_UNITS[1 if mode==0 else mode]
+    return {"source_derived_units":derived if source_bound else None,
+            "source_summary_unit":summary,
+            "source_unit_text_known":source_bound and derived is not None,
+            "source_unit_bound":source_bound,
+            "unit":"дБ" if mode==0 else summary}
 
 
 def research_spectrum_vscale_auto_basis(peak:float)->float:

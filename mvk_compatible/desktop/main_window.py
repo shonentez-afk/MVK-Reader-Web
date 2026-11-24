@@ -1926,6 +1926,8 @@ class MainWindow(QMainWindow):
         # that triplet "дБ" or switch its units with the chart Y scale.
         mode=self.spec_mode.currentIndex()
         summary_unit=('м/с²','м/с²','мм/с','мкм')[mode]
+        if self._live_active and isinstance(self._full_spectrum,dict):
+            summary_unit=self._full_spectrum.get('source_summary_unit',summary_unit)
         if isinstance(self.session,DirectBinSession):
             unit=summary_unit+' (условн.)'
             calibration=(
@@ -2045,9 +2047,13 @@ class MainWindow(QMainWindow):
         live_result=self._full_spectrum or {}
         live_frange=(live_result.get('source_live_f_range_single') if self._live_active and
             live_result.get('live_input_ring_verified') and live_result.get('channel')==self._ch() else None)
-        live_source_range=live_frange is not None and live_frange!=1.0
+        state=live_result.get('source_range_state') or {}
+        # A real observed range=1 is not an auto-fit.
+        live_source_range=(live_frange is not None and
+            (live_frange!=1.0 or state.get('origin') in
+             ('REGISTER_FLOAT32','REGISTER_ZERO_FALLBACK_ONE')))
         source_evidence=self._source_spectrum_gain
-        source_tsxml=(not exact_operator_frange
+        source_tsxml=(not self._live_active and not exact_operator_frange
                       and source_evidence is not None
                       and source_evidence.frange_single is not None)
         source_scope=None
@@ -2186,7 +2192,10 @@ class MainWindow(QMainWindow):
                 # Without FRange, captions correspond to actual LOCAL
                 # auto-fit graph heights, not meaningless "÷1000" labels.
                 # Units are NOMINAL: BIN calibration remains unverified.
-                caption=original_physical_y_caption(mode,absolute)
+                units=None
+                if self._live_active and isinstance(self._full_spectrum,dict):
+                    units=self._full_spectrum.get('source_summary_unit')
+                caption=original_physical_y_caption(mode,absolute,units=units)
             action.setText(caption)
             action.setToolTip(
                 f"Delphi Tag{current}, "
@@ -4225,7 +4234,8 @@ class MainWindow(QMainWindow):
                 self._spec_display_contract["grapher_axis_end_frequency_hz"])
             xs,ys=live_spectrum_plot_points(d)
             self._live_spectrum_curve=self.spec_plot.plot(
-                xs,ys,pen=pg.mkPen('#000000'))
+                xs,ys,pen=pg.mkPen('#000000'),
+                **({'symbol':'o','symbolSize':4} if len(xs)==1 else {}))
             self.spec_line=pg.InfiniteLine(angle=90,pen=pg.mkPen(None))
             self.spec_line.setVisible(False)
             self.spec_plot.addItem(self.spec_line,ignoreBounds=True)
@@ -7091,7 +7101,8 @@ class MainWindow(QMainWindow):
                 found["live_window_sha256"]=self._full_spectrum["live_window_sha256"]
                 found["live_provisional_not_audited"]=True
             self._spec_last_cursor=found
-            y_name=source_spectrum_y_unit(found['mode'])
+            y_name=(self._full_spectrum.get('unit',source_spectrum_y_unit(found['mode']))
+                    if self._live_active else source_spectrum_y_unit(found['mode']))
             cursor_unit=y_name
             local_calibration_warning=(
                 ' · исходный BIN без подтверждённой физической калибровки'

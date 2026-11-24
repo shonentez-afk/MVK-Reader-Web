@@ -197,10 +197,29 @@ def validate_original_storage_receipt(
     }
 
 
-def source_live_units_text(state):
+def source_live_units_text(state, *, windows_ansi_code_page=None):
     """ConfigUnits type 9 (32 bytes). Never infer Windows ANSI code page."""
     if not isinstance(state,dict) or not state.get("units_raw_le"):
         return None
     from .original_get_value_text_30 import get_value_text_30
-    out=get_value_text_30(9,bytes.fromhex(state["units_raw_le"]))
-    return out.text if out.available else None
+    raw=state["units_raw_le"]
+    if not isinstance(raw,str) or not re.fullmatch("[0-9a-f]{64}",raw):
+        return None
+    out=get_value_text_30(9,bytes.fromhex(raw),
+        windows_ansi_code_page=windows_ansi_code_page)
+    return out.text if out.available and not any(ord(c)<32 for c in out.text) else None
+
+def source_status_channel_units(status,adc):
+    """PageStatus uses its own accepted snapshot; tcAdc is independent."""
+    if (not isinstance(status,dict) or status.get("source_original_storage_verified") is not True
+            or type(adc) is not int or not 1<=adc<=8):
+        return None
+    bank=status.get("source_original_storage")
+    rows=bank.get("channels") if isinstance(bank,dict) else None
+    if not isinstance(rows,list) or len(rows)!=10 or not isinstance(rows[adc-1],dict):
+        return None
+    try:
+        state=validate_source_range_state(rows[adc-1].get("source_range_state"),adc)
+        return source_live_units_text(state)
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return None

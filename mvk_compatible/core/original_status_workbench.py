@@ -93,6 +93,7 @@ class OriginalStatusProjection:
     tick_index:int|None
     session_serial:str|None
     provenance:str=SOURCE
+    source_chart_units:str|None=None
 
     def __post_init__(self):
         i=self.model.index
@@ -132,6 +133,7 @@ class OriginalStatusProjection:
             "verified_source_band_value":float(y),
             "source_frequency_text_candidate":source_octave_chart_text(SOURCE_FREQUENCIES[position]),
             "source_band_text_candidate":source_octave_chart_text(y),
+            "source_chart_units":self.source_chart_units,
             "source_tick_index":self.tick_index,
             "original_canvas_mouse_pixel_parity_verified":False,
         }
@@ -152,6 +154,7 @@ class OriginalStatusProjection:
             "verified_bins":43 if self.chart_visible else 0,
             "source_chart_y_max":self.chart_maximum(),
             "source_chart_top_axis_max":43.5 if self.chart_visible else None,
+            "source_chart_units":self.source_chart_units if self.chart_visible else None,
             "source_chart_win32_x87_parity_verified":False,
             "rows":len(self.model.rows),
             "columns":len(self.model.headers),

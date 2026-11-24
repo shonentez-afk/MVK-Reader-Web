@@ -1,0 +1,11 @@
+# Stage111Z31EG — вычислительное ядро и связи графиков
+
+
+## Stage111Z31EG — full computation-link pass (2026-11-24)
+
+EF 071e0c9dd7310851660da7e4d53c5521899d5a3f integrated by fast-forward into research/stage111-mvkview-desktop-20261029 after run 45368355630: Linux Core, Go RX/export, Windows Core/Qt, QPA all PASS; EXE compiled but isolated fix branch rejected by artifact provenance check. Guard unchanged; publish only on research branch. EG candidate fix/stage111-eg-computation-links-20261124, no private files committed.
+
+- Reopened Atlas v32 PAS, IDP SHA256 77e59f98febdd7df94e71cb538a2df69ea4de4624f15b088a81c86e61bb5a438, SQLite exact xrefs. _Unit115 007D1158/007D1C48 hexadecimal q=0x10,0x20,0x40,0x80,0x100 =16,32,64,128,256; previous Python decimal 10,20,40,80,160 incorrect, Go rejected q>8. Both Go/Python now implement correct stages and inverse history. Source counts for 76 allowed Fs/Code pairs and 8 bSpecLines (608 plans), synthetic numeric matrix all four modes at 1/2.5 with same normalized history. Time HTag output count validated before IPC, zero output refused.
+- 007D1801 skips empty sum, zero summary; 1024@65536/2048 stage4 yields N=4, 2 powers, source plot count 1. Model handles boundary, strict max initialized 0; no unsupported array access. These tests are not original x87 certification.
+- 007D1268 GetDerivedUnits direct callers 007D1529 and 0084B93E, source 0042AA10 ASCII-only lowercase, exact Cyrillic literal м/с2 -> мм/с, мкм, other strings prefix ~ / ~~. Mode0 output metadata and linear summary FUnits while chart dB. Bound to same-window result, Y menu/cursor/summary; PageStatus 00847B5A from own accepted snapshot selected channel, not waveform ADC. Proven range=1 uses source Y, not local fit; no stale archive FRange in LIVE. Unknown ANSI explicit, optional explicit codepage decoder. Legacy no-state nominal.
+- Still open: actual Win32 x87/full buffers, approved ANSI code page for non-ASCII live units, source system GetValueText advanced dictionaries, 007D2228 startup/InvalidateData leading-zero semantics versus strict real-only IPC, original file-name/clock/physical byte parity and remaining dynamic aliases. Do not label original full parity. Main unchanged.
