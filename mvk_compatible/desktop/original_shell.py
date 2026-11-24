@@ -48,6 +48,11 @@ from ..core.native_r6_tach_evidence import read_tach_evidence
 from ..core.original_live_pagefile import (
     OriginalLiveFilePlan,live_pagefile_channel_rows,
 )
+from ..core.original_live_operator_status import (
+    LivePageStatusBinding, source_live_operator_status_projection,
+    SOURCE as LIVE_OPERATOR_STATUS_SOURCE,
+)
+from ..core.original_ru_csv_layout import SOURCE_OCTAVE_TITLES
 from ..core.original_view_time_source import source_view_time, source_linked_caption
 
 from ..core.original_ui_form_contract import (
@@ -473,6 +478,9 @@ class OriginalRootShell:
         self.status_cursor = self.status_page.source_cursor
         self.status_export = self.status_page.source_export
         self._source_status_projection = None
+        self._live_status_binding = LivePageStatusBinding()
+        self._status_render_snapshot = None
+        self._status_render_key = None
         self.status_plot = self.status_page.source_plot
         self.status_splitter = self.status_page.source_splitter
         self.status_note = self.status_page.source_note
@@ -779,96 +787,99 @@ class OriginalRootShell:
         finally:self.status_tabs.blockSignals(False)
         flow=None
         error=None
-        if (self.window._measurement_mode_selected
-                or self.window._live_active):
-            # Native provenance belongs to the selected Mode2 run and
-            # survives switching between all fifteen original status tabs.
-            # No Go counter is copied into Delphi DSP/firmware cells.
-            live_evidence=connected_system_status(
-                getattr(self.window,"_native_live_status",None))
+        mode2=bool(self.window._measurement_mode_selected or self.window._live_active)
+        paused=False
+        stopping=False
+        if mode2:
+            status=getattr(self.window,"_native_live_status",None)
+            trace=getattr(self.window,"_source_mode2_runtime",None)
+            stopping=bool(self.window._measurement_exit_requested)
+            source_fault=bool(trace is not None and trace.status_cells.system_error_latched)
+            source_cells=trace.status_cells.receipt() if trace is not None else None
+            live_evidence=connected_system_status(status)
+            snapshot=self._live_status_binding.select(
+                status,active=self.window._live_active,
+                stop_requested=stopping,source_fault=source_fault,
+                freeze_requested=self.window._source_live_view_frozen,
+                expected_session_id=trace.session_id if trace is not None else None)
+            paused=self._live_status_binding.paused
+            display_system=connected_system_status(snapshot)
             self.status_page.setProperty(
                 "sourceNativeLiveQualityReceipt",live_evidence.receipt())
-        else:
-            self.status_page.setProperty("sourceNativeLiveQualityReceipt",None)
-        if (self.window._measurement_mode_selected
-                or self.window._live_active) and index==0:
-            # The source screenshot's system table has 15 original labels;
-            # validated passive Go status knows the TCP transport only.
-            # A frame count is NOT the device calculation counter.
-            native_status=getattr(self.window,"_native_live_status",None)
-            model=connected_system_status(native_status)
-            trace=getattr(self.window,"_source_mode2_runtime",None)
-            source_cells=trace.status_cells.receipt() if trace is not None else None
+            self.status_page.setProperty(
+                "sourceNativeTransportConnected",
+                bool(live_evidence.connection_verified and
+                     not live_evidence.data_integrity_alert and
+                     not stopping and not source_fault))
+            self.status_page.setProperty(
+                "sourceOriginalSystemRowsVerified",display_system.source_fields_proven)
             known=(source_cells["source_status_cells_valid_count"]
                    if source_cells is not None else 0)
-            if model.source_fields_proven:
-                note=(f"Подтверждено {model.source_fields_proven}/15 видимых полей "
-                      f"из реальных регистров, внутренних StatusCells: {known}/14. "
-                      "Неаттестованные Delphi-форматы показаны как RAW HEX.")
-            elif known:
-                note=(f"Получено {known}/14 StatusCells; 15 видимых "
-                      "регистров ещё не поступили.")
-                if source_cells["source_system_error_latched_until_new_capture"]:
-                    code=source_cells["source_statuscells0_uint32"]
+            code=(source_cells["source_statuscells0_uint32"]
+                  if source_cells is not None else None)
+            # The original 20 ms dispatcher still calls this method.
+            # Reuse the same presented model on unchanged source/mode:
+            # no fifty identical expensive TStringGrid-like rebuilds/s.
+            key=(index,paused,stopping,source_fault,known,code,
+                 live_evidence.transport_phase)
+            if (key==self._status_render_key and
+                    snapshot is self._status_render_snapshot):
+                return
+            self._status_render_key=key
+            self._status_render_snapshot=snapshot
+            if index==0:
+                model=display_system
+                if model.source_fields_proven:
+                    note=(f"Подтверждено {model.source_fields_proven}/15 видимых полей "
+                          f"из реальных регистров, внутренних StatusCells: {known}/14. "
+                          "Неаттестованные Delphi-форматы показаны как RAW HEX.")
+                elif known:
+                    note=(f"Получено {known}/14 StatusCells; 15 видимых "
+                          "регистров ещё не поступили.")
+                else:
+                    note=("Пассивный приёмник подтверждает состояние потока; "
+                          "системные StatusCells прибора ещё не получены.")
+                if source_fault:
                     detail=(f"0x{code:08X}" if isinstance(code,int) and code>0
                             else "ранее подтверждена")
                     note=("Системная ошибка прибора: "+detail+
                           " (source StatusCells[0]); "+note)
+                live_table=StatusTable(
+                    0,ORIGINAL_OPERATOR_STATUS_TABS[0],
+                    model.headers,model.rows,note,
+                    provenance=CONNECTED_SOURCE)
+                from ..core.original_status_workbench import OriginalStatusProjection
+                result=OriginalStatusProjection(
+                    live_table,ORIGINAL_STATUS_GRIDS[0],False,None,None,None)
             else:
-                note=("Пассивный приёмник подтверждает состояние потока; "
-                      "системные StatusCells прибора ещё не получены.")
-            live_table=StatusTable(
-                0,ORIGINAL_OPERATOR_STATUS_TABS[0],
-                model.headers,model.rows,note,
-                provenance=CONNECTED_SOURCE)
-            from ..core.original_status_workbench import OriginalStatusProjection
-            result=OriginalStatusProjection(
-                live_table,ORIGINAL_STATUS_GRIDS[0],False,None,None,None)
-            self.status_page.setProperty(
-                "sourceNativeTransportConnected",model.connection_verified)
-            self.status_page.setProperty(
-                "sourceOriginalSystemRowsVerified",model.source_fields_proven)
-        elif (self.window.session is not None
-                and not self.window._measurement_mode_selected
-                and not self.window._live_active):
-            try:
-                flow=self.window._current_offline_flow()
-                flow.require_session(self.window.session)
-                result=source_status_projection(index,flow)
-            except (ValueError,OSError,KeyError,RuntimeError) as exc:
-                error=str(exc)
-                result=source_status_projection(index,None)
+                # tcStatus is independent of tcAdc/tcSpectrum (0084F708).
+                # Every result tab uses the same accepted PARAM snapshot,
+                # never the selected waveform ADC's local FFT.
+                result=source_live_operator_status_projection(
+                    index,self._live_status_binding.banks)
         else:
-            if (index in range(1,15) and self.window._live_active
-                    and self.window._native_live_status is not None):
-                status=self.window._native_live_status
-                live_banks=(status.get("source_live_page_status_banks")
-                    if status.get("source_live_page_status_banks_verified") is True
-                    else None)
-                from ..core.original_live_result_registers import (
-                    source_live_status_projection)
-                health=connected_system_status(status)
-                trace=getattr(self.window,"_source_mode2_runtime",None)
-                source_fault=bool(trace is not None and
-                    trace.status_cells.system_error_latched)
-                if (live_banks is not None and health.connection_verified
-                        and not health.data_integrity_alert and
-                        not source_fault):
-                    # Source 007CF4A4 GetValueText for each validated DWORD;
-                    # verified ru-ru EXTLOCALIZATION, no guessed missing
-                    # registers. Keep separate RAW validation receipt.
-                    result=source_live_status_projection(
-                        index,live_banks,source_ru_text=True)
-                else:
+            self._live_status_binding.reset()
+            self._status_render_key=self._status_render_snapshot=None
+            self.status_page.setProperty("sourceNativeLiveQualityReceipt",None)
+            self.status_page.setProperty("sourceNativeTransportConnected",False)
+            self.status_page.setProperty("sourceOriginalSystemRowsVerified",0)
+            if self.window.session is not None:
+                try:
+                    flow=self.window._current_offline_flow()
+                    flow.require_session(self.window.session)
+                    result=source_status_projection(index,flow)
+                except (ValueError,OSError,KeyError,RuntimeError) as exc:
+                    error=str(exc)
                     result=source_status_projection(index,None)
             else:
                 result=source_status_projection(index,None)
         self._source_status_projection=result
+        binding_receipt=self._live_status_binding.receipt() if mode2 else None
         self.status_page.setProperty(
             "sourceLivePageStatusParamEvidence",
-            result.receipt() if self.window._live_active and
-            1<=index<=14 and result.provenance.startswith("SOURCE_LIVE_")
-            else None)
+            {**result.receipt(),**binding_receipt} if
+            binding_receipt is not None and 1<=index<=14
+            and result.provenance==LIVE_OPERATOR_STATUS_SOURCE else None)
         name=result.table_name
         # The original 4 TStringGrid objects have distinct identities and
         # visibility. Keep inactive grids empty to block stale AUX/VALUES.
@@ -887,6 +898,8 @@ class OriginalRootShell:
                 grid.setItem(row,col,cell)
         self.status_grid_stack.setCurrentWidget(grid)
         self.status_note.setText(
+            ("Завершение измерения · " if stopping else
+             "Пауза · сохранён последний принятый снимок · " if paused else "")+
             ("Источник отклонён: "+error+" · " if error else "")+
             result.model.note)
         # Source tcStatus modes 13/14 are TACH1/TACH2, NOT ADC graphs.
@@ -918,11 +931,23 @@ class OriginalRootShell:
                 +"обороты/калибровка НЕ подтверждены.")
         self.status_plot.clear()
         verified_chart=result.chart_visible and error is None
+        axis=self.status_plot.getAxis("bottom")
+        if result.provenance==LIVE_OPERATOR_STATUS_SOURCE:
+            self.status_plot.setLabel("bottom","Частота, Гц")
+            self.status_plot.setLabel("left","СКЗ, м/с²")
+            axis.setTicks([[(i,SOURCE_OCTAVE_TITLES[i]) for i in range(0,43,3)]])
+        else:
+            self.status_plot.setLabel("bottom","Полоса, индекс")
+            self.status_plot.setLabel("left","СКЗ (только источник)")
+            axis.setTicks(None)
         if verified_chart:
             values=list(result.model.bands_for_plot)
+            colors=("#306090","#3468a0","#3870b0")
             self.status_plot.addItem(pg.BarGraphItem(
                 x=list(range(43)),height=values,width=1.0,
-                brush="#147b91"))
+                **({"brushes":[colors[i%3] for i in range(43)]}
+                   if result.provenance==LIVE_OPERATOR_STATUS_SOURCE
+                   else {"brush":"#147b91"})))
             self.status_plot.setXRange(-0.5,42.5,padding=0)
             self.status_plot.enableAutoRange(axis="y")
         self.status_plot.setVisible(bool(verified_chart))
@@ -959,7 +984,12 @@ class OriginalRootShell:
             f"АЦП{cursor['adc']}: "
             f"{cursor['nominal_hz_float32']:.6g} Гц · "
             f"{cursor['verified_source_band_value']:.8g} м/с² "
-            "(по проверенному VALUES, без новых расчётов)")
+            + ("(PARAM текущего сеанса; пауза)" if
+               source.provenance==LIVE_OPERATOR_STATUS_SOURCE
+               and self._live_status_binding.paused else
+               "(PARAM текущего сеанса, без новых расчётов)" if
+               source.provenance==LIVE_OPERATOR_STATUS_SOURCE else
+               "(по проверенному VALUES, без новых расчётов)"))
 
     def _export_selected_status(self) -> None:
         if (self.window._live_active or self.window.session is None

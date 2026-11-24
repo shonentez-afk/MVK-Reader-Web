@@ -108,8 +108,7 @@ def parse_live_result_registers(status:dict)->dict|None:
         six=(_word_array(six_raw,6,"result ADC six") if six_raw is not None
              else (None,)*6)
         cleaned["result_adc_six_raw_dwords_le"]=six
-        if six[0] is not None and (
-                six[0]!=six[1] or six[1]!=six[2]):
+        if len(set(six[:3]))!=1:
             raise ValueError("Source PageStatus advanced ResultADC6 source words differ")
         # Only the last three are new unique words. First three
         # reference the already-counted +0x120 sensor status.
@@ -117,8 +116,7 @@ def parse_live_result_registers(status:dict)->dict|None:
         cleaned["sensor_status_raw_u32_le"]=_word(
             raw.get("sensor_status_raw_u32_le"),"sensor status")
         observed+=cleaned["sensor_status_raw_u32_le"] is not None
-        if six[0] is not None and (
-                cleaned["sensor_status_raw_u32_le"] is not None and
+        if (six_raw is not None and
                 six[0]!=cleaned["sensor_status_raw_u32_le"]):
             raise ValueError("Source PageStatus ResultADC6 sensor status overlaps incorrectly")
         adcs.append(cleaned)
