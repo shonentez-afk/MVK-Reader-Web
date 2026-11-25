@@ -356,8 +356,13 @@ def test_original_measure_mode2_operator_controls_before_and_during_live(qt_app)
         assert win._measurement_mode_selected
         assert win.wave_advanced_button.isHidden()
         assert win.leave_measurement_mode()
-        assert not win.wave_advanced_button.isHidden()
-        assert not win.spec_advanced_button.isHidden()
+        # MVK-14: an ordinary operator must not gain research controls
+        # just by leaving measurement mode. The explicit technical
+        # workspace is a separate route, not a side effect of Stop.
+        assert not win._measurement_mode_selected
+        assert not win.original_visual_skin.technical
+        assert win.wave_advanced_button.isHidden()
+        assert win.spec_advanced_button.isHidden()
         assert all(
             action.isVisible() for action in win._spec_lines_actions
         )
