@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from .core.direct_bin_session import (
-    _bin_from_selection,_sidecar_for_bin,_checked_file,
+    _bin_from_selection,_sidecar_for_bin,_checked_file,_portable_names,
     _MAX_BIN_BYTES,MAX_TSXML_BYTES,
 )
 from .core.original_tsxml_contract import (
@@ -33,11 +33,13 @@ def inspect_local_bin_sidecar(file:str | Path)->dict:
     selected=Path(file).absolute()
     if selected.is_symlink() or not selected.is_file():
         raise ValueError("Требуется обычный локальный BIN/TSXML, не ссылка")
-    binfile=_bin_from_selection(selected)
-    sidecar=_sidecar_for_bin(binfile)
+    names=_portable_names(selected.parent)
+    binfile=_bin_from_selection(selected,names)
+    sidecar=_sidecar_for_bin(binfile,names)
     meta_xml=_checked_file(sidecar,limit=MAX_TSXML_BYTES,what="TSXML")
     contract=inspect_original_tsxml(
-        meta_xml,actual_bin_filename=binfile.name,max_data_bytes=_MAX_BIN_BYTES)
+        meta_xml,actual_bin_filename=binfile.name,max_data_bytes=_MAX_BIN_BYTES,
+        allow_bin_extension_case=True)
     raw=_checked_file(binfile,limit=_MAX_BIN_BYTES+4096,what="BIN")
     if contract.data_offset_bytes+contract.data_length_bytes!=len(raw):
         raise ValueError(
