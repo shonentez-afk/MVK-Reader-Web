@@ -124,7 +124,9 @@ def source_view_time(
         p = minimum
     # _Unit128:0084F81B..0084F8B6 first maps Tag+position to a 64-bit
     # REAL source sample offset using the original sampling frequency.
-    index = min(n - 1, max(0, int(round(p * step * fs))))
+    is_mode1 = (flow.direct_bin and
+                flow.session.mode1_adc_range(flow.channel) is not None)
+    index = min(n if is_mode1 else n - 1, max(0, int(round(p * step * fs))))
     actual_seconds = index / fs
     return SourceViewTime(
         adc=flow.channel, bin_sha256=evidence["source_bin_sha256"],
@@ -162,7 +164,8 @@ def source_wave_readout(flow: OfflineMeasurementFlow, trace: dict,
         "source_start_sample": time.selected_start_sample,
         "signal_samples": samples, "rms_from_core": rms,
         "removed_dc_from_core": removed_dc,
-        "unit": "усл. ед. BIN" if flow.direct_bin else "расч. ед.",
+        "unit": "Byte/255" if flow.tach_byte else
+                "усл. ед. BIN" if flow.direct_bin else "расч. ед.",
         "original_runtime_parity_verified": False,
         "physical_calibration_verified": False,
     }
@@ -207,7 +210,8 @@ def source_spectrum_readout(flow: OfflineMeasurementFlow, spectrum: dict,
         "peak_y_from_core": peak_y,
         "archive_end_selected": bool(archive_end),
         "view_time_start_s": view_time.selected_start_seconds,
-        "unit": "усл. ед. BIN" if flow.direct_bin else "расч. ед.",
+        "unit": spectrum.get("source_summary_unit", "") if flow.tach_byte
+                else "усл. ед. BIN" if flow.direct_bin else "расч. ед.",
         "physical_calibration_verified": False,
         "original_runtime_parity_verified": False,
     }
@@ -229,6 +233,7 @@ def source_linked_caption(flow: OfflineMeasurementFlow,
         status = f"VALUES {flow.tick_index+1}/{flow.session.updates}"
     else:
         status = "VALUES/AUX НЕТ" if flow.direct_bin else "VALUES не проверены"
-    return (f"АЦП{flow.channel} · {record['data_file_label']} · "
+    channel=f"TACH{flow.channel-8}" if flow.tach_byte else f"АЦП{flow.channel}"
+    return (f"{channel} · {record['data_file_label']} · "
             f"{view_time.label} · {status} · "
             f"SHA {view_time.bin_sha256[:12]}…")

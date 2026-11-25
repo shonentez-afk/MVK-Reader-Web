@@ -34,6 +34,12 @@ ORIGINAL_WRITER_FIELDS=(
 _SAFE_NAME=re.compile(r"^(?:\.[\\/])?([^\\/:\x00-\x1f]+)$")
 
 
+class _NoDoctype(ET.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        # Parser-level rejection works for all detected XML encodings.
+        raise ValueError("TSXML с DTD/ENTITY не поддерживается")
+
+
 @dataclass(frozen=True)
 class OriginalTsxmlContract:
     sample_rate_hz: int
@@ -83,6 +89,7 @@ def _whole(text:str,field:str,*,minimum=0,maximum=10**9)->int:
 def inspect_original_tsxml(
     xml_bytes:bytes, *, actual_bin_filename:str,
     max_data_bytes:int=40_000_000,
+    allow_bin_extension_case:bool=False,
 ) -> OriginalTsxmlContract:
     """Validate both original full CP1251 and minimal read-only TSXML schema.
 
@@ -94,7 +101,7 @@ def inspect_original_tsxml(
     if b"<!DOCTYPE" in xml_bytes.upper() or b"<!ENTITY" in xml_bytes.upper():
         raise ValueError("TSXML с DTD/ENTITY не поддерживается")
     try:
-        root=ET.fromstring(xml_bytes)
+        root=ET.fromstring(xml_bytes, parser=ET.XMLParser(target=_NoDoctype()))
     except (ET.ParseError,LookupError,ValueError) as exc:
         raise ValueError("TSXML: ошибка разбора XML/кодировки") from exc
     if root.tag!="MainRoot":
@@ -129,7 +136,12 @@ def inspect_original_tsxml(
     name=_one(root,"DataFileName")
     if name is not None:
         name_match=_SAFE_NAME.fullmatch(name)
-        if not name_match or name_match.group(1)!=actual_bin_filename:
+        declared_label=name_match.group(1) if name_match else ""
+        same=declared_label==actual_bin_filename
+        if (not same and allow_bin_extension_case and
+                declared_label[-4:].lower()==actual_bin_filename[-4:].lower()==".bin"):
+            same=declared_label[:-4]==actual_bin_filename[:-4]
+        if not name_match or not same:
             raise ValueError(
                 "TSXML: DataFileName не соответствует выбранному BIN "
                 "(запрещён другой файл или каталог)")

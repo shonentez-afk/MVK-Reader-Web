@@ -45,10 +45,12 @@ type sourceLongWindowRequest struct {
     CaptureEnd uint64 `json:"capture_end"`
     SampleRateHz uint32 `json:"sample_rate_hz"`
     DeviceEnd uint32 `json:"device_end_index"`
+    SampleWidth int `json:"sample_width_bytes,omitempty"`
     EnvelopeCode int `json:"envelope_code,omitempty"`
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
     OriginalHTag int `json:"original_h_tag,omitempty"`
     SourceRangeState *sourceOriginalRangeState `json:"source_range_state,omitempty"`
+    SourceEpoch *sourceDisplayEpoch `json:"source_epoch,omitempty"`
 }
 type sourceLongWindowResult struct {
     Schema string `json:"schema"`
@@ -64,6 +66,8 @@ type sourceLongWindowResult struct {
     SampleRateHz uint32 `json:"sample_rate_hz"`
     FirstIndex uint32 `json:"first_sample_index"`
     NextIndex uint32 `json:"next_sample_index"`
+    SampleWidth int `json:"sample_width_bytes,omitempty"`
+    DeviceEndWordIndex *uint32 `json:"device_end_word_index,omitempty"`
     InputDomain string `json:"input_domain"`
     CalibrationAlreadyApplied bool `json:"calibration_already_applied"`
     Provisional bool `json:"provisional_not_audited"`
@@ -74,6 +78,7 @@ type sourceLongWindowResult struct {
     OriginalBSpecLines uint32 `json:"original_bspec_lines,omitempty"`
     OriginalHTag int `json:"original_h_tag,omitempty"`
     SourceRangeState *sourceOriginalRangeState `json:"source_range_state,omitempty"`
+    SourceEpoch *sourceDisplayEpoch `json:"source_epoch,omitempty"`
 }
 
 func sourceLongWindowLength(rate uint32,tag int) (uint32,error) {
@@ -132,27 +137,36 @@ func sourceFIRWindowCounts(rate uint32,code int,selected uint32)(uint32,uint32,u
         return 0,0,0,errors.New("source FIR target rate not supported by ADC")
     }
     ratio:=rate/target
-    var prefix uint32
+    // IDR 007D1178/007D1C62 immediate operands are hexadecimal.
+    // q=0x10 is 16; q=0x20 is 32, then 64,128,256.
+    var pre,second int
     switch ratio {
-    case 1:prefix=0
-    case 2:prefix=45
-    case 4:prefix=89
-    case 8:prefix=177
+    case 1:
+    case 2:pre=7
+    case 4:pre=8
+    case 8:pre=9
+    case 16:pre=10
+    case 32:pre=7;second=10
+    case 64:pre=8;second=10
+    case 128:pre=9;second=10
+    case 256:pre=10;second=10
     default:return 0,0,0,errors.New("original source FIR Invalid sample rate")
     }
+    var prefix uint32
+    if second!=0 {prefix=sourceFIRTaps[second]}
+    if pre!=0 {prefix=prefix*sourceFIRDecim[pre]+sourceFIRTaps[pre]}
     stage:=sourceFIREnvelopeStages[code]
     count:=uint64(selected)+uint64(prefix)+uint64(sourceFIRTaps[stage])*uint64(ratio)
     if count==0 || count>sourceOriginalStorageSamples {
         return 0,0,0,errors.New("source FIR history exceeds original 2M ring")
     }
     n:=uint32(count)
-    if ratio>1 {
-        var pre int
-        switch ratio {case 2:pre=7;case 4:pre=8;case 8:pre=9}
-        if n<sourceFIRTaps[pre]+sourceFIRDecim[pre] {
+    for _,decimator:=range []int{pre,second} {
+        if decimator==0 {continue}
+        if n<sourceFIRTaps[decimator]+sourceFIRDecim[decimator] {
             return 0,0,0,errors.New("source FIR pre-decimator lacks history")
         }
-        n=(n-sourceFIRTaps[pre])/sourceFIRDecim[pre]
+        n=(n-sourceFIRTaps[decimator])/sourceFIRDecim[decimator]
     }
     if n<sourceFIRTaps[stage]+sourceFIRDecim[stage] {
         return 0,0,0,errors.New("source FIR I/Q lacks history")
@@ -190,8 +204,10 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     }
     // The source ring is not an output of LiveBinSpool: a valid
     // 2^21 original FRange1 ring remains readable without BIN export.
-    if m.captureOnly || m.summary.SourceTCPMultiSocket ||
-       m.sourceRateTransitionDetected {
+    if m.captureOnly || m.summary.CaptureOnly || m.summary.InvalidFrames!=0 ||
+       m.sourceTCP!=nil && m.sourceTCP.Active==0 ||
+       m.sourceOriginalTask2Stage!=nil && (!m.sourceOriginalTask2Stage.connected ||
+          m.sourceOriginalTask2Stage.systemErrorLatched) {
         return nil
     }
     path:=filepath.Join(m.dir,sourceLongWindowRequestName)
@@ -216,8 +232,17 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     if !sourceLongWindowID.MatchString(req.RequestID) ||
        req.Schema!=sourceLongWindowRequestSchema ||
        req.SessionID!=filepath.Base(m.dir) ||
-       req.ADC<1 || req.ADC>8 {
+       req.ADC<1 || req.ADC>10 {
         return errors.New("untrusted source long-window request identity")
+    }
+    isTach:=req.ADC>=9
+    if isTach {
+        if req.SampleWidth!=1 || req.SourceRangeState!=nil || req.HTag < -1 ||
+           req.EnvelopeCode!=0 || req.OriginalBSpecLines!=0 || req.OriginalHTag!=0 {
+            return errors.New("TACH source window requires typed Byte with no FIR")
+        }
+    } else if req.SampleWidth!=0 && req.SampleWidth!=4 {
+        return errors.New("ADC source window requires Float32")
     }
     // A duplicate request never causes a 2M/FFT window to be
     // re-read/re-written on each 750ms status publication.
@@ -258,29 +283,58 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     idx:=req.ADC-1
     channel:=&m.sourceOriginalStorage.channels[idx]
     summary:=m.summary.Channels[idx]
+    epoch:=m.sourceOriginalStorage.displayEpoch(idx)
+    // Only the old healthy single-epoch fixture/IPC may omit new metadata.
+    // A recovered window needs a proof from the currently active generation.
+    epochRequired:=m.summary.SourceTCPMultiSocket || m.sourceRateTransitionDetected ||
+        channel.rateChanges!=0
+    if (epochRequired || req.SourceEpoch!=nil) &&
+       (epoch==nil || !reflect.DeepEqual(epoch,req.SourceEpoch) ||
+        m.sourceOriginalRXGate==nil) {
+        return errors.New("source long window stale or unverified display epoch")
+    }
+    if epochRequired && m.summary.Denials!=0 {
+        return errors.New("source long window refused after device denial")
+    }
+    if m.summary.SourceTCPMultiSocket {
+        stage:=m.sourceOriginalTask2Stage
+        if m.sourceTCP==nil || uint64(m.sourceTCP.Active)!=epoch.SocketAttempt ||
+           epoch.SocketAttempt!=m.summary.SourceTCPConnectionCount ||
+           stage==nil || stage.attempts!=epoch.SocketAttempt || stage.stage!=1 ||
+           stage.paramsAfterConnect==0 {
+            return errors.New("source long window lacks a fresh active socket with validated PARAM")
+        }
+    }
     // Original FreezeUpdate/MvkSampleRate deliberately skip TCP frames.
     // After thaw, source FRxPos is smaller than forensic Native.Samples.
     // It must equal the count admitted to ORIGINAL ring by the exact
     // rate/freeze gate, not the count of every packet read from TCP.
-    allowedCount:=summary.Samples
+    wireFactor:=uint64(1)
+    if isTach {wireFactor=4}
+    if summary.Samples > ^uint64(0)/wireFactor {return errors.New("source wire count overflow")}
+    observedElements:=summary.Samples*wireFactor
+    allowedCount:=observedElements
     if m.sourceOriginalRXGate!=nil {
         g:=m.sourceOriginalRXGate
         allowedCount=g.allowed[idx]
         if (g.frozen || g.rate!=req.SampleRateHz ||
                 g.allowed[idx]+g.skippedRate[idx]+g.skippedFrozen[idx]!=
-                    summary.Samples) {
+                    observedElements) {
             return errors.New("source original gate not ready for long GetSignal")
         }
     }
-    if !channel.seen || !sourceIsLiveADC(channel.domain) ||
+    validDomain:=sourceIsLiveADC(channel.domain)
+    if isTach {validDomain=channel.domain==sourceStorageTachBytes}
+    if !channel.seen || !validDomain ||
        channel.sampleRate!=req.SampleRateHz ||
+       channel.rejectedNonfinite!=0 ||
+       !isTach && summary.NonFiniteSamples!=0 ||
        channel.rxPos!=allowedCount {
-        // Do NOT use the all-TCP rates/sequence/nonfinite counters here.
-        // They include discarded Fs != MvkSampleRate packets, while
-        // GetSignal reads ONLY the original gated ring. Ring.validPos
-        // and ring.window reject gaps/nonfinite/overwritten history.
+        // Historical all-wire Fs/sequence counters are not the scoped
+        // window bounds. ADC nonfinite counters nevertheless fail closed.
+        // Ring.validPos and ring.window also reject superseded history.
 
-        return errors.New("source long window not confirmed original live FRange1 ADC")
+        return errors.New("source long window not confirmed original live typed storage")
     }
     if !reflect.DeepEqual(req.SourceRangeState,channel.rangeState) {
         return errors.New("source long window stale FRange epoch")
@@ -295,14 +349,31 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
     // provided the exact slice has not been overwritten.
     lag:=channel.rxPos-req.CaptureEnd
     if lag>sourceOriginalStorageSamples-uint64(req.Samples) ||
-       channel.nextDeviceIndex-uint32(lag)!=req.DeviceEnd {
+       lag%wireFactor!=0 || req.CaptureEnd%wireFactor!=0 ||
+       channel.nextDeviceIndex-uint32(lag/wireFactor)!=req.DeviceEnd {
         return errors.New("source long window stale or device index mismatch")
     }
     first:=req.CaptureEnd-uint64(req.Samples)
+    if first<channel.displayStart {
+        return errors.New("source long window crosses a display epoch boundary")
+    }
     data,e:=m.sourceOriginalStorage.window(idx,first,uint64(req.Samples))
     if e!=nil{return e}
+    if !isTach && !sourcePhysicalFinite(data) {
+        return errors.New("source long window contains nonfinite Float32")
+    }
     sum:=sha256.Sum256(data)
     entry:=fmt.Sprintf("ADC%d.f32",req.ADC)
+    // FRxPos counts bytes; header Index counts words. Separate epochs.
+    endIndex:=req.DeviceEnd
+    var deviceEndWord *uint32
+    width:=0
+    if isTach {
+        entry=fmt.Sprintf("TACH%d.u8",req.ADC-8)
+        endIndex=req.DeviceEnd*4
+        deviceEndWord=&req.DeviceEnd
+        width=1
+    }
     receipt:=sourceLongWindowResult{
         Schema:sourceLongWindowResultSchema,SessionID:req.SessionID,
         RequestID:req.RequestID,Phase:"RECORDING",
@@ -310,9 +381,11 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
         ADC:req.ADC,HTag:req.HTag,Entry:entry,
         Samples:req.Samples,CaptureEnd:req.CaptureEnd,
         SampleRateHz:req.SampleRateHz,
-        FirstIndex:req.DeviceEnd-req.Samples,NextIndex:req.DeviceEnd,
+        FirstIndex:endIndex-req.Samples,NextIndex:endIndex,
+        SampleWidth:width,DeviceEndWordIndex:deviceEndWord,
         InputDomain:channel.domain,SourceRangeState:channel.rangeState,
-        CalibrationAlreadyApplied:true,Provisional:true,
+        SourceEpoch:req.SourceEpoch,
+        CalibrationAlreadyApplied:!isTach,Provisional:true,
         RawBytes:m.summary.RawBytes,FramesDecoded:m.summary.TotalFrames,
         SHA256:hex.EncodeToString(sum[:]),
         EnvelopeCode:req.EnvelopeCode,
@@ -324,8 +397,8 @@ func (m *Monitor) handleSourceLongWindowRequest(now time.Time) error {
 
 func writeSourceLongWindowAtomic(dir,entry string,data []byte,
                                  receipt sourceLongWindowResult) error {
-    // One selected original ADC at a time. Do not export 8*2M or the two
-    // TACH byte rings to Qt, and do not change the forensic RAW/BIN spool.
+    // One selected original channel at a time, exact Float32 or Byte.
+    // Never change the forensic RAW/BIN spool.
     tmp,e:=os.CreateTemp(dir,".mvk_long_window_pending_")
     if e!=nil{return e}
     defer os.Remove(tmp.Name())

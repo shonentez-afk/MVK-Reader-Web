@@ -1,4 +1,4 @@
-"""Stage111Z31BT real original PageCalib Qt: DFM 49 test flags, 77x11 grid.
+"""Stage111Z31BT real original PageCalib Qt: DFM 55 test flags, 77x11 grid.
 
 Original source from operator's Projects.7z mvkform.dfm and _Unit128.pas.
 All calculator / import / save buttons are OFFLINE ONLY; bCalibStart
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QLocale, Qt
 from PySide6.QtWidgets import (
     QComboBox,QFileDialog,QHBoxLayout,QLabel,QListWidget,QListWidgetItem,
     QPlainTextEdit,QPushButton,QSplitter,QTabWidget,QTableWidget,
@@ -18,8 +18,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.original_calibration_workbench import (
-    OriginalCalibrationWorkspace,STEP_GROUPS,GRID_ROWS,GRID_COLS,
-    GROUP_ROW_HEADERS,DFM_LEFT_WIDTH,DFM_RIGHT_WIDTH,
+    OriginalCalibrationWorkspace,CALIBRATION_STEPS,STEP_COUNT,GRID_ROWS,GRID_COLS,
+    source_calib_csv_filename,
+    DFM_LEFT_WIDTH,DFM_RIGHT_WIDTH,
     DFM_SPLITTER_WIDTH,DFM_CALIB_TOOLS_HEIGHT,DFM_CALIB_SELECT_HEIGHT,
     DFM_RESULT_TOOLS_HEIGHT,DFM_SAVE_BUTTONS,DFM_UNIT_BUTTONS,
     DFM_START,DFM_PORT,CALIB_SOURCE_TABS,
@@ -75,7 +76,7 @@ def build_original_calibration_page(parent):
     select=QWidget(param)
     select.setObjectName("pnCalibSelect")
     select.setFixedHeight(DFM_CALIB_SELECT_HEIGHT)
-    caption={"A":"A","V":"V","D":"D","DR":"DR","T":"T"}
+    caption={"A":"ВУ","V":"ВС","D":"ВП","DR":"ДД","T":"ЧВ"}
     for short,tag,x,y,w,h in DFM_UNIT_BUTTONS:
         btn=_button(select,"bCalib"+short,caption[short],(x,y,w,h))
         btn.setProperty("SourceDFMTag",tag)
@@ -84,7 +85,7 @@ def build_original_calibration_page(parent):
             "Оригинальный bCalibAClick: инвертирует первый флаг и "
             "назначает его всей группе исходных шагов")
     pl.addWidget(select)
-    left.addTab(param,"Параметры")
+    left.addTab(param,"Параметры поверки")
 
     right=QTabWidget(split)
     right.setObjectName("tcCalibResult")
@@ -99,7 +100,7 @@ def build_original_calibration_page(parent):
         "Здесь будет только импортированный исходный лог калибровки. "
         "TMVKCalibThread не запущен.")
     log_lay.addWidget(log)
-    right.addTab(result_log,"Журнал")
+    right.addTab(result_log,"Ход поверки")
 
     result_table=QWidget(right)
     table_layout=QVBoxLayout(result_table)
@@ -109,14 +110,17 @@ def build_original_calibration_page(parent):
     grid.setColumnCount(GRID_COLS)
     grid.setRowCount(GRID_ROWS)
     grid.setEditTriggers(QTableWidget.NoEditTriggers)
+    grid.setSelectionBehavior(QTableWidget.SelectRows)
     grid.verticalHeader().setDefaultSectionSize(20)
-    grid.horizontalHeader().setDefaultSectionSize(90)
-    grid.setHorizontalHeaderLabels(
-        ["Группа","Частота / U","Эталон"]+
-        [f"АЦП {i}" for i in range(1,9)])
-    grid.setColumnWidth(0,160)
+    # Original TStringGrid has no fixed headers, and its labels are cells
+    # inside each block, not an additional Qt-generated row.
+    grid.verticalHeader().hide()
+    grid.horizontalHeader().hide()
+    grid.horizontalHeader().setDefaultSectionSize(112)
+    for column in range(3,GRID_COLS):
+        grid.setColumnWidth(column,84)
     table_layout.addWidget(grid)
-    right.addTab(result_table,"Таблица")
+    right.addTab(result_table,"Результаты поверки")
     assert right.count()==CALIB_SOURCE_TABS
 
     # DFM pnCalibResult is a sibling of both memo/grid; keep it visible
@@ -124,9 +128,9 @@ def build_original_calibration_page(parent):
     toolbar=QWidget(right)
     toolbar.setObjectName("pnCalibResult")
     toolbar.setGeometry(4,42,607,DFM_RESULT_TOOLS_HEIGHT)
-    captions={"bCalibSave":"Сохранить CSV",
-              "bCalibClear":"Очистить таблицу",
-              "bCalibGenerate":"Проект поправок"}
+    captions={"bCalibSave":"Запись в файл",
+              "bCalibClear":"Очистка таблицы",
+              "bCalibGenerate":"Расчет коэфф."}
     for name,x,y,w,h in DFM_SAVE_BUTTONS:
         _button(toolbar,name,captions[name],(x,y,w,h))
     toolbar.raise_()
@@ -252,20 +256,19 @@ class OriginalCalibrationPanel:
     def _render_steps(self):
         old=self.steps.blockSignals(True)
         try:
-            self.steps.clear()
-            counter=0
-            for short,label,count in STEP_GROUPS:
-                for k in range(count):
-                    item=QListWidgetItem(
-                        f"{label} · исходный шаг {k+1:02d}",self.steps)
-                    item.setData(Qt.UserRole,counter)
+            if self.steps.count()!=STEP_COUNT:
+                self.steps.clear()
+                for step in CALIBRATION_STEPS:
+                    item=QListWidgetItem(step.caption(QLocale().decimalPoint()),self.steps)
+                    item.setData(Qt.UserRole,step.index)
+                    item.setData(Qt.UserRole+1,step.group)
+                    item.setData(Qt.UserRole+2,step.result_rows)
                     item.setFlags(Qt.ItemIsSelectable|
                                   Qt.ItemIsEnabled|Qt.ItemIsUserCheckable)
-                    item.setCheckState(
-                        Qt.Checked if self.workspace.steps[counter] else
-                        Qt.Unchecked)
-                    counter+=1
-            assert counter==49
+            for step in CALIBRATION_STEPS:
+                item=self.steps.item(step.index)
+                item.setCheckState(
+                    Qt.Checked if self.workspace.steps[step.index] else Qt.Unchecked)
         finally:
             self.steps.blockSignals(old)
 
@@ -276,7 +279,7 @@ class OriginalCalibrationPanel:
             index,item.checkState()==Qt.Checked)
         self.hint.setText(
             f"Исходные bCalibAClick: отмечено "
-            f"{self.workspace.checked_steps}/49. "
+            f"{self.workspace.checked_steps}/{STEP_COUNT}. "
             "Команд генератору или прибору нет.")
 
     def toggle_group(self,tag):
@@ -284,7 +287,7 @@ class OriginalCalibrationPanel:
         self._render_steps()
         self.hint.setText(
             f"Группа {tag} переключена, выбрано "
-            f"{self.workspace.checked_steps}/49 исходных шагов. "
+            f"{self.workspace.checked_steps}/{STEP_COUNT} исходных шагов. "
             "TMVKCalibThread не запускался.")
         return self.workspace.steps
 
@@ -315,7 +318,7 @@ class OriginalCalibrationPanel:
             self.hint.setText(
                 f"Открыт исходный CALIB CSV: 77×11; SHA256 "
                 f"{self.workspace.source_sha256[:16]}… "
-                f"Выбрано {self.workspace.checked_steps}/49 шагов. "
+                f"Выбрано {self.workspace.checked_steps}/{STEP_COUNT} шагов. "
                 "Данные только локальные, COM/прибор не задействованы.")
         else:
             self.hint.setText(
@@ -365,8 +368,14 @@ class OriginalCalibrationPanel:
         return self.workspace.export_csv(path)
 
     def choose_save_csv(self):
+        suggested=source_calib_csv_filename()
+        controller=getattr(self.window,"original_start_controller",None)
+        library=(controller.workspace.library_path if controller is not None
+                 else None)
+        if library is not None and Path(library).is_dir():
+            suggested=str(Path(library)/suggested)
         dest,_=QFileDialog.getSaveFileName(
-            self.page,"Создать новый локальный CALIB CSV","CALIB-local.csv",
+            self.page,"Создать новый локальный CALIB CSV",suggested,
             "Исходный CALIB CSV (*.csv)")
         if not dest:return
         try:result=self.save_csv(dest)
@@ -412,8 +421,13 @@ class OriginalCalibrationPanel:
     def save_proposal(self,path):
         if self.proposal is None:
             raise ValueError("Создайте локальный кандидат перед сохранением")
-        self.workspace.require_source_unchanged()
-        self._config_workspace()  # SHA-source revalidation
+        try:
+            current=self._config_workspace()
+            if current is None or self.workspace.candidate(current.original)!=self.proposal:
+                raise ValueError("Исходные значения изменились; рассчитайте проект заново")
+        except (ValueError,OSError,UnicodeError):
+            self._clear_proposal()
+            raise
         return OriginalCalibrationWorkspace.save_candidate_json(
             self.proposal,path)
 

@@ -118,14 +118,14 @@ def test_all_seven_live_pages_all_three_forms_dmf95_and_true_safe_routes(
         calibration.groups[min(calibration.groups)].click()
         qt_app.processEvents()
         assert calibration.workspace.checked_steps>=0
-        assert calibration.steps.count()==49
+        assert calibration.steps.count()==55
         assert not calibration.buttons["bCalibStart"].isEnabled()
         assert not win.original_config_panel.page.findChild(
             QPushButton,"bConfigUpload").isEnabled()
         assert not win.original_config_panel.page.findChild(
             QPushButton,"bConfigDownload").isEnabled()
-        assert not win.original_config_panel.page.findChild(
-            QPushButton,"bConfigReset").isEnabled()
+        assert win.original_config_panel.page.findChild(
+            QPushButton,"bConfigReset").isEnabled()  # local Defaults, not hardware
     finally:
         editor.close()
         message.close()

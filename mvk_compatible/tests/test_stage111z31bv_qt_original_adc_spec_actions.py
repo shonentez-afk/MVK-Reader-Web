@@ -14,6 +14,7 @@ import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QPointF,Qt
 from PySide6.QtWidgets import QApplication,QPushButton
+from PySide6.QtCore import QLocale
 
 from .test_desktop_qt import qt_app
 from .test_offline_core import fixture_zip
@@ -22,19 +23,22 @@ from .test_stage111z31bj_qt_visible_file_workbench import (
     capture_synthetic_ui_if_requested)
 from ..core.original_adc_spectrum_actions import (
     OriginalEnvelopeCursor,OriginalSpectrumAction,
-    SPEC_CSV_HEADER,SPECTRUM_COPY_SOURCE,SPECTRUM_SAVE_SOURCE,
+    SPEC_CSV_HEADER,SPEC_CSV_ENCODING,SPECTRUM_COPY_SOURCE,SPECTRUM_SAVE_SOURCE,
 )
 
 
+@pytest.mark.parametrize("locale_name,decimal_separator",[("ru_RU",","),("en_US",".")])
 def test_original_spectrum_copy_and_daily_save_source_3_values_live_qt_controls(
-        qt_app,tmp_path):
+        qt_app,tmp_path,locale_name,decimal_separator):
     from ..desktop.main_window import MainWindow
     source=fixture_zip(tmp_path,sample_count=4096)
     original_sha=sha256(source.read_bytes()).hexdigest()
     w=MainWindow()
     w.show()
     qt_app.processEvents()
+    previous_locale=QLocale()
     try:
+        QLocale.setDefault(QLocale(locale_name))
         w.open_archive(source)
         w.original_root_tabs.setCurrentIndex(4)
         qt_app.processEvents()
@@ -55,7 +59,7 @@ def test_original_spectrum_copy_and_daily_save_source_3_values_live_qt_controls(
         w.spec_copy_button.click()
         qt_app.processEvents()
         copied=QApplication.clipboard().text()
-        assert copied==action.clipboard_text(decimal_separator=",")
+        assert copied==action.clipboard_text(decimal_separator=decimal_separator)
         assert len(copied.split("\t"))==3
         assert "\n" not in copied
         assert "GetSpectrum" in w.statusBar().currentMessage()
@@ -72,9 +76,9 @@ def test_original_spectrum_copy_and_daily_save_source_3_values_live_qt_controls(
         assert daily.exists()
         first=daily.read_bytes()
         assert first.startswith(
-            ("sep=|\r\n"+SPEC_CSV_HEADER+"\r\n").encode("utf-8"))
+            ("sep=|\r\n"+SPEC_CSV_HEADER+"\r\n").encode(SPEC_CSV_ENCODING))
         assert len(first.splitlines())==3
-        assert len(first.splitlines()[2].split(b"|"))==3
+        assert first.splitlines()[2]==action.pipe_row(decimal_separator=decimal_separator).encode("ascii")
         w.spec_save_button.click()
         qt_app.processEvents()
         second=daily.read_bytes()
@@ -98,6 +102,7 @@ def test_original_spectrum_copy_and_daily_save_source_3_values_live_qt_controls(
         assert len(daily.read_bytes().splitlines())==5
         assert sha256(source.read_bytes()).hexdigest()==original_sha
     finally:
+        QLocale.setDefault(previous_locale)
         w.close()
         qt_app.processEvents()
 
@@ -186,7 +191,7 @@ def test_one_source_original_all_seven_pages_three_form_types_safe(
             assert w.original_shell.view_state is not None
             assert w.original_shell.status_tabs.count()==15
         assert w.original_root_stack.currentWidget() is w.original_calib_panel.page
-        assert w.original_calib_panel.steps.count()==49
+        assert w.original_calib_panel.steps.count()==55
         assert w.original_shell.status_grid_stack.count()==4
         assert w.original_start_controller.host.objectName()=="SourcePageStartLauncher"
 

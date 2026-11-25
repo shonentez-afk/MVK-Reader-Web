@@ -5,6 +5,7 @@ from hashlib import sha256
 
 import pytest
 pytest.importorskip("PySide6")
+from PySide6.QtCore import QLocale
 
 from PySide6.QtWidgets import QApplication,QTableWidget
 
@@ -117,17 +118,18 @@ def test_one_native_session_full_seven_page_route_with_readbacks(
         assert len(w._full_spectrum["amplitude"])==w._full_spectrum["n_fft"]//2
         w.spec_copy_button.click()
         qt_app.processEvents()
-        assert QApplication.clipboard().text()==action.clipboard_text(decimal_separator=",")
+        expected="." if QLocale().decimalPoint()=="." else ","
+        assert QApplication.clipboard().text()==action.clipboard_text(decimal_separator=expected)
         # PageFile: source selection tied to same open ZIP, not synthetic placeholder.
         w.original_root_tabs.setCurrentIndex(5)
         qt_app.processEvents()
         assert w.original_shell.file_channels.count()>=8
         assert w.original_shell.file_export_button.isEnabled()
         assert w.original_shell._file_flow.source_record()["source_bin_sha256"]==selected_sha
-        # PageCalib: 49 test steps, 77x11 grid, never activate hardware.
+        # PageCalib: 55 test steps, 77x11 grid, never activate hardware.
         w.original_root_tabs.setCurrentIndex(6)
         qt_app.processEvents()
-        assert w.original_calib_panel.steps.count()==49
+        assert w.original_calib_panel.steps.count()==55
         assert w.original_calib_panel.page.objectName()=="PageCalib"
         # Third-party original Delphi form types must be instantiated,
         # not merely counted as navigation labels.

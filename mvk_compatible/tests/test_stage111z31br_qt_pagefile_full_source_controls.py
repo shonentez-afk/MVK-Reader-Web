@@ -43,14 +43,14 @@ def test_dpi150_original_pagefile_two_modes_selected_source_and_writer_options(
         assert ui.file_page.findChild(QTabWidget,"tcFileChannels").count()==1
         tabs=ui.file_page.findChild(QTabWidget,"tcFileActions")
         assert tabs.count()==2
-        assert "SPEC" in tabs.tabText(0)
-        assert "АЦП" in tabs.tabText(1)
+        assert tabs.tabText(0)=="Значения для записи"
+        assert tabs.tabText(1)=="Параметры временного сигнала"
         adc=ui.file_page.findChild(QWidget,"pnFileAdc")
         assert adc.height()==207
         assert not adc.isVisible()
         for key in ("cbFileWriteXml","cbFileFolderPrefix","cbFileMvkName"):
             box=ui.file_page.findChild(QCheckBox,key)
-            assert box is not None and box.isChecked()
+            assert box is not None and box.isChecked()==(key=="cbFileWriteXml")
         assert ui.file_page.findChild(
             QLineEdit,"edFolderPrefix").text()==ORIGINAL_SOURCE_DEFAULT_FOLDER_TEMPLATE
         assert not ui.file_page.findChild(QLineEdit,"edFilePrefix").isVisible()
@@ -79,8 +79,8 @@ def test_dpi150_original_pagefile_two_modes_selected_source_and_writer_options(
         tabs.setCurrentIndex(1)
         qt_app.processEvents()
         assert adc.isVisible()
-        assert ui.file_page.findChild(QLineEdit,"edFolderPrefix").isEnabled()
-        assert ui.file_page.findChild(QLineEdit,"edFileMvkName").isEnabled()
+        assert not ui.file_page.findChild(QLineEdit,"edFolderPrefix").isEnabled()
+        assert not ui.file_page.findChild(QLineEdit,"edFileMvkName").isEnabled()
         assert ui.file_page.findChild(
             QLineEdit,"edFileMvkName").text()==win.session.serial
         ui.file_record_flags["cbFileFolderPrefix"].setChecked(False)

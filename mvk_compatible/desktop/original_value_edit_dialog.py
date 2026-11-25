@@ -7,6 +7,7 @@ No network/device write, no original bitmap data.
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QLabel, QLineEdit, QListWidget, QPushButton,
 )
@@ -21,6 +22,7 @@ class OriginalValueEditDialog(QDialog):
 
     def __init__(self, *, prompt: str = "", value: str = "",
                  units: str = "", choices: list[str] | None = None,
+                 choice_values: list[str] | None = None,
                  parent=None, read_only: bool = False,
                  sensitivity_conversion: bool = False):
         super().__init__(parent)
@@ -58,8 +60,16 @@ class OriginalValueEditDialog(QDialog):
         self.cbVal.setObjectName("cbVal")
         self.cbVal.setGeometry(16, 49, 321, 229)
         self.cbVal.itemDoubleClicked.connect(self._accept_selected)
-        for item in choices or ():
-            self.cbVal.addItem(item)
+        if choice_values is not None and (choices is None or
+                                          len(choice_values)!=len(choices)):
+            raise ValueError("Original editor requires one value per choice")
+        for index,label in enumerate(choices or ()):
+            self.cbVal.addItem(label)
+            item=self.cbVal.item(index)
+            raw=choice_values[index] if choice_values is not None else label
+            item.setData(Qt.UserRole,raw)
+            if raw==value:
+                self.cbVal.setCurrentRow(index)
         # DFM declares both edit/list because the source toggles at runtime.
         self.cbVal.setVisible(choices is not None)
         self.edVal.setVisible(choices is None)
@@ -122,7 +132,7 @@ class OriginalValueEditDialog(QDialog):
         """Return edited value without applying it to any instrument."""
         if self._source_list_mode:
             selected = self.cbVal.currentItem()
-            return selected.text() if selected is not None else ""
+            return selected.data(Qt.UserRole) if selected is not None else ""
         return self.edVal.text()
 
     def _accept_selected(self, *_):

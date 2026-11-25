@@ -1,18 +1,20 @@
 """BT original Delphi PageCalib UI+Core end-to-end synthetic Win DPI150.
 
-Original 49 source checkboxes + 11x77 source grid + two result modes +
+Original 55 source checkboxes + 11x77 source grid + two result modes +
 source 155x41 Save/Clear/Generate buttons + linked PageConfig candidate.
 No connected COM generator/device; private operator originals never uploaded.
 """
 from dataclasses import replace
 from hashlib import sha256
+from pathlib import Path
 import json
+import re
 import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog,QLabel,QListWidget,QPlainTextEdit,QPushButton,
+    QFileDialog,QLabel,QListWidget,QPlainTextEdit,QPushButton,QMessageBox,
     QTabWidget,QTableWidget,QWidget,QComboBox,
 )
 from .test_desktop_qt import qt_app
@@ -27,6 +29,7 @@ from ..core.original_calibration_workbench import (
 def _synthetic_sources(tmp_path):
     raw=OriginalCalibrationWorkspace.initial()
     rows=[list(r) for r in raw.grid]
+    rows[8][0]="100"
     rows[8][2]="1.0"
     for adc in range(8):
         rows[8][3+adc]="1.0"
@@ -52,6 +55,10 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
     w.show()
     qt_app.processEvents()
     try:
+        # Enter the original route; no connection button confirmation is sent.
+        monkeypatch.setattr(QMessageBox,"question",lambda *_: QMessageBox.Yes)
+        assert w.original_start_controller.request_factory_mode()
+        assert w.enter_measurement_mode()
         w.original_root_tabs.setCurrentIndex(6)
         qt_app.processEvents()
         panel=w.original_calib_panel
@@ -70,9 +77,9 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
         assert not page.findChild(QPushButton,"bCalibStart").isEnabled()
         assert not page.findChild(QComboBox,"cbCalibGenPort").isEnabled()
         assert len(STEP_GROUPS)==5
-        assert panel.steps.count()==49
+        assert panel.steps.count()==55
         assert all(panel.steps.item(i).checkState()==Qt.Checked
-                   for i in range(49))
+                   for i in range(55))
         for short,tag,x,y,width,height in DFM_UNIT_BUTTONS:
             group=page.findChild(QPushButton,"bCalib"+short)
             assert group.property("SourceDFMTag")==tag
@@ -83,6 +90,8 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
                 x,y,width,height)
         assert panel.grid.rowCount()==GRID_ROWS
         assert panel.grid.columnCount()==GRID_COLS
+        assert panel.grid.horizontalHeader().isHidden()
+        assert panel.grid.verticalHeader().isHidden()
         assert panel.grid.objectName()=="tabCalibResult"
         assert panel.log.objectName()=="logCalibResult"
         assert panel.log.isReadOnly()
@@ -90,22 +99,25 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
         assert not panel.buttons["localCalibSaveProposal"].isEnabled()
         panel.tabs.setCurrentIndex(0)
         capture_synthetic_ui_if_requested(
-            w,qt_app,"24_bt_source_calib_original_log_and_49_steps")
+            w,qt_app,"24_bt_source_calib_original_log_and_55_steps")
         panel.tabs.setCurrentIndex(1)
 
         # DFM original 5 group buttons perform actual source boolean
         # propagation, rather than enabling a fake generator.
         panel.groups[1].click()
-        assert panel.workspace.checked_steps==49-11
+        assert panel.workspace.checked_steps==55-17
         assert all(panel.steps.item(i).checkState()==Qt.Unchecked
-                   for i in range(11))
+                   for i in range(17))
         assert all(panel.steps.item(i).checkState()==Qt.Checked
-                   for i in range(11,49))
+                   for i in range(17,55))
         panel.groups[1].click()
-        assert panel.workspace.checked_steps==49
+        assert panel.workspace.checked_steps==55
 
         w.original_config_panel.load_local_file(config)
-        panel.load_csv(path)
+        monkeypatch.setattr(
+            QFileDialog,"getOpenFileName",
+            staticmethod(lambda *a,**kw:(str(path),"CSV")))
+        panel.buttons["localCalibLoadCsv"].click()
         qt_app.processEvents()
         assert panel.workspace.source_grid_loaded
         assert panel.tabs.currentIndex()==1
@@ -125,7 +137,8 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
         assert "TMVKCalibThread" in panel.log.toPlainText()
         assert panel.tabs.currentIndex()==0
         panel.tabs.setCurrentIndex(1)
-        candidate=panel.make_proposal()
+        panel.buttons["bCalibGenerate"].click()
+        candidate=panel.proposal
         assert candidate is not None and len(candidate.entries)==8
         assert panel.preview.rowCount()==8
         assert panel.preview.isVisible()
@@ -138,12 +151,22 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
 
         # bCalibSaveClick source: sep=| followed by all 11x77 cells.
         out=tmp_path/"CALIB-local-export.csv"
-        monkeypatch.setattr(
-            QFileDialog,"getSaveFileName",
-            staticmethod(lambda *a,**kw:(str(out),"CSV")))
+        saved_dialog=[]
+        def save_dialog(*a,**kw):
+            saved_dialog.append(a[2])
+            return str(out),"CSV"
+        monkeypatch.setattr(QFileDialog,"getSaveFileName",staticmethod(save_dialog))
+        w.original_start_controller.set_library(tmp_path)
         panel.buttons["bCalibSave"].click()
+        assert Path(saved_dialog[0]).parent==tmp_path
+        assert re.fullmatch(r"CALIB-\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2}\.csv",
+                            Path(saved_dialog[0]).name)
         assert out.exists()
-        assert out.read_text(encoding="utf-8-sig").startswith("sep=|\n")
+        wire=out.read_bytes()
+        assert wire.startswith(b"sep=|\r\n")
+        assert wire.count(b"\r\n")==78
+        assert wire.count(b"\n")==78
+        assert "Виброускорение".encode("cp1251") in wire
         reopened=OriginalCalibrationWorkspace.load_csv(out)
         assert reopened.grid==panel.workspace.grid
         assert sha256(path.read_bytes()).hexdigest()==path_sha
@@ -156,6 +179,15 @@ def test_original_pagecalib_source_geometry_modes_group_toggle_and_local_files(
         assert payload["device_commands_sent"] is False
         assert payload["uploadable_original_calib_txt_created"] is False
         assert sha256(config.read_bytes()).hexdigest()==config_sha
+
+        different=tmp_path/"different-calib-gains.cfg"
+        different.write_bytes(config.read_bytes().replace(b" f:1.00",b" f:1.01",1))
+        w.original_config_panel.load_local_file(different)
+        refused=tmp_path/"stale-candidate.json"
+        with pytest.raises(ValueError,match="изменились"):
+            panel.save_proposal(refused)
+        assert not refused.exists()
+        assert not panel.buttons["localCalibSaveProposal"].isEnabled()
 
         panel.buttons["bCalibClear"].click()
         assert not panel.workspace.source_grid_loaded
@@ -180,7 +212,7 @@ def test_original_calib_source_rejects_absent_data_and_no_hardware_start(
     try:
         w.original_root_tabs.setCurrentIndex(6)
         panel=w.original_calib_panel
-        assert panel.steps.count()==49
+        assert panel.steps.count()==55
         assert panel.workspace.grid[8][2]==""
         assert not panel.buttons["bCalibGenerate"].isEnabled()
         assert not panel.buttons["bCalibStart"].isEnabled()

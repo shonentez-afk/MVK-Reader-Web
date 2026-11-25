@@ -5,7 +5,8 @@ package main
 //  0080822F..0080824B gates received samples by MvkSampleRate and
 //  FreezeUpdate; 00808291..008082A3 changes Stage0->1 ONLY on accepted
 //  ADC1; 008082AA..008082DE writes selected TmpStream.FMemory bytes.
-// This module DOES write those accepted wire bytes at receive time. It
+// Writes separate forensic wire bytes and an ADC physical candidate from
+// the admitted ProcessBufferChunk output. It
 // is local disk I/O and NEVER generates a device command or socket.
 //
 // Provenance: original mvkview.idp + Projects.7z/_Unit125.pas,
@@ -26,12 +27,23 @@ import (
 const sourceLiveWriterSchema="MVK_SOURCE_TMVKTHREAD_LIVE_WRITEDATA_V1"
 const sourceLiveWriterAudit="SOURCE_LIVE_WRITEDATA_NATIVE_AUDIT.json"
 const sourceLiveWriterPackets="SOURCE_LIVE_WRITEDATA_PACKET_GATE.jsonl"
+const sourceLivePhysicalSchema="MVK_SOURCE_LIVE_ADC_PHYSICAL_V1"
 
 type sourceLiveDataFile struct {
     Channel int `json:"channel"`
     Name string `json:"name"`
     Bytes uint64 `json:"bytes"`
     Packets uint64 `json:"packets"`
+    SHA256 string `json:"sha256"`
+    Physical *sourceLivePhysicalFile `json:"physical_candidate,omitempty"`
+    file *os.File
+    digest hash.Hash
+}
+type sourceLivePhysicalFile struct {
+    Name string `json:"name"`
+    Bytes uint64 `json:"bytes"`
+    Packets uint64 `json:"packets"`
+    Skipped uint64 `json:"skipped_packets"`
     SHA256 string `json:"sha256"`
     file *os.File
     digest hash.Hash
@@ -72,6 +84,7 @@ type sourceLiveDataPacket struct {
 }
 type sourceLiveDataAudit struct {
     Schema string `json:"schema"`
+    PhysicalSchema string `json:"physical_writer_schema,omitempty"`
     Session string `json:"session_id"`
     SourceRawSHA256 string `json:"source_raw_sha256"`
     EndFrames uint64 `json:"end_frames_decoded"`
@@ -96,6 +109,7 @@ type sourceLiveDataWriter struct {
     packetSum hash.Hash
     packetCount uint64
     closed bool
+    physicalEnabled bool
 }
 func newSourceLiveDataWriter(dir string)*sourceLiveDataWriter {
     return &sourceLiveDataWriter{dir:dir,packetSum:sha256.New()}
@@ -115,6 +129,7 @@ func (w *sourceLiveDataWriter) applyFrameMarks(m *Monitor)error {
                 return errors.New("original source WriteData needs live rate/freeze gate")
             }
             w.nextWindow++
+            w.physicalEnabled=m.sourceParamGate!=nil && m.sourceOriginalStorage!=nil
             entry:=&sourceLiveDataWindow{
                 Window:w.nextWindow,BeginOperatorSequence:mark.Sequence,
                 BeginBeforeFrame:m.summary.TotalFrames,Channels:mark.Channels,
@@ -131,10 +146,24 @@ func (w *sourceLiveDataWriter) applyFrameMarks(m *Monitor)error {
                 f,e:=os.OpenFile(filepath.Join(w.dir,name),
                     os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
                 if e!=nil {return e}
-                entry.Files=append(entry.Files,&sourceLiveDataFile{
-                    Channel:channel+1,Name:name,file:f,digest:sha256.New()})
+                item:=&sourceLiveDataFile{Channel:channel+1,Name:name,file:f,digest:sha256.New()}
+                entry.Files=append(entry.Files,item)
                 m.filenames=append(m.filenames,name)
                 m.summary.Files[name]=name
+                if w.physicalEnabled && channel<8 {
+                    physicalName:=fmt.Sprintf("SOURCE_W%02d_ADC%d_LIVE_PHYSICAL_CANDIDATE.bin",entry.Window,channel+1)
+                    pf,err:=os.OpenFile(filepath.Join(w.dir,physicalName),os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
+                    if err!=nil {
+                        for _,opened:=range entry.Files {
+                            _=opened.file.Close()
+                            if opened.Physical!=nil {_=opened.Physical.file.Close()}
+                        }
+                        return err
+                    }
+                    item.Physical=&sourceLivePhysicalFile{Name:physicalName,file:pf,digest:sha256.New()}
+                    m.filenames=append(m.filenames,physicalName)
+                    m.summary.Files[physicalName]=physicalName
+                }
             }
             if selected==0 {return errors.New("original WriteData has no selected channels")}
             if w.packetFile==nil {
@@ -162,7 +191,7 @@ func (w *sourceLiveDataWriter) applyFrameMarks(m *Monitor)error {
     return nil
 }
 func (w *sourceLiveDataWriter) onSample(m *Monitor,
-    sample SampleHeader,payload []byte,gateAllowed bool) error {
+    sample SampleHeader,payload []byte,gateAllowed bool,physicalPayload ...[]byte) error {
     if w==nil || w.active==nil || w.closed || sample.Samples==0 {return nil}
     if len(payload)!=sample.Samples*4 || m.sourceOriginalRXGate==nil {
         return errors.New("source WriteData sample body/gate unavailable")
@@ -193,6 +222,18 @@ func (w *sourceLiveDataWriter) onSample(m *Monitor,
                 if n!=len(payload){return errors.New("source WriteData short file write")}
                 _,_=file.digest.Write(payload)
                 file.Bytes+=uint64(n);file.Packets++
+                if pf:=file.Physical;pf!=nil {
+                    if len(physicalPayload)!=1 || len(physicalPayload[0])!=len(payload) {
+                        pf.Skipped++
+                    } else {
+                        chunk:=physicalPayload[0]
+                        pn,err:=pf.file.Write(chunk)
+                        if err!=nil{return err}
+                        if pn!=len(chunk){return errors.New("source physical WriteData short write")}
+                        _,_=pf.digest.Write(chunk)
+                        pf.Bytes+=uint64(pn);pf.Packets++
+                    }
+                }
                 written=true
                 state.WrittenPackets++
                 break
@@ -238,6 +279,13 @@ func (w *sourceLiveDataWriter) closeWindow(m *Monitor,outcome string)error {
             f.file=nil
         }
         f.SHA256=hex.EncodeToString(f.digest.Sum(nil))
+        if pf:=f.Physical;pf!=nil {
+            if pf.file!=nil {
+                if e:=pf.file.Close();e!=nil && first==nil{first=e}
+                pf.file=nil
+            }
+            pf.SHA256=hex.EncodeToString(pf.digest.Sum(nil))
+        }
     }
     w.active=nil
     return first
@@ -272,6 +320,7 @@ func(w *sourceLiveDataWriter) finalize(m *Monitor)error {
         OriginalDelphiByteParityVerified:false,
         OperatorClickTimingParityVerified:false,
     }
+    if w.physicalEnabled {doc.PhysicalSchema=sourceLivePhysicalSchema}
     for i:=0;i<10;i++{doc.EndChannels[i]=m.summary.Channels[i].Samples}
     encoded,e:=json.MarshalIndent(doc,"","  ")
     if e!=nil{return e}
@@ -294,6 +343,7 @@ func(w *sourceLiveDataWriter) cleanup(){
     for _,win:=range w.windows {
         for _,f:=range win.Files {
             if f.file!=nil{_ = f.file.Close();f.file=nil}
+            if pf:=f.Physical;pf!=nil && pf.file!=nil{_=pf.file.Close();pf.file=nil}
         }
     }
     if w.packetFile!=nil {_ = w.packetFile.Close();w.packetFile=nil}

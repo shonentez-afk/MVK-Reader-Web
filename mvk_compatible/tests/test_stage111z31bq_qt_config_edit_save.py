@@ -44,13 +44,13 @@ def test_real_original_config_toolbar_load_edit_save_reload_and_discard(
         assert not panel.discard_button.isEnabled()
         assert panel.page_tabs.count()==2
         assert panel.channel_fields.objectName()=="sourceConfigSelectedAdcFields"
-        assert panel.channel_table.rowCount()==8
+        assert panel.channel_table.rowCount()==10
         assert panel.alarm_table.rowCount()==64
         panel.load_local_file(source)
         assert panel.save_button.isEnabled()    # bConfigSave NOW WORKS LOCALLY
         assert not panel.page.findChild(QPushButton,"bConfigUpload").isEnabled()
         assert not panel.page.findChild(QPushButton,"bConfigDownload").isEnabled()
-        assert not panel.page.findChild(QPushButton,"bConfigReset").isEnabled()
+        assert panel.page.findChild(QPushButton,"bConfigReset").isEnabled()
 
         # Mode4 IP real double-click now opens original Tmvkeditform editing
         # its actual candidate, rather than a permanently read-only dialog.
@@ -101,15 +101,16 @@ def test_real_original_config_toolbar_load_edit_save_reload_and_discard(
         qt_app.processEvents()
         assert output.exists()
         doc=inspect_original_local_config(output)
-        assert doc.value(0x000A).formatted=="w:503"
-        assert doc.value(0x0020).formatted=="f:3.25"
+        assert doc.value(0x000A) is None  # Mode6 saves channels/TACH/alarms only
+        assert doc.value(0x0020) is None
         assert doc.value(0x0102).formatted=="f:1.75"
         assert doc.value(0x0162).formatted=="f:4.5"
         assert hashlib.sha256(source.read_bytes()).hexdigest()==src_sha
         assert "Локальный файл сохранён" in panel.source_note.text()
+        assert panel.workspace.changed_count==2  # IP/calib drafts were not saved
         panel.discard_button.click()
         assert panel.workspace.changed_count==0
-        assert panel.alarm_table.item(0,4).text()=="f:2.50"
+        assert panel.alarm_table.item(0,4).text()=="f:4.5"
         assert not panel.discard_button.isEnabled()
         panel.load_local_file(output)
         assert not panel.workspace.changed

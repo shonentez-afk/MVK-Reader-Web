@@ -10,6 +10,7 @@ calculation, callback and automated test interfaces.
 """
 from __future__ import annotations
 
+import sys
 import zipfile
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
@@ -35,6 +36,7 @@ from ..core.original_connected_status import (
 )
 from ..core.original_status_workbench import (
     ORIGINAL_STATUS_GRIDS,source_status_projection,export_verified_status_csv,
+    COMPATIBLE_OCTAVE_BOTTOM_RANGE,
 )
 from ..core.original_file_workbench import source_file_workbench
 from ..core.original_pagefile_recording import (
@@ -42,6 +44,9 @@ from ..core.original_pagefile_recording import (
     export_selected_original_pagefile,ORIGINAL_SOURCE_DEFAULT_FOLDER_TEMPLATE,
     CHANNEL_COUNT,SPEC_COUNT,VALUE_COUNT,ADC_VALUE_COUNT,BAND_VALUE_COUNT,
     TACH_RESULT_COUNT,ORIGINAL_DFM_FILE_ADC_HEIGHT,
+)
+from ..core.original_pagefile_settings import (
+    load_pagefile_settings,save_pagefile_settings,
 )
 from ..core.original_pagestatus_source import TACH_FIELDS
 from ..core.native_r6_tach_evidence import read_tach_evidence
@@ -240,7 +245,7 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     groups.addWidget(values_list)
     groups.setSizes([256,343])
     results_lay.addWidget(groups,1)
-    right.addTab(source_result,"Выбор SPEC / VALUES")
+    right.addTab(source_result,"Значения для записи")
 
     source_adc=QWidget(right)
     adc_lay=QVBoxLayout(source_adc)
@@ -248,18 +253,18 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     panel=QWidget(source_adc)
     panel.setObjectName("pnFileAdc")
     panel.setFixedHeight(ORIGINAL_DFM_FILE_ADC_HEIGHT)
-    def _check(name,label,x,y,w=577):
+    def _check(name,label,x,y,w=577,*,checked=False):
         b=QCheckBox(label,panel)
         b.setObjectName(name)
         b.setGeometry(x,y,w,17)
-        b.setChecked(True)  # DFM Checked=True
+        b.setChecked(checked)  # Source runtime defaults, not DFM design flags
         return b
     def _text_field(name,x,y,w=225):
         ed=QLineEdit(panel)
         ed.setObjectName(name)
         ed.setGeometry(x,y,w,24)
         return ed
-    write_xml=_check("cbFileWriteXml","Дополнительно TSXML",16,16)
+    write_xml=_check("cbFileWriteXml","Дополнительно TSXML",16,16,checked=True)
     folder_prefix=_check("cbFileFolderPrefix","Префикс каталога",16,56)
     folder_label=QLabel("Префикс каталога:",panel)
     folder_label.setObjectName("lbFolderPrefix")
@@ -284,6 +289,8 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     file_prefix_edit.hide()  # DFM Visible=False for BOTH controls
     folder_prefix.toggled.connect(folder_edit.setEnabled)
     device_name.toggled.connect(device_edit.setEnabled)
+    folder_edit.setEnabled(folder_prefix.isChecked())
+    device_edit.setEnabled(device_name.isChecked())
     adc_lay.addWidget(panel)
     note=QLabel(
         "Параметры исходной панели записи АЦП. Сохраняют выбранные "
@@ -293,7 +300,7 @@ def _file_page(parent: QWidget, open_offline) -> QWidget:
     note.setObjectName("sourceFileOfflineCaptureNote")
     adc_lay.addWidget(note)
     adc_lay.addStretch(1)
-    right.addTab(source_adc,"Параметры записи АЦП")
+    right.addTab(source_adc,"Параметры временного сигнала")
     assert right.count()==2
     split.addWidget(left)
     split.addWidget(right)
@@ -343,8 +350,12 @@ def _status_page(parent: QWidget) -> QWidget:
     """
     page=QWidget(parent)
     page.setObjectName("PageStatus")
-    layout=QVBoxLayout(page)
+    host=QHBoxLayout(page)
+    host.setContentsMargins(0,0,0,0)
+    host.setSpacing(0)
+    layout=QVBoxLayout()
     layout.setContentsMargins(4,4,4,4)
+    host.addLayout(layout,1)
     tabs=QTabBar(page)
     tabs.setObjectName("tcStatus")
     tabs.setExpanding(False)
@@ -360,11 +371,12 @@ def _status_page(parent: QWidget) -> QWidget:
     plot.setObjectName("chResult")
     plot.setMinimumWidth(320)
     plot.setBackground("w")
+    plot.showGrid(x=True,y=True,alpha=.23)
     plot.setMenuEnabled(False)
     plot.setMouseEnabled(x=False,y=False)
     plot.getPlotItem().setLabel("bottom","Полоса, индекс")
     plot.getPlotItem().setLabel("left","СКЗ (только источник)")
-    plot.getPlotItem().setXRange(-0.5,42.5,padding=0)
+    plot.getPlotItem().setXRange(*COMPATIBLE_OCTAVE_BOTTOM_RANGE,padding=0)
     table_host=QStackedWidget(split)
     table_host.setObjectName("OriginalPageStatusGrids")
     grids={}
@@ -428,7 +440,7 @@ def _status_page(parent: QWidget) -> QWidget:
 
 
 def _calib_page(parent: QWidget) -> QWidget:
-    """Source PageCalib DFM: functional 49-step, 77x11, two-mode worksheet."""
+    """Source PageCalib DFM: functional 55-step, 77x11, two-mode worksheet."""
     return build_original_calibration_page(parent)
 
 
@@ -610,6 +622,8 @@ class OriginalRootShell:
         self.view_slider.valueChanged.connect(window._source_time_position_changed)
         window.tabs.tabBar().hide()  # 3 internal tabs no longer 3 top-level pages
         window.original_start_launcher = install_source_task_buttons(window, self.navigation)
+        if getattr(sys,"frozen",False):
+            self._install_pagefile_settings()
         # DFM PageStart is a task launcher, not six research subpages.
         window.task_subpages.tabBar().hide()
         self.sync_file_session(None, ())
@@ -683,7 +697,14 @@ class OriginalRootShell:
         self.status_note.setToolTip(caption)
 
     def _remember_view_action(self,action,selection):
-        self.view_state=self.view_state.transition(action,selection)
+        # A live selection is not a saved Byte file and must not extend
+        # this portable offline state. The typed offline flow owns 9/10.
+        saved=(action=='select_channel' and selection>=9
+               and self.window._offline_tach_channel())
+        if action=='select_channel' and selection>=9 and not saved:
+            return
+        self.view_state=self.view_state.transition(
+            action,selection,verified_saved_tach=saved)
         self.window.source_view_state=self.view_state
 
     def _source_file_action_mode_changed(self,index:int):
@@ -858,6 +879,11 @@ class OriginalRootShell:
                 # never the selected waveform ADC's local FFT.
                 result=source_live_operator_status_projection(
                     index,self._live_status_binding.banks)
+                if result.chart_visible:
+                    from dataclasses import replace
+                    from ..core.original_source_ring_receipt import source_status_channel_units
+                    result=replace(result,source_chart_units=
+                        source_status_channel_units(snapshot,index-4))
         else:
             self._live_status_binding.reset()
             self._status_render_key=self._status_render_snapshot=None
@@ -874,6 +900,8 @@ class OriginalRootShell:
                     result=source_status_projection(index,None)
             else:
                 result=source_status_projection(index,None)
+        previous=getattr(self,'_source_status_projection',None)
+        same_mode=previous is not None and previous.model.index==result.model.index
         self._source_status_projection=result
         binding_receipt=self._live_status_binding.receipt() if mode2 else None
         self.status_page.setProperty(
@@ -885,18 +913,45 @@ class OriginalRootShell:
         # The original 4 TStringGrid objects have distinct identities and
         # visibility. Keep inactive grids empty to block stale AUX/VALUES.
         for key,grid in self.status_grids.items():
-            grid.clearContents()
-            if key!=name:grid.setRowCount(0)
+            if key!=name and grid.rowCount():
+                grid.clearContents()
+                grid.setRowCount(0)
         grid=self.status_grids[name]
         self.status_table=grid       # backwards-compatible current grid
-        grid.setRowCount(len(result.model.rows))
-        grid.setColumnCount(len(result.model.headers))
-        grid.setHorizontalHeaderLabels(list(result.model.headers))
+        captions=tuple(result.model.headers)
+        if not same_mode:
+            grid.clearContents()
+        if grid.rowCount()!=len(result.model.rows):
+            grid.setRowCount(len(result.model.rows))
+        if grid.columnCount()!=len(captions):
+            grid.setColumnCount(len(captions))
+        if grid.property("mvkStatusColumns")!=list(captions):
+            grid.setProperty("mvkStatusColumns",list(captions))
+            grid.setHorizontalHeaderLabels(list(captions))
+            header=grid.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(QHeaderView.Stretch)
+            header.setSectionResizeMode(0,QHeaderView.Interactive)
+            longest=max((grid.fontMetrics().horizontalAdvance(str(row[0]))
+                         for row in result.model.rows if row),default=0)
+            grid.setColumnWidth(0,max(220,longest+18))
+            for i,caption in enumerate(captions):
+                item=grid.horizontalHeaderItem(i)
+                if item is not None:
+                    item.setTextAlignment(Qt.AlignLeft|Qt.AlignVCenter)
+                if caption.startswith('Ед.'):
+                    header.setSectionResizeMode(i,QHeaderView.Fixed)
+                    grid.setColumnWidth(i,76)
         for row,values in enumerate(result.model.rows):
             for col,value in enumerate(values):
-                cell=QTableWidgetItem(str(value))
-                cell.setFlags(Qt.ItemIsEnabled|Qt.ItemIsSelectable)
-                grid.setItem(row,col,cell)
+                cell=grid.item(row,col)
+                if cell is None:
+                    cell=QTableWidgetItem()
+                    cell.setFlags(Qt.ItemIsEnabled|Qt.ItemIsSelectable)
+                    grid.setItem(row,col,cell)
+                text=str(value)
+                if cell.text()!=text:
+                    cell.setText(text)
         self.status_grid_stack.setCurrentWidget(grid)
         self.status_note.setText(
             ("Завершение измерения · " if stopping else
@@ -935,9 +990,9 @@ class OriginalRootShell:
         axis=self.status_plot.getAxis("bottom")
         if result.provenance==LIVE_OPERATOR_STATUS_SOURCE:
             self.status_plot.setLabel("bottom","Гц")
-            # Source FUnits is runtime channel storage, not a universal constant.
-            # Current PARAM evidence does not carry a proven FUnits string.
-            self.status_plot.setLabel("left","СКЗ (единица канала не подтверждена)")
+            # 00847B5A: selected tcStatus channel's FUnits, same held snapshot.
+            self.status_plot.setLabel("left",result.source_chart_units
+                if result.source_chart_units is not None else "СКЗ (единица канала не подтверждена)")
             axis.setTicks([[(i,SOURCE_OCTAVE_TITLES[i]) for i in range(0,43,3)]])
         else:
             self.status_plot.setLabel("bottom","Полоса, индекс")
@@ -954,22 +1009,27 @@ class OriginalRootShell:
                 **({"brushes":[colors[i%3] for i in range(43)]}
                    if result.provenance==LIVE_OPERATOR_STATUS_SOURCE
                    else {"brush":"#147b91"})))
-            self.status_plot.setXRange(-0.5,42.5,padding=0)
+            self.status_plot.setXRange(*COMPATIBLE_OCTAVE_BOTTOM_RANGE,padding=0)
             self.status_plot.disableAutoRange(axis="y")
             self.status_plot.setYRange(0.0,y_max,padding=0)
             self.status_page.setProperty("sourceOctaveYMaximum",y_max)
-        self.status_plot.setTitle("---" if verified_chart else "")
+        was_drawn=not self.status_plot.isHidden()
         self.status_plot.setVisible(bool(verified_chart))
+        if not same_mode or not verified_chart:
+            self._status_cursor_index=None
         # Source DFM splResult.Width=8 for ALL modes. Hide chResult
         # when its 43 source bars are absent, but never mutate the
         # original Delphi splitter width to zero: Qt already collapses
         # its handle when either adjacent child is hidden.
         self.status_splitter.setHandleWidth(ORIGINAL_STATUS_SPLITTER[2])
-        if verified_chart:
+        if verified_chart and not was_drawn:
             self.status_splitter.setSizes([ORIGINAL_STATUS_CHART[2],580])
-        self.status_cursor.setText(
-            "---" if verified_chart else
-            "Нет подтверждённого источника спектра для текущего режима")
+        if verified_chart:
+            self._status_show_cursor(getattr(self,'_status_cursor_index',None))
+        else:
+            self.status_plot.setTitle("")
+            self.status_cursor.setText(
+                "Нет подтверждённого источника спектра для текущего режима")
         self.status_export.setEnabled(
             bool(error is None and flow is not None
                  and not flow.direct_bin))
@@ -982,19 +1042,28 @@ class OriginalRootShell:
         try:
             box=self.status_plot.getPlotItem().vb
             if not box.sceneBoundingRect().contains(scene_pos):
-                self.status_cursor.setText("---")
-                self.status_plot.setTitle("---")
+                self._status_show_cursor(None)
                 return
             x=box.mapSceneToView(scene_pos).x()
             index=int(round(x))
-            cursor=source.cursor(index)
         except (ValueError,OverflowError,TypeError,AttributeError):
+            index=None
+        self._status_show_cursor(index)
+
+    def _status_show_cursor(self,index):
+        try:
+            cursor=self._source_status_projection.cursor(index) if index is not None else None
+        except (ValueError,OverflowError,TypeError,AttributeError):
+            cursor=None
+        self._status_cursor_index=index if cursor is not None else None
+        if cursor is None:
             self.status_cursor.setText("---")
             self.status_plot.setTitle("---")
             return
+        units=cursor["source_chart_units"]
         text=(cursor["source_frequency_text_candidate"]+" Гц - "+
               cursor["source_band_text_candidate"]+
-              " (единица канала не подтверждена)")
+              (" "+units if units is not None else " (единица канала не подтверждена)"))
         self.status_cursor.setText(text)
         self.status_plot.setTitle(text)
 
@@ -1069,10 +1138,12 @@ class OriginalRootShell:
         try:
             flow.require_session(self.window.session)
             info = flow.source_record()
+            ch=info['selected_channel']
+            channel=f"TACH{ch-8}" if flow.tach_byte else f"АЦП{ch}"
+            dtype="Byte" if flow.tach_byte else "Single"
             self.file_source_evidence.setText(
                 f"Один источник {info['measurement_kind']} · "
-                f"АЦП{info['selected_channel']} / "
-                f"{info['sample_count']} реальных Single @ "
+                f"{channel} / {info['sample_count']} реальных {dtype} @ "
                 f"{info['sample_rate_hz']:g} Гц · "
                 f"SHA256 {info['source_bin_sha256'][:16]}… · "
                 + ("AUX/VALUES DSP НЕТ; физическая калибровка НЕ подтверждена"
@@ -1368,6 +1439,42 @@ class OriginalRootShell:
         item.setSizeHint(QSize(190,20))
         return item
 
+    def _install_pagefile_settings(self):
+        flags={"write_tsxml":"cbFileWriteXml","use_folder_prefix":"cbFileFolderPrefix",
+               "use_custom_name":"cbFileMvkName"}
+        fields={"folder_prefix":"edFolderPrefix","custom_name":"edFileMvkName",
+                "file_prefix":"edFilePrefix"}
+        start=self.window.original_start_controller
+        try:
+            values=load_pagefile_settings()
+            for key,name in flags.items():
+                self.file_record_flags[name].setChecked(values[key])
+            for key,name in fields.items():
+                self.file_record_names[name].setText(values[key])
+            if values["library"]:
+                # Re-use the checked existing-directory route, but do not
+                # scan the directory or start any capture at application launch.
+                start.workspace=start.workspace.with_library(values["library"])
+                start.library_edit.setText(str(start.workspace.library_path))
+        except (OSError,ValueError) as exc:
+            start.library_edit.setToolTip("Настройки записи не восстановлены: "+str(exc))
+
+        def persist(*_):
+            values={key:self.file_record_flags[name].isChecked()
+                    for key,name in flags.items()}
+            values.update({key:self.file_record_names[name].text()
+                           for key,name in fields.items()})
+            values["library"]=str(start.workspace.library_path or "")
+            try:
+                save_pagefile_settings(values)
+            except (OSError,ValueError) as exc:
+                self.file_page.setToolTip("Настройки записи не сохранены: "+str(exc))
+        for flag in self.file_record_flags.values():
+            flag.toggled.connect(persist)
+        for field in self.file_record_names.values():
+            field.editingFinished.connect(persist)
+        start.library_edit.textChanged.connect(persist)
+
     def _file_names_option_state(self):
         return OriginalFileNameOptions(
             write_tsxml=self.file_record_flags["cbFileWriteXml"].isChecked(),
@@ -1509,7 +1616,7 @@ class OriginalRootShell:
             self.file_values.blockSignals(blocked_values)
 
     def sync_file_session(self, session, channels, *, flow=None) -> None:
-        """Populate ORIGINAL ten check flags, verified ADC only, never TACH fake."""
+        """Populate the original ten flags from checked archive channel roles."""
         self._file_flow=flow
         self.file_record_selection=None
         self.file_page.setProperty("sourceAppliedLiveFilePlanReceipt",None)
@@ -1519,6 +1626,8 @@ class OriginalRootShell:
         try:
             self.file_channels.clear()
             if session is None:
+                if self.view_state.saved_byte_channel:
+                    self._remember_view_action("select_channel",1)
                 self.update_file_evidence(None)
                 self.refresh_file_workbench()
                 return
@@ -1544,7 +1653,12 @@ class OriginalRootShell:
                 if native_tach_receipt is not None else None)
             for i in range(CHANNEL_COUNT):
                 adc=i+1
-                if i>=8:
+                if i>=8 and flow.direct_bin and adc in source_by_adc:
+                    source=source_by_adc[adc]
+                    name=(f"TACH{i-7}: {source.bin_path.name} · "
+                          f"Byte @ {source.sample_rate_hz} Гц")
+                    enabled=True
+                elif i>=8:
                     ch=(native_tach.channels[i-8]
                         if native_tach is not None else None)
                     if ch is not None and ch.present:
@@ -1570,8 +1684,9 @@ class OriginalRootShell:
                     name,i,self.file_record_selection.channels[i],enabled)
                 item.setData(Qt.UserRole,adc)
                 self.file_channels.addItem(item)
-            self.file_record_names["edFileMvkName"].setText(
-                session.serial if session.serial else "")
+            custom_name=self.file_record_names["edFileMvkName"]
+            if not custom_name.text():
+                custom_name.setText(session.serial or "")
             self._sync_file_selection(self.window.adc.currentIndex())
             self.update_file_evidence(flow)
             self.refresh_file_workbench()

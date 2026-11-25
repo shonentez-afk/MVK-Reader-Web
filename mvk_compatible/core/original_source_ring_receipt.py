@@ -33,6 +33,56 @@ def _bounded_int(obj:dict,key:str,max_value:int=U64_MAX)->int:
     return value
 
 
+def validate_source_epoch(epoch, *, rx: int, valid: int, width: int,
+                          socket_count: int = 0):
+    """An admitted, contiguous range, not a certificate for the whole run."""
+    if epoch is None:
+        return None
+    if (not isinstance(epoch, dict) or
+            set(epoch) != {"socket_attempt", "continuity_generation",
+                           "start_pos_64"}):
+        raise ValueError("Original storage: malformed source epoch")
+    attempt = _bounded_int(epoch, "socket_attempt", 128)
+    generation = _bounded_int(epoch, "continuity_generation")
+    start = _bounded_int(epoch, "start_pos_64", rx)
+    if (attempt == 0 or generation == 0 or start < valid or start >= rx
+            or (socket_count and attempt != socket_count)
+            or (width == 1 and start % 4)):
+        raise ValueError("Original storage: invalid source epoch bounds/socket")
+    return dict(epoch)
+
+
+def source_epoch_recovery_pending(status: dict) -> bool:
+    """The legacy, mixed-history preview must never replace an epoch window."""
+    return (status.get("source_tcp_multi_socket") is True or
+            status.get("source_rate_transition_during_live") is True)
+
+
+def source_epoch_recovery_possible(status: dict) -> bool:
+    """Only the local graph path can resume; leave writer/transport alarms intact."""
+    return (source_epoch_recovery_pending(status) and
+            status.get("phase") == "RECORDING" and
+            status.get("capture_only") is False and
+            status.get("snapshot_stale") is False and
+            status.get("invalid_frames") == 0 and
+            status.get("source_rx_denied_responses", 0) == 0 and
+            status.get("source_system_error_observed", False) is False and
+            type(status.get("source_tcp_connection_count")) is int and
+            status["source_tcp_connection_count"] > 0 and
+            status.get("source_original_receive_gate_verified") is True and
+            status.get("source_original_storage_verified") is True)
+
+
+def source_channel_epoch(status: dict, row: dict):
+    epoch = row.get("source_epoch")
+    if epoch is None:
+        return None
+    return validate_source_epoch(
+        epoch, rx=row["rx_pos_64"],
+        valid=row["valid_pos_64"], width=row["sample_width_bytes"],
+        socket_count=status.get("source_tcp_connection_count", 0))
+
+
 def validate_source_range_state(state,channel):
     """Prove the reported Single against source config bytes, not UI gain."""
     if state is None:
@@ -88,7 +138,7 @@ def source_live_range_matches(row,domain,scale,state):
 
 def validate_original_storage_receipt(
         receipt:dict|None,channels:list[dict],
-        receive_gate:dict|None=None)->dict|None:
+        receive_gate:dict|None=None, *, socket_count:int=0)->dict|None:
     """Check Go ring accounting; never claim Delphi binary/runtime parity.
 
     The optional receipt preserves existing approved historical status files.
@@ -123,6 +173,8 @@ def validate_original_storage_receipt(
                 first!=max(valid,rx-BUFFER_ELEMENTS if rx>BUFFER_ELEMENTS else 0)
                 or available!=rx-first or available>BUFFER_ELEMENTS):
             raise ValueError("Original storage: impossible ring cursor/history")
+        epoch=validate_source_epoch(row.get("source_epoch"),
+            rx=rx,valid=valid,width=width,socket_count=socket_count)
         source_samples=channels[i].get("samples")
         expected_upper=source_samples if i<8 else (
             source_samples*4 if type(source_samples) is int else -1)
@@ -143,7 +195,7 @@ def validate_original_storage_receipt(
         if (type(source_samples) is not int or source_samples<0
                 or rx>expected_upper or rx>admitted or
                 rx+skipped>expected_upper or
-                gap>channels[i].get("sequence_discontinuities",-1)+1+gate_gaps or
+                gap>channels[i].get("sequence_discontinuities",-1)+max(1,socket_count)+gate_gaps or
                 dropped>channels[i].get("nonfinite_samples",-1)):
             raise ValueError("Original storage: source RX counters disagree")
         domain=row.get("input_domain")
@@ -185,6 +237,7 @@ def validate_original_storage_receipt(
             "next_device_sample_index":idx,"input_domain":domain,
             "original_live_f_range_single":live_range,
             **({"source_range_state":range_state} if range_state is not None else {}),
+            **({"source_epoch":epoch} if epoch is not None else {}),
             "sequence_gaps":gap,"rate_changes":rate_changes,
             "rejected_nonfinite_frames":dropped,
         })
@@ -197,10 +250,31 @@ def validate_original_storage_receipt(
     }
 
 
-def source_live_units_text(state):
+def source_live_units_text(state, *, windows_ansi_code_page=None):
     """ConfigUnits type 9 (32 bytes). Never infer Windows ANSI code page."""
     if not isinstance(state,dict) or not state.get("units_raw_le"):
         return None
     from .original_get_value_text_30 import get_value_text_30
-    out=get_value_text_30(9,bytes.fromhex(state["units_raw_le"]))
-    return out.text if out.available else None
+    raw=state["units_raw_le"]
+    if not isinstance(raw,str) or not re.fullmatch("[0-9a-f]{64}",raw):
+        return None
+    out=get_value_text_30(9,bytes.fromhex(raw),
+        windows_ansi_code_page=windows_ansi_code_page)
+    return out.text if out.available and not any(ord(c)<32 for c in out.text) else None
+
+def source_status_channel_units(status,adc):
+    """PageStatus uses its own accepted snapshot; tcAdc is independent."""
+    if (not isinstance(status,dict) or status.get("source_original_storage_verified") is not True
+            or type(adc) is not int or not 1<=adc<=10):
+        return None
+    bank=status.get("source_original_storage")
+    rows=bank.get("channels") if isinstance(bank,dict) else None
+    if not isinstance(rows,list) or len(rows)!=10 or not isinstance(rows[adc-1],dict):
+        return None
+    try:
+        if adc>=9:
+            return "" if rows[adc-1].get("input_domain")==TACH_DOMAIN else None
+        state=validate_source_range_state(rows[adc-1].get("source_range_state"),adc)
+        return source_live_units_text(state)
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return None

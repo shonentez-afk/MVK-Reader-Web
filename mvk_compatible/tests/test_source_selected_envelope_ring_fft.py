@@ -99,8 +99,10 @@ def test_source_fir_refuses_missing_extra_samples_or_reinterpreting_bspec_lines(
     assert small["source_history_samples"]==4289
     assert len(small["amplitude"])==256
     assert small["original_delphi_numerical_parity_verified"] is False
+    assert source_selected_envelope_fft_plan(4096,65536,24)["post_fir_fft_n"]==128
+    assert source_selected_envelope_fft_plan(1024,65536,19)["post_fir_fft_n"]==4
     with pytest.raises(ValueError,match="Invalid sample rate"):
-        source_selected_envelope_fft_plan(4096,65536,24)
+        source_selected_envelope_fft_plan(4096,512,24)
     for bogus in (0,True,512,2048,1000,262145):
         with pytest.raises(ValueError):
             source_selected_envelope_fft_plan(bogus,65536,20)

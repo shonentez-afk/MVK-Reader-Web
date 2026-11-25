@@ -35,8 +35,9 @@ from .offline_export import require_members
 from .native_r6_tach_evidence import validate_tach_evidence
 from .original_pagefile_recording import OriginalPageFileSelection,OriginalFileNameOptions
 from .original_measure_controls import table_rows
-from .original_values_3100_timeline import scan_original_values_3100
+from .original_values_3100_timeline import max_source_values_ticks,scan_original_values_3100
 from .original_param_gate_proof import SOURCE_PARAM_GATE_NAME
+from .original_local_tach_latch import GATE_NAME as SOURCE_LOCAL_TACH_GATE_NAME
 from .original_write_data_wire_replay import export_source_wire_write_intervals
 from .original_write_data_live_gate import verify_native_live_write_data
 from .original_mode2_source_files import (
@@ -115,8 +116,9 @@ def _status_proof(payload):
     # _Unit125:008085A5..008085BD writes a VALUES row only when the
     # observed PARAM descriptor starts at address 0x3100, not on AUX4700.
     ticks=payload.get("source_values_ticks_address_3100")
-    if ticks is not None and _int(ticks,"actual source 0x3100 VALUES ticks")>frames:
-        raise ValueError("Source VALUES ticks cannot exceed received frames")
+    if (ticks is not None and _int(ticks,"actual source 0x3100 VALUES ticks")
+            >max_source_values_ticks(frames, raw)):
+        raise ValueError("Source VALUES ticks exceed received PARAM capacity")
     return (session_id,tuple(counters),aux,frames,raw)
 
 
@@ -550,7 +552,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                             data_windows):
                         raise ValueError(
                             "Original live Go WriteData window count not agreed with Qt")
-                    for proof in source_live_data_evidence["verified_channel_files"]:
+                    physical_files=source_live_data_evidence.get("verified_physical_channel_files",[])
+                    for proof in (source_live_data_evidence["verified_channel_files"]+physical_files):
                         original=directory/proof["name"]
                         copied=target/proof["name"]
                         if (original.is_symlink() or not original.is_file()
@@ -570,7 +573,9 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                 raise ValueError(
                                     "Source live WriteData changed during local copy")
                         emitted.append({
-                            "kind":"source_live_original_rate_freeze_adc1_gated",
+                            "kind":("source_live_adc_physical_candidate" if
+                                     proof.get("physical_raw_replay_verified") else
+                                     "source_live_original_rate_freeze_adc1_gated"),
                             **proof})
                     # Original Delphi 00806A8C writes a sidecar TSXML on
                     # closing each channel file. Use the source tag order,
@@ -586,8 +591,18 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     xml_options={i:w.file_options for i,w in enumerate(
                         (entry for entry in ledger.windows
                          if entry.kind=="data"),1)}
+                    # New physical schema: wire remains forensic. Old captures
+                    # retain their existing structural sidecar behavior.
+                    sidecar_proof=source_live_data_evidence
+                    if source_live_data_evidence.get("physical_writer_schema"):
+                        sidecar_proof=dict(source_live_data_evidence,
+                            verified_channel_files=[
+                                x for x in source_live_data_evidence["verified_channel_files"]
+                                if x["channel"]>=9]+physical_files)
+                        skipped.extend(dict(x,kind="source_live_adc_physical_candidate")
+                            for x in source_live_data_evidence.get("skipped_physical_channel_files",[]))
                     source_tsxml_receipts=write_verified_source_tsxml_sidecars(
-                        target,live_proof=source_live_data_evidence,
+                        target,live_proof=sidecar_proof,
                         source_run_end_utc=raw_summary.get("ended_utc"),
                         window_options=xml_options)
                     for part in source_tsxml_receipts:
@@ -640,7 +655,11 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                     expected_frozen_values=raw_summary.get(
                         "source_original_values_3100_skipped_frozen",0),
                     capture_register_prefix=raw_summary.get(
-                        "source_live_values_audit_sha256") is not None)
+                        "source_live_values_audit_sha256") is not None,
+                    tach_gate_path=(directory/SOURCE_LOCAL_TACH_GATE_NAME if
+                        raw_summary.get("source_local_tach_gate_sha256") else None),
+                    expected_tach_gate_sha256=raw_summary.get("source_local_tach_gate_sha256"),
+                    expected_tach_gate_records=raw_summary.get("source_local_tach_gate_records",0))
                 source_live_values_evidence=verify_original_live_values(
                     directory,summary=raw_summary,
                     source_sha=audit["source_raw_sha256"],
@@ -773,7 +792,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                             writer.writerow((
                                 "SOURCE_3100_TICK_INDEX","RECEIVED_FRAME_INDEX",
                                 "REGISTER_ADDRESS","WORD_COUNT","PARAM_PAYLOAD_LE_HEX",
-                                "PARAM_PAYLOAD_SHA256","LATEST_PRECEDING_AUX_INDEX"))
+                                "PARAM_PAYLOAD_SHA256","LATEST_PRECEDING_AUX_INDEX",
+                                "SOURCE_PARAM_DESCRIPTOR_INDEX"))
                             for event in events:
                                 writer.writerow((
                                     event["source_tick_index"],event["frame_index"],
@@ -781,7 +801,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                     event["register_bytes_hex"],
                                     event["register_payload_sha256"],
                                     event["latest_earlier_aux_index"] if
-                                    event["latest_earlier_aux_index"] is not None else ""))
+                                    event["latest_earlier_aux_index"] is not None else "",
+                                    event["source_param_descriptor_index"]))
                         evidence=target/evidence_name
                         emitted.append({
                             "window":number,"kind":"source_3100_evidence",
@@ -904,6 +925,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
             "source_live_original_writer_files":
                 len(source_live_data_evidence["verified_channel_files"]) if
                 source_live_data_evidence is not None else 0,
+            "source_live_physical_candidate_files":len(
+                (source_live_data_evidence or {}).get("verified_physical_channel_files",[])),
             "source_original_tsxml_structural_sidecars":
                 sum(item.get("sidecar_created",False) for item in
                     source_tsxml_receipts),
@@ -957,6 +980,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                 "source_live_original_packet_gate_records":
                     source_live_data_evidence["verified_source_packet_records"] if
                     source_live_data_evidence is not None else 0,
+                "source_live_physical_candidate_files":len(
+                    (source_live_data_evidence or {}).get("verified_physical_channel_files",[])),
                 "source_original_tsxml_structural_sidecars":
                     sum(item.get("sidecar_created",False) for item in
                         source_tsxml_receipts),

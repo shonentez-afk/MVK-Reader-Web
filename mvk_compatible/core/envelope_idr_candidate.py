@@ -24,7 +24,8 @@ ENVELOPE_STAGES=(0,1,2,3,4,2,3,4,2,3,4,2,3,4,2,3,4,2,3,4,
  5,5,5,5,5,5,6,6,6,6,6,6)
 FIR_TAPS=(0,97,129,161,193,51,49,45,89,177,353)
 FIR_DECIM=(0,4,4,4,8,2,1,2,4,8,16)
-VALID_RATIOS=(1,2,4,8,10,20,40,80,160)
+# IDR immediate operands are HEX, not decimal: 007D1178..007D11C8.
+VALID_RATIOS=(1,2,4,8,16,32,64,128,256)
 _PRIVATE_IDP_SHA256="77e59f98febdd7df94e71cb538a2df69ea4de4624f15b088a81c86e61bb5a438"
 _PRIVATE_IMAGE_OFFSET=0x400ed8
 _PRIVATE_FIR_ADDRESS=0x8cda58
@@ -98,15 +99,14 @@ def envelope_plan(signal_length:int,sample_rate:int,code:int)->dict:
     if ratio not in VALID_RATIOS:
         raise ValueError(f"Original Delphi Invalid sample rate: ratio {ratio}")
     stage=ENVELOPE_STAGES[code]
-    pre_stage={1:None,2:7,4:8,8:9,10:10,
-               20:7,40:8,80:9,160:10}[ratio]
-    second_stage=10 if ratio in (20,40,80,160) else None
-    # 007D118F: extra historical length for second-stage filter.
-    offset=353 if second_stage is not None else 0
-    offset={1:offset,2:offset*2+45,4:offset*4+89,
-            8:offset*8+177,10:offset*16+353,
-            20:offset*2+45,40:offset*4+89,
-            80:offset*8+177,160:offset*16+353}[ratio]
+    pre_stage={1:None,2:7,4:8,8:9,16:10,
+               32:7,64:8,128:9,256:10}[ratio]
+    second_stage=10 if ratio>=32 else None
+    # 007D118F..007D11F7: inverse history of the second decimator
+    # before the first one. Execution order is pre -> second -> I/Q.
+    offset=FIR_TAPS[10] if second_stage is not None else 0
+    if pre_stage is not None:
+        offset=offset*FIR_DECIM[pre_stage]+FIR_TAPS[pre_stage]
     # _Unit115.pas:007D1215/007D1225: the multiplicand is the
     # original Fs/target ratio (EDX), NOT FIR_DECIM[stage]. The old
     # shortcut mis-sized the original GetSpectrum/GetSignal history.
@@ -117,6 +117,7 @@ def envelope_plan(signal_length:int,sample_rate:int,code:int)->dict:
             'ratio':ratio,'stage':stage,'pre_stage':pre_stage,
             'second_stage':second_stage,'adjusted_input_length':adjusted,
             'history_padding':adjusted-signal_length,
+            'post_fir_output_samples':signal_length//ratio//FIR_DECIM[stage],
             'original_history_factor_ratio':ratio,
             'source_getadjusted_address':'_Unit115.pas:007D1158-007D1230',
             'reported_output_rate_hz':target//FIR_DECIM[stage],

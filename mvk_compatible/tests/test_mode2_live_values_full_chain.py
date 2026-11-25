@@ -4,6 +4,7 @@ Only generated local original-shaped test frames and archives; no device.
 """
 from __future__ import annotations
 
+import csv
 from hashlib import sha256
 import json
 
@@ -19,8 +20,8 @@ from ..core.original_live_write_stages import (
 )
 
 
-def _with_go_values_events(tmp_path):
-    run,flow,ledger=_marked_original_values_run(tmp_path)
+def _with_go_values_events(tmp_path, *, multi_descriptor=False):
+    run,flow,ledger=_marked_original_values_run(tmp_path,multi_descriptor=multi_descriptor)
     window=ledger.windows[0]
     assert window.kind=="values"
     summary=json.loads((run/"summary.json").read_text())
@@ -50,6 +51,8 @@ def _with_go_values_events(tmp_path):
             "param_payload_le_hex":e["register_bytes_hex"],
             "param_payload_sha256":e["register_payload_sha256"],
         }
+        if multi_descriptor:
+            row["source_param_descriptor_index"] = e["source_param_descriptor_index"]
         lines.append(json.dumps(row,separators=(",",":"))+"\n")
     data="".join(lines).encode()
     (run/filename).write_bytes(data)
@@ -153,3 +156,17 @@ def test_values_source_does_not_use_audited_aux_as_row_trigger(tmp_path):
     (run/"summary.json").write_text(json.dumps(summary))
     with pytest.raises(ValueError,match="tick/events disagree"):
         export_source_write_windows(ledger,flow,run)
+
+
+
+def test_stop_export_keeps_both_rows_from_one_param(tmp_path):
+    run,flow,ledger,_=_with_go_values_events(tmp_path,multi_descriptor=True)
+    result=export_source_write_windows(ledger,flow,run)
+    assert result["source_live_values_3100_verified"] is True
+    assert result["source_live_values_3100_events"] == 2
+    with (run/EXPORT_SUBDIR/"VALUES01_SOURCE_3100_EVENTS.csv").open(
+            encoding="utf-8-sig",newline="") as file:
+        rows=list(csv.DictReader(file, delimiter=";"))
+    assert [(r["SOURCE_PARAM_DESCRIPTOR_INDEX"],r["PARAM_PAYLOAD_LE_HEX"]) for r in rows] == [
+        ("0",b"ABCD".hex()),("2",b"WXYZ".hex())]
+    assert rows[0]["RECEIVED_FRAME_INDEX"] == rows[1]["RECEIVED_FRAME_INDEX"]

@@ -1,7 +1,7 @@
 name: Stage111 - VALUES trigger-prefix regression
 on:
   push:
-    branches: [fix/stage111-values-trigger-prefix-20261124, research/stage111-mvkview-desktop-20261029]
+    branches: [fix/stage111-values-trigger-prefix-20261124, fix/stage111-eg-computation-links-20261124, research/stage111-mvkview-desktop-20261029]
     paths:
       - 'tools/research/native_tcp10230_stage108_live_recording_r6_1/**'
       - 'mvk_compatible/**'
@@ -29,7 +29,7 @@ jobs:
           go-version: '1.24'
           cache: false
       - name: Strict trigger-prefix, Freeze, duplicate, Stop regressions
-        run: go test -v -count=1 -run 'TestValuesTriggerPrefix|TestOriginalQtStopFileEndsSameSocketAndClosesWriteDataWriteValues|TestOriginalWriteValuesStopClosesActiveOnlyWhenClean' .
+        run: go test -v -count=1 -run 'TestValuesTriggerPrefix|TestSourceLocalTach|TestSourceTachByteWindow|TestOriginalQtStopFileEndsSameSocketAndClosesWriteDataWriteValues|TestOriginalWriteValuesStopClosesActiveOnlyWhenClean' .
       - name: Complete Native Go regression
         run: go test -count=1 ./...
       - name: Vet Native Go
@@ -59,13 +59,15 @@ jobs:
         working-directory: tools/research/native_tcp10230_stage108_live_recording_r6_1/source
         run: |
           mkdir -p "$MVK_PREFIX_FIXTURE_DIR"
-          go test -v -count=1 -run '^TestValuesTriggerPrefixCoreFixture$' .
+          go test -v -count=1 -run '^(TestValuesTriggerPrefixCoreFixture|TestSourceLocalTachCoreFixture|TestSourceTachByteWindowCoreFixture)$' .
       - name: Install offline core test requirements
         run: python -m pip install -r mvk_compatible/requirements-core.txt pytest
       - name: Verify actual Go RAW prefix and reject rehashed suffix
         run: |
           python -m pytest -q mvk_compatible/tests/test_mode2_live_values_trigger_prefix.py \
             mvk_compatible/tests/test_mode2_live_values_full_chain.py \
+            mvk_compatible/tests/test_stage111z31ei_local_tach.py \
+            mvk_compatible/tests/test_stage111z31ej_tach_byte_window.py \
             mvk_compatible/tests/test_original_source_values_tick_acceptance.py \
             mvk_compatible/tests/test_stage111z31fq_original_values_3100_timeline.py \
             mvk_compatible/tests/test_stage111z31fq_marked_values_export.py

@@ -356,8 +356,13 @@ def test_original_measure_mode2_operator_controls_before_and_during_live(qt_app)
         assert win._measurement_mode_selected
         assert win.wave_advanced_button.isHidden()
         assert win.leave_measurement_mode()
-        assert not win.wave_advanced_button.isHidden()
-        assert not win.spec_advanced_button.isHidden()
+        # MVK-14: an ordinary operator must not gain research controls
+        # just by leaving measurement mode. The explicit technical
+        # workspace is a separate route, not a side effect of Stop.
+        assert not win._measurement_mode_selected
+        assert not win.original_visual_skin.technical
+        assert win.wave_advanced_button.isHidden()
+        assert win.spec_advanced_button.isHidden()
         assert all(
             action.isVisible() for action in win._spec_lines_actions
         )
@@ -563,7 +568,7 @@ def test_original_qt_long_window_request_only_for_selected_page_and_tag(
     try:
         window._begin_live_capture()
         dialog._mode="capture"   # simulate already-authorized local Go run
-        dialog._capture_root=root
+        dialog._capture_root=tmp_path  # CaptureSpec parent; Go creates the child
         dialog._poll_source_long_window(status)
         assert not (root/REQUEST_NAME).exists() # initial PageStatus
         tabs=window.original_root_tabs

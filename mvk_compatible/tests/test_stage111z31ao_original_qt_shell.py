@@ -164,9 +164,8 @@ def test_stage111z31av_original_title_research_and_config_readable(source_window
         assert control.text() == ""
         assert control.accessibleName()
         assert not control.icon().isNull()
-        # Stage111Z31BD: only local READ-ONLY config text open is safe.
-        # Save/Reset/Download/Upload still cannot write to an instrument.
-        assert control.isEnabled() is (button_name == "bConfigLoad")
+        # Local read and confirmed local Defaults are safe.
+        assert control.isEnabled() is (button_name in {"bConfigLoad","bConfigReset"})
 
 
 def test_stage111z31aw_source_control_rectangles_and_mode_menu(source_window):
@@ -216,7 +215,7 @@ def test_stage111z31aw_page_status_source_chart_and_config_icons(
         button=page.findChild(QPushButton,name)
         assert button.geometry().getRect()==(x,y,w,h)
         assert button.property("originalDfmImageName")==image
-        assert button.isEnabled() is (name == "bConfigLoad")
+        assert button.isEnabled() is (name in {"bConfigLoad","bConfigReset"})
     win.open_archive(fixture_zip(tmp_path))
     win.original_root_tabs.setCurrentIndex(2)
     plot=win.original_shell.status_plot

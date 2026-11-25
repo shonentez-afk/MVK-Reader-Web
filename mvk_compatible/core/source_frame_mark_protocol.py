@@ -17,6 +17,8 @@ from pathlib import Path
 import tempfile
 import zipfile
 
+from .original_values_3100_timeline import max_source_values_ticks
+
 REQUEST_SCHEMA="MVK_NATIVE_LOCAL_FRAME_MARK_REQUEST_V1"
 AUDIT_SCHEMA="MVK_NATIVE_LOCAL_FRAME_MARK_AUDIT_V1"
 INBOX=".mvk_frame_marks_inbox"
@@ -185,9 +187,12 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
     if (end_source_tick is None)!=(summary_source_tick is None):
         raise ValueError("Original Values PARAM 0x3100 tick proof incomplete")
     if end_source_tick is not None:
+        raw_bytes=summary.get("raw_bytes")
+        if raw_bytes is not None:
+            raw_bytes=_strict_int(raw_bytes,"summary RAW bytes")
         end_source_tick=_strict_int(end_source_tick,"Go original 0x3100 row triggers")
         if (end_source_tick!=_strict_int(summary_source_tick,"Go VALUES ticks")
-                or end_source_tick>end_frames):
+                or end_source_tick>max_source_values_ticks(end_frames, raw_bytes)):
             raise ValueError("Source 0x3100 VALUES row count and summary disagree")
     end_counts=_counts(doc.get("end_channel_samples"))
     if (end_frames!=_strict_int(summary.get("frames_decoded"),"summary frames")
@@ -232,7 +237,8 @@ def accept_native_frame_mark_audit(ledger,flow)->dict:
         source_tick=receipt.get("source_values_ticks_address_3100")
         if end_source_tick is not None:
             source_tick=_strict_int(source_tick,"Go frame mark source VALUES tick")
-            if source_tick<previous_source_tick or source_tick>end_source_tick:
+            if (source_tick < previous_source_tick or source_tick > end_source_tick or
+                    source_tick > max_source_values_ticks(frames)):
                 raise ValueError("Go source 0x3100 row trigger rolled back")
             previous_source_tick=source_tick
         elif source_tick is not None:

@@ -298,17 +298,17 @@ def test_qt_stage111g_three_field_copy_and_local_save_candidate(tmp_path,qt_app,
     assert len(copied.split('\t'))==3
     assert all(copied.split('\t'))
     # Intercept the *user action* file picker; never open a real directory.
-    path=tmp_path/'candidate-export.csv'
+    path=tmp_path/'SPEC-FREQ-2026-11-25.csv'
     monkeypatch.setattr(QFileDialog,'getSaveFileName',
                         lambda *a,**k:(str(path),'CSV (*.csv)'))
     window.spec_save_button.click()
     qt_app.processEvents()
     assert path.exists()
-    lines=path.read_text(encoding='utf-8').splitlines()
+    lines=path.read_text(encoding='cp1251').splitlines()
     assert lines[0]=='sep=|'
     assert len(lines)==3
     assert len(lines[-1].split('|'))==3
-    assert 'кандидат' in lines[1]
+    assert 'СКЗ спектра' in lines[1]
     window.close()
     qt_app.processEvents()
 
@@ -1345,7 +1345,7 @@ def test_stage111z20_xor_overlay_tracks_spectrum_cursor_without_fft_change(
     win.close()
 
 
-def test_stage111z21_source_gain_shown_in_advanced_but_not_applied(tmp_path,qt_app):
+def test_stage111z21_mode1_fft_uses_gain_without_modifying_bin(tmp_path,qt_app):
     from mvk_compatible.desktop.main_window import MainWindow
     from .test_stage111z21_original_tsxml import _write_pair
     p,tsxml,raw=_write_pair(tmp_path,gain="0.7786")
@@ -1362,7 +1362,9 @@ def test_stage111z21_source_gain_shown_in_advanced_but_not_applied(tmp_path,qt_a
     text=win.spec_source_gain_label.text()
     assert "TSXML InternalChannelGain=" in text
     assert "FRange=" in text
-    assert "НЕ применено повторно к BIN" in text
+    assert "исходного чтения FFT; BIN не меняется" in text
+    assert win._full_spectrum["f_range_used"]==pytest.approx(.7786)
+    assert win._full_spectrum["input_domain"]=="original_float_storage"
     assert "физических единиц/паритета по этому BIN НЕТ" in text
     assert not win.spec_inspector.isVisible()
     win.spec_advanced_button.click()

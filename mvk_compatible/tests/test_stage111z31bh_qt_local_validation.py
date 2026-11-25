@@ -60,8 +60,7 @@ def test_source_config_local_validation_does_not_enable_edit_or_device(qt_app):
             panel.preview_local_value_input(0,"1")
 
         assert panel.document.report()["parsed_cells"]==before==0
-        for name in ("bConfigSave","bConfigReset","bConfigDownload",
-                     "bConfigUpload"):
+        for name in ("bConfigSave","bConfigDownload","bConfigUpload"):
             assert not panel.page.findChild(QPushButton,name).isEnabled()
         panel.set_source_mode(4)
         dialog=panel.basic_detail_dialog(3,3)

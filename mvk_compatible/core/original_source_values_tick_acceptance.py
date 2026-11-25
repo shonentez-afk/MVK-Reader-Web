@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 import re
 
-from .original_values_3100_timeline import RegisterPrefixSnapshot
+from .original_values_3100_timeline import MAX_PARAM_DESCRIPTORS,RegisterPrefixSnapshot
 
 SCHEMA="MVK_SOURCE_VALUES_3100_ORDERED_RAW_TICK_V1"
 HEX4=re.compile(r"[0-9a-f]{8}\Z")
@@ -64,6 +64,10 @@ def parse_source_values_3100_event(event:dict)->dict:
     for field in ("frame_index","source_values_tick_index","register_words"):
         if type(event.get(field)) is not int or not 0<=event[field]<1<<64:
             raise ValueError("Source WriteValues invalid frame/tick/word count")
+    descriptor = event.get("source_param_descriptor_index")
+    if ("source_param_descriptor_index" in event and
+            (type(descriptor) is not int or not 0 <= descriptor < MAX_PARAM_DESCRIPTORS)):
+        raise ValueError("Source WriteValues invalid PARAM descriptor index")
     raw=event.get("param_payload_le_hex")
     if (not isinstance(raw,str) or
             len(raw)!=event["register_words"]*4 or
@@ -140,6 +144,7 @@ def parse_source_values_3100_event(event:dict)->dict:
     return {
         "tick_index":event["source_values_tick_index"],
         "frame_index":event["frame_index"],
+        "source_param_descriptor_index":descriptor,
         "source_ordered_cells":len(cells),
         "source_valid_raw_dwords":known,
         "unmapped_or_missing_cells":unknown,
@@ -207,6 +212,7 @@ def verify_source_values_tick_files(events_jsonl,raw_layout_csv)->dict:
     count=known=unknown=0
     hd=sha256()
     last_frame=last_tick=-1
+    last_descriptor=None
     with events.open("rb") as f,layout.open("rb") as raw:
         for record in f:
             if len(record)>MAX_EVENT_LINE:
@@ -219,9 +225,14 @@ def verify_source_values_tick_files(events_jsonl,raw_layout_csv)->dict:
             except (UnicodeError,json.JSONDecodeError) as exc:
                 raise ValueError("Original WriteValues event JSONL corrupt") from exc
             r=parse_source_values_3100_event(entry)
-            if r["frame_index"]<=last_frame or r["tick_index"]<=last_tick:
-                raise ValueError("Original WriteValues tick/frame cursor reordered")
+            descriptor=r["source_param_descriptor_index"]
+            if (r["frame_index"]<last_frame or r["tick_index"]<=last_tick or
+                    (r["frame_index"]==last_frame and
+                     (descriptor is None or last_descriptor is None or
+                      descriptor<=last_descriptor))):
+                raise ValueError("Original WriteValues tick/frame/descriptor cursor reordered")
             last_frame,last_tick=r["frame_index"],r["tick_index"]
+            last_descriptor=descriptor
             expect=r.pop("raw_line_bytes")
             actual=raw.read(len(expect))
             if actual!=expect:

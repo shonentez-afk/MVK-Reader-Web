@@ -295,6 +295,7 @@ func TestSourceEnvelopeWindowUsesPreFIRParamsCountNotPostFFTCount(t *testing.T) 
     for _,tc:=range []struct{code int;selected uint32;want uint32}{
         {1,4096,4193},{2,4096,4225},{5,4096,4399},
         {20,4096,4147},{21,4096,4243},{26,4096,4145},
+        {24,4096,5265},{25,4096,6479},{19,1024,7951},
     }{
         n,e:=sourceFIREnvelopeWindowLength(65536,tc.code,tc.selected)
         if e!=nil || n!=tc.want{
@@ -305,7 +306,6 @@ func TestSourceEnvelopeWindowUsesPreFIRParamsCountNotPostFFTCount(t *testing.T) 
     for _,tc:=range []struct{hz uint32;code int;n uint32}{
         {65536,0,4096},{65536,32,4096},
         {65536,20,2048},{65536,20,1234},
-        {65536,24,4096}, // q=16: original Invalid sample rate
         {512,20,4096},{8192,21,4096},
     }{
         if _,e:=sourceFIREnvelopeWindowLength(tc.hz,tc.code,tc.n);e==nil{
@@ -370,4 +370,30 @@ func TestSourceEnvelopeGoRingExactPreFIRLengthAndRawSHA(t *testing.T){
     if e:=m.handleSourceLongWindowRequest(time.Now());e==nil{
         t.Fatal("outdated 4198-word FIR history accepted")
     }
+}
+
+ 
+func TestSourceFIRAllRateCodeAndOriginalMenuLengthPairs(t *testing.T) {
+    accepted:=0
+    for _,rate:=range []uint32{512,2048,8192,32768,65536} {
+        for code:=1;code<=31;code++ {
+            target:=sourceFIREnvelopeRates[code]
+            for _,n:=range []uint32{1024,4096,8192,16384,32768,65536,131072,262144} {
+                pre,post,fs,e:=sourceFIRWindowCounts(rate,code,n)
+                if target>rate {
+                    if e==nil {t.Fatalf("invalid FIR rate %d code %d",rate,code)}
+                    continue
+                }
+                ratio:=rate/target
+                want:=n/ratio/sourceFIRDecim[sourceFIREnvelopeStages[code]]
+                if e!=nil || pre<n || post!=want || fs!=target/sourceFIRDecim[sourceFIREnvelopeStages[code]] {
+                    t.Fatalf("FIR Fs=%d code=%d N=%d: %d/%d/%d %v",rate,code,n,pre,post,fs,e)
+                }
+                again,err:=sourceFIREnvelopeWindowLength(rate,code,n)
+                if err!=nil||again!=pre {t.Fatalf("FIR exact window mismatch: %v",err)}
+                accepted++
+            }
+        }
+    }
+    if accepted!=608 {t.Fatalf("source FIR coverage=%d",accepted)}
 }

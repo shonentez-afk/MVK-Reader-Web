@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from mvk_compatible.offline_source_audit_cli import (
     inspect_local_bin_sidecar,main
 )
@@ -53,3 +55,18 @@ def test_compare_original_fft_cli_offline_no_source_paths(tmp_path,capsys):
     assert t.name not in out and p.name not in out
     assert str(tmp_path) not in out
     assert not d["original_float32_radix2_bit_parity_verified"]
+
+
+def test_source_cli_accepts_mixed_extension_and_rejects_second_sidecar(tmp_path):
+    p,x,_=_write_pair(tmp_path)
+    upper=p.with_suffix('.BiN')
+    side=upper.with_name(upper.name+'.TsXmL')
+    p.rename(upper)
+    x.rename(side)
+    manifest=inspect_local_bin_sidecar(side)
+    assert manifest['sample_count']==8192
+    assert manifest==inspect_local_bin_sidecar(upper)
+    other=upper.with_suffix('.TSXML')
+    other.write_bytes(side.read_bytes())
+    with pytest.raises(ValueError,match='ровно одна'):
+        inspect_local_bin_sidecar(upper)

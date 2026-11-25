@@ -29,6 +29,7 @@ from .tqgrapher_display_idr_candidate import spectrum_display_contract
 
 SOURCE = "MVK_ORIGINAL_LINKED_SPECTRUM_VIEW_STAGE111Z31BL"
 SOURCE_GAIN = "TSXML_CHANNEL_GAIN_STATIC_LOADER_CANDIDATE"
+SOURCE_BYTE_GAIN = "MODE1_TACH_COUNT_BYTE_UNIT_RANGE"
 SOURCE_MISSING = "NO_VERIFIED_CHANNEL_FRANGE"
 ORIGINAL_FULL_HZ = HORIZONTAL_HZ[0]
 
@@ -48,6 +49,8 @@ class SourceSpectrumGain:
 
     @property
     def label(self) -> str:
+        if self.origin == SOURCE_BYTE_GAIN:
+            return "FRange TACH = 1 · Byte/255, не физическая калибровка"
         if self.frange_single is None:
             return "FRange: не установлен для текущего АЦП"
         return (f"FRange TSXML {self.frange_single:.8g}"
@@ -184,7 +187,14 @@ def source_spectrum_gain(
         metadata=matches[0].source_metadata
         branch=metadata.gain_loader_branch
         raw=metadata.original_f_range_single_candidate
-        if raw is not None:
+        if flow.tach_byte:
+            if (spectrum.get("source_tach_byte_normalization_divisor") != 255
+                    or spectrum.get("f_range_used") != 1.0):
+                raise ValueError("Spectrum does not match typed Mode1 Byte/TACH input")
+            gain, origin = 1.0, SOURCE_BYTE_GAIN
+            if metadata.internal_gain_single is None:
+                branch = "MODE1_BYTE_ABSENT_GAIN_DEFAULTS_TO_ONE"
+        elif raw is not None:
             gain=float(raw)
             if not (math.isfinite(gain) and gain>0):
                 raise ValueError("Nonpositive source TSXML FRange")

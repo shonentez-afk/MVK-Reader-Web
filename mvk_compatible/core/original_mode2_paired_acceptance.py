@@ -15,7 +15,9 @@ matching RAW are required for a complete explicit four-mode comparison.
 No file comparison alone authenticates original Win32 runtime/window.
 For numerical files: compare exact Single words and aggregate differences.
 For exported files: compare bytes, SHA-256 and first mismatch, not guesses
-about CSV delimiters, locale, Win32 timestamps or user-selected names.
+about CSV delimiters or locale. For strict mode, explicit WriteData roles
+bind each selected ADC/TACH BIN to its own TSXML on both sides. Source
+filename and local clock diagnostics do not authenticate a Win32 clock.
 """
 from __future__ import annotations
 
@@ -27,6 +29,8 @@ from pathlib import Path
 import re
 
 import numpy as np
+
+from .original_mode2_write_data_pair import MAX_TSXML_BYTES, write_data_coverage
 
 KINDS=frozenset((
     "ADC_BIN_F32","TACH_BIN_BYTES","GETSIGNAL_F32",
@@ -44,6 +48,7 @@ FLOAT_KINDS=frozenset((
 _FILE_NAME=re.compile(r"[A-Za-z0-9_\-. #$()А-Яа-я]{1,240}\Z")
 _SHA=re.compile(r"[0-9a-f]{64}\Z")
 MAX_PAIRS=40
+WRITE_DATA_KINDS=frozenset(("ADC_BIN_F32","TACH_BIN_BYTES","TSXML_CP1251"))
 MAX_PAIR_BYTES=128*1024*1024
 MAX_TOTAL_BYTES=512*1024*1024
 MAX_RAW_BYTES=2048*1024*1024
@@ -72,10 +77,11 @@ def _regular_file(directory,name,*,limit=MAX_PAIR_BYTES):
     return p
 
 
-def _file_bytes(folder,name):
-    p=_regular_file(folder,name)
-    body=p.read_bytes()
-    if len(body)>MAX_PAIR_BYTES:
+def _file_bytes(folder,name,*,limit=MAX_PAIR_BYTES):
+    p=_regular_file(folder,name,limit=limit)
+    with p.open("rb") as file:
+        body=file.read(limit+1)
+    if len(body)>limit:
         raise ValueError("Mode2 paired evidence changed during reading")
     return body
 
@@ -168,6 +174,7 @@ def compare_original_mode2_pair(
         *,files:list[dict],session_id:str,
         reference_raw_name:str|None=None,
         candidate_raw_name:str|None=None,
+        write_data_channels:list[int]|None=None,
 )->dict:
     """Compare explicit same-measurement files; no inferred 1:1 parity.
 
@@ -184,6 +191,12 @@ def compare_original_mode2_pair(
         raise ValueError("Mode2 paired evidence requires bounded file pairs")
     if (reference_raw_name is None)!=(candidate_raw_name is None):
         raise ValueError("Mode2 RAW proof must provide both streams")
+    if write_data_channels is not None and (
+            not isinstance(write_data_channels,list)
+            or not 1<=len(write_data_channels)<=10
+            or any(type(ch) is not int or not 1<=ch<=10 for ch in write_data_channels)
+            or len(set(write_data_channels))!=len(write_data_channels)):
+        raise ValueError("Mode2 WriteData requires unique channels 1..10")
     raw_proof=None
     total=0
     if reference_raw_name is not None:
@@ -196,14 +209,30 @@ def compare_original_mode2_pair(
     mode_pairs=set()
     tagged_reference_files=set()
     tagged_candidate_files=set()
+    writer_pairs={}
+    untagged_writer_pairs=0
     for entry in files:
         basic={"kind","reference_name","candidate_name"}
         if (not isinstance(entry,dict) or
-                set(entry) not in (basic,basic|{"source_spectrum_mode"})):
+                not basic<=set(entry)
+                or set(entry)-basic-{"source_spectrum_mode","source_writer_channel"}):
             raise ValueError("Mode2 paired file descriptor incomplete")
         kind=entry["kind"]
         if kind not in KINDS:
             raise ValueError("Mode2 paired output kind unsupported")
+        channel=entry.get("source_writer_channel")
+        if "source_writer_channel" in entry:
+            if (kind not in WRITE_DATA_KINDS or type(channel) is not int
+                    or not 1<=channel<=10
+                    or (kind=="ADC_BIN_F32" and channel>=9)
+                    or (kind=="TACH_BIN_BYTES" and channel<=8)):
+                raise ValueError("Mode2 WriteData writer channel/kind mismatched")
+            writer_channel=writer_pairs.setdefault(channel,{})
+            writer_role="tsxml" if kind=="TSXML_CP1251" else "bin"
+            if writer_role in writer_channel:
+                raise ValueError("Mode2 duplicate WriteData channel role")
+        elif kind in WRITE_DATA_KINDS:
+            untagged_writer_pairs+=1
         mode=entry.get("source_spectrum_mode")
         if "source_spectrum_mode" in entry:
             if (kind not in ("GETSPECTRUM_Y_F32",
@@ -230,8 +259,13 @@ def compare_original_mode2_pair(
                 raise ValueError("Mode2 same tagged spectrum file reused")
             tagged_reference_files.add(orig_key)
             tagged_candidate_files.add(clone_key)
-        a=_file_bytes(reference,a_name)
-        b=_file_bytes(candidate,b_name)
+        limit=MAX_TSXML_BYTES if kind=="TSXML_CP1251" and channel is not None else MAX_PAIR_BYTES
+        a=_file_bytes(reference,a_name,limit=limit)
+        b=_file_bytes(candidate,b_name,limit=limit)
+        if channel is not None:
+            writer_channel[writer_role]=(
+                ((a_name,a),(b_name,b)) if writer_role=="tsxml" else
+                ((a_name,len(a)),(b_name,len(b))))
         total+=len(a)+len(b)
         if total>MAX_TOTAL_BYTES:
             raise ValueError("Mode2 pair exceeds bounded local evidence budget")
@@ -249,7 +283,11 @@ def compare_original_mode2_pair(
             row.update(_numeric_diff(a,b,kind))
         if mode is not None:
             row["source_spectrum_mode"]=mode
+        if channel is not None:
+            row["source_writer_channel"]=channel
         records.append(row)
+    data_coverage=write_data_coverage(write_data_channels,writer_pairs)
+    data_coverage["untagged_writer_pairs"]=untagged_writer_pairs
     equal=all(x["byte_identical"] for x in records)
     found={x["kind"] for x in records}
     spectrum_families=frozenset((
@@ -257,7 +295,9 @@ def compare_original_mode2_pair(
         "GETSPECTRUM_FFT_COMPLEX_F32","GETSPECTRUM_POWER_F32",
         "GETSPECTRUM_POSTMODE_POWER_F32","GETSPECTRUM_Y_F32"))
     writer_families=frozenset((
-        "ADC_BIN_F32","TSXML_CP1251","VALUES_CSV","TABLE_CSV"))
+        "TSXML_CP1251","VALUES_CSV","TABLE_CSV"))
+    writer_kinds_supplied=writer_families.issubset(found) and bool(
+        found.intersection(("ADC_BIN_F32","TACH_BIN_BYTES")))
     tagged_y={r["source_spectrum_mode"]:r for r in records
               if r["kind"]=="GETSPECTRUM_Y_F32"
               and "source_spectrum_mode" in r}
@@ -277,7 +317,9 @@ def compare_original_mode2_pair(
     strict_same_raw_files_complete=bool(
         raw_proof is not None and raw_proof["same_original_tcp_bytes"]
         and explicit_four_mode_comparison and mode_comparison_equal
-        and writer_families.issubset(found)
+        and writer_kinds_supplied and not untagged_writer_pairs
+        and data_coverage["all_selected_channel_pairs_structurally_bound"]
+        and data_coverage["reference_bin_channel_and_clock_patterns_complete"]
         and "GETSIGNAL_F32" in found and equal
     )
     return {
@@ -303,8 +345,8 @@ def compare_original_mode2_pair(
         "source_same_raw_four_mode_numeric_pairs_byte_identical":(
             mode_comparison_equal),
         "source_all_four_modes_original_win32_same_window_attested":False,
-        "source_write_data_values_output_families_supplied":(
-            writer_families.issubset(found)),
+        "source_write_data_values_output_families_supplied":writer_kinds_supplied,
+        "source_write_data_channel_coverage":data_coverage,
         "source_stop_boundary_authenticated_with_original_win32":False,
         "all_pairs_byte_identical":bool(equal),
         "exact_file_contents_match_for_supplied_pairs":bool(equal),
@@ -325,9 +367,9 @@ def main(argv=None)->int:
     parser.add_argument("--reference-dir",required=True)
     parser.add_argument("--candidate-dir",required=True)
     parser.add_argument("--manifest",required=True,
-                        help="local JSON: session_id, files, optional two RAW basenames")
+                        help="local JSON: session_id, files, optional RAW basenames and write_data_channels")
     parser.add_argument("--require-complete-same-raw",action="store_true",
-                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, GetSignal, writer outputs and all compared file bytes match; does NOT attest physical Win32 runtime")
+                        help="fail closed unless RAW, all four mode Y, Tag2/3 power, all spectral stages, GetSignal, role-bound BIN and TSXML for every declared WriteData channel, VALUES, TABLE and all compared file bytes match; does NOT attest physical Win32 runtime")
     args=parser.parse_args(argv)
     manifest=Path(args.manifest)
     if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size>20000:
@@ -341,6 +383,7 @@ def main(argv=None)->int:
         files=data["files"],session_id=data["session_id"],
         reference_raw_name=data.get("reference_raw_name"),
         candidate_raw_name=data.get("candidate_raw_name"),
+        write_data_channels=data.get("write_data_channels"),
     )
     print(json.dumps(report,ensure_ascii=False,indent=2))
     if args.require_complete_same_raw:

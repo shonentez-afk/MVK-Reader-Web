@@ -43,10 +43,10 @@ def required_original_history(n_fft:int, sample_rate:int, code:int)->dict:
     n=check_n(n_fft)
     # bSpecLines is PRE-FIR. The source FFT executes on Params.Count
     # AFTER FIR/decimation, which can legitimately fall below 1024.
-    # Original 007CC198 accepts powers of two >=2; our complete peak
-    # summary/visible series contract is bounded to >=8 (N/2>=4).
-    if n<8:
-        raise ValueError('Source post-FIR FFT requires at least 8 samples')
+    # N=4 is reachable at 65536/2048 and I/Q decimation 8.
+    # Original 007D1801 skips the empty summary interval and returns zero.
+    if n<4:
+        raise ValueError('Source post-FIR FFT requires at least 4 samples')
     dummy=envelope_plan(1,sample_rate,code)
     stages=tuple(t for t in
         (dummy['pre_stage'],dummy['second_stage'],dummy['stage']) if t)
@@ -100,9 +100,7 @@ def source_selected_envelope_fft_plan(selected_bspec_lines_n:int,
     for stage in reversed(stages):
         reverse=reverse*FIR_DECIM[stage]+FIR_TAPS[stage]
     if reverse!=source_count:
-        # For the original real source-rate set 512..65536, q=1/2/4/8.
-        # Never pretend an exotic q=10/20/40/80/160 that changes a
-        # fractional tail matches the exact inverse history.
+        # Exact integer inverse for the hexadecimal source ratio table.
         raise ValueError("Source GetAdjustedLength and FIR inverse disagree")
     fs_out=info["reported_output_rate_hz"]
     if fs_out*selected!=sample_rate*count:
@@ -142,10 +140,8 @@ def source_selected_envelope_spectrum_candidate(
     if (source.ndim!=1 or len(source)!=plan["source_getadjusted_length_samples"]
             or not np.isfinite(source).all()):
         raise ValueError("Exact source GetAdjustedEnvelopeLength window required")
-    if plan["post_fir_fft_n"]<8:
-        # Source FFT accepts >=2, but full power summary requires
-        # an interval starting at bin2 and ending at Trunc(N/2.56).
-        raise ValueError("Post-FIR FFT too short for full PageSpectrum summary")
+    if plan["post_fir_fft_n"]<4:
+        raise ValueError("Post-FIR FFT below the supported original menu range")
     outcome=envelope_spectrum_idr_candidate(
         source,sample_rate,code,profile,
         n_fft=plan["post_fir_fft_n"],mode=mode,
@@ -248,7 +244,7 @@ def envelope_spectrum_idr_candidate(samples:np.ndarray,sample_rate:int,code:int,
     assert second_removed==0.0
     fs_out=int(env['output_sample_rate_hz'])
     low=max(2,round(n_fft/(2.0*fs_out)))
-    if low>=len(power):
+    if low>len(power):
         raise ValueError('Invalid lower-band cutoff for FFT output rate')
     p=np.asarray(power,dtype=np.float32).copy()
     p[:low]=0

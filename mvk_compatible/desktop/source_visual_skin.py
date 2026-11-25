@@ -13,12 +13,13 @@ research, F12 to show/hide the compatible Qt technical interface.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QRect, QPoint, QEvent, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QKeySequence, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
-    QFileDialog, QLabel, QPushButton, QStyle, QWidget, QToolButton,
+    QApplication, QFileDialog, QLabel, QPushButton, QStyle, QWidget, QToolButton,
 )
 
 from ..core.original_pagestart_private_pictures import (
@@ -109,7 +110,7 @@ class SourceStartBackdrop(QWidget):
         self.setProperty("sourcePrivateDfmPaletteAcceptedForBackground",False)
         self.setProperty("sourceOriginalIconCollectionLoaded",False)
         candidate=os.environ.get("MVKVIEW_PRIVATE_SOURCE_DFM","")
-        if candidate:
+        if candidate and not getattr(sys,"frozen",False):
             # Explicit opt-in only. Wrong or missing paths are NOT searched
             # across the user's disk and never become startup blockers.
             try:
@@ -282,8 +283,23 @@ class OriginalVisualSkin:
         # Normal operator execution has NO research hotkeys, panels or
         # menu actions. An explicit developer process may opt in using
         # MVKVIEW_DEVELOPER_UI=1, never a hidden in-app F12 toggle.
-        self.developer_enabled=(os.environ.get(
+        self.packaged_operator=bool(getattr(sys,"frozen",False))
+        self.developer_enabled=(not self.packaged_operator and os.environ.get(
             "MVKVIEW_DEVELOPER_UI","")=="1")
+        if self.packaged_operator:
+            # Parent actions may already have been constructed by MainWindow.
+            # Detach every View-menu route and remove Window shortcuts,
+            # without deleting the controls used internally by normal pages.
+            pending=list(view_menu.actions())
+            while pending:
+                action=pending.pop()
+                submenu=action.menu()
+                if submenu is not None:
+                    pending.extend(submenu.actions())
+                window.removeAction(action)
+                action.setShortcut(QKeySequence())
+                action.setEnabled(False)
+            view_menu.menuAction().setVisible(False)
         self.home=window.task_subpages.widget(0)
         self.start=window.original_start_controller
         self.root=window.original_root_tabs
@@ -411,11 +427,13 @@ class OriginalVisualSkin:
             widget.setProperty("sourceOriginalBitmapProvided",False)
 
     def _configure_visibility(self,enabled:bool):
-        enabled=bool(enabled)
+        enabled=bool(enabled) and not self.packaged_operator
         # Programmatic QA may still switch this for legacy regression
         # coverage, but ordinary Qt users have no reachable action.
         self.technical=enabled
         w=self.window
+        for plot in (w.wave_plot,w.spec_plot):
+            plot.set_generic_graph_interaction(enabled and self.developer_enabled)
         w.menuBar().setVisible(enabled)
         w.statusBar().setVisible(enabled)
         w.note.setVisible(enabled)
@@ -500,6 +518,14 @@ class OriginalVisualSkin:
                     i,self.root.tabData(i) in expected)
         finally:
             self._visibility_guard=False
+        # With a fixed-size non-expanding QTabBar, Qt can retain old
+        # tab hitboxes after changing visibility. Refresh the tab bar's
+        # layout at its current size, without moving the top-level window.
+        signature=tuple(self.root.isTabVisible(i) for i in range(self.root.count()))
+        if signature!=getattr(self, "_laid_out_tab_visibility", None):
+            self._laid_out_tab_visibility=signature
+            size=self.root.size()
+            QApplication.sendEvent(self.root, QResizeEvent(size, size))
         receipt=original_runtime_tab_contract(
             has_measurement=ready,technical=self.technical,
             current_page=page,live=live,measurement_requested=requested,
@@ -518,6 +544,8 @@ class OriginalVisualSkin:
         return self.root.tabData(index)
 
     def choose_private_dfm(self):
+        if self.packaged_operator:
+            return
         path,_=QFileDialog.getOpenFileName(
             self.window,"Исходный mvkform.dfm — только локальное чтение",
             "","Delphi text DFM (*.dfm)")

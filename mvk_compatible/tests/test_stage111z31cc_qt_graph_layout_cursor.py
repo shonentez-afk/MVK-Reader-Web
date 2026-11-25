@@ -44,20 +44,24 @@ def test_both_visible_plots_resize_and_pan_without_stale_cursor_or_fft(qt_app,tm
             xr,yr=vb.viewRange()
             pos=vb.mapViewToScene(QPointF(sum(xr)/2,sum(yr)/2))
             handler(pos,force=True)
-            assert getattr(w,pixel_attr) is not None
+            pixel=getattr(w,pixel_attr)
+            assert pixel is not None
             assert getattr(w,line_attr).isVisible()
-            # Same scene X after pan now selects a different source sample.
+            # A view-only pan/resize reprojects the same plot X without
+            # waiting for mouse motion or reading another source window.
             span=xr[1]-xr[0]
-            vb.setXRange(xr[0]+span*.05,xr[1]-span*.05,padding=0)
+            vb.setXRange(xr[0]+span*.15,xr[1]-span*.02,padding=0)
             settle(qt_app)
-            assert getattr(w,pixel_attr) is None
-            assert not getattr(w,line_attr).isVisible()
-            handler(pos)
-            assert getattr(w,pixel_attr) is not None
+            assert getattr(w,pixel_attr)==pixel
             assert getattr(w,line_attr).isVisible()
             w.resize(w.width()+120,w.height()+40);settle(qt_app)
             assert_rect(plot)
-            assert getattr(w,pixel_attr) is None
+            assert getattr(w,pixel_attr)==pixel
+            assert getattr(w,line_attr).isVisible()
+            rect=vb.sceneBoundingRect()
+            handler(QPointF(rect.right()+4,rect.center().y()))
+            assert not getattr(w,line_attr).isVisible()
+            w.resize(w.width()+20,w.height()+20);settle(qt_app)
             assert not getattr(w,line_attr).isVisible()
         import numpy as np
         np.testing.assert_array_equal(w._full_spectrum['amplitude'],fft)

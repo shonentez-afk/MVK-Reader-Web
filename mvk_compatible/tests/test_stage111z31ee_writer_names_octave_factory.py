@@ -1,4 +1,5 @@
 """Source-recovered naming, PageStatus scale and factory visibility (offline)."""
+from dataclasses import replace
 from datetime import datetime,timezone
 from types import SimpleNamespace
 import pytest
@@ -21,9 +22,11 @@ def test_source_names_utf16_empty_prefix_and_distinct_paths():
     assert source_values_filename(prefix="",when=STAMP)=="VALUES-2026-11-24--09-05-06.csv"
     assert source_device_label(use_custom_name=False,custom_name="ignored",status_serial_text="0012")=="MVK0012"
     assert source_device_label(use_custom_name=False,custom_name="ignored") is None
+    assert OriginalFileNameOptions().use_folder_prefix is False
+    assert OriginalFileNameOptions().use_custom_name is False
     window=SimpleNamespace(kind="data",operator_begin_utc=STAMP.isoformat(),
         channels=(True,)+(False,)*7+(True,False),
-        file_options=OriginalFileNameOptions(use_custom_name=True,custom_name="МВК/1",
+        file_options=OriginalFileNameOptions(use_folder_prefix=True,use_custom_name=True,custom_name="МВК/1",
             file_prefix="Узел-",folder_prefix=SOURCE_FOLDER_TEMPLATE))
     result=source_writer_name_candidates(window)
     assert result["folder"]=="RunUp24-11-2026 09-05-06"
@@ -31,6 +34,12 @@ def test_source_names_utf16_empty_prefix_and_distinct_paths():
                             "Узел-МВК_1-TACH1-2026-11-24--09-05-06.bin"]
     assert not result["original_file_open_time_verified"]
     assert result["actual_go_filenames_unchanged"]
+    checked_options=window.file_options
+    window.file_options=replace(checked_options,use_folder_prefix=False)
+    without_folder=source_writer_name_candidates(window)
+    assert without_folder["folder"]==""
+    assert without_folder["files"]==result["files"]
+    window.file_options=checked_options
     window.kind="values"
     assert source_writer_name_candidates(window)["files"]==["Узел-VALUES-2026-11-24--09-05-06.csv"]
     assert source_writer_name_candidates(window)["folder"]==""

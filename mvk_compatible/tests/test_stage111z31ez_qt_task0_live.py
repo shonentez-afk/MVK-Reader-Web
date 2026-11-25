@@ -42,8 +42,8 @@ def test_source_page_config_download_is_a_real_task0_action(qt_app,monkeypatch):
         assert panel.source_mode==4
         assert panel.download_button.objectName()=="bConfigDownload"
         assert panel.download_button.isEnabled()
-        for danger in (panel.upload_button,panel.reset_button):
-            if danger is not None:assert not danger.isEnabled()
+        assert panel.upload_button is None or not panel.upload_button.isEnabled()
+        assert panel.reset_button.isEnabled()
         assert panel.download_device_config()
         assert invoked[0][0]=="created"
         assert invoked[0][1]==controller.workspace.device_ipv4
@@ -96,7 +96,7 @@ def test_source_task0_proof_populates_existing_original_basic_grid(qt_app):
         assert "Task0" in panel.source_note.text()
         assert panel.save_button.isEnabled() is False
         assert panel.upload_button is None or not panel.upload_button.isEnabled()
-        assert panel.reset_button is None or not panel.reset_button.isEnabled()
+        assert panel.reset_button.isEnabled()
         assert not win._live_active
         assert win.session is None
     finally:

@@ -116,20 +116,20 @@ func TestSourceRangeLatchIndependentChannelsAndDescriptorSuffix(t *testing.T){
     r:=m.sourceOriginalStorage
     b:=make([]byte,4)
     binary.LittleEndian.PutUint32(b,math.Float32bits(2.5))
-    m.image.Put(RegBlock{Addr:0x10e,Words:2,Payload:b})
+    m.storeSourcePARAMDescriptor(RegBlock{Addr:0x10e,Words:2,Payload:b})
     binary.LittleEndian.PutUint32(b,math.Float32bits(4))
-    m.image.Put(RegBlock{Addr:0x20e,Words:2,Payload:b})
+    m.storeSourcePARAMDescriptor(RegBlock{Addr:0x20e,Words:2,Payload:b})
     binary.LittleEndian.PutUint32(b,0)
-    m.image.Put(RegBlock{Addr:0x30e,Words:2,Payload:b})
+    m.storeSourcePARAMDescriptor(RegBlock{Addr:0x30e,Words:2,Payload:b})
     binary.LittleEndian.PutUint32(b,math.Float32bits(-2))
-    m.image.Put(RegBlock{Addr:0x40e,Words:2,Payload:b})
+    m.storeSourcePARAMDescriptor(RegBlock{Addr:0x40e,Words:2,Payload:b})
     m.latchSourceOriginalRanges()
     for i,want:=range []float32{2.5,4,1,0,1} {
         s:=r.channels[i].rangeState
         if s==nil||s.Single!=want||s.Usable!=(i!=3){t.Fatalf("ADC%d %+v",i+1,s)}
     }
     binary.LittleEndian.PutUint32(b,math.Float32bits(999))
-    m.image.Put(RegBlock{Addr:0x10e,Words:2,Payload:b})
+    m.storeSourcePARAMDescriptor(RegBlock{Addr:0x10e,Words:2,Payload:b})
     m.latchSourceOriginalRanges()
     if r.channels[0].rangeState.Single!=2.5 {t.Fatal("later descriptor changed latched range")}
     if r.channels[2].rangeState.Origin!="REGISTER_ZERO_FALLBACK_ONE"||

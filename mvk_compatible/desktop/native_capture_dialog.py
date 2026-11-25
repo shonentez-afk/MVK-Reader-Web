@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import time
+from weakref import ref
 
 from PySide6.QtCore import QProcess, QThread, QTimer, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -22,6 +23,7 @@ from ..core.native_r6_bridge import (CaptureSpec, native_executable,
                                      pack_completed_export, request_graceful_stop)
 from ..core.native_r6_live_status import load_capture_live_status
 from ..core.native_r6_live_preview import load_live_preview, MAX_SAMPLES
+from ..core.original_source_ring_receipt import source_epoch_recovery_pending
 from ..core.original_source_long_window import (
     submit_source_long_window,submit_source_fft_window,
     submit_source_envelope_window,submit_source_getsignal_envelope_window,
@@ -65,6 +67,7 @@ class NativeCaptureDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._capture_owner = ref(parent) if parent is not None else lambda: None
         self.setWindowTitle("Запись с МВК01 · Native R6.1")
         self.resize(750, 650)
         self.setMinimumSize(550, 500)
@@ -245,6 +248,20 @@ class NativeCaptureDialog(QDialog):
         root.addWidget(self.live_tabs, 1)
         self._sync_buttons()
 
+    def prepare_inline(self):
+        """Mount the same consent and receiver controller inside PageStatus."""
+        from PySide6.QtCore import Qt
+
+        self.setWindowFlags(Qt.Widget)
+        self.setMinimumSize(0, 0)
+        self.setObjectName("operatorNativeCapturePanel")
+        self.confirm.setText("Разрешение получено, выбран проводной Ethernet")
+        self.source_rate_tx.setText("Передавать SetRate в разрешённом сеансе")
+        self.source_auto_reconnect.setText("Переподключаться после обрыва")
+        self.cancel_inline = QPushButton("Отменить подготовку", self)
+        self.layout().insertWidget(2,self.cancel_inline)
+        self._sync_buttons()
+
     def _reset_live_channels(self):
         for i in range(10):
             name = f"АЦП {i+1}" if i < 8 else f"TACH {i-7}"
@@ -355,18 +372,11 @@ class NativeCaptureDialog(QDialog):
                       str(ch["sequence_discontinuities"]), status, ch["quality"]]
             for col, value in enumerate(values):
                 self.live_channels.item(i, col).setText(value)
-        # At most one bounded preview per new atomic snapshot, never a second
-        # TCP client and never an on-disk partial BIN. Failed provenance must
-        # CLEAR any previously displayed provisional data.
-        if snapshot.get("source_tcp_multi_socket"):
-            self.previewInvalid.emit(
-                "После переподключения исходная история графиков не может "
-                "считаться непрерывной; RAW разделён по TCP-сеансам")
-            return
-        if snapshot.get("source_rate_transition_during_live"):
-            self.previewInvalid.emit(
-                "Исходная ЧД изменилась в текущем сеансе; прежнее "
-                "превью скрыто, полный RAW продолжает сохраняться")
+        # Skip the ordinary forensic preview after a transition.
+        # The independent source-ring request above already recovered
+        # the current epoch (or is still waiting for its full history).
+        # A mixed-preview invalidation must not erase that valid graph.
+        if source_epoch_recovery_pending(snapshot):
             return
         if snapshot["phase"] != "RECORDING":
             self.previewInvalid.emit("Запись не в фазе RECORDING: предварительные графики скрыты")
@@ -395,12 +405,13 @@ class NativeCaptureDialog(QDialog):
         Native preview (which includes packets skipped during FreezeUpdate).
         Nothing is transmitted to the physical instrument.
         """
-        parent=self.parent()
+        parent=self._capture_owner()
         if (self._mode!="capture" or self._capture_root is None or
                 parent is None or
                 not getattr(parent,"_live_active",False) or
                 getattr(parent,"_measurement_exit_requested",False) or
-                getattr(parent,"_source_live_view_frozen",False)):
+                getattr(parent,"_source_live_view_frozen",False) or
+                getattr(parent,"_source_graph_wait_rate",None) is not None):
             return
         tabs=getattr(parent,"original_root_tabs",None)
         if tabs is None:
@@ -420,7 +431,7 @@ class NativeCaptureDialog(QDialog):
             fft_n=None
             if type(source_h_tag) is not int:
                 return
-            envelope_code=int(parent.wave_envelope_code.currentData() or 0)
+            envelope_code=int(parent.wave_envelope_code.currentData() or 0) if adc<=8 else 0
             if envelope_code:
                 profile=getattr(parent,"envelope_profile",None)
                 if (profile is None or getattr(profile,"provenance",None)!=
@@ -434,7 +445,7 @@ class NativeCaptureDialog(QDialog):
                 fft_n=int(parent.spec_n.currentData())
             except (ValueError,TypeError,AttributeError):
                 return
-            if parent.spec_envelope_button.isChecked():
+            if adc<=8 and parent.spec_envelope_button.isChecked():
                 envelope_code=int(parent.spec_envelope_code.currentData() or 0)
                 profile=getattr(parent,"envelope_profile",None)
                 if (envelope_code<1 or profile is None or
@@ -444,8 +455,13 @@ class NativeCaptureDialog(QDialog):
                 tag=-2  # local spectrum FIR request, never TCP
             else:
                 tag=-1
+        rows=(snapshot.get("source_original_storage") or {}).get("channels") or []
+        row=rows[adc-1] if 1<=adc<=len(rows) else {}
+        epoch=row.get("source_epoch") or {}
         key=(snapshot.get("session_id"),adc,tag,fft_n,
-             envelope_code,source_h_tag)
+             envelope_code,source_h_tag,row.get("last_sample_rate_hz"),
+             epoch.get("socket_attempt"),epoch.get("continuity_generation"),
+             epoch.get("start_pos_64"))
         if self._source_long_selector!=key:
             self._source_long_selector=key
             self._source_long_request=None
@@ -453,9 +469,15 @@ class NativeCaptureDialog(QDialog):
             self._source_long_last_emitted=None
             self._source_long_last_capture_end=None
         try:
+            # BY DESIGN LoadCaptureLiveStatus receives the parent
+            # CaptureSpec root; the ring IPC APIs receive its exact child
+            # run. Never create/read IPC siblings or foreign runs.
+            run=Path(snapshot["run_directory"])
+            if (run.is_symlink() or run.parent.resolve()!=self._capture_root.resolve()):
+                raise ValueError("Source window outside generated capture directory")
             pending=self._source_long_request
             if pending is not None:
-                window=load_source_long_window(self._capture_root,snapshot,pending)
+                window=load_source_long_window(run,snapshot,pending)
                 if window is not None and pending.request_id!=self._source_long_last_emitted:
                     self._source_long_last_emitted=pending.request_id
                     self._source_long_last_capture_end=window.received_samples
@@ -473,13 +495,13 @@ class NativeCaptureDialog(QDialog):
                     rows[adc-1]["rx_pos_64"]<=self._source_long_last_capture_end):
                 return
             request=(submit_source_getsignal_envelope_window(
-                self._capture_root,snapshot,adc,source_h_tag,envelope_code)
+                run,snapshot,adc,source_h_tag,envelope_code)
                 if tag==-3 else submit_source_envelope_window(
-                    self._capture_root,snapshot,adc,fft_n,envelope_code)
+                    run,snapshot,adc,fft_n,envelope_code)
                 if tag==-2 else submit_source_fft_window(
-                    self._capture_root,snapshot,adc,fft_n)
+                    run,snapshot,adc,fft_n)
                 if tag==-1 else submit_source_long_window(
-                    self._capture_root,snapshot,adc,tag))
+                    run,snapshot,adc,tag))
             if request is None:
                 return  # Selected real source ring history not yet resident
             self._source_long_request=request
@@ -503,7 +525,7 @@ class NativeCaptureDialog(QDialog):
         """
         if self._source_mode2_disarmed:
             return False
-        owner=self.parent()
+        owner=self._capture_owner()
         return (owner is None or
                 not hasattr(owner,"_measurement_mode_selected") or
                 bool(owner._measurement_mode_selected))
@@ -533,6 +555,9 @@ class NativeCaptureDialog(QDialog):
             and self.confirm.isChecked() and
             self.adapters.currentData() is not None)
         self.stop_button.setEnabled(self._mode == "capture")
+        cancel = getattr(self, "cancel_inline", None)
+        if cancel is not None:
+            cancel.setVisible(idle)
         self.open_button.setEnabled(self._zip is not None or self._raw_only_dir is not None)
         self.browse_button.setEnabled(idle)
         # The checkbox always reflects actual per-session permission;
@@ -731,7 +756,7 @@ class NativeCaptureDialog(QDialog):
         # Source edIpAddr remains the one operator-selected device address.
         # A dialog override is reflected into PageStart before Go starts;
         # this is not Ethernet NIC autodetection or a second TCP socket.
-        controller=getattr(self.parent(),"original_start_controller",None)
+        controller=getattr(self._capture_owner(),"original_start_controller",None)
         if controller is not None:
             controller.apply_capture_device_ip(spec.device_ipv4)
         self._live_last_error = None
@@ -854,6 +879,14 @@ class NativeCaptureDialog(QDialog):
             self.archiveReady.emit(self._zip)
         elif self._raw_only_dir is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._raw_only_dir)))
+
+    def reject(self):
+        # Qt routes Escape through reject(), not necessarily closeEvent.
+        # An active capture keeps the only UI which can request a graceful Stop.
+        if self.is_busy():
+            return
+        self._timer.stop()
+        super().reject()
 
     def closeEvent(self, event):
         if self.is_busy():

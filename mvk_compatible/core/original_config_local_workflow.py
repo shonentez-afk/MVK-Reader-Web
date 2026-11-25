@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 
 from .original_config_readonly import (
-    LocalConfigInspection,RawConfigCell,alarm_config_register,
+    FIELDS,LocalConfigInspection,RawConfigCell,alarm_config_register,
     inspect_original_local_config,MAX_BYTES)
 from .original_config_semantics import section_fields
 from .original_config_input_draft import (
@@ -46,6 +46,7 @@ class OriginalLocalConfigWorkspace:
     current:LocalConfigInspection
     input_file:Path
     edits:tuple[LocalEdit,...]=()
+    saved:tuple[RawConfigCell,...]=()
 
     @classmethod
     def load(cls,path):
@@ -62,8 +63,40 @@ class OriginalLocalConfigWorkspace:
         return len(self.edits)
 
     def discard_changes(self):
+        # A mode-scoped successful Save acknowledges only the cells
+        # written; reverting an unsaved draft must retain those values.
+        cells={c.address:c for c in self.original.cells}
+        cells.update((c.address,c) for c in self.saved)
+        baseline=LocalConfigInspection(tuple(cells[k] for k in sorted(cells)),
+            self.original.file_digests,self.original.source)
         return OriginalLocalConfigWorkspace(
-            self.original,self.original,self.input_file)
+            self.original,baseline,self.input_file,saved=self.saved)
+
+    @staticmethod
+    def _mode_sections(mode):
+        def bank(kind,adc=None):
+            fields,base=section_fields(kind,adc=adc)
+            return base,tuple(base+f.offset for f in fields)
+        if mode==4:return (bank("ip"),)
+        if mode==5:return (bank("calib"),)
+        if mode==6:return (
+            *(bank("adc",i) for i in range(1,9)),
+            *(bank("tach",i) for i in range(1,3)),
+            *((i*0x100,tuple(alarm_config_register(i,slot,key)
+                for slot in range(1,9) for key,_,_ in FIELDS))
+                for i in range(1,9)),
+        )
+        raise ValueError("Only original configuration modes 4/5/6 are supported")
+
+    def mark_mode_saved(self,mode):
+        addresses={a for _,items in self._mode_sections(mode) for a in items}
+        saved={c.address:c for c in self.saved}
+        saved.update((c.address,c) for c in self.current.cells
+                     if c.address in addresses)
+        return OriginalLocalConfigWorkspace(
+            self.original,self.current,self.input_file,
+            tuple(e for e in self.edits if e.address not in addresses),
+            tuple(saved[a] for a in sorted(saved)))
 
     def _patch(self,address,type_id,text,key,bounds=None):
         if type(address) is not int or not 0<=address<=0xfffe or address%2:
@@ -97,16 +130,17 @@ class OriginalLocalConfigWorkspace:
             tuple(cells[k] for k in sorted(cells)),
             self.original.file_digests,self.original.source)
         edits=tuple(x for x in self.edits if x.address!=address)
-        original=self.original.value(address)
+        original=next((c for c in self.saved if c.address==address),
+                      self.original.value(address))
         if original is None or original.formatted!=new.formatted:
             edits+=(LocalEdit(
                 address,key,info["format_char"],
                 sha256(payload).hexdigest()),)
         return OriginalLocalConfigWorkspace(
-            self.original,doc,self.input_file,edits)
+            self.original,doc,self.input_file,edits,self.saved)
 
     def edit_field(self,section,row,text,*,adc=None):
-        """Typed and bounded source fields on IP, Calib and ADC pages."""
+        """Typed and bounded source fields on IP, Calib, ADC and TACH pages."""
         fields,base=section_fields(section,adc=adc)
         if type(row) is not int or not 0<=row<len(fields):
             raise SourceInputRejected("ctIndexOutOfBounds")
@@ -127,28 +161,39 @@ class OriginalLocalConfigWorkspace:
             address,source_type_for_raw_format(old.format_char),
             text,"Alarm."+field)
 
-    def source_text(self):
-        """Original loader-compatible FLATTENED address:format file.
+    def _export_cells(self,mode):
+        if mode is None:
+            # Legacy complete-project API; PageConfig uses the source modes.
+            return ((0,self.current.cells),)
+        by_address={c.address:c for c in self.current.cells}
+        return tuple((base,tuple(by_address[a] for a in addresses
+                                if a in by_address))
+                     for base,addresses in self._mode_sections(mode))
 
-        Original TMvkCellList SaveValuesToFile writes +offset then each
-        address / GetValueWithFmt; titles are optional after ';'. Native
-        binary equality/codepage parity is not asserted.
-        """
+    def source_text(self,*,mode=None):
+        """Original loader-compatible address:format text, grouped by bank."""
         if not self.original.file_digests:
             raise ValueError("Load an explicit original text config first")
         if len(self.current.cells)>8192:
             raise ValueError("Too many source cells")
-        lines=["; Local MVK source config; NO device connected","+0x0000"]
-        for c in self.current.cells:
-            if (type(c.address) is not int or
-                    not 0<=c.address<=0xfffe or c.address%2 or
-                    not isinstance(c.format_char,str) or
-                    len(c.format_char)!=1 or
-                    not isinstance(c.literal,str) or
-                    SAFE_VALUE.fullmatch(c.literal) is None):
-                raise ValueError("Source cell cannot be serialized")
-            lines.append(f"0x{c.address:04X} {c.format_char}:{c.literal}")
-        result="\n".join(lines)+"\n"
+        lines=["; Local MVK source config; NO device connected"]
+        sections=self._export_cells(mode)
+        if not any(cells for _,cells in sections):
+            raise ValueError("No verified local values for selected configuration mode")
+        for base,cells in sections:
+            if not cells:continue
+            lines.append(f"+0x{base:04X}")
+            for c in cells:
+                if (type(c.address) is not int or
+                        not base<=c.address<=0xfffe or c.address%2 or
+                        not isinstance(c.format_char,str) or
+                        len(c.format_char)!=1 or
+                        not isinstance(c.literal,str) or
+                        SAFE_VALUE.fullmatch(c.literal) is None):
+                    raise ValueError("Source cell cannot be serialized")
+                lines.append(f"0x{c.address-base:04X} {c.format_char}:{c.literal}")
+        newline="\r\n" if mode is not None else "\n"
+        result=newline.join(lines)+newline
         if len(result.encode("utf-8"))>MAX_BYTES:
             raise ValueError("Original config file size exceeded")
         return result
@@ -160,7 +205,7 @@ class OriginalLocalConfigWorkspace:
                 tuple((x.address,x.formatted) for x in self.original.cells)):
             raise ValueError("Source config/includes changed since opening")
 
-    def save_as(self,filename):
+    def save_as(self,filename,*,mode=None):
         """Explicitly create a NEW file, read it back, never write original."""
         self._ensure_input_unchanged()
         target=Path(filename).absolute()
@@ -171,7 +216,7 @@ class OriginalLocalConfigWorkspace:
             raise ValueError(
                 "Choose a NEW local .txt/.cfg/.conf; never overwrite original")
         try:
-            raw=self.source_text().encode("cp1251","strict")
+            raw=self.source_text(mode=mode).encode("cp1251","strict")
         except UnicodeEncodeError as exc:
             raise ValueError("Cannot safely represent original CP1251 text") from exc
         if not 0<len(raw)<=MAX_BYTES:
@@ -182,15 +227,18 @@ class OriginalLocalConfigWorkspace:
                 created=True
                 fp.write(raw)
             readback=inspect_original_local_config(target)
-            if tuple((x.address,x.formatted) for x in readback.cells)!=tuple(
-                    (x.address,x.formatted) for x in self.current.cells):
+            expected=sorted((x.address,x.formatted)
+                            for _,cells in self._export_cells(mode) for x in cells)
+            if [(x.address,x.formatted) for x in readback.cells]!=expected:
                 raise ValueError("Saved source parser roundtrip did not match")
             return {
                 "source":SOURCE,
                 "local_source_file_created":True,
                 "source_loader_roundtrip_verified":True,
                 "saved_cells":len(readback.cells),
-                "edited_cells":len(self.edits),
+                "edited_cells":sum(e.address in {addr for addr,_ in expected}
+                                   for e in self.edits),
+                "source_config_mode":mode,
                 "saved_sha256":sha256(raw).hexdigest(),
                 "original_live_device_config_verified":False,
                 "original_delphi_bytes_and_codepage_verified":False,

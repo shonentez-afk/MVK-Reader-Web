@@ -52,16 +52,19 @@ type sourceOriginalChannelRing struct {
     sequenceGaps uint64
     rateChanges uint64
     rejectedNonfinite uint64
+    displayGeneration uint64
+    displayStart uint64
     rangeState *sourceOriginalRangeState
 }
 
 type sourceOriginalStorageRing struct {
     channels [10]sourceOriginalChannelRing
     rangeLatchAttempt uint64
+    displaySocketAttempt uint64
 }
 
 func newSourceOriginalStorageRing() *sourceOriginalStorageRing {
-    return &sourceOriginalStorageRing{}
+    return &sourceOriginalStorageRing{displaySocketAttempt: 1}
 }
 
 func sourceOriginalElementWidth(channel int) int {
@@ -105,18 +108,25 @@ func (r *sourceOriginalStorageRing) appendFrame(
     }
     // A source gap, changed sample rate or raw/calibrated domain invalidates
     // the old continuous window WITHOUT fabricating lost samples.
+    discontinuity:=false
     if c.seen {
         if h.Index!=c.nextDeviceIndex {
             c.sequenceGaps++
-            c.validPos=c.rxPos
+            discontinuity=true
         }
         if h.Rate!=c.sampleRate {
             c.rateChanges++
-            c.validPos=c.rxPos
+            discontinuity=true
         }
         if domain!=c.domain && !(sourceIsLiveADC(domain)&&sourceIsLiveADC(c.domain)) {
-            c.validPos=c.rxPos
+            discontinuity=true
         }
+    }
+    if discontinuity || h.NonFinite>0 && h.Channel<8 {
+        c.validPos=c.rxPos
+        c.cutDisplayHistory()
+    } else if c.displayGeneration==0 {
+        c.cutDisplayHistory()
     }
     c.nextDeviceIndex=h.Index+uint32(h.Samples) // uint32 wraps by design
     c.sampleRate=h.Rate
@@ -128,7 +138,6 @@ func (r *sourceOriginalStorageRing) appendFrame(
         // when their four-byte patterns resemble Float32 NaN/Inf.
         // Preserve the RAW ADC packet, but do not present a bad Float32.
         c.rejectedNonfinite++
-        c.validPos=c.rxPos
         return nil
     }
     if c.data==nil {
@@ -184,6 +193,7 @@ type sourceOriginalChannelReceipt struct {
     SequenceGaps uint64 `json:"sequence_gaps"`
     RateChanges uint64 `json:"rate_changes"`
     RejectedNonfinite uint64 `json:"rejected_nonfinite_frames"`
+    SourceEpoch *sourceDisplayEpoch `json:"source_epoch,omitempty"`
 }
 
 type sourceOriginalStorageReceipt struct {
@@ -211,6 +221,7 @@ func (r *sourceOriginalStorageRing) receipt() sourceOriginalStorageReceipt {
             SampleRate:c.sampleRate,Domain:c.domain,
             SequenceGaps:c.sequenceGaps,RateChanges:c.rateChanges,
             RejectedNonfinite:c.rejectedNonfinite,
+            SourceEpoch:r.displayEpoch(ch),
         }
         if c.seen {
             next:=c.nextDeviceIndex

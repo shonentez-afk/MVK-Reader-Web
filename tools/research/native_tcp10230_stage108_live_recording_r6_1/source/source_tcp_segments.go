@@ -42,10 +42,13 @@ func (m *Monitor) sourceSentBytes() uint64 {
 func (l *sourceTCPLedger) begin(m *Monitor) error {
  if l.Active!=0{return errors.New("source TCP session already active")}
  if len(l.Segments)>0 {
-  // Absolutely no stale registers, fragment, DSP status or sample-index
-  // continuity from the old TCP connection may enter the new session.
+  // Forensic registers, framing and published DSP/TACH status start
+  // fresh on each connection. The independent form-owned ADC config
+  // and storage survive the original Task2 retry. Only the separately
+  // fenced local display may use new, contiguous source-epoch windows.
   m.f=&Framer{}
   m.image=RegisterImage{}
+  if m.sourceTach!=nil {m.sourceTach.state=sourceLocalTachState{}}
   m.liveDSPSeen=[8]bool{}
   m.liveDSPStatus=[8]uint32{}
   m.liveLastAUXUTC=""
@@ -62,6 +65,9 @@ func (l *sourceTCPLedger) begin(m *Monitor) error {
  })
  l.Active=len(l.Segments)
  m.summary.SourceTCPConnectionCount=uint64(len(l.Segments))
+ if m.sourceOriginalStorage!=nil {
+  m.sourceOriginalStorage.beginDisplaySocket(m.summary.SourceTCPConnectionCount)
+ }
  m.note(fmt.Sprintf("SOURCE TCP CONNECT #%d: RAW offset %d",l.Active,m.summary.RawBytes))
  return nil
 }

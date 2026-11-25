@@ -237,7 +237,12 @@ class OriginalStartController:
                 "QLineEdit#edIpAddr { border: 1px solid #bf6a40; }")
             self.status.setText("Неверный локальный IPv4: "+str(exc))
             return False
+        ip_changed=self.workspace.device_ipv4!=next_state.device_ipv4
         self.workspace=next_state
+        if ip_changed:
+            config=getattr(self.window,"original_config_panel",None)
+            if config is not None:
+                config.invalidate_task0_ip()
         self.ip_edit.setStyleSheet("")
         self.status.setText(
             f"Выбран IP: {self.workspace.device_ipv4}; "
@@ -332,7 +337,7 @@ class OriginalStartController:
         if self.factory_mode:
             return True
         if QMessageBox.question(self.window,"Заводской режим",
-                "Показать локальный заводской режим? Команды калибровки, сброса и записи в прибор останутся запрещены.",
+                "Показать локальный заводской режим? Команды калибровки, записи и перезагрузки прибора останутся запрещены.",
                 QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:
             return False
         self.factory_mode=True
@@ -346,6 +351,10 @@ class OriginalStartController:
 
     def open_config_mode(self,mode):
         if mode not in (4,5,6):raise ValueError("Original local config mode")
+        panel=self.window.original_config_panel
+        if panel._task0_reading():
+            self.status.setText("Сначала завершите чтение Task0.")
+            return False
         if mode==5:
             if not self.factory_mode:
                 return False
@@ -358,7 +367,7 @@ class OriginalStartController:
         if self.window._measurement_mode_selected or self.window._live_active:
             self.status.setText("Сначала завершите измерение.")
             return False
-        self.window.original_config_panel.set_source_mode(mode)
+        panel.set_source_mode(mode)
         skin=getattr(self.window,"original_visual_skin",None)
         if skin is not None:
             skin.reveal_page(1)
@@ -396,6 +405,9 @@ class OriginalStartController:
                 "Сначала завершите текущее TCP-соединение.")
             return False
         if not self.commit_ip():
+            QMessageBox.warning(self.window, "Не удалось начать измерение",
+                "Введите корректный IPv4-адрес прибора, например 192.168.0.30.")
+            self.ip_edit.setFocus(Qt.OtherFocusReason)
             return False
         self.workspace.source_route("bTaskConnect")
         if not self.window.enter_measurement_mode():

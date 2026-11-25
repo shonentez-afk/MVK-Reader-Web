@@ -21,6 +21,7 @@ from .original_live_result_registers import parse_live_result_registers
 from .original_system_register_fields import verify_source_error_overlap
 from .original_source_ring_receipt import validate_original_storage_receipt
 from .original_receive_gate_receipt import validate_original_receive_gate_receipt
+from .original_values_3100_timeline import max_source_values_ticks
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
 _SOURCE_TCP_RETRY_CAUSES = frozenset((
@@ -117,8 +118,8 @@ def validate_live_status(payload: dict, *, expected_run: str,
     source_values_ticks=payload.get("source_values_ticks_address_3100")
     if source_values_ticks is not None and (
             _positive_int(source_values_ticks,"source address 0x3100 VALUES ticks")
-            >payload["frames_decoded"]):
-        raise ValueError("Native source VALUES ticks exceed decoded frames")
+            >max_source_values_ticks(payload["frames_decoded"], payload["raw_bytes"])):
+        raise ValueError("Native source VALUES ticks exceed decoded PARAM capacity")
     if any(source_fields) and not all(source_fields):
         raise ValueError("Native live status: partial source RX evidence")
     if all(source_fields):
@@ -224,7 +225,18 @@ def validate_live_status(payload: dict, *, expected_run: str,
     source_receive_gate=validate_original_receive_gate_receipt(
         payload.get("source_original_receive_gate"),safe)
     source_ring=validate_original_storage_receipt(
-        payload.get("source_original_storage"),safe,source_receive_gate)
+        payload.get("source_original_storage"),safe,source_receive_gate,
+        socket_count=tcp_count)
+    if source_ring is not None:
+        for i in (8,9):
+            row=source_ring["channels"][i]
+            ch=safe[i]
+            if (row["input_domain"]=="TACH_EXACT_DEVICE_PAYLOAD_BYTES" and
+                    row["sample_width_bytes"]==1 and ch["samples"] and
+                    not ch["sequence_discontinuities"] and len(ch["sample_rates_hz"])<=1):
+                # Preserve forensic nonfinite_samples; the live typed Byte
+                # channel itself has no IEEE754 NaN.
+                ch["quality"]="ПОТОК ПОЛУЧЕН"
     live_banks=parse_live_result_registers(payload)
     result = dict(payload)
     result["source_live_page_status_banks_verified"]=live_banks is not None

@@ -10,7 +10,8 @@ import numpy as np
 
 from .native_r6_live_preview import LivePreview
 from .tqgrapher_display_idr_candidate import spectrum_display_contract
-from .mvk_original_scale_tables_idr_candidate import source_spectrum_y_unit
+from .mvk_original_scale_tables_idr_candidate import source_spectrum_unit_contract
+from .original_source_ring_receipt import source_live_units_text,TACH_DOMAIN
 
 
 def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
@@ -25,6 +26,10 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
             or type(mode) is not int or mode not in range(4)
             or result.get("mode") != mode or result.get("channel") != adc):
         raise ValueError("Live PageSpectrum ADC/mode/N mismatch")
+    is_tach=adc>=9 and preview.input_domain==TACH_DOMAIN
+    if is_tach and (code or not preview.source_ring_provenance_verified or
+            channel.samples.dtype!=np.dtype("u1")):
+        raise ValueError("Live PageSpectrum: TACH Byte source cannot use FIR")
     if code:
         plan = result.get("original_source_fft_plan") or {}
         if (not preview.source_ring_provenance_verified
@@ -60,18 +65,29 @@ def bind_live_spectrum_view(preview: LivePreview, adc: int, result: dict,
         raise ValueError("Live PageSpectrum requires complete contiguous N/2")
     if not isinstance(result.get("spectrum_summary"), dict):
         raise ValueError("Live PageSpectrum summary missing")
+    # Range/units receipt belongs to the same ADC/window epoch.
+    if preview.source_ring_provenance_verified and channel.source_range_state is not None:
+        actual=result["spectrum_summary"].get("f_range")
+        if actual!=channel.source_f_range_single:
+            raise ValueError("Live PageSpectrum stale FRange in result")
+    units="" if is_tach else source_live_units_text(channel.source_range_state)
+    unit_contract=source_spectrum_unit_contract(mode,units,
+        source_bound=(preview.source_ring_provenance_verified and
+                      (is_tach or channel.source_range_state is not None)))
     x = x.copy()
     y = y.copy()
     x.setflags(write=False)
     y.setflags(write=False)
     return {**result,
             "frequency_hz": x, "amplitude": y,
-            "unit": source_spectrum_y_unit(mode),
+            **unit_contract,
+            "source_live_units":units,
             "grapher_series_bins": display["grapher_series_bins"],
             "live_display_contract": display,
             "live_measurement_view": True,
             "live_session_id": preview.session_id,
             "live_window_sha256": channel.sha256,
+            "live_source_epoch": channel.source_epoch,
             "live_adc_rate_hz": channel.rate_hz,
             "live_selected_bspec_lines": selected_n,
             "live_envelope_code": code,

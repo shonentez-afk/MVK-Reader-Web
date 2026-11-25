@@ -49,7 +49,7 @@ def test_scalar_original_instruction_order_bitwise_matches_optimized(stage,quadr
     (1,65536,4193,(1,)),   # independent FIR envelope
     (5,65536,5000,(7,2)), # first decimation + I/Q
     (20,65536,2099,(5,)), # 2x effective envelope rate
-    (20,20*65536,3000,(7,10,5)), # 2 decimators + I/Q
+    (20,32*65536,5000,(7,10,5)), # 2 decimators + I/Q
 ])
 def test_entire_source_chain_matches_optimized_without_input_mutation(
     code,fs,n,expected

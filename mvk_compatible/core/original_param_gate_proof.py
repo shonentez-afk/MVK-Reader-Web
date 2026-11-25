@@ -58,7 +58,7 @@ class OriginalParamGateReader:
         self.file = None
 
     def consume(self, *, frame_index: int, frame: bytes,
-                descriptors: int, values3100: bool) -> bool:
+                descriptors: int, values3100_count: int) -> bool:
         if self.file is None:
             raise ValueError("Original PARAM gate: reader not opened")
         raw = self.file.readline(MAX_PARAM_GATE_LINE + 1)
@@ -71,13 +71,20 @@ class OriginalParamGateReader:
             record = json.loads(raw)
         except (ValueError, UnicodeDecodeError) as exc:
             raise ValueError("Original PARAM gate: invalid JSON") from exc
-        if (not isinstance(record, dict)
-                or set(record) != {
-                    "schema", "frame_index_one_based", "frame_sha256",
-                    "descriptor_count", "freeze_update", "is_aux4700",
-                    "contains_values_3100"
-                }):
+        fields = {
+            "schema", "frame_index_one_based", "frame_sha256",
+            "descriptor_count", "freeze_update", "is_aux4700",
+            "contains_values_3100"
+        }
+        count_field = "source_values_3100_descriptor_count"
+        if not isinstance(record, dict) or set(record) not in (fields, fields | {count_field}):
             raise ValueError("Original PARAM gate: unknown or partial fields")
+        # Legacy evidence only encoded a flag. This is sufficient when a
+        # frame contains at most one trigger; repeated triggers require the
+        # new independent count, not a silently equivalent-looking flag.
+        count = record.get(count_field, int(bool(values3100_count)))
+        if type(count) is not int or count != values3100_count:
+            raise ValueError("Original PARAM gate: trigger descriptor count contradicts RAW")
         index = record["frame_index_one_based"]
         digest = record["frame_sha256"]
         frozen = record["freeze_update"]
@@ -92,7 +99,7 @@ class OriginalParamGateReader:
                 or type(record["is_aux4700"]) is not bool
                 or record["is_aux4700"] != (len(frame) == 4700)
                 or type(record["contains_values_3100"]) is not bool
-                or record["contains_values_3100"] != values3100):
+                or record["contains_values_3100"] != bool(values3100_count)):
             raise ValueError("Original PARAM gate: event contradicts RAW")
         self.last_index = index
         return frozen

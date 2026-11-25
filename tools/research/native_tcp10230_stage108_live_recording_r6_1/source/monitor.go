@@ -84,6 +84,8 @@ type Summary struct {
     SourceFrozenValuesTicks uint64 `json:"source_original_values_3100_skipped_frozen,omitempty"`
     SourceOriginalParamGateSHA256 string `json:"source_original_param_gate_sha256,omitempty"`
     SourceOriginalParamGateRecords uint64 `json:"source_original_param_gate_records,omitempty"`
+    SourceLocalTachGateSHA256 string `json:"source_local_tach_gate_sha256,omitempty"`
+    SourceLocalTachGateRecords uint64 `json:"source_local_tach_gate_records,omitempty"`
 	RegisterBlocks         uint64            `json:"register_blocks"`
 	Aux4700                uint64            `json:"aux4700_updates"`
 	ValuesTicks            uint64            `json:"values_ticks_address_3100"`
@@ -123,9 +125,11 @@ type Monitor struct {
 	closed      bool
 	liveBin     *LiveBinSpool
 	sourceOriginalStorage *sourceOriginalStorageRing // 8 Float32 + 2 byte rings, each 2^21
+	sourceOriginalADCConfig sourceOriginalADCConfig // accepted Range/Units words, form lifetime (not socket)
     sourceOriginalRXGate *sourceOriginalReceiveGate // original rate/freeze storage gate, NEVER TCP RX stop
     sourceOriginalTask2Stage *sourceOriginalTask2Lifecycle // independent Task2 Stage0/1/3 and DENIED original receive status
     sourceParamGate *sourceOriginalParamGateJournal // original PARAM freeze decisions per actual source TCP frame
+    sourceTach *sourceLocalTachJournal // separate local TACH projection, never mutates wire image
 	sourceLongWindowLastID string // one on-demand read per unique local request ID
 	sourceLongWindowLastError string // suppress duplicate optional IPC warnings
 	frameMarks  *frameMarkController // local-only source button marks; never device commands
@@ -281,6 +285,14 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
         }
 	}
 	for frameIndex, f := range frames {
+        // A control accepted while Read was blocked must be applied before
+        // the completed frame reaches the original Fs/Freeze admission gate.
+        // Keep the sole receive goroutine in charge, and preserve the raw
+        // write above. This only queues any separately approved RATE; it
+        // does not add a socket write or permit device commands.
+        if e := m.drainSourceOperatorRates(m.sourceOperatorRateChan); e != nil {
+            return e
+        }
         // Original reads ONE application frame at a time. Coalesced
         // TCP frames still need one FIFO dispatch between packets.
         if frameIndex>0 && m.sourceTask2TX!=nil {
@@ -433,10 +445,29 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // FreezeUpdate is false. No device TX is inferred or performed.
         sourceStoreAllowed:=m.sourceOriginalRXGate==nil ||
             m.sourceOriginalRXGate.allowedFrame(*sample,c.Samples)
-        if m.sourceLiveDataWriter!=nil {
-            if e:=m.sourceLiveDataWriter.onSample(
-                m,*sample,f.Raw[28:],sourceStoreAllowed);e!=nil {return e}
+        if !sourceStoreAllowed && m.sourceOriginalStorage!=nil {
+            // Freeze/rate-excluded wire data cannot make old samples fresh.
+            // Preserve RAW and internal accounting; fence only the UI window.
+            m.sourceOriginalStorage.channels[sample.Channel].cutDisplayHistory()
         }
+        if typ==typeTach && m.sourceParamGate!=nil && m.sourceOriginalRXGate!=nil {
+            if e:=m.ensureSourceLocalTach();e!=nil{return e}
+            if e:=m.sourceTach.onSample(m,f,*sample,sourceStoreAllowed);e!=nil{return e}
+        }
+        // Only a second ADMITTED rate, not discarded wrong-Fs wire data,
+        // proves a rate change. Preserve the homogeneous export ban even if
+        // the optional LiveBinSpool was not requested for this capture.
+        if m.sourceTask2TX!=nil && sourceStoreAllowed &&
+            m.sourceOriginalStorage!=nil &&
+            m.sourceOriginalStorage.channels[sample.Channel].seen &&
+            m.sourceOriginalStorage.channels[sample.Channel].sampleRate!=sample.Rate &&
+            !m.sourceRateTransitionDetected {
+            m.sourceRateTransitionDetected=true
+            m.summary.SourceRateTransition=true
+            m.warn("Original SetRate changed source Fs during capture: RAW retained, single-rate BIN export unavailable")
+            if m.liveBin!=nil {m.liveBin.preview=nil}
+        }
+        var physicalChunk []byte
 		// Original channel 8/9 store the 256 raw payload BYTES, not
         // 64 Float32 samples; FRxPos is byte count for TACH in Delphi.
         if typ==typeTach && sourceStoreAllowed &&
@@ -444,27 +475,19 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
         }
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
-			// Original mRate1Click permits rate changes. Keep every subsequent
-			// RAW/ADC/PARAM frame instead of falsely calling deliberate changes
-			// corrupt TCP. Existing single-rate BIN cannot certify this session.
-			// A wire Fs not selected by MvkSampleRate is ignored by the
-            // original channel store. Only a SECOND accepted rate proves
-            // an actual SetRate transition; wrong-Fs RAW alone does not.
-            if m.sourceTask2TX!=nil && sourceStoreAllowed &&
-               m.sourceOriginalStorage!=nil &&
-               m.sourceOriginalStorage.channels[sample.Channel].seen &&
-               m.sourceOriginalStorage.channels[sample.Channel].sampleRate!=sample.Rate &&
-               !m.sourceRateTransitionDetected {
-				m.sourceRateTransitionDetected=true
-				m.summary.SourceRateTransition=true
-				m.warn("Original SetRate changed ADC Fs during capture: RAW retained, single-rate BIN export unavailable")
-				if m.liveBin.preview!=nil {m.liveBin.preview=nil}
-			}
-            // The original receive gate drops mismatched Fs from
-            // channel storage and WriteData, not merely from GUI. The
-            // optional calibrated BIN must not consume that packet
-            // or falsely classify its valid header as corruption.
-			if sourceStoreAllowed && !m.sourceRateTransitionDetected && m.liveBin.begun {
+            // Freeze excludes samples from the original ring and WriteData,
+            // not the separate calibrated forensic archive made from the
+            // full wire stream. Otherwise the first ADC after unfreeze
+            // falsely looks like a broken wire sequence to the spool.
+            // Stop exposing its fallback preview once the two paths diverge.
+            archiveOnlyFrozen := m.sourceOriginalRXGate != nil &&
+                m.sourceOriginalRXGate.frozen && m.sourceOriginalRXGate.rate == sample.Rate
+            if archiveOnlyFrozen {
+                m.liveBin.preview = nil
+            }
+            // Do not change the existing safeguards for wrong-Fs data,
+            // pre-PARAM data, or the verified physical Source ring.
+			if (sourceStoreAllowed || archiveOnlyFrozen) && !m.sourceRateTransitionDetected && m.liveBin.begun {
                 // Original TMVKThread accepts pre-PARAM source ADC into
                 // its channel storage with default FRange=1.0. The
                 // OPTIONAL forensic calibrated BIN needs a complete
@@ -476,7 +499,8 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         // Original _Unit125 00808284/0080828C calls ProcessBufferChunk
         // with ApplyRange=true for every admitted ADC. Constructor=1,
         // then Stage0->1 latches the independent per-channel config range.
-        // WriteData above still writes the original TmpStream wire bytes.
+        // The physical companion receives this SAME processed chunk.
+        // The forensic wire file remains separate and immutable.
         if typ==typeADC && sourceStoreAllowed && m.sourceOriginalStorage!=nil {
             domain:=sourceStorageUnscaledADC
             scale:=sourceOriginalLiveFRange
@@ -487,8 +511,24 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e!=nil{return e}
             if e=m.sourceOriginalStorage.appendFrame(
                 *sample,aligned,domain);e!=nil{return e}
+            state:=m.sourceOriginalStorage.channels[sample.Channel].rangeState
+            // If a writer is re-opened after reconnect, retain its RAW
+            // evidence but do not label bytes physical based on old config.
+            rangeCurrent:=!m.summary.SourceTCPMultiSocket ||
+                state!=nil && state.SocketAttempt==m.summary.SourceTCPConnectionCount
+            if m.sourceLiveDataWriter!=nil && rangeCurrent && sourcePhysicalRangeKnown(state) &&
+                sample.NonFinite==0 && sourcePhysicalFinite(aligned) {
+                physicalChunk=aligned
+            }
+        }
+        if m.sourceLiveDataWriter!=nil {
+            if e:=m.sourceLiveDataWriter.onSample(
+                m,*sample,f.Raw[28:],sourceStoreAllowed,physicalChunk);e!=nil {return e}
         }
 	case typeParam:
+        if m.sourceParamGate!=nil && m.sourceOriginalRXGate!=nil {
+            if e:=m.ensureSourceLocalTach();e!=nil{return e}
+        }
         sourceFrozen:=m.sourceOriginalRXGate!=nil && m.sourceOriginalRXGate.frozen
         // A SHA-anchored local ledger records the REAL operator Freeze
         // state per PARAM frame. RAW replay alone cannot recover it.
@@ -510,9 +550,10 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
         m.summary.SourceNonemptyParameters++
         // _Unit125.pas:0080850C..008085E1: while FreezeUpdate=1, the
         // original STILL reads each PARAM register word from TCP, but
-        // skips register-image update, FRange, GetValueText, AUX and the
-        // WriteValues trigger at 0x3100. Do not substitute stale DSP
-        // readings or write an event just because RAW contains 0x3100.
+        // skips register-image changes, AUX and the WriteValues trigger
+        // at 0x3100. Stage0 still reads the retained ADC config below.
+        // Do not substitute stale DSP readings or emit a VALUES event
+        // just because RAW contains 0x3100.
         // The immutable forensic incoming.raw retains those exact bytes.
         if sourceFrozen {
             // Nonempty frozen PARAM still transitions Stage0; image is unchanged.
@@ -521,52 +562,50 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             m.summary.SourceFrozenParamBlocks+=uint64(len(blocks))
             if len(f.Raw)==4700 {m.summary.SourceFrozenAux4700++}
             for _,b:=range blocks {
-                if b.Addr==0x3100 {m.summary.SourceFrozenValuesTicks++;break}
+                if b.Addr==0x3100 {m.summary.SourceFrozenValuesTicks++}
             }
             m.note("original FreezeUpdate: received PARAM preserved in RAW; local register/DSP/VALUES update skipped")
             break
         }
-		// VALUES observes the register image at its descriptor, inclusive,
-		// not the end of the PARAM frame. Keep final image and all existing
-		// frame counters, spool validation and RAW handling unchanged.
-		var valuesTriggerImage *RegisterImage
-		for _, b := range blocks {
-			m.image.Put(b)
-			m.summary.RegisterBlocks++
+        // The Delphi receive loop processes each descriptor in order.
+        // WriteValues sees this trigger's inclusive register prefix and
+        // both current local TACH DWORDs before the following reset.
+        for index, b := range blocks {
+            m.storeSourcePARAMDescriptor(b)
+            if m.sourceTach != nil {
+                m.sourceTach.state.onBlock(b)
+            }
+            m.summary.RegisterBlocks++
             // Source 00808617..00808682 is inside the descriptor loop.
             m.latchSourceOriginalRanges()
-			if b.Addr == 0x3100 && valuesTriggerImage == nil &&
-				m.sourceLiveValuesWriter != nil &&
-				!m.sourceLiveValuesWriter.closed &&
-				m.sourceLiveValuesWriter.active != nil {
-				// RegisterImage owns fixed arrays (bytes and validity); this
-				// value copy cannot alias later updates to m.image.
-				atTrigger := m.image
-				valuesTriggerImage = &atTrigger
-			}
-		}
-		m.summary.RegisterUpdates++
-		if m.liveBin != nil {
-			if e := m.liveBin.paramFrame(f, blocks, &m.image); e != nil {
-				return e
-			}
-		}
-		if len(blocks) == 1 && blocks[0].Addr == 0 && blocks[0].Words == registerWords {
-			m.summary.FullSnapshots++
-			m.note("full 32800-byte register image received")
-		}
-		for _, b := range blocks {
-			if b.Addr == 0x3100 {
-				m.summary.ValuesTicks++
-				break
-			}
-		}
-        // Preserve whole-frame validation and the one-tick-per-frame
-        // policy; only the row's register source is trigger-prefix bound.
-        if m.sourceLiveValuesWriter!=nil {
-            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at,valuesTriggerImage);e!=nil {return e}
+            if b.Addr != 0x3100 {
+                continue
+            }
+            m.summary.ValuesTicks++
+            var localTach *sourceLocalTachState
+            if m.sourceTach != nil {
+                localTach = &m.sourceTach.state
+            }
+            if m.sourceLiveValuesWriter != nil {
+                if e := m.sourceLiveValuesWriter.onParamDescriptor(m, blocks, index, at, localTach); e != nil {
+                    return e
+                }
+            }
+            if localTach != nil {
+                localTach.resetTick()
+            }
         }
-		if len(f.Raw) == 4700 {
+        m.summary.RegisterUpdates++
+        if m.liveBin != nil {
+            if e := m.liveBin.paramFrame(f, blocks, &m.image); e != nil {
+                return e
+            }
+        }
+        if len(blocks) == 1 && blocks[0].Addr == 0 && blocks[0].Words == registerWords {
+            m.summary.FullSnapshots++
+            m.note("full 32800-byte register image received")
+        }
+        if len(f.Raw) == 4700 {
 			m.summary.Aux4700++
 			for channel := 0; channel < 8; channel++ {
 				v, e := decodeCalculated(&m.image, channel, at.UTC().Format(time.RFC3339Nano), m.summary.Aux4700)
@@ -643,6 +682,7 @@ func (m *Monitor) CloseFiles() error {
     if m.sourceLiveDataWriter!=nil {m.sourceLiveDataWriter.cleanup()}
     if m.sourceLiveValuesWriter!=nil {m.sourceLiveValuesWriter.cleanup()}
     if m.sourceParamGate!=nil {m.sourceParamGate.cleanup()}
+    if m.sourceTach!=nil {m.sourceTach.cleanup()}
 	return first
 }
 func (m *Monitor) Finalize(reason string) (Summary, string, error) {
@@ -680,6 +720,13 @@ func (m *Monitor) Finalize(reason string) (Summary, string, error) {
         if m.sourceParamGate!=nil {
             if e:=m.sourceParamGate.finalize(m);e!=nil {
                 m.warn("source PARAM Freeze ledger unavailable: "+e.Error())
+                m.captureOnly=true
+                m.summary.CaptureOnly=true
+            }
+        }
+        if m.sourceTach!=nil {
+            if e:=m.sourceTach.finalize(m);e!=nil {
+                m.warn("source local TACH journal unavailable: "+e.Error())
                 m.captureOnly=true
                 m.summary.CaptureOnly=true
             }
