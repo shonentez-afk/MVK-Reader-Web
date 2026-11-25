@@ -150,8 +150,9 @@ def request_graceful_stop(root: Path) -> None:
     if not root.is_dir() or root.is_symlink():
         raise ValueError("Нет каталога активной сессии")
     marker = root / STOP_REQUEST
-    with marker.open("x", encoding="ascii") as stream:
-        stream.write("STOP\n")
+    # Keep the local marker identical on Windows and Linux; never replace it.
+    with marker.open("xb") as stream:
+        stream.write(b"STOP\n")
 
 
 def _json(path: Path, maximum: int) -> dict:
