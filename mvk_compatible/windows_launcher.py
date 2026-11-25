@@ -1,28 +1,18 @@
-"""Windows one-file entry point with an optional verified offline FIR resource."""
+"""Windows one-file entry point with optional archive and verified offline FIR."""
 import sys
 
 
-def main():
+def main(argv=None):
     from mvk_compatible.core.bundled_offline_fir import load_frozen_offline_fir
 
-    profile = load_frozen_offline_fir()
-    if sys.argv[1:] == ["--verify-offline-fir"]:
+    args=tuple(sys.argv[1:] if argv is None else argv)
+    profile=load_frozen_offline_fir()
+    if args==('--verify-offline-fir',):
         return 0 if profile is not None else 2
 
-    if profile is None:
-        from mvk_compatible.desktop.main_window import run
-        return run()
-
-    from PySide6.QtWidgets import QApplication
-    from mvk_compatible.desktop.main_window import MainWindow
-
-    app = QApplication.instance() or QApplication([])
-    app.setApplicationName("ТПО МВК")
-    win = MainWindow()
-    win.set_envelope_profile(profile)
-    win.show()
-    return app.exec()
+    from mvk_compatible.desktop.archive_entry import run_archive_desktop
+    return run_archive_desktop(args,profile=profile)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

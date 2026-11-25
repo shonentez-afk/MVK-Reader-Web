@@ -37,7 +37,7 @@ _RENDER_READS = ContextVar("direct_bin_render_reads", default=None)
 MAX_TSXML_BYTES = 64_000
 _MAX_BIN_BYTES = MAX_BIN_SAMPLES * 4
 _CHANNEL_NAME = re.compile(
-    r"(MVK\d+)-(ADC[1-8]|TACH[12])-(\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2})\.bin\Z"
+    r"(MVK\d+)-(ADC[1-8]|TACH[12])-(\d{4}-\d{2}-\d{2}--\d{2}-\d{2}-\d{2})\.(?i:bin)\Z"
 )
 PROVENANCE = "LOCAL_DIRECT_BIN_TSXML_SINGLE_UNVERIFIED_CALIBRATION"
 TACH_PROVENANCE = "LOCAL_DIRECT_BIN_TSXML_MODE1_TACH_BYTE"
@@ -83,39 +83,69 @@ def _checked_file(path: Path, *, limit: int, what: str) -> bytes:
     return data
 
 
-def _sidecar_for_bin(bin_path: Path) -> Path:
-    # Both conventions occur in local measurement collections:
-    # "record.bin.tsxml" or "record.tsxml".
-    options = (bin_path.with_name(bin_path.name + ".tsxml"),
-               bin_path.with_suffix(".tsxml"))
-    existing = [p for p in options if p.exists() or p.is_symlink()]
-    if len(existing) != 1:
-        raise ValueError(
-            "Для прямого BIN нужна ровно одна парная TSXML: "
-            "имя.bin.tsxml или имя.tsxml"
-        )
-    return existing[0]
+def _extension_key(name: str) -> str:
+    """Only extensions are case-insensitive; the evidence-bearing stem is not."""
+    path=Path(name)
+    stem,suffix=path.stem,path.suffix.lower()
+    if suffix==".tsxml" and Path(stem).suffix.lower()==".bin":
+        stem=Path(stem).stem+".bin"
+    return stem+suffix
 
 
-def _bin_from_selection(selected: Path) -> Path:
-    suffix = selected.suffix.lower()
-    if suffix == ".bin":
-        return selected
-    if suffix == ".tsxml":
-        if selected.name.lower().endswith(".bin.tsxml"):
-            return selected.with_name(selected.name[:-6])
-        return selected.with_suffix(".bin")
-    raise ValueError("Выберите локальный BIN или соответствующий TSXML")
+def _portable_names(folder: Path) -> dict[str, list[Path]]:
+    names={}
+    for p in folder.iterdir():
+        if p.suffix.lower() in (".bin",".tsxml"):
+            names.setdefault(_extension_key(p.name),[]).append(p)
+    for group in names.values():
+        group.sort(key=lambda p:p.name)
+    return names
 
 
-def _inspect_channel(bin_file: Path, adc: int | None) -> DirectBinChannel:
-    # Original IDR TSXML writer emits full CP1251 metadata, including
-    # DataFileName and ChannelNumber. Check these against the selected BIN
-    # so same-size files cannot be silently paired with wrong sidecars.
-    sidecar = _sidecar_for_bin(bin_file)
+def _sidecar_for_bin(bin_path: Path, names, *, selected=None, allow_equivalent=False):
+    canonical=_extension_key(bin_path.name+".tsxml")
+    short=_extension_key(bin_path.with_suffix(".tsxml").name)
+    existing=[*names.get(canonical,()),*names.get(short,())]
+    if len(existing)==1:
+        return existing[0]
+    if len(existing)==2 and allow_equivalent:
+        # Operator recovery may accept the two supported conventions only
+        # if their complete contents agree. Same-suffix case twins are
+        # ambiguous objects even when their current bytes match.
+        if {_extension_key(p.name) for p in existing}=={canonical,short}:
+            first,second=(_checked_file(p,limit=MAX_TSXML_BYTES,what="TSXML")
+                          for p in existing)
+            if first==second:
+                return selected if selected in existing else existing[0]
+    raise ValueError(
+        "Для прямого BIN нужна ровно одна парная TSXML: "
+        "имя.bin.tsxml или имя.tsxml (конфликт имён или содержимого)")
+
+
+def _bin_from_selection(selected: Path,names) -> Path:
+    suffix=selected.suffix.lower()
+    if suffix==".bin":
+        wanted=_extension_key(selected.name)
+    elif suffix==".tsxml":
+        stem=selected.stem
+        wanted=(Path(stem).stem if Path(stem).suffix.lower()==".bin" else stem)+".bin"
+    else:
+        raise ValueError("Выберите локальный BIN или соответствующий TSXML")
+    choices=names.get(wanted,())
+    if len(choices)!=1:
+        raise ValueError("Для выбранного имени нужен один BIN; файл отсутствует или есть конфликт регистра")
+    return choices[0]
+
+
+def _inspect_channel(bin_file: Path, adc: int | None,names, *,
+                     selected=None,allow_equivalent=False) -> DirectBinChannel:
+    # Check declared filename and channel against the actual local pair.
+    sidecar = _sidecar_for_bin(bin_file,names,selected=selected,
+                               allow_equivalent=allow_equivalent)
     xml = _checked_file(sidecar, limit=MAX_TSXML_BYTES, what="TSXML")
     contract = inspect_original_tsxml(
-        xml, actual_bin_filename=bin_file.name,max_data_bytes=_MAX_BIN_BYTES)
+        xml, actual_bin_filename=bin_file.name,max_data_bytes=_MAX_BIN_BYTES,
+        allow_bin_extension_case=True)
     tach = contract.data_type == "Byte"
     declared=contract.channel_number
     if tach and (
@@ -226,18 +256,23 @@ class DirectBinSession(OfflineSession):
         selected = Path(file).absolute()
         if selected.is_symlink() or not selected.is_file():
             raise ValueError("Нужен обычный локальный BIN/TSXML без ссылок")
-        primary = _bin_from_selection(selected)
+        names=_portable_names(selected.parent)
+        primary = _bin_from_selection(selected,names)
         m = _CHANNEL_NAME.fullmatch(primary.name)
         discovered: list[tuple[int | None, Path]] = []
+        warnings = []
         if m:
             serial, _, timestamp = m.groups()
             for ch in range(1, 11):
                 label = f"ADC{ch}" if ch <= 8 else f"TACH{ch-8}"
-                sibling = primary.with_name(
-                    f"{serial}-{label}-{timestamp}.bin"
-                )
-                if sibling.exists() or sibling.is_symlink():
-                    discovered.append((ch, sibling))
+                siblings=names.get(f"{serial}-{label}-{timestamp}.bin",())
+                if len(siblings)>1:
+                    error=f"{label}: найдено несколько BIN с одинаковым именем без учёта регистра расширения"
+                    if not allow_partial_group:
+                        raise ValueError(error)
+                    warnings.append(error)
+                elif siblings:
+                    discovered.append((ch,siblings[0]))
         else:
             # Nonstandard names may still include an original ChannelNumber
             # inside the paired TSXML. Preserve it instead of guessing ADC1.
@@ -247,12 +282,14 @@ class DirectBinSession(OfflineSession):
         if not discovered or primary not in [p for _, p in discovered]:
             raise ValueError("Нельзя определить исходную группу BIN")
         primary_channel = next(ch for ch, p in discovered if p == primary)
-        anchor = _inspect_channel(primary, primary_channel)
+        anchor = _inspect_channel(
+            primary,primary_channel,names,
+            selected=selected if selected.suffix.lower()==".tsxml" else None,
+            allow_equivalent=allow_partial_group)
         entries = []
-        warnings = []
         for ch, p in discovered:
             try:
-                entry = anchor if p == primary else _inspect_channel(p, ch)
+                entry = anchor if p == primary else _inspect_channel(p,ch,names,allow_equivalent=allow_partial_group)
                 if entry.sample_rate_hz != anchor.sample_rate_hz:
                     raise ValueError("Каналы одного измерения имеют разную частоту")
             except (OSError, ValueError) as exc:
