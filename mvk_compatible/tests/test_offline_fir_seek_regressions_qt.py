@@ -184,3 +184,92 @@ def test_real_qt_mouse_seek_with_tracking_disabled(tmp_path,qt_app,monkeypatch):
         assert slider.value()<old and win.spec_save_button.isEnabled()
     finally:
         win.close()
+
+
+def test_early_spectrum_explains_plain_and_fir_without_unavailable_options(tmp_path, qt_app):
+    path,_=_adc(tmp_path,1,'м/с2',8,fs=65536,n=327680)
+    win=mw.MainWindow()
+    try:
+        banks=np.zeros((10,512),dtype=np.float32)
+        banks[:,0]=1
+        win.set_envelope_profile(EnvelopeProfile(banks))
+        win.open_archive(path)
+        win.original_root_tabs.setCurrentIndex(4)
+        slider=win.original_shell.view_slider
+        slider.setValue(slider.minimum())
+        for code,caption in ((0,'спектра'),(20,'FIR')):
+            win._original_envelope_actions[code].trigger()
+            text=win.spec_mean_primary.text()
+            assert f'Недостаточно отсчётов для {caption}' in text
+            assert 'Доступно: 0; нужно:' in text
+            assert 'Передвиньте ползунок' in text
+            assert 'Выберите разрешение' not in text
+            assert win._full_spectrum is None
+            assert not win.spec_copy_button.isEnabled() and not win.spec_save_button.isEnabled()
+        slider.setValue(slider.maximum())
+        assert win._full_spectrum is not None
+        assert win.spec_save_button.isEnabled()
+        assert 'Недостаточно' not in win.spec_mean_primary.text()
+        assert 'Недостаточно' not in win.statusBar().currentMessage()
+    finally:
+        win.close()
+
+
+@pytest.mark.parametrize("seek_in_progress",[False,True])
+def test_measure_cancel_restores_verified_adc_time_and_spectrum_view(
+        tmp_path, qt_app, monkeypatch, seek_in_progress):
+    a,_=_adc(tmp_path,1,'м/с2',8,fs=65536,n=655360)
+    _adc(tmp_path,3,'м/с2',4,fs=65536,n=655360)
+    win=mw.MainWindow()
+    entered,release,finished=(threading.Event() for _ in range(3))
+    old=mw.direct_drag_spectrum
+    def held(*args,**kwargs):
+        entered.set()
+        try:
+            release.wait(5)
+            return old(*args,**kwargs)
+        finally:
+            finished.set()
+    if seek_in_progress:
+        monkeypatch.setattr(mw,'direct_drag_spectrum',held)
+    try:
+        win.show()
+        banks=np.zeros((10,512),dtype=np.float32)
+        banks[:,0]=1
+        win.set_envelope_profile(EnvelopeProfile(banks))
+        win.open_archive(a)
+        win.original_root_tabs.setCurrentIndex(4)
+        win.spec_channel_tabs.setCurrentIndex(2)
+        slider=win.original_shell.view_slider
+        slider.setValue(400)
+        win.spec_n.setCurrentText('8192')
+        win._original_envelope_actions[20].trigger()
+        win._select_original_hscale(3200,position_hz=500)
+        assert win.spec_save_button.isEnabled()
+        target=430 if seek_in_progress else 400
+        if seek_in_progress:
+            slider.setSliderDown(True)
+            slider.setValue(target)
+            slider.setSliderDown(False)
+            _wait(qt_app,entered.is_set)
+        start=win.original_start_controller
+        start.ip_edit.setText('192.0.2.10')
+        assert start.open_capture_dialog()
+        assert win.session is None and win._drag_future is None
+        assert not win.spec_copy_button.isEnabled() and not win.spec_save_button.isEnabled()
+        win._native_dialog.cancel_inline.click()
+        assert win.session.path==a and win._ch()==3
+        assert slider.value()==target and win.spec_n.currentText()=='8192'
+        assert win.spec_envelope_code.currentData()==20
+        assert win._spec_original_hscale_selected==3200 and win.spec_hscroll.value()==500
+        assert win.spec_save_button.isEnabled()
+        result=win._full_spectrum
+        if seek_in_progress:
+            release.set()
+            _wait(qt_app,finished.is_set)
+            qt_app.processEvents()
+            assert win._full_spectrum is result
+            assert win._ch()==3 and slider.value()==target
+    finally:
+        release.set()
+        win.close()

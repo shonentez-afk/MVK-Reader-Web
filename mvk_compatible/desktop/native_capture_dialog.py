@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import time
+from weakref import ref
 
 from PySide6.QtCore import QProcess, QThread, QTimer, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -66,6 +67,7 @@ class NativeCaptureDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._capture_owner = ref(parent) if parent is not None else lambda: None
         self.setWindowTitle("Запись с МВК01 · Native R6.1")
         self.resize(750, 650)
         self.setMinimumSize(550, 500)
@@ -246,6 +248,20 @@ class NativeCaptureDialog(QDialog):
         root.addWidget(self.live_tabs, 1)
         self._sync_buttons()
 
+    def prepare_inline(self):
+        """Mount the same consent and receiver controller inside PageStatus."""
+        from PySide6.QtCore import Qt
+
+        self.setWindowFlags(Qt.Widget)
+        self.setMinimumSize(0, 0)
+        self.setObjectName("operatorNativeCapturePanel")
+        self.confirm.setText("Разрешение получено, выбран проводной Ethernet")
+        self.source_rate_tx.setText("Передавать SetRate в разрешённом сеансе")
+        self.source_auto_reconnect.setText("Переподключаться после обрыва")
+        self.cancel_inline = QPushButton("Отменить подготовку", self)
+        self.layout().insertWidget(2,self.cancel_inline)
+        self._sync_buttons()
+
     def _reset_live_channels(self):
         for i in range(10):
             name = f"АЦП {i+1}" if i < 8 else f"TACH {i-7}"
@@ -389,7 +405,7 @@ class NativeCaptureDialog(QDialog):
         Native preview (which includes packets skipped during FreezeUpdate).
         Nothing is transmitted to the physical instrument.
         """
-        parent=self.parent()
+        parent=self._capture_owner()
         if (self._mode!="capture" or self._capture_root is None or
                 parent is None or
                 not getattr(parent,"_live_active",False) or
@@ -509,7 +525,7 @@ class NativeCaptureDialog(QDialog):
         """
         if self._source_mode2_disarmed:
             return False
-        owner=self.parent()
+        owner=self._capture_owner()
         return (owner is None or
                 not hasattr(owner,"_measurement_mode_selected") or
                 bool(owner._measurement_mode_selected))
@@ -539,6 +555,9 @@ class NativeCaptureDialog(QDialog):
             and self.confirm.isChecked() and
             self.adapters.currentData() is not None)
         self.stop_button.setEnabled(self._mode == "capture")
+        cancel = getattr(self, "cancel_inline", None)
+        if cancel is not None:
+            cancel.setVisible(idle)
         self.open_button.setEnabled(self._zip is not None or self._raw_only_dir is not None)
         self.browse_button.setEnabled(idle)
         # The checkbox always reflects actual per-session permission;
@@ -737,7 +756,7 @@ class NativeCaptureDialog(QDialog):
         # Source edIpAddr remains the one operator-selected device address.
         # A dialog override is reflected into PageStart before Go starts;
         # this is not Ethernet NIC autodetection or a second TCP socket.
-        controller=getattr(self.parent(),"original_start_controller",None)
+        controller=getattr(self._capture_owner(),"original_start_controller",None)
         if controller is not None:
             controller.apply_capture_device_ip(spec.device_ipv4)
         self._live_last_error = None

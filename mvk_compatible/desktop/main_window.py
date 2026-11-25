@@ -163,6 +163,7 @@ class MainWindow(QMainWindow):
         self.session=None
         self._offline_flow=None  # One autonomous File/Signal/Spectrum/Status source
         self._native_dialog=None  # Stage111Z.25: integrated verified Go recorder controller
+        self._native_capture_host=None
         self._live_active=False
         self._measurement_mode_selected=False  # original Mode2 click, before any socket
         self._measurement_connection_error=False  # separate source StatusIsError candidate
@@ -191,6 +192,7 @@ class MainWindow(QMainWindow):
         self._source_large_fft_at=0.0
         self._native_live_status=None  # validated Go read-only transport, never device STATUS
         self._live_prior_session=None
+        self._preflight_archive_view=None
         self._pending_native_pagefile_plan=None  # set only by accepted Native event
         self._source_live_writer=OriginalLiveWriteLedger()
         self._source_mode2_runtime=OriginalMode2RuntimeTrace()
@@ -3137,6 +3139,15 @@ class MainWindow(QMainWindow):
         # Park the last VERIFIED offline source before Mode2 clears the
         # visible session. Never treat it as evidence of this new device.
         self._live_prior_session=self.session
+        self._preflight_archive_view=None
+        if isinstance(self.session,DirectBinSession):
+            self._preflight_archive_view=(
+                self._ch(), self.original_shell.view_slider.value(),
+                self.spec_n.currentIndex(), self._spec_original_hscale_selected,
+                self.spec_hscroll.value())
+        self._cancel_offline_drag()
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
         # Do not display stale values/graphs from an earlier offline file
         # as though they had arrived from this not-yet-connected device.
         self.session=None
@@ -3232,15 +3243,21 @@ class MainWindow(QMainWindow):
         if self._live_active or not self._measurement_mode_selected:
             return False
         # Source 00846B48 Mode2->idle invalidates a prepared (not yet
-        # started) Go TCP consent. Otherwise a stale QDialog could start
-        # a socket even after the original «Отключить» was pressed.
+        # started) Go TCP consent. Existing local interface enumeration
+        # finishes before retiring its controller; it does not contact MVK.
         dialog=self._native_dialog
+        if dialog is not None and getattr(dialog,"_mode",None)=="interfaces":
+            self.statusBar().showMessage("Дождитесь локального списка сетевых адаптеров.")
+            return False
         if dialog is not None:
             disarm=getattr(dialog,"disarm_before_tcp",None)
             if callable(disarm):
                 disarm()
+        self._hide_inline_native_capture()
         parked=self._live_prior_session
         self._live_prior_session=None
+        view=self._preflight_archive_view
+        self._preflight_archive_view=None
         self._measurement_mode_selected=False
         self._sync_mode2_operator_controls()
         if self._source_mode2_runtime.finished:
@@ -3264,6 +3281,10 @@ class MainWindow(QMainWindow):
         # using the normal offline Core before showing its old values.
         if parked is not None and self.session is None:
             self.open_archive(parked.path)
+            if (view is not None and isinstance(self.session,DirectBinSession)
+                    and self.session.path==parked.path
+                    and view[0] in self.session.available_channels):
+                self._restore_preflight_archive_view(view)
         elif self.session is not None and self._offline_flow is not None:
             # Last verified source was restored after a failed connection;
             # do not leave provisional PageFile checkboxes on archive view.
@@ -3273,6 +3294,19 @@ class MainWindow(QMainWindow):
         else:
             self.original_shell.refresh_file_workbench()
         return True
+
+    def _restore_preflight_archive_view(self,view):
+        channel, position, fft_index, width, left = view
+        self.adc.setCurrentIndex(channel-1)
+        slider=self.original_shell.view_slider
+        slider.setValue(max(slider.minimum(),min(slider.maximum(),position)))
+        # Only restore a resolution the newly verified archive can supply.
+        if 0<=fft_index<self.spec_n.count() and self.spec_n.model().item(fft_index).isEnabled():
+            self.spec_n.setCurrentIndex(fft_index)
+        if width in HORIZONTAL_HZ and self._full_spectrum is not None:
+            axis_end=self._real_spectrum_axis_end_hz()
+            if axis_end is not None and width<=axis_end+1e-5:
+                self._select_original_hscale(width,position_hz=left)
 
     def measurement_connection_display(self):
         return source_connection_display(
@@ -4668,6 +4702,8 @@ class MainWindow(QMainWindow):
             has_parked_archive=self._live_prior_session is not None)
         self._measurement_connection_error=completion.connection_error
         self._measurement_mode_selected=completion.keep_mode2
+        if not completion.keep_mode2:
+            self._hide_inline_native_capture()
         self._sync_mode2_operator_controls()
         if not completion.keep_mode2 and not exported:
             # The operator pressed the original second Mode2 button:
@@ -4697,6 +4733,7 @@ class MainWindow(QMainWindow):
         self._refresh_source_pagestatus()
         old=self._live_prior_session
         self._live_prior_session=None
+        self._preflight_archive_view=None
         for widget,was_enabled in self._live_control_states:
             widget.setEnabled(was_enabled)
         self._live_control_states=[]
@@ -4881,10 +4918,26 @@ class MainWindow(QMainWindow):
     def open_native_capture(self):
         """One Go socket: passive by default, source SetRate only with consent."""
         from .native_capture_dialog import NativeCaptureDialog
-        if self._native_dialog is not None and self._native_dialog.isVisible():
-            self._native_dialog.raise_()
-            self._native_dialog.activateWindow()
+        old=self._native_dialog
+        host=self._native_capture_host
+        if old is not None and (old.isVisible() or old.is_busy()
+                                or (host is not None and not host.isHidden())):
+            if not old.isWindow():
+                self.original_visual_skin.reveal_page(2)
+            else:
+                old.raise_()
+                old.activateWindow()
             return
+        # Retire an idle old controller only when starting a new preflight.
+        # Capture completion emits archiveReady after captureEnded, so merely
+        # hiding its pane does not disconnect or destroy the result producer.
+        if host is not None:
+            self._native_capture_host=None
+            self.original_shell.status_page.layout().removeWidget(host)
+            host.hide()
+            host.deleteLater()
+        elif old is not None:
+            old.deleteLater()
         dlg=NativeCaptureDialog(self)
         dlg.finished.connect(lambda _result, owner=dlg: self._native_preflight_dismissed(owner))
         dlg.archiveReady.connect(self._accept_native_capture_archive)
@@ -4897,7 +4950,24 @@ class MainWindow(QMainWindow):
         dlg.previewInvalid.connect(self._invalidate_live_preview)
         dlg.sourceLongWindowReady.connect(self._receive_source_long_window)
         self._native_dialog=dlg
+        if self._measurement_mode_selected:
+            dlg.prepare_inline()
+            dlg.cancel_inline.clicked.connect(self.leave_measurement_mode)
+            page=self.original_shell.status_page
+            host=QScrollArea(page)
+            host.setObjectName("operatorNativeCaptureHost")
+            host.setWidgetResizable(True)
+            host.setMinimumWidth(360)
+            host.setMaximumWidth(590)
+            host.setWidget(dlg)
+            page.layout().addWidget(host,1)
+            self._native_capture_host=host
+            host.show()
         dlg.show()
+
+    def _hide_inline_native_capture(self):
+        if self._native_capture_host is not None:
+            self._native_capture_host.hide()
 
     def _native_preflight_dismissed(self, dialog):
         """Closing a prepared confirmation is cancellation, not a TCP stop."""
@@ -7403,19 +7473,25 @@ class MainWindow(QMainWindow):
             self.spec_canvas_geometry_button.setEnabled(False)
             self.spec_pair_button.setEnabled(False)
             self._sync_spectrum_summary_primary()
-            if (insufficient_history and history_detail is not None and
-                    self.spec_envelope_button.isChecked()):
+            if insufficient_history and history_detail is not None:
+                filtered=self.spec_envelope_button.isChecked()
                 self._sync_fft_menu_availability(samples_count=len(samples),sample_rate=fs)
-                resolution=[a.text() for a in self._spec_lines_actions if a.isEnabled()]
-                why=('Недостаточно отсчётов для FIR.\n'
+                resolution=[a.text() for a in self._spec_lines_actions
+                            if a.isEnabled() and a.isVisible()]
+                subject='FIR' if filtered else 'спектра'
+                why=(f'Недостаточно отсчётов для {subject}.\n'
                      f"Доступно: {history_detail['archive_end_sample']:,}; "
-                     f"нужно: {history_detail['required_real_history_samples']:,}.\n"
-                     +'Выберите доступное разрешение спектра или передвиньте время дальше.')
+                     f"нужно: {history_detail['required_real_history_samples']:,}.")
                 if resolution:
-                    why+='\nДоступно: '+', '.join(resolution)+'.'
+                    why+='\nВыберите разрешение: '+', '.join(resolution)+'.'
+                if source_end is not None and source_end<len(samples):
+                    why+='\nПередвиньте ползунок времени дальше.'
+                if not resolution and (source_end is None or source_end>=len(samples)):
+                    why+='\nДля этого окна нужна более длинная запись.'
                 self.spec_mean_primary.setText(why)
                 self._offline_window_notice('spectrum',
-                    'Недостаточно предыстории для выбранного спектра FIR')
+                    'Недостаточно предыстории для выбранного спектра'
+                    +(' FIR' if filtered else ''))
             self.spec_cursor_primary.setText('Курсор: —')
             self.spec_mean.setText('Спектр не рассчитан: '+str(e))
             self.spec_hint.setText('Нет действительного спектра: '+str(e))

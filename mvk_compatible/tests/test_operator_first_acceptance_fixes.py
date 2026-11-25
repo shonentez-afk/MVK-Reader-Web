@@ -309,3 +309,80 @@ def test_saved_count_cannot_append_under_physical_header(tmp_path, qt_app):
         assert dest.read_bytes() == before
     finally:
         w.close()
+
+
+def test_mode2_native_consent_is_inline_and_cancel_disarms(tmp_path, qt_app, monkeypatch):
+    import mvk_compatible.desktop.native_capture_dialog as native_ui
+    monkeypatch.setattr(native_ui,'native_executable',lambda:tmp_path/'mock-receiver.exe')
+    path,_=_adc(tmp_path,1,'м/с2',8)
+    win=MainWindow()
+    win.show()
+    try:
+        win.open_archive(path)
+        start=win.original_start_controller
+        win.original_root_tabs.setCurrentIndex(0)
+        start.ip_edit.setText('192.0.2.10')
+        assert start.open_capture_dialog()
+        qt_app.processEvents()
+        panel=win._native_dialog
+        host=win._native_capture_host
+        assert not panel.isWindow() and panel.window() is win
+        assert panel not in QApplication.topLevelWidgets()
+        assert host.parentWidget() is win.original_shell.status_page
+        assert panel.isVisible() and host.isVisible()
+        assert panel._original_mode2_authorized() and not panel.confirm.isChecked()
+        assert not panel.start_button.isEnabled() and not panel.is_busy()
+        panel.confirm.setChecked(True)
+        assert not panel.start_button.isEnabled()  # no selected Ethernet interface
+        panel.cancel_inline.click()
+        qt_app.processEvents()
+        assert not host.isVisible() and not panel._original_mode2_authorized()
+        assert not panel.confirm.isChecked() and not win._measurement_mode_selected
+        assert win.session.path==path
+        assert start.open_capture_dialog()
+        qt_app.processEvents()
+        assert win._native_dialog is not panel
+        assert not win._native_dialog.confirm.isChecked()
+        assert not win._native_dialog.isWindow()
+        assert not win._native_dialog.is_busy()
+    finally:
+        win.close()
+
+
+def test_inline_measurement_stop_reaches_same_receiver_once(tmp_path,qt_app,monkeypatch):
+    from PySide6.QtTest import QSignalSpy
+    from ..core.native_r6_bridge import STOP_REQUEST
+    import mvk_compatible.desktop.native_capture_dialog as native_ui
+    monkeypatch.setattr(native_ui,'native_executable',lambda:tmp_path/'mock-receiver.exe')
+    win=MainWindow()
+    win.show()
+    panel=None
+    try:
+        start=win.original_start_controller
+        start.ip_edit.setText('192.0.2.10')
+        assert start.open_capture_dialog()
+        panel=win._native_dialog
+        win.original_visual_skin.reveal_page(3)
+        win.open_native_capture()
+        assert win._native_dialog is panel
+        assert not panel.isWindow()
+        panel._mode='capture'
+        panel._capture_root=tmp_path
+        panel.captureStarted.emit()
+        finalizing=QSignalSpy(panel.captureFinalizing)
+        assert win.request_measurement_stop()
+        assert (tmp_path/STOP_REQUEST).read_bytes()==b'STOP\n'
+        assert win._live_active and win._measurement_exit_requested
+        assert not win.request_measurement_stop()
+        assert finalizing.count()==1
+        assert win._source_mode2_runtime.receipt()['hardware_commands_sent']==0
+        panel._mode=None
+        panel.captureEnded.emit(False)
+        assert not win._live_active and not win._measurement_mode_selected
+        assert win._native_capture_host.isHidden()
+    finally:
+        if panel is not None:
+            panel._mode=None
+        if win._live_active:
+            win._end_live_capture(False)
+        win.close()

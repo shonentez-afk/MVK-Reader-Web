@@ -350,8 +350,12 @@ def _status_page(parent: QWidget) -> QWidget:
     """
     page=QWidget(parent)
     page.setObjectName("PageStatus")
-    layout=QVBoxLayout(page)
+    host=QHBoxLayout(page)
+    host.setContentsMargins(0,0,0,0)
+    host.setSpacing(0)
+    layout=QVBoxLayout()
     layout.setContentsMargins(4,4,4,4)
+    host.addLayout(layout,1)
     tabs=QTabBar(page)
     tabs.setObjectName("tcStatus")
     tabs.setExpanding(False)
