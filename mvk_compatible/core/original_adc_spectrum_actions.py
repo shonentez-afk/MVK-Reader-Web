@@ -319,7 +319,9 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
                     raise ValueError("Unrecognized Russian header")
             except (UnicodeError,ValueError) as exc:
                 raise ValueError("Existing vendor/unverified SPEC-FREQ: different header, encoding or units") from exc
-            if action.source_units:
+            # Count may retain only another Count-derived header, never
+            # an earlier acceleration/velocity/displacement header.
+            if action.source_units or m[1] not in ("", "~", "~~"):
                 raise ValueError(
                     'Заголовок дневного SPEC-FREQ не совпадает с единицами текущего спектра. '
                     'Выберите отдельную папку для этого режима. Старый файл не изменён.')

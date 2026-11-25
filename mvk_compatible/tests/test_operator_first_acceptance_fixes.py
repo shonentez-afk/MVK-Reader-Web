@@ -1,7 +1,9 @@
+import pytest
+
+pytest.importorskip("PySide6")
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
-import pytest
 from .test_desktop_qt import qt_app
 from .test_mode1_saved_adc_spectrum_export_qt import _adc
 from ..desktop.main_window import MainWindow
@@ -282,5 +284,28 @@ def test_archive_opens_verified_pair_and_names_unusable_sibling(tmp_path, qt_app
         assert w.session is original
         assert messages and adc2.name in messages[-1]
         assert 'Предыдущая запись осталась открытой' in messages[-1]
+    finally:
+        w.close()
+
+def test_saved_count_cannot_append_under_physical_header(tmp_path, qt_app):
+    import numpy as np
+    from .test_stage111z31en_saved_tach_qt import _write_bin
+    adc, _ = _adc(tmp_path, 1, 'м/с2', 8, n=8192)
+    tach, _ = _write_bin(tmp_path, 'TACH2', 10,
+        (127+90*np.sin(np.arange(8192)*.32)).astype('u1').tobytes())
+    dest = tmp_path/'SPEC-FREQ-2026-11-25.csv'
+    w = MainWindow()
+    w.show()
+    try:
+        w.open_archive(adc)
+        flow, action = w._current_original_spectrum_action()
+        append_source_spec_freq_csv(action, flow, dest, spectrum=w._full_spectrum)
+        before = dest.read_bytes()
+        w.open_archive(tach)
+        flow, action = w._current_original_spectrum_action()
+        assert action.source_units == ""
+        with pytest.raises(ValueError, match='единицами'):
+            append_source_spec_freq_csv(action, flow, dest, spectrum=w._full_spectrum)
+        assert dest.read_bytes() == before
     finally:
         w.close()
