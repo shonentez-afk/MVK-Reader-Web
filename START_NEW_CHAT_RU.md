@@ -2,7 +2,7 @@
 
 ## Исправления по предрелизному аудиту 8b472e1
 
-Сборка 8b472e1 ниже — предыдущий кандидат. Локальный набор правок по Freeze/VALUES, графикам, настройкам, параметрам записи и поверке описан в [этом отчёте](docs/research/STAGE111_PRERELEASE_AUDIT_FIXES_RU.md). Новый совместимый Windows Portable и паритет на реальном приборе этим не подтверждены.
+Сборка 8b472e1 ниже — предыдущий кандидат. Патч dot по Freeze/VALUES, графикам, настройкам, параметрам записи и поверке полностью внесён в [3a3506f](https://github.com/shonentez-afk/MVK-Reader-Web/commit/3a3506f98e696dc9aff4f3487419ed9477a8a623): 55/55 файлов совпали с патчем, два уже внесены 9c6e7c9. [Отчёт](docs/research/STAGE111_PRERELEASE_AUDIT_FIXES_RU.md). Первый CI: [offline SUCCESS](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519516997), Go SUCCESS на Linux/Windows; [VALUES](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519510432) и [Windows/core](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519510384) FAILURE из-за трёх проверок. Последующий коммит уточняет тесты холодного флага папки, точных входных LF-байтов и переноса офлайн-курсора при изменении осей. Результаты повторного CI и новая Portable ещё не подтверждены. FIR/FFT, работа с прибором и программные ограничения не менялись.
 
 ## Mode1: штатный Copy/Save для исходных BIN/TSXML
 
@@ -17,12 +17,12 @@
 - Отдельный приватный слой Atlas подготовлен; матрица 40, карта рёбер, адресные таблицы и первичные материалы не публикуются. Код и main не изменялись.
 
 
-> **Приоритетный актуальный блок.** Текущий код 8b472e1, полный тестовый CI SUCCESS, portable готова. Старые ограничения Direct BIN, UTF-8 SPEC-FREQ, два Windows locale failures и прежние SHA относятся к истории. Не повторять выполненные исправления. Предыдущие снимки: [f5695c0](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f5695c01ea044c96fa73327cc4fefbff7243068d) и [dd28b3d](https://github.com/shonentez-afk/MVK-Reader-Web/commit/dd28b3d1b6e94e28ec0650c5976ea1bf812e8195).
+> **Приоритетный актуальный блок.** Актуален патч 3a3506f и следующий коммит коррекции регрессионных тестов (см. верхний раздел). 8b472e1 — предыдущий зелёный кандидат с portable, а не текущий код. Старые ограничения Direct BIN, UTF-8 SPEC-FREQ, два Windows locale failures и прежние SHA относятся к истории. Не повторять выполненные исправления. Предыдущие снимки: [f5695c0](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f5695c01ea044c96fa73327cc4fefbff7243068d) и [dd28b3d](https://github.com/shonentez-afk/MVK-Reader-Web/commit/dd28b3d1b6e94e28ec0650c5976ea1bf812e8195).
 
 ## 1. Точка продолжения
 
 - [PR #17](https://github.com/shonentez-afk/MVK-Reader-Web/pull/17), Draft, открыт, не объединён; ветка [`fix/stage111-eg-computation-links-20261124`](https://github.com/shonentez-afk/MVK-Reader-Web/tree/fix/stage111-eg-computation-links-20261124).
-- Последний кодовый коммит [`8b472e1e9e4fad2c9460ed4f0a87eadce2849def`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/8b472e1e9e4fad2c9460ed4f0a87eadce2849def) — Restore Copy and SPEC-FREQ for verified saved Mode1 ADC and TACH pairs (24.11.2026 22:00 UTC). Включает предыдущие исправления EN, Mode1, CP1251 и локалей. [Отчёт](docs/research/MODE1_SAVED_BIN_SPEC_FREQ_RU.md).
+- Предыдущий зелёный кодовый коммит [`8b472e1e9e4fad2c9460ed4f0a87eadce2849def`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/8b472e1e9e4fad2c9460ed4f0a87eadce2849def) — Restore Copy and SPEC-FREQ for verified saved Mode1 ADC and TACH pairs (24.11.2026 22:00 UTC). Включает предыдущие исправления EN, Mode1, CP1251 и локалей. [Отчёт](docs/research/MODE1_SAVED_BIN_SPEC_FREQ_RU.md).
 - f5695c0 (24.11.2026 21:21 UTC) — русский SPEC-FREQ, Windows-1251 и тесты локалей; предшествующий этап, а не последний SHA.
 - Предыдущий кодовый коммит [`7bb528c2cd9ed11e6481e4080d25b731d7edcb9c`](https://github.com/shonentez-afk/MVK-Reader-Web/commit/7bb528c2cd9ed11e6481e4080d25b731d7edcb9c) — Fix saved Mode1 FFT gain, linked time windows and spectrum axes (24.11.2026 20:51 UTC). Девять изменённых файлов, [отчёт MODE1_OFFLINE_PARITY_REPAIR_RU.md](docs/research/MODE1_OFFLINE_PARITY_REPAIR_RU.md), `mvk_compatible/tests/test_mode1_parity_offline_view.py`.
 - Базовый EN `8d95bf01` остаётся прежним проверенным кандидатом. Рабочая research desktop-ветка на EF `071e0c9d`; main не менять. Не смешивать MVKView Compatible с MVK Live Standalone, web reader и отдельным PR карты #13. Не считать документационный SHA новым кодовым SHA.

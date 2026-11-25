@@ -89,12 +89,27 @@ def test_both_live_page_grid_and_cursor_are_shown_without_replacing_full_data(
             assert not getattr(w,line_attr).isVisible()
             handler(pos,force=True)
             assert xor.cursor is not None
+            # This ZIP is offline; the prerelease fix keeps the same
+            # plot-relative X while changing the affine viewport.
+            key="adc" if page==3 else "spectrum"
+            anchor=w._offline_cursor_anchors[key]
             xr=plot.getViewBox().viewRange()[0]
             plot.getViewBox().setXRange(
                 xr[0]+.1*(xr[1]-xr[0]),
                 xr[1]-.1*(xr[1]-xr[0]),padding=0)
             settle(qt_app)
+            assert xor.cursor is not None
+            assert getattr(w,line_attr).isVisible()
+            assert w._offline_cursor_anchors[key][0]==anchor[0]
+            assert w._offline_cursor_anchors[key][1] is anchor[1]
+            automatic=tuple(xor.cursor)
+            rect=plot.getViewBox().sceneBoundingRect()
+            handler(QPointF(rect.left()+anchor[0]+.01,rect.center().y()),
+                    force=True)
+            assert tuple(xor.cursor)==pytest.approx(automatic)
+            handler(QPointF(rect.left(),rect.center().y()),force=True)
             assert xor.cursor is None
+            assert not getattr(w,line_attr).isVisible()
             _live(plot)
         np.testing.assert_array_equal(w._full_spectrum["amplitude"],fft)
         assert sha256(src.read_bytes()).hexdigest()==digest

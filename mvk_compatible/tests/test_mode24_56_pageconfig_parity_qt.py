@@ -136,7 +136,8 @@ def test_start_settings_enter_enum_channel_tach_and_local_reset(
         assert source.read_bytes()==before
 
         defaults=tmp_path/"DefaultConfig.txt"
-        defaults.write_text("0x000A w:504\n",encoding="utf-8")
+        # Preserve the exact input bytes independently of the runner OS.
+        defaults.write_bytes(b"0x000A w:504\n")
         monkeypatch.setattr(mod,"source_original_default_config_path",lambda:defaults)
         panel=_task(w,"bTaskConfigIP",qt_app)
         result=_dialog(lambda d:QTest.mouseClick(d.bNo,Qt.LeftButton))
