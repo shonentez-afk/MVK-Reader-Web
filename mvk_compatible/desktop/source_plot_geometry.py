@@ -65,6 +65,7 @@ class SourceGeometryPlot(pg.PlotWidget):
                 "left": SourceTickAxis(orientation="left"),
             }
         super().__init__(*args, **kwargs)
+        self.set_generic_graph_interaction(False)
         # This overlay is added straight to ViewBox, not PlotItem.items:
         # normal spectrum/waveform .clear() never removes the source grid.
         self.source_grid_overlay = SourceLiveGridOverlay(self.getViewBox())
@@ -97,6 +98,19 @@ class SourceGeometryPlot(pg.PlotWidget):
         self.getViewBox().sigResized.connect(
             self.source_paintbox_text_overlay.schedule_source_text)
         self.schedule_source_geometry()
+
+    def set_generic_graph_interaction(self, enabled):
+        """Qt zoom/context actions are unavailable on operator graphs."""
+        self._generic_graph_interaction=bool(enabled)
+        self.getPlotItem().setMenuEnabled(self._generic_graph_interaction)
+
+    def wheelEvent(self,event):
+        # A freely zoomable Qt ViewBox bypasses original X/Y presets and
+        # can desynchronise the drawn axes, scale buttons and cursor.
+        if not self._generic_graph_interaction:
+            event.accept()
+            return
+        super().wheelEvent(event)
 
     def bind_source_tqgr_series(self, values, *, x_start, x_scale,
                                 provenance, expected_series_sha256):
