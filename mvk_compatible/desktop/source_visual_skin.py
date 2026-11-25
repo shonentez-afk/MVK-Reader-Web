@@ -16,9 +16,9 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QRect, QPoint, QEvent, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPen, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
-    QFileDialog, QLabel, QPushButton, QStyle, QWidget, QToolButton,
+    QApplication, QFileDialog, QLabel, QPushButton, QStyle, QWidget, QToolButton,
 )
 
 from ..core.original_pagestart_private_pictures import (
@@ -500,6 +500,14 @@ class OriginalVisualSkin:
                     i,self.root.tabData(i) in expected)
         finally:
             self._visibility_guard=False
+        # With a fixed-size non-expanding QTabBar, Qt can retain old
+        # tab hitboxes after changing visibility. Refresh the tab bar's
+        # layout at its current size, without moving the top-level window.
+        signature=tuple(self.root.isTabVisible(i) for i in range(self.root.count()))
+        if signature!=getattr(self, "_laid_out_tab_visibility", None):
+            self._laid_out_tab_visibility=signature
+            size=self.root.size()
+            QApplication.sendEvent(self.root, QResizeEvent(size, size))
         receipt=original_runtime_tab_contract(
             has_measurement=ready,technical=self.technical,
             current_page=page,live=live,measurement_requested=requested,

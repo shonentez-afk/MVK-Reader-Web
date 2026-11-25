@@ -367,6 +367,7 @@ def _status_page(parent: QWidget) -> QWidget:
     plot.setObjectName("chResult")
     plot.setMinimumWidth(320)
     plot.setBackground("w")
+    plot.showGrid(x=True,y=True,alpha=.23)
     plot.setMenuEnabled(False)
     plot.setMouseEnabled(x=False,y=False)
     plot.getPlotItem().setLabel("bottom","Полоса, индекс")
@@ -895,6 +896,8 @@ class OriginalRootShell:
                     result=source_status_projection(index,None)
             else:
                 result=source_status_projection(index,None)
+        previous=getattr(self,'_source_status_projection',None)
+        same_mode=previous is not None and previous.model.index==result.model.index
         self._source_status_projection=result
         binding_receipt=self._live_status_binding.receipt() if mode2 else None
         self.status_page.setProperty(
@@ -906,18 +909,45 @@ class OriginalRootShell:
         # The original 4 TStringGrid objects have distinct identities and
         # visibility. Keep inactive grids empty to block stale AUX/VALUES.
         for key,grid in self.status_grids.items():
-            grid.clearContents()
-            if key!=name:grid.setRowCount(0)
+            if key!=name and grid.rowCount():
+                grid.clearContents()
+                grid.setRowCount(0)
         grid=self.status_grids[name]
         self.status_table=grid       # backwards-compatible current grid
-        grid.setRowCount(len(result.model.rows))
-        grid.setColumnCount(len(result.model.headers))
-        grid.setHorizontalHeaderLabels(list(result.model.headers))
+        captions=tuple(result.model.headers)
+        if not same_mode:
+            grid.clearContents()
+        if grid.rowCount()!=len(result.model.rows):
+            grid.setRowCount(len(result.model.rows))
+        if grid.columnCount()!=len(captions):
+            grid.setColumnCount(len(captions))
+        if grid.property("mvkStatusColumns")!=list(captions):
+            grid.setProperty("mvkStatusColumns",list(captions))
+            grid.setHorizontalHeaderLabels(list(captions))
+            header=grid.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(QHeaderView.Stretch)
+            header.setSectionResizeMode(0,QHeaderView.Interactive)
+            longest=max((grid.fontMetrics().horizontalAdvance(str(row[0]))
+                         for row in result.model.rows if row),default=0)
+            grid.setColumnWidth(0,max(220,longest+18))
+            for i,caption in enumerate(captions):
+                item=grid.horizontalHeaderItem(i)
+                if item is not None:
+                    item.setTextAlignment(Qt.AlignLeft|Qt.AlignVCenter)
+                if caption.startswith('Ед.'):
+                    header.setSectionResizeMode(i,QHeaderView.Fixed)
+                    grid.setColumnWidth(i,76)
         for row,values in enumerate(result.model.rows):
             for col,value in enumerate(values):
-                cell=QTableWidgetItem(str(value))
-                cell.setFlags(Qt.ItemIsEnabled|Qt.ItemIsSelectable)
-                grid.setItem(row,col,cell)
+                cell=grid.item(row,col)
+                if cell is None:
+                    cell=QTableWidgetItem()
+                    cell.setFlags(Qt.ItemIsEnabled|Qt.ItemIsSelectable)
+                    grid.setItem(row,col,cell)
+                text=str(value)
+                if cell.text()!=text:
+                    cell.setText(text)
         self.status_grid_stack.setCurrentWidget(grid)
         self.status_note.setText(
             ("Завершение измерения · " if stopping else
@@ -979,18 +1009,23 @@ class OriginalRootShell:
             self.status_plot.disableAutoRange(axis="y")
             self.status_plot.setYRange(0.0,y_max,padding=0)
             self.status_page.setProperty("sourceOctaveYMaximum",y_max)
-        self.status_plot.setTitle("---" if verified_chart else "")
+        was_drawn=not self.status_plot.isHidden()
         self.status_plot.setVisible(bool(verified_chart))
+        if not same_mode or not verified_chart:
+            self._status_cursor_index=None
         # Source DFM splResult.Width=8 for ALL modes. Hide chResult
         # when its 43 source bars are absent, but never mutate the
         # original Delphi splitter width to zero: Qt already collapses
         # its handle when either adjacent child is hidden.
         self.status_splitter.setHandleWidth(ORIGINAL_STATUS_SPLITTER[2])
-        if verified_chart:
+        if verified_chart and not was_drawn:
             self.status_splitter.setSizes([ORIGINAL_STATUS_CHART[2],580])
-        self.status_cursor.setText(
-            "---" if verified_chart else
-            "Нет подтверждённого источника спектра для текущего режима")
+        if verified_chart:
+            self._status_show_cursor(getattr(self,'_status_cursor_index',None))
+        else:
+            self.status_plot.setTitle("")
+            self.status_cursor.setText(
+                "Нет подтверждённого источника спектра для текущего режима")
         self.status_export.setEnabled(
             bool(error is None and flow is not None
                  and not flow.direct_bin))
@@ -1003,13 +1038,21 @@ class OriginalRootShell:
         try:
             box=self.status_plot.getPlotItem().vb
             if not box.sceneBoundingRect().contains(scene_pos):
-                self.status_cursor.setText("---")
-                self.status_plot.setTitle("---")
+                self._status_show_cursor(None)
                 return
             x=box.mapSceneToView(scene_pos).x()
             index=int(round(x))
-            cursor=source.cursor(index)
         except (ValueError,OverflowError,TypeError,AttributeError):
+            index=None
+        self._status_show_cursor(index)
+
+    def _status_show_cursor(self,index):
+        try:
+            cursor=self._source_status_projection.cursor(index) if index is not None else None
+        except (ValueError,OverflowError,TypeError,AttributeError):
+            cursor=None
+        self._status_cursor_index=index if cursor is not None else None
+        if cursor is None:
             self.status_cursor.setText("---")
             self.status_plot.setTitle("---")
             return

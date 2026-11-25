@@ -298,17 +298,17 @@ def test_qt_stage111g_three_field_copy_and_local_save_candidate(tmp_path,qt_app,
     assert len(copied.split('\t'))==3
     assert all(copied.split('\t'))
     # Intercept the *user action* file picker; never open a real directory.
-    path=tmp_path/'candidate-export.csv'
+    path=tmp_path/'SPEC-FREQ-2026-11-25.csv'
     monkeypatch.setattr(QFileDialog,'getSaveFileName',
                         lambda *a,**k:(str(path),'CSV (*.csv)'))
     window.spec_save_button.click()
     qt_app.processEvents()
     assert path.exists()
-    lines=path.read_text(encoding='utf-8').splitlines()
+    lines=path.read_text(encoding='cp1251').splitlines()
     assert lines[0]=='sep=|'
     assert len(lines)==3
     assert len(lines[-1].split('|'))==3
-    assert 'кандидат' in lines[1]
+    assert 'СКЗ спектра' in lines[1]
     window.close()
     qt_app.processEvents()
 

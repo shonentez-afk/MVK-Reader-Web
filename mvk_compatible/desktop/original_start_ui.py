@@ -405,6 +405,9 @@ class OriginalStartController:
                 "Сначала завершите текущее TCP-соединение.")
             return False
         if not self.commit_ip():
+            QMessageBox.warning(self.window, "Не удалось начать измерение",
+                "Введите корректный IPv4-адрес прибора, например 192.168.0.30.")
+            self.ip_edit.setFocus(Qt.OtherFocusReason)
             return False
         self.workspace.source_route("bTaskConnect")
         if not self.window.enter_measurement_mode():

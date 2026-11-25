@@ -861,6 +861,14 @@ class NativeCaptureDialog(QDialog):
         elif self._raw_only_dir is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._raw_only_dir)))
 
+    def reject(self):
+        # Qt routes Escape through reject(), not necessarily closeEvent.
+        # An active capture keeps the only UI which can request a graceful Stop.
+        if self.is_busy():
+            return
+        self._timer.stop()
+        super().reject()
+
     def closeEvent(self, event):
         if self.is_busy():
             QMessageBox.warning(

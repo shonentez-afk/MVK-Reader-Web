@@ -85,7 +85,8 @@ def test_saved_units_menu_reselect_and_stock_channel_transition(
                 assert [i for i in w.spec_type_menu.actions() if i.isChecked()] == [a]
             assert w.spec_plot.getAxis("left").labelText == axis
             assert all(v.text().endswith(" "+axis) for v in w.spec_vscale_menu.actions())
-            assert f" {summary} (условн.)" in w.spec_mean_primary.text().splitlines()[0]
+            assert w.spec_mean_primary.text().splitlines()[0].endswith(f" {summary}")
+            assert "Калибровка НЕ подтверждена" in w.spec_mean_primary.text()
             box = w.spec_plot.getViewBox()
             w._spec_at_scene_pos(box.sceneBoundingRect().center(), force=True)
             assert w.spec_cursor_primary.text().splitlines()[-1].endswith(" "+axis)

@@ -139,6 +139,8 @@ class OriginalSpectrumAction:
 
     @classmethod
     def from_view(cls,flow:OfflineMeasurementFlow,spectrum:dict):
+        if isinstance(spectrum,dict) and spectrum.get("preview_left_padding_samples"):
+            raise ValueError("Дополненный спектр доступен только для просмотра")
         record,n,mode,values,_=_source_summary(flow,spectrum)
         window=spectrum.get("input_source_window")
         signature=(tuple(window.get(k) for k in (
@@ -268,7 +270,8 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
 
     Every write revalidates the source and checks the full output.
     Native ZIP keeps its strict header check. A saved original archive
-    can retain its recognizable first daily header after a unit change.
+    with Count metadata can retain its recognizable first daily header.
+    Never append a physical unit under a different physical-unit header.
     A foreign header or mixed numeric locale is refused. A failed append is rolled
     back to the original verified byte length.
     """
@@ -302,7 +305,8 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
         before=dest.read_bytes()
         old_header=header
         if not before.startswith(header):
-            # The original writes a daily header once, then only numeric rows
+            # Count/Byte has no attested physical units. The original writes a
+            # daily header once, then only numeric rows
             # even after a change of mode/channel/unit. In saved Mode1 reproduce
             # this for recognizable original headers; never rewrite old bytes.
             fields=before.split(b"\r\n",2)
@@ -315,14 +319,18 @@ def append_source_spec_freq_csv(action:OriginalSpectrumAction,
                     raise ValueError("Unrecognized Russian header")
             except (UnicodeError,ValueError) as exc:
                 raise ValueError("Existing vendor/unverified SPEC-FREQ: different header, encoding or units") from exc
+            if action.source_units:
+                raise ValueError(
+                    'Заголовок дневного SPEC-FREQ не совпадает с единицами текущего спектра. '
+                    'Выберите отдельную папку для этого режима. Старый файл не изменён.')
             old_header=b"sep=|\r\n"+fields[1]+b"\r\n"
             retained_first_header=True
         tail=before[len(old_header):]
-        if not tail or not tail.endswith(b"\r\n"):
+        if tail and not tail.endswith(b"\r\n"):
             raise ValueError("Existing candidate SPEC-FREQ rows malformed")
         number=rb"[+-]?(?:[0-9]+(?:"+re.escape(decimal_separator.encode("ascii"))+rb"[0-9]*)?)(?:[eE][+-]?[0-9]+)?"
         numeric_row=re.compile(rb"\|".join((number,)*3))
-        rows=tail[:-2].split(b"\r\n")
+        rows=tail[:-2].split(b"\r\n") if tail else []
         if any((b"." if decimal_separator=="," else b",") in old for old in rows):
             raise ValueError("Existing SPEC-FREQ has a different decimal separator")
         if not all(numeric_row.fullmatch(old) for old in rows):

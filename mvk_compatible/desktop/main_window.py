@@ -2092,6 +2092,8 @@ class MainWindow(QMainWindow):
             calibration='TACH Byte/255 · расчёт сохранённого файла, не обороты'
         elif isinstance(self.session,DirectBinSession):
             unit=summary_unit+' (условн.)'
+            if self._saved_wave_channel_units() is not None:
+                unit=summary_unit
             calibration=(
                 'Калибровка НЕ подтверждена · единицы сохранённого канала'
                 if self._saved_wave_channel_units() is not None else
@@ -2460,7 +2462,14 @@ class MainWindow(QMainWindow):
         return (end-n_fft)/fs
 
     def _saved_mode1_fft_end(self, total_samples, fs):
-        if self._saved_mode1_range() is None or self.spec_last.isChecked():
+        if self._offline_tach_channel():
+            clock=self._source_view_time
+            # The slider uses whole ticks; its final position must still
+            # address the true last saved sample, even for a short TACH.
+            if (clock is not None and clock.adc==self._ch() and
+                    clock.position==clock.maximum):
+                return total_samples
+        elif self._saved_mode1_range() is None or self.spec_last.isChecked():
             return None
         return min(total_samples, round(self._effective_source_start_seconds()*fs))
 
@@ -2608,7 +2617,9 @@ class MainWindow(QMainWindow):
         maximum=info.get('grapher_axis_end_frequency_hz')
         if not isinstance(maximum,(float,int)) or not math.isfinite(maximum) or maximum<=0:
             return None
-        if self._saved_mode1_range() is not None:
+        if (self._saved_mode1_range() is not None and
+                self.spec_envelope_button.isChecked() and
+                self._source_envelope_menu_fs == 65536):
             return float(HORIZONTAL_HZ[0])
         return min(float(HORIZONTAL_HZ[0]),float(maximum))
 
@@ -2972,8 +2983,10 @@ class MainWindow(QMainWindow):
         if in_mode2:
             self.wave_inspector.hide()
             self.spec_inspector.hide()
-        self.wave_advanced_button.setVisible(not in_mode2)
-        self.spec_advanced_button.setVisible(not in_mode2)
+        show_diagnostics = not in_mode2 and bool(getattr(
+            getattr(self, "original_visual_skin", None), "technical", False))
+        self.wave_advanced_button.setVisible(show_diagnostics)
+        self.spec_advanced_button.setVisible(show_diagnostics)
         for action in self._spec_lines_actions:
             action.setVisible(
                 not in_mode2 or int(action.data()) not in RESEARCH_FFT_SIZES)
@@ -4847,6 +4860,7 @@ class MainWindow(QMainWindow):
             self._native_dialog.activateWindow()
             return
         dlg=NativeCaptureDialog(self)
+        dlg.finished.connect(lambda _result, owner=dlg: self._native_preflight_dismissed(owner))
         dlg.archiveReady.connect(self._accept_native_capture_archive)
         dlg.captureStarted.connect(self._begin_live_capture)
         dlg.captureFinalizing.connect(self._native_capture_finalizing)
@@ -4858,6 +4872,13 @@ class MainWindow(QMainWindow):
         dlg.sourceLongWindowReady.connect(self._receive_source_long_window)
         self._native_dialog=dlg
         dlg.show()
+
+    def _native_preflight_dismissed(self, dialog):
+        """Closing a prepared confirmation is cancellation, not a TCP stop."""
+        if (dialog is self._native_dialog and self._measurement_mode_selected
+                and not self._live_active and not dialog.is_busy()
+                and getattr(dialog, "_mode", None) != "capture"):
+            self.leave_measurement_mode()
 
     def compare_original_native_local(self):
         """Stage111Z27 local-only forensic comparison, no network or mutation.
@@ -4928,7 +4949,14 @@ class MainWindow(QMainWindow):
             'Файлы измерений MVK (*.bin *.tsxml *.zip);;'
             'Экспорт Native R6.1 (*.zip);;'
             'Все поддерживаемые файлы (*.bin *.tsxml *.zip)')
-        if path:self.open_archive(path)
+        if path:
+            previous=self.session
+            self.open_archive(path)
+            if self.session is not None and self.session is not previous:
+                # Original operator route enters PageAdc once the chosen
+                # recording has been accepted. Cancel and failure leave
+                # the current page and previously valid session intact.
+                self.original_visual_skin.reveal_page(3)
 
     def _bind_only_verified_channels(self,channels,*,selected_channel=None):
         """Atomic Qt ADC + two original DFM channel tab selectors.
@@ -4991,7 +5019,7 @@ class MainWindow(QMainWindow):
             source=Path(path)
             direct=source.suffix.lower() in ('.bin','.tsxml')
             if direct:
-                s=DirectBinSession.open(source)
+                s=DirectBinSession.open(source,allow_partial_group=True)
                 channels=s.available_channels
                 primary=s.primary_channel
             else:
@@ -5006,7 +5034,10 @@ class MainWindow(QMainWindow):
                 raise ValueError('Для графического FFT требуется не менее 1024 отсчётов')
             flow=OfflineMeasurementFlow.bind(s,channel=primary)
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
-            QMessageBox.critical(self,'Архив отклонён',str(exc))
+            retained=('\n\nПредыдущая запись осталась открытой.'
+                      if self.session is not None else '')
+            QMessageBox.critical(
+                self,'Архив отклонён',f'{Path(path).name}: {exc}'+retained)
             return
         self._reset_visible_original_pair()
         # Do not let a previous visual-only x32dbg snapshot leak into a newly
@@ -5049,7 +5080,8 @@ class MainWindow(QMainWindow):
         blocked=self.wave_start.blockSignals(True)
         try:
             self.wave_start.setRange(0.,max(300.,len(samples)/float(fs)))
-            self.wave_start.setValue(len(samples)/float(fs) if direct and s.mode1_adc_range(primary) is not None else 0.)
+            self.wave_start.setValue(len(samples)/float(fs) if direct and
+                (s.mode1_adc_range(primary) is not None or s.is_tach(primary)) else 0.)
         finally:
             self.wave_start.blockSignals(blocked)
         # Source data, selected combo ADC and both DFM tab bars move as
@@ -5060,7 +5092,7 @@ class MainWindow(QMainWindow):
         self.wave_time_label.setText('Конец, с' if original_saved else 'Начало, с')
         was_blocked=self.spec_last.blockSignals(True)
         try:
-            self.spec_last.setChecked(not original_saved)
+            self.spec_last.setChecked(not (original_saved or (direct and s.is_tach(primary))))
         finally:
             self.spec_last.blockSignals(was_blocked)
         if original_saved:
@@ -5119,10 +5151,16 @@ class MainWindow(QMainWindow):
                 self.spec_mode.currentIndex(),former_tag=0,former_position=0)
             self._select_original_vscale(
                 choice['source_menu_tag'],source_choice=choice)
+        warnings=s.group_warnings if direct else ()
+        if warnings:
+            self.task_session_summary.setText(
+                self.task_session_summary.text()+'\nНе открыты каналы:\n'+'\n'.join(warnings))
         self.statusBar().showMessage(
             ('Открыт локальный BIN/TSXML; калибровка и приборный DSP НЕ подтверждены · '
              if direct else 'Открыт проверенный ZIP Native R6.1 · ')
             + Path(path).name
+            + (f' · Не открыто соседних каналов: {len(warnings)} (см. «Задачи»)'
+               if warnings else '')
         )
 
     @staticmethod
@@ -5261,6 +5299,13 @@ class MainWindow(QMainWindow):
         if (self.session is None or self._live_active or
                 self._offline_flow is None):
             return
+        if isinstance(self.session,DirectBinSession):
+            with self.session.sample_render_transaction():
+                self._render_source_time_position(position)
+        else:
+            self._render_source_time_position(position)
+
+    def _render_source_time_position(self, position):
         try:
             flow=self._current_offline_flow()
             model=self.original_shell.sync_source_view_time(
@@ -5282,6 +5327,9 @@ class MainWindow(QMainWindow):
         except (OSError,ValueError,KeyError,RuntimeError) as exc:
             self._source_view_time=None
             self.original_shell.clear_source_view_time()
+            self.spec_copy_button.setEnabled(False)
+            self.spec_save_button.setEnabled(False)
+            self.spec_mean_primary.setText('Текущее окно не рассчитано.\n'+str(exc))
             self.statusBar().showMessage(
                 'Исходное время просмотра отклонено: '+str(exc))
 
@@ -6872,7 +6920,11 @@ class MainWindow(QMainWindow):
                 start=max(0,source_end-n_fft)/fs
             self._sync_spec_lines_presentation(fs)
             gate=self._spec_history_gate(n_fft,len(samples),fs)
-            if not gate['can_compute_without_padding']:
+            partial_preview=(flow.direct_bin and not tach and
+                not self.spec_envelope_button.isChecked() and
+                self._saved_mode1_range() is not None and
+                source_end is not None and 0 < source_end < n_fft)
+            if not gate['can_compute_without_padding'] and not partial_preview:
                 # A checked short file still has a valid signal/time axis.
                 # Never pad FFT or invalidate its already-accepted waveform.
                 insufficient_history=flow.direct_bin
@@ -6883,7 +6935,11 @@ class MainWindow(QMainWindow):
                     "дополнение нулями запрещено")
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
-            if tach:
+            if partial_preview:
+                d=flow.session.preview_partial_spectrum(
+                    flow.channel,n_fft,self.spec_mode.currentIndex(),source_end,
+                    **self._offline_fft_domain())
+            elif tach:
                 d=flow.spectrum(n_fft,self.spec_mode.currentIndex(),
                                 start,max_hz=1e9,max_points=n_fft//2,
                                 backend=self._fft_backend())
@@ -6922,10 +6978,9 @@ class MainWindow(QMainWindow):
             # Original TQGrapher screenshot: x-axis ends at DataSize * df;
             # last stored series bin is one df earlier (25599.75 vs 25600
             # Hz at N262144/Fs65536). Never invent a final data sample.
-            self._spec_visible_max_hz=min(self.spec_hz.value(),
-                    float(HORIZONTAL_HZ[0]) if self._saved_mode1_range() is not None
-                    else display_contract['grapher_axis_end_frequency_hz'])
             self._full_spectrum=d
+            self._spec_visible_max_hz=min(self.spec_hz.value(),
+                    self._real_spectrum_axis_end_hz())
             self._sync_original_hscale_data_availability()
             self._spectrum_summary=d.get('spectrum_summary')
             self._source_spectrum_gain=source_spectrum_gain(
@@ -6975,9 +7030,10 @@ class MainWindow(QMainWindow):
             else:
                 self.spec_core_triplet.setText(
                     'Нет принятой тройки GetSpectrum для этого режима')
-            self.spec_copy_button.setEnabled(valid_summary)
-            self.spec_save_button.setEnabled(valid_summary)
-            self.spec_original_copy_compare.setEnabled(valid_summary)
+            exportable=valid_summary and not partial_preview
+            self.spec_copy_button.setEnabled(exportable)
+            self.spec_save_button.setEnabled(exportable)
+            self.spec_original_copy_compare.setEnabled(exportable)
             self.spec_canvas_geometry_button.setEnabled(valid_summary)
             xx=np.asarray(d['frequency_hz'],dtype=np.float64)
             yy=np.asarray(d['amplitude'],dtype=np.float64)
@@ -7052,7 +7108,15 @@ class MainWindow(QMainWindow):
             else:
                 self.spec_hscale_button.setText(
                     f'{self._spec_visible_max_hz:g} Гц')
+                for action in self._spec_hscale_actions:
+                    action.setChecked(action.isEnabled() and
+                        math.isclose(float(action.data()),self._spec_visible_max_hz,
+                                     abs_tol=1e-5,rel_tol=0.0))
             self._sync_spectrum_summary_primary()
+            if partial_preview:
+                self.spec_mean_primary.setText(
+                    self.spec_mean_primary.text()+
+                    '\nНачало записи дополнено нулями · только просмотр')
             self.spec_cursor_primary.setText(
                 self._idle_spectrum_cursor_label())
             if valid_summary:
@@ -7843,8 +7907,14 @@ class MainWindow(QMainWindow):
                 self._spectrum_reference is not None or
                 self._full_spectrum is None):
             raise ValueError("No verified offline GetSpectrum for current ADC")
+        if self._full_spectrum.get('preview_left_padding_samples'):
+            raise ValueError('Дополненный спектр доступен только для просмотра')
         flow=self._current_offline_flow()
         flow.require_session(self.session)
+        if isinstance(self.session,DirectBinSession):
+            # Export is never authorized by a render-time cache, even if
+            # the draw handler reentered the event loop.
+            self.session.read_current_samples(flow.channel)
         action=OriginalSpectrumAction.from_view(flow,self._full_spectrum)
         if action.adc!=self._ch():
             raise ValueError("Current spectrum channel disagrees with original tab")
@@ -7907,7 +7977,10 @@ class MainWindow(QMainWindow):
                 f"{action.spectrum_mode}, FFT {action.n_fft} · "
                 "три числа из текущего GetSpectrum, не приборный DSP")
         except (OSError,KeyError,TypeError,ValueError) as exc:
-            self.statusBar().showMessage('bSpecCopyValue отклонён: '+str(exc))
+            reason = str(exc)
+            self.statusBar().showMessage('bSpecCopyValue отклонён: '+reason)
+            QMessageBox.warning(self, 'Не удалось скопировать спектр',
+                f'{reason}\n\nБуфер обмена не изменён.')
 
     @staticmethod
     def _source_csv_decimal():
@@ -7983,25 +8056,19 @@ class MainWindow(QMainWindow):
                 proposed='SPEC-FREQ-'+date.today().strftime('%Y-%m-%d')+'.csv'
                 target,_=QFileDialog.getSaveFileName(
                     self,
-                    'SPEC-FREQ · русская шапка, Windows-1251',
-                    proposed,'SPEC-FREQ CSV (*.csv)')
+                    'SPEC-FREQ · создание файла или добавление строки',
+                    proposed,'SPEC-FREQ CSV (*.csv)','',
+                    QFileDialog.Option.DontConfirmOverwrite)
                 if not target:return
                 current_flow,new_action=self._current_original_spectrum_action()
                 if current_flow.session is not flow.session or new_action!=action:
                     raise ValueError('Источник сменился до сохранения')
-                # Backward-compatible explicit research Save As retains
-                # the existing synthetic workflow and DOES NOT impersonate
-                # the original SPEC-FREQ daily file. The original handler
-                # only accepts its exact source file name and writes to
-                # edLibraryPath when that folder is selected.
+                # An operator action for SPEC-FREQ never changes format
+                # merely because the selected basename is different.
                 if not Path(target).name.startswith('SPEC-FREQ-'):
-                    report=append_research_summary_csv(
-                        target,self._spectrum_summary,
-                        uncalibrated=False)
-                    self.statusBar().showMessage(
-                        f"Исследовательский CSV: {Path(target).name} · "
-                        "это НЕ исходный bSpecSaveValue/Win32 заголовок")
-                    return report
+                    raise ValueError(
+                        'Для штатного CSV оставьте имя SPEC-FREQ-ГГГГ-ММ-ДД.csv. '
+                        'Формат файла не меняется при переименовании.')
             report=append_source_spec_freq_csv(
                 action,flow,target,spectrum=self._full_spectrum,
                 decimal_separator=self._source_csv_decimal())

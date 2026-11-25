@@ -368,20 +368,30 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
                      max_hz:float=10000.0, max_points:int=5000, backend:str='idr_float32',
                      *, f_range:float|None=None,
                      input_domain:str=DOMAIN_CALIBRATED_BIN,
-                     sample_provider=None)->dict:
+                     sample_provider=None, preview_prefix_end:int|None=None)->dict:
     applied_range,range_source=resolve_f_range(f_range)
     if n_fft<1024 or n_fft>262144 or n_fft&(n_fft-1):
         raise ValueError('FFT N должно быть степенью двойки 1024..262144, максимум оригинала')
     if mode not in range(4):raise ValueError('Допустимы четыре режима 0..3')
     samples,fs,audit,filename=(sample_provider(channel) if sample_provider
                                 is not None else read_samples(path,channel))
-    start = max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
-    if start<0 or start+n_fft>len(samples):
-        raise ValueError('Не хватает данных для выбранного окна FFT')
+    pad = 0
+    if preview_prefix_end is not None:
+        if (sample_provider is None or start_s is not None or
+                type(preview_prefix_end) is not int or
+                not 0 < preview_prefix_end < n_fft or preview_prefix_end > len(samples)):
+            raise ValueError('Некорректное начало сохранённой записи FFT')
+        start,end = 0,preview_prefix_end
+        pad = n_fft-end
+    else:
+        start = max(0,len(samples)-n_fft) if start_s is None else round(start_s*fs)
+        end = start+n_fft
+        if start<0 or end>len(samples):
+            raise ValueError('Не хватает данных для выбранного окна FFT')
     # Same local pre-DC, pre-Hann Float32 BIN window can now be matched
     # against GetSignal by SHA; this is NOT original Delphi same-run parity.
     source_window=archive_input_window_evidence(
-        samples,first=start,end=start+n_fft,sample_rate_hz=fs,
+        samples,first=start,end=end,sample_rate_hz=fs,
         native_audit=bool(isinstance(audit,dict) and
             audit.get('instrument_serial') and audit.get('output_file_sha256')),
         channel=channel,
@@ -390,12 +400,15 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
     # Original GetSpectrum (0x007D14B3) ALWAYS removes stored f32 mean.
     # Stage111B reconstructed IDR FFT is still candidate, NOT instrument DSP.
     prepared=prepare_original_fft_input(
-        samples[start:start+n_fft],f_range=f_range,input_domain=input_domain)
+        samples[start:end],f_range=f_range,input_domain=input_domain)
+    fft_input=prepared['samples_before_dc_removal']
+    if pad:
+        fft_input=np.pad(fft_input,(pad,0),mode='constant')
     # Source 007D149A pushes bool 1: original FAdcDataType==1 storage
     # reader divides PAdcFloatData by FRange BEFORE mean removal and FFT.
     # This is an explicit operator hypothesis, never inferred from Native BIN.
     power, removed_mean=idr_power_spectrum(
-        prepared['samples_before_dc_removal'],backend=backend)
+        fft_input,backend=backend)
     power=np.asarray(power,dtype=np.float64)
     # Original 007D158B..007D15BC: Max(2, Round((N/fs)*0.5)).
     # Helper 007B1CF0 is unsigned Max, verified in PRIVATE _Unit114.pas.
@@ -430,7 +443,7 @@ def spectrum_for_zip(path:Path,channel:int,n_fft:int,mode:int,start_s:float|None
         chunk=math.ceil(len(keep)/max_points)
         keep=np.array([keep[i:i+chunk][np.argmax(y[keep[i:i+chunk]])] for i in range(0,len(keep),chunk)],dtype=np.int64)
     return {'version':VERSION,'channel':channel,'n_fft':n_fft,'df_hz':fs/n_fft,
-            'start_s':start/fs,'end_s':(start+n_fft)/fs,
+            'start_s':start/fs,'end_s':end/fs,'preview_left_padding_samples':pad,
             'input_source_window':source_window,
             'mode':mode,'mode_name':('Логарифмич.','Линейный ВУ','Линейный ВС','Линейный ВП')[mode],
             'frequency_hz':freq[keep].tolist(),'amplitude':y[keep].tolist(),

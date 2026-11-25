@@ -13,6 +13,8 @@ No AUX/VALUES/third-octave DSP results are manufactured.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -29,6 +31,8 @@ from .original_tsxml_contract import (
     OriginalTsxmlContract,inspect_original_tsxml,ORIGINAL_TSXML_SOURCE,
 )
 from .mvk_original_scale_tables_idr_candidate import source_spectrum_unit_contract
+
+_RENDER_READS = ContextVar("direct_bin_render_reads", default=None)
 
 MAX_TSXML_BYTES = 64_000
 _MAX_BIN_BYTES = MAX_BIN_SAMPLES * 4
@@ -169,6 +173,7 @@ class DirectBinSession(OfflineSession):
     reads verified local bytes. Native ZIP data and DSP CSV paths are untouched.
     """
     channel_files: tuple[DirectBinChannel, ...]
+    group_warnings: tuple[str, ...] = ()
 
     @property
     def primary_channel(self) -> int:
@@ -217,7 +222,7 @@ class DirectBinSession(OfflineSession):
         return entry.source_metadata.original_f_range_single_candidate if entry else None
 
     @classmethod
-    def open(cls, file: str | Path) -> "DirectBinSession":
+    def open(cls, file: str | Path, *, allow_partial_group: bool = False) -> "DirectBinSession":
         selected = Path(file).absolute()
         if selected.is_symlink() or not selected.is_file():
             raise ValueError("Нужен обычный локальный BIN/TSXML без ссылок")
@@ -241,21 +246,50 @@ class DirectBinSession(OfflineSession):
             discovered.append((None, primary))
         if not discovered or primary not in [p for _, p in discovered]:
             raise ValueError("Нельзя определить исходную группу BIN")
-        sources = tuple(
-            _inspect_channel(p, ch) for ch, p in discovered
-        )
-        if len({src.sample_rate_hz for src in sources}) != 1:
-            raise ValueError("Каналы одного измерения имеют разную частоту")
+        primary_channel = next(ch for ch, p in discovered if p == primary)
+        anchor = _inspect_channel(primary, primary_channel)
+        entries = []
+        warnings = []
+        for ch, p in discovered:
+            try:
+                entry = anchor if p == primary else _inspect_channel(p, ch)
+                if entry.sample_rate_hz != anchor.sample_rate_hz:
+                    raise ValueError("Каналы одного измерения имеют разную частоту")
+            except (OSError, ValueError) as exc:
+                if not allow_partial_group or p == primary:
+                    raise
+                warnings.append(f"{p.name}: {exc}")
+            else:
+                entries.append(entry)
         return cls(
             path=primary, serial=serial, updates=1, started_utc=None,
-            channel_files=sources,
+            channel_files=tuple(entries), group_warnings=tuple(warnings),
         )
 
     @property
     def available_channels(self) -> tuple[int, ...]:
         return tuple(ch.adc for ch in self.channel_files)
 
+    @contextmanager
+    def sample_render_transaction(self):
+        """Share a checked, read-only snapshot within one synchronous render."""
+        token=_RENDER_READS.set((self,{}))
+        try:
+            yield
+        finally:
+            _RENDER_READS.reset(token)
+
     def samples(self, channel: int) -> tuple:
+        scope=_RENDER_READS.get()
+        if type(channel) is not int or scope is None or scope[0] is not self:
+            return self.read_current_samples(channel)
+        cache=scope[1]
+        if channel not in cache:
+            cache[channel]=self.read_current_samples(channel)
+        values,rate,audit,name=cache[channel]
+        return values,rate,audit.copy(),name
+
+    def read_current_samples(self, channel: int) -> tuple:
         if type(channel) is not int:
             raise ValueError("Номер АЦП должен быть целым")
         entry = next(
@@ -343,6 +377,15 @@ class DirectBinSession(OfflineSession):
             processing_note=result["processing_note"] +
                 " · BIN/TSXML Single принят без подтверждения калибровки."
         )
+
+    def preview_partial_spectrum(self, channel, n_fft, mode, end_sample, *, f_range, input_domain):
+        """Early archived ADC preview only; not an exportable complete window."""
+        if self.mode1_adc_range(channel) is None or self.is_tach(channel):
+            raise ValueError('Предпросмотр начала требует проверенный АЦП BIN/TSXML')
+        return spectrum_for_zip(
+            self.path,channel,n_fft,mode,max_hz=1e9,max_points=n_fft//2,
+            f_range=f_range,input_domain=input_domain,sample_provider=self.samples,
+            preview_prefix_end=end_sample)
 
     def spectrum(self, channel: int, n_fft: int = 65536, mode: int = 1,
                  start_s: float | None = None,

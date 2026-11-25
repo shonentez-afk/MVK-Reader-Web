@@ -94,8 +94,12 @@ def test_original_start_page_source_5_rectangles_ip_folder_and_real_navigation(
         called=[]
         monkeypatch.setattr(win,"open_native_capture",
                             lambda:called.append("show consent-only dialog"))
+        from PySide6.QtWidgets import QMessageBox
+        warning=[]
+        monkeypatch.setattr(QMessageBox, "warning", lambda *args: warning.append(args[-1]))
         ip.setText("bad.device.name")
         assert not controller.open_capture_dialog()
+        assert warning and "IPv4" in warning[-1]
         assert called==[]
         ip.setText("192.168.1.84")
         assert controller.open_capture_dialog()
