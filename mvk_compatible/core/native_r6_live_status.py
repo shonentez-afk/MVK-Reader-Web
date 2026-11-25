@@ -21,6 +21,7 @@ from .original_live_result_registers import parse_live_result_registers
 from .original_system_register_fields import verify_source_error_overlap
 from .original_source_ring_receipt import validate_original_storage_receipt
 from .original_receive_gate_receipt import validate_original_receive_gate_receipt
+from .original_values_3100_timeline import max_source_values_ticks
 
 SCHEMA = "MVK_NATIVE_R6_LIVE_STATUS_V1"
 _SOURCE_TCP_RETRY_CAUSES = frozenset((
@@ -117,8 +118,8 @@ def validate_live_status(payload: dict, *, expected_run: str,
     source_values_ticks=payload.get("source_values_ticks_address_3100")
     if source_values_ticks is not None and (
             _positive_int(source_values_ticks,"source address 0x3100 VALUES ticks")
-            >payload["frames_decoded"]):
-        raise ValueError("Native source VALUES ticks exceed decoded frames")
+            >max_source_values_ticks(payload["frames_decoded"], payload["raw_bytes"])):
+        raise ValueError("Native source VALUES ticks exceed decoded PARAM capacity")
     if any(source_fields) and not all(source_fields):
         raise ValueError("Native live status: partial source RX evidence")
     if all(source_fields):

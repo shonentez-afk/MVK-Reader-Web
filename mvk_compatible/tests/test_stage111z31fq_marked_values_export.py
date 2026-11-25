@@ -34,16 +34,19 @@ def _sample(ch,index):
     return bytes(f)
 
 
-def _marked_original_values_run(tmp_path):
+def _marked_original_values_run(tmp_path, *, multi_descriptor=False):
     run=tmp_path/RUN
     run.mkdir()
     parts=[frame(1,bytes(256))]
     for ch in range(8):
         parts.append(_sample(ch,0))
-    parts.extend([aux_frame(),param((0x3100,b"ABCD"))])
+    first = frame(0xDEADBEEF, bytes(4)) if multi_descriptor else param((0x3100,b"ABCD"))
+    parts.extend([aux_frame(), first])
     for ch in range(8):
         parts.append(_sample(ch,256))
-    parts.extend([aux_frame(),param((0x3100,b"WXYZ")),
+    second = (param((0x3100,b"ABCD"), (0x2002,b"DATA"), (0x3100,b"WXYZ"))
+              if multi_descriptor else param((0x3100,b"WXYZ")))
+    parts.extend([aux_frame(), second,
                   frame(0xDEADBEEF,bytes(4))])
     raw=b"".join(parts)
     digest=sha256(raw).hexdigest()

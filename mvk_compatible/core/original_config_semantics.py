@@ -139,6 +139,28 @@ CHANNEL_FIELDS=(
     ConfigField("ConfigMinVoltage",0x52,0,("0","100")),
     ConfigField("ConfigMaxVoltage",0x50,0,("0","100")),
 )
+# _Unit125:008047C8; ConfigTachCellList follows the eight ADC banks.
+TACH_FIELDS=(
+    ConfigField("ConfigTachoFunction",0x08,10,advanced="tacho_function"),
+    ConfigField("ConfigButtonTime",0x06,2,("0","65536")),
+    ConfigField("ConfigTachoSerial",0x20,9),
+)
+
+# Alarm editor's source constructor expands the four fixed choices with
+# three groups of eight ranges (three quantities), followed by 43 bands.
+# These labels are human-readable fallbacks; the DWORD IDs are source IDs.
+_SOURCE_ALARM_RANGES=("10..3000 Гц","10..2000 Гц","10..1000 Гц",
+    "2..1000 Гц","0,8..300 Гц","0,8..150 Гц","Польз. 1","Польз. 2")
+SOURCE_CONFIG_ALARM_OPTIONS=AdvancedCell(
+    SOURCE_ADVANCED_OPTIONS["alarm_band"].values+
+    tuple(AdvancedValue(0x31+group*32+i*3+j,
+                        f"{unit}, {band} · вариант {group+1}")
+          for group in range(3) for i,band in enumerate(_SOURCE_ALARM_RANGES)
+          for j,unit in enumerate(("ВУ","ВС","ВП")))+
+    tuple(AdvancedValue(2+i,f"Полоса {frequency:.3g} Гц")
+          for i,frequency in enumerate(source_octave_frequencies_float32()))
+)
+
 UNRESOLVED_ADVANCED=frozenset(("num_groups","option","wifi_mode","octave_band"))
 # Backward-compatibility name: only original runtime translated strings
 # remain unresolved. The numeric IDs are now source-verified in BF.
@@ -150,7 +172,9 @@ def section_fields(section:str,*,adc:int|None=None):
         return CALIBRATION_FIELDS,0
     if section=="adc" and type(adc) is int and 1<=adc<=8:
         return CHANNEL_FIELDS,0x100+(adc-1)*0x100
-    raise ValueError("Expected ip/calib or adc 1..8")
+    if section=="tach" and type(adc) is int and 1<=adc<=2:
+        return TACH_FIELDS,0x900+(adc-1)*0x100
+    raise ValueError("Expected ip/calib, adc 1..8 or tach 1..2")
 
 def source_section_rows(document,section:str,*,adc:int|None=None):
     fields,base=section_fields(section,adc=adc)

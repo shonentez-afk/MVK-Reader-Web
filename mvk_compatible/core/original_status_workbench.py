@@ -28,6 +28,11 @@ from .offline_measurement_flow import OfflineMeasurementFlow
 from .original_pagestatus_source import StatusTable,MODE_NAMES,source_pagestatus_table
 from .original_config_idp_tables import source_octave_frequencies_float32
 
+# Recovered Delphi top-axis metadata is distinct from the Qt bottom
+# view, whose 43 bins are centred on integer indexes 0 through 42.
+SOURCE_OCTAVE_TOP_AXIS_MAX=43.5
+COMPATIBLE_OCTAVE_BOTTOM_RANGE=(-0.5,42.5)
+
 SOURCE="ORIGINAL_IDR_PAGESTATUS_FOUR_TABLES_SOURCE_FUNCTIONAL_STAGE111Z31BU"
 ORIGINAL_STATUS_TABS_DESIGN_TIME=2
 ORIGINAL_STATUS_TABS_RUNTIME=len(MODE_NAMES)
@@ -153,7 +158,9 @@ class OriginalStatusProjection:
             "original_grid_name":self.table_name,
             "verified_bins":43 if self.chart_visible else 0,
             "source_chart_y_max":self.chart_maximum(),
-            "source_chart_top_axis_max":43.5 if self.chart_visible else None,
+            "source_chart_top_axis_max":SOURCE_OCTAVE_TOP_AXIS_MAX if self.chart_visible else None,
+            "compatible_chart_bottom_axis_range":(
+                list(COMPATIBLE_OCTAVE_BOTTOM_RANGE) if self.chart_visible else None),
             "source_chart_units":self.source_chart_units if self.chart_visible else None,
             "source_chart_win32_x87_parity_verified":False,
             "rows":len(self.model.rows),

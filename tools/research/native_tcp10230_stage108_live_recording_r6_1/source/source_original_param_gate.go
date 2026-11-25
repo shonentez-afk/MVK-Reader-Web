@@ -28,6 +28,7 @@ type sourceOriginalParamGateRecord struct {
     FreezeUpdate bool `json:"freeze_update"`
     AUX4700 bool `json:"is_aux4700"`
     Values3100 bool `json:"contains_values_3100"`
+    Values3100DescriptorCount int `json:"source_values_3100_descriptor_count"`
 }
 
 type sourceOriginalParamGateJournal struct {
@@ -36,6 +37,16 @@ type sourceOriginalParamGateJournal struct {
     records uint64
     closed bool
 }
+func countOriginalValuesDescriptors(blocks []RegBlock) int {
+    count := 0
+    for _, block := range blocks {
+        if block.Addr == 0x3100 {
+            count++
+        }
+    }
+    return count
+}
+
 func newSourceOriginalParamGateJournal(dir string)(*sourceOriginalParamGateJournal,error){
     f,e:=os.OpenFile(filepath.Join(dir,sourceOriginalParamGateName),
         os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
@@ -53,16 +64,14 @@ func(j *sourceOriginalParamGateJournal)onParam(m *Monitor,f Frame,blocks []RegBl
         return errors.New("source PARAM gate requires complete frame")
     }
     sum:=sha256.Sum256(f.Raw)
-    values:=false
-    for _,block:=range blocks{
-        if block.Addr==0x3100{values=true;break}
-    }
+    values:=countOriginalValuesDescriptors(blocks)
     entry:=sourceOriginalParamGateRecord{
         Schema:sourceOriginalParamGateSchema,
         FrameIndex:m.summary.TotalFrames,
         FrameSHA256:hex.EncodeToString(sum[:]),
         DescriptorCount:len(blocks),
-        FreezeUpdate:frozen,AUX4700:len(f.Raw)==4700,Values3100:values,
+        FreezeUpdate:frozen,AUX4700:len(f.Raw)==4700,Values3100:values>0,
+        Values3100DescriptorCount:values,
     }
     line,e:=json.Marshal(entry)
     if e!=nil{return e}

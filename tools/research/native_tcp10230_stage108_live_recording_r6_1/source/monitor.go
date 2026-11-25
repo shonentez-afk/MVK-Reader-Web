@@ -285,6 +285,14 @@ func (m *Monitor) ProcessChunk(chunk []byte, at time.Time) error {
         }
 	}
 	for frameIndex, f := range frames {
+        // A control accepted while Read was blocked must be applied before
+        // the completed frame reaches the original Fs/Freeze admission gate.
+        // Keep the sole receive goroutine in charge, and preserve the raw
+        // write above. This only queues any separately approved RATE; it
+        // does not add a socket write or permit device commands.
+        if e := m.drainSourceOperatorRates(m.sourceOperatorRateChan); e != nil {
+            return e
+        }
         // Original reads ONE application frame at a time. Coalesced
         // TCP frames still need one FIFO dispatch between packets.
         if frameIndex>0 && m.sourceTask2TX!=nil {
@@ -467,11 +475,19 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             if e:=m.sourceOriginalStorage.appendFrame(*sample,f.Raw[28:],sourceStorageTachBytes);e!=nil{return e}
         }
 		if typ == typeADC && m.liveBin != nil && !m.summary.SourceTCPMultiSocket {
-            // The original receive gate drops mismatched Fs from
-            // channel storage and WriteData, not merely from GUI. The
-            // optional calibrated BIN must not consume that packet
-            // or falsely classify its valid header as corruption.
-			if sourceStoreAllowed && !m.sourceRateTransitionDetected && m.liveBin.begun {
+            // Freeze excludes samples from the original ring and WriteData,
+            // not the separate calibrated forensic archive made from the
+            // full wire stream. Otherwise the first ADC after unfreeze
+            // falsely looks like a broken wire sequence to the spool.
+            // Stop exposing its fallback preview once the two paths diverge.
+            archiveOnlyFrozen := m.sourceOriginalRXGate != nil &&
+                m.sourceOriginalRXGate.frozen && m.sourceOriginalRXGate.rate == sample.Rate
+            if archiveOnlyFrozen {
+                m.liveBin.preview = nil
+            }
+            // Do not change the existing safeguards for wrong-Fs data,
+            // pre-PARAM data, or the verified physical Source ring.
+			if (sourceStoreAllowed || archiveOnlyFrozen) && !m.sourceRateTransitionDetected && m.liveBin.begun {
                 // Original TMVKThread accepts pre-PARAM source ADC into
                 // its channel storage with default FRange=1.0. The
                 // OPTIONAL forensic calibrated BIN needs a complete
@@ -546,61 +562,50 @@ func (m *Monitor) consume(f Frame, at time.Time) error {
             m.summary.SourceFrozenParamBlocks+=uint64(len(blocks))
             if len(f.Raw)==4700 {m.summary.SourceFrozenAux4700++}
             for _,b:=range blocks {
-                if b.Addr==0x3100 {m.summary.SourceFrozenValuesTicks++;break}
+                if b.Addr==0x3100 {m.summary.SourceFrozenValuesTicks++}
             }
             m.note("original FreezeUpdate: received PARAM preserved in RAW; local register/DSP/VALUES update skipped")
             break
         }
-		// VALUES observes the register image at its descriptor, inclusive,
-		// not the end of the PARAM frame. Keep final image and all existing
-		// frame counters, spool validation and RAW handling unchanged.
-		var valuesTriggerImage *RegisterImage
-        var valuesTriggerTach *sourceLocalTachState
-		for _, b := range blocks {
-			m.storeSourcePARAMDescriptor(b)
-            if m.sourceTach!=nil {m.sourceTach.state.onBlock(b)}
-			m.summary.RegisterBlocks++
+        // The Delphi receive loop processes each descriptor in order.
+        // WriteValues sees this trigger's inclusive register prefix and
+        // both current local TACH DWORDs before the following reset.
+        for index, b := range blocks {
+            m.storeSourcePARAMDescriptor(b)
+            if m.sourceTach != nil {
+                m.sourceTach.state.onBlock(b)
+            }
+            m.summary.RegisterBlocks++
             // Source 00808617..00808682 is inside the descriptor loop.
             m.latchSourceOriginalRanges()
-			if b.Addr == 0x3100 && valuesTriggerImage == nil &&
-				m.sourceLiveValuesWriter != nil &&
-				!m.sourceLiveValuesWriter.closed &&
-				m.sourceLiveValuesWriter.active != nil {
-				// RegisterImage owns fixed arrays (bytes and validity); this
-				// value copy cannot alias later updates to m.image.
-				atTrigger := m.image
-				valuesTriggerImage = &atTrigger
-                if m.sourceTach!=nil {
-                    snapshot:=m.sourceTach.state
-                    valuesTriggerTach=&snapshot
+            if b.Addr != 0x3100 {
+                continue
+            }
+            m.summary.ValuesTicks++
+            var localTach *sourceLocalTachState
+            if m.sourceTach != nil {
+                localTach = &m.sourceTach.state
+            }
+            if m.sourceLiveValuesWriter != nil {
+                if e := m.sourceLiveValuesWriter.onParamDescriptor(m, blocks, index, at, localTach); e != nil {
+                    return e
                 }
-			}
-            // 008085BD reads the row before 008085D1 clears BOTH local
-            // DWORDs, even with no ValuesFile. Last bytes are retained.
-            if b.Addr==0x3100 && m.sourceTach!=nil {m.sourceTach.state.resetTick()}
-		}
-		m.summary.RegisterUpdates++
-		if m.liveBin != nil {
-			if e := m.liveBin.paramFrame(f, blocks, &m.image); e != nil {
-				return e
-			}
-		}
-		if len(blocks) == 1 && blocks[0].Addr == 0 && blocks[0].Words == registerWords {
-			m.summary.FullSnapshots++
-			m.note("full 32800-byte register image received")
-		}
-		for _, b := range blocks {
-			if b.Addr == 0x3100 {
-				m.summary.ValuesTicks++
-				break
-			}
-		}
-        // Preserve whole-frame validation and the one-tick-per-frame
-        // policy; only the row's register source is trigger-prefix bound.
-        if m.sourceLiveValuesWriter!=nil {
-            if e:=m.sourceLiveValuesWriter.onParam(m,blocks,at,valuesTriggerImage,valuesTriggerTach);e!=nil {return e}
+            }
+            if localTach != nil {
+                localTach.resetTick()
+            }
         }
-		if len(f.Raw) == 4700 {
+        m.summary.RegisterUpdates++
+        if m.liveBin != nil {
+            if e := m.liveBin.paramFrame(f, blocks, &m.image); e != nil {
+                return e
+            }
+        }
+        if len(blocks) == 1 && blocks[0].Addr == 0 && blocks[0].Words == registerWords {
+            m.summary.FullSnapshots++
+            m.note("full 32800-byte register image received")
+        }
+        if len(f.Raw) == 4700 {
 			m.summary.Aux4700++
 			for channel := 0; channel < 8; channel++ {
 				v, e := decodeCalculated(&m.image, channel, at.UTC().Format(time.RFC3339Nano), m.summary.Aux4700)

@@ -24,11 +24,12 @@ def test_local_factory_confirmation_and_source_mode5(qt_app,monkeypatch):
         assert start.open_config_mode(5)==5
         panel=win.original_config_panel
         assert panel.source_mode==5
+        assert win.original_root_tabs.tabText(1)=="Калибровочные значения"
         assert panel.basic_table.isVisible()
         assert not panel.page_tabs.isVisible()
         assert not panel.download_button.isEnabled()
         assert not panel.upload_button.isEnabled()
-        assert not panel.reset_button.isEnabled()
+        assert panel.reset_button.isEnabled()
         win.original_visual_skin.reveal_page(0)
         assert win.enter_measurement_mode()
         assert "PageCalib" in win.original_visual_skin.snapshot()["visible_source_tabs"]

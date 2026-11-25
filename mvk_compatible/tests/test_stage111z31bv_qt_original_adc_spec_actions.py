@@ -191,7 +191,7 @@ def test_one_source_original_all_seven_pages_three_form_types_safe(
             assert w.original_shell.view_state is not None
             assert w.original_shell.status_tabs.count()==15
         assert w.original_root_stack.currentWidget() is w.original_calib_panel.page
-        assert w.original_calib_panel.steps.count()==49
+        assert w.original_calib_panel.steps.count()==55
         assert w.original_shell.status_grid_stack.count()==4
         assert w.original_start_controller.host.objectName()=="SourcePageStartLauncher"
 

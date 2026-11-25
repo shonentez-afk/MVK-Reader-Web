@@ -161,8 +161,8 @@ class OriginalPageFileSelection:
 @dataclass(frozen=True)
 class OriginalFileNameOptions:
     write_tsxml:bool=True
-    use_folder_prefix:bool=True
-    use_custom_name:bool=True
+    use_folder_prefix:bool=False
+    use_custom_name:bool=False
     folder_prefix:str=ORIGINAL_SOURCE_DEFAULT_FOLDER_TEMPLATE
     custom_name:str=""
     file_prefix:str=""

@@ -1,7 +1,7 @@
 """Stage111Z31BT: functional ORIGINAL PageCalib local worksheet.
 
 Private Projects/mvkform.dfm, _Unit128.pas (provided by operator):
- * bCalibAClick at 0084C9A4 selects 11/14/14/1/9 original tests.
+ * bCalibAClick at 0084C9A4 selects 17/14/14/1/9 original tests.
  * bCalibClearClick at 0084CA58 creates 11 cols x 77 rows.
  * bCalibSaveClick at 0084D9D0 creates CALIB-*.csv: sep=| then
    each source TStringGrid cell plus a trailing '|' (11 per row).
@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass,replace
 from hashlib import sha256
+from datetime import datetime
+from decimal import Decimal, localcontext
 from pathlib import Path
 import json
 import math
@@ -30,10 +32,74 @@ from .original_config_readonly import LocalConfigInspection
 SOURCE="ORIGINAL_IDR_PAGECALIB_LOCAL_WORKBENCH_STAGE111Z31BT"
 GRID_ROWS=77
 GRID_COLS=11
-STEP_GROUPS=(("A","Ускорение",11),("V","Скорость",14),
-             ("D","Перемещение",14),("DR","Динамический диапазон",1),
+STEP_GROUPS=(("A","Виброускорение",17),("V","Виброскорость",14),
+             ("D","Виброперемещение",14),("DR","Динамический диапазон",1),
              ("T","Частота вращения",9))
-GROUP_ROW_HEADERS=(0,14,25,36,47)
+STEP_COUNT=sum(group[2] for group in STEP_GROUPS)
+# 0084CA58: 1-based cursor 1 + hex offsets 14, 11, 11, 0B.
+GROUP_ROW_HEADERS=(0,20,37,54,65)
+# Original PE float tables at 008D30A8..008D3233, presented to
+# four significant digits as in the original checklist.
+_STEP_VALUES=(
+    (("0.5","0.8","1","2","5","50","100","500","5000","10000","15000",
+      "20000","160","160","160","160","160"),
+     ("3467",)*13+("346.7","34.67","3.467","1.02")),
+    (("0.5","0.8","1","2","5","50","100","500","7000")+("80",)*5,
+     ("22.1","35.37","44.21","88.41","221","2210","2210","2210",
+      "2210","3537","353.7","35.37","3.537","0.5125")),
+    (("0.5","0.8","1","2","5","50","100","500","2000")+("40",)*5,
+     ("0.5433","1.391","2.174","8.695","54.34","100.6","201.3","2516",
+      "1610","3478","347.8","34.78","3.478","0.6441")),
+    (("",),("",)),
+    (("0.5","2","5","10","20","50","100","500","1000"),("",)*9),
+)
+CALIB_CSV_ENCODING="cp1251"
+CALIB_CSV_EOL="\r\n"
+
+
+@dataclass(frozen=True)
+class CalibrationStep:
+    index:int
+    group:str
+    group_index:int
+    title:str
+    frequency_hz:str
+    voltage_mv:str
+    result_rows:tuple[int,...]
+
+    def caption(self,decimal_separator="."):
+        text=self.title
+        if self.frequency_hz:
+            text+=": "+self.frequency_hz.replace(".",decimal_separator)+" Гц"
+        if self.voltage_mv:
+            text+=", "+self.voltage_mv.replace(".",decimal_separator)+" мВ"
+        return text
+
+
+def _calibration_steps():
+    steps=[]
+    for top,(key,title,count),(frequencies,voltages) in zip(
+            GROUP_ROW_HEADERS,STEP_GROUPS,_STEP_VALUES):
+        assert len(frequencies)==len(voltages)==count
+        for i,(frequency,voltage) in enumerate(zip(frequencies,voltages)):
+            row=top+2+i
+            rows=tuple(range(row,row+8)) if key=="DR" else (row,)
+            steps.append(CalibrationStep(
+                len(steps),key,i,title,frequency,voltage,rows))
+    return tuple(steps)
+
+
+CALIBRATION_STEPS=_calibration_steps()
+
+
+def source_calib_csv_filename(now=None):
+    if now is None:
+        now=datetime.now()
+    if not isinstance(now,datetime):
+        raise ValueError("Original CALIB timestamp required")
+    return now.strftime("CALIB-%Y-%m-%d--%H-%M-%S.csv")
+
+
 DFM_LEFT_WIDTH=369
 DFM_SPLITTER_WIDTH=8
 DFM_RIGHT_WIDTH=615
@@ -53,6 +119,7 @@ CALIB_SOURCE_TABS=2
 GAIN_REGISTERS=tuple(0x20+2*i for i in range(8))
 # Rounded source Extended multiplier literal at _Unit128:0084D5CE.
 SOURCE_RATIO_DENOMINATOR_ADJUSTMENT=1.001001001001
+_SOURCE_RATIO_EXTENDED_SIGNIFICAND=0x8020CD0148020CD0
 SOURCE_RATIO_MIN=.8
 SOURCE_RATIO_MAX=1.2
 MAX_CSV_BYTES=512*1024
@@ -82,20 +149,21 @@ def _float32(x):
 def blank_original_grid():
     """bCalibClear grid dimensions/header locations, no invented values."""
     rows=[[""]*GRID_COLS for _ in range(GRID_ROWS)]
-    for index,(symbol,label,count) in enumerate(STEP_GROUPS):
-        top=GROUP_ROW_HEADERS[index]
+    for top,(symbol,label,_) in zip(GROUP_ROW_HEADERS,STEP_GROUPS):
         rows[top][0]=label
-        rows[top+1][0]="Частота, Гц"
-        rows[top+1][1]="U, мВ СКЗ"
-        rows[top+1][2]={
-            "A":"Ускорение, м/с² СКЗ",
-            "V":"Скорость, мм/с СКЗ",
-            "D":"Перемещение, мкм СКЗ",
-            "DR":"Динамический диапазон",
-            "T":"Частота вращения",
-        }[symbol]
-        for adc in range(8):
-            rows[top+1][3+adc]=f"АЦП {adc+1}"
+        if symbol in ("A","V","D"):
+            rows[top+1][:3]=[
+                "Частота, Гц","Uз, мВ СКЗ",
+                {"A":"Aз, м/с2 СКЗ","V":"Vз, мм/с СКЗ",
+                 "D":"Dз, мкм СКЗ"}[symbol],
+            ]
+            rows[top+1][3:]=[f"АЦП {i}" for i in range(1,9)]
+        elif symbol=="DR":
+            rows[top+1][:5]=["Канал","Частота, Гц","Uз, мВ СКЗ",
+                              "MAX CC, дБ","MAX параз, дБ"]
+        else:
+            rows[top+1][:4]=["Частота, Гц","Uз, мВ СКЗ",
+                              "Тахометр 1","Тахометр 2"]
     return tuple(tuple(r) for r in rows)
 
 
@@ -214,7 +282,7 @@ class OriginalCalibrationWorkspace:
     def __post_init__(self):
         if (len(self.steps)!=sum(g[2] for g in STEP_GROUPS) or
                 any(type(checked) is not bool for checked in self.steps)):
-            raise ValueError("Source PageCalib requires 49 checked test flags")
+            raise ValueError("Source PageCalib requires 55 Boolean test flags")
         _validate_grid(self.grid)
         if len(self.log_lines)>4096 or any(
                 not isinstance(line,str) or len(line)>300
@@ -289,11 +357,15 @@ class OriginalCalibrationWorkspace:
         # restored app, refuse unsafe source cells, NOT silently mutate them.
         for row in self.grid:
             for cell in row:
-                if cell.lstrip().startswith(("=","@","+")):
-                    try: _source_number(cell,"CSV numeric field")
+                if cell.lstrip().startswith(("=","@","+","-","−")):
+                    try:
+                        token=cell.strip()
+                        if _DECIMAL.fullmatch(token) is None or not math.isfinite(
+                                float(token.replace(",","."))):
+                            raise ValueError("Not a finite numeric CSV field")
                     except ValueError as exc:
                         raise ValueError("Potential spreadsheet formula in CALIB cell") from exc
-        return "sep=|\n"+"\n".join("|".join(row)+"|" for row in self.grid)+"\n"
+        return CALIB_CSV_EOL.join(("sep=|",*("|".join(row)+"|" for row in self.grid),""))
 
     def export_csv(self,destination):
         self.require_source_unchanged()
@@ -302,7 +374,7 @@ class OriginalCalibrationWorkspace:
                 or target.exists() or not target.parent.is_dir()
                 or target.parent.is_symlink()):
             raise ValueError("Choose a NEW local CALIB CSV file")
-        try: payload=self._csv_text().encode("utf-8-sig")
+        try: payload=self._csv_text().encode(CALIB_CSV_ENCODING)
         except UnicodeError as exc:raise ValueError("CALIB text encoding error") from exc
         if len(payload)>MAX_CSV_BYTES:
             raise ValueError("Source calibration CSV exceeds size budget")
@@ -318,6 +390,10 @@ class OriginalCalibrationWorkspace:
                 "source":SOURCE,
                 "original_shape":[GRID_ROWS,GRID_COLS],
                 "original_delimiter":"sep=|",
+                "csv_encoding":CALIB_CSV_ENCODING,
+                "crlf_lines":GRID_ROWS+1,
+                "bom":False,
+                "encoding_note":"Russian Windows ANSI reconstruction; full original CP1251 bytes unverified",
                 "saved_csv_sha256":sha256(target.read_bytes()).hexdigest(),
                 "independent_source_csv_readback_passed":True,
                 "local_file_created":True,
@@ -339,6 +415,10 @@ class OriginalCalibrationWorkspace:
         self.require_source_unchanged()
         if not self.source_grid_loaded or not isinstance(config,LocalConfigInspection):
             raise ValueError("Original CALIB CSV and local config source required")
+        # Row 8 is source A/100 Hz; do not apply this formula to a
+        # shifted or unrelated matrix that merely has the same shape.
+        if _source_number(self.grid[8][0],"frequency row8, col0")!=100.0:
+            raise ValueError("Original row8 must be the 100 Hz acceleration result")
         reference=_source_number(self.grid[8][2],"reference row8, col2")
         entries=[]
         for index,address in enumerate(GAIN_REGISTERS):
@@ -352,9 +432,13 @@ class OriginalCalibrationWorkspace:
             # above reference, then FDIVRP ST(1),ST(0). Ratio is thus
             # (MEASURED*MULT)/REFERENCE, not the inverse. Subsequently
             # 0084D6B3 divides the original gain by that ratio.
-            ratio=(measured*SOURCE_RATIO_DENOMINATOR_ADJUSTMENT)/reference
-            if (not math.isfinite(ratio) or
-                    not SOURCE_RATIO_MIN<=ratio<=SOURCE_RATIO_MAX):
+            with localcontext() as context:
+                context.prec=50
+                multiplier=Decimal(_SOURCE_RATIO_EXTENDED_SIGNIFICAND)/Decimal(2**63)
+                measure_decimal=Decimal(self.grid[8][3+index].strip().replace(",","."))
+                reference_decimal=Decimal(self.grid[8][2].strip().replace(",","."))
+                ratio=_float32(measure_decimal*multiplier/reference_decimal)
+            if not Decimal(".8")<=Decimal.from_float(ratio)<=Decimal("1.2"):
                 raise ValueError(f"ADC{index+1}: calibration deviation exceeds source 0.8..1.2")
             proposed=_float32(old_gain/ratio)
             entries.append(CandidateGain(index+1,address,reference,measured,
@@ -396,5 +480,6 @@ class OriginalCalibrationWorkspace:
             raise
 
 
-assert sum(g[2] for g in STEP_GROUPS)==49
+assert STEP_COUNT==len(CALIBRATION_STEPS)==55
+assert CALIBRATION_STEPS[6].result_rows==(8,)
 assert len(GROUP_ROW_HEADERS)==5 and len(GAIN_REGISTERS)==8

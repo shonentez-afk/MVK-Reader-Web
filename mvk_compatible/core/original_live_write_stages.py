@@ -35,7 +35,7 @@ from .offline_export import require_members
 from .native_r6_tach_evidence import validate_tach_evidence
 from .original_pagefile_recording import OriginalPageFileSelection,OriginalFileNameOptions
 from .original_measure_controls import table_rows
-from .original_values_3100_timeline import scan_original_values_3100
+from .original_values_3100_timeline import max_source_values_ticks,scan_original_values_3100
 from .original_param_gate_proof import SOURCE_PARAM_GATE_NAME
 from .original_local_tach_latch import GATE_NAME as SOURCE_LOCAL_TACH_GATE_NAME
 from .original_write_data_wire_replay import export_source_wire_write_intervals
@@ -116,8 +116,9 @@ def _status_proof(payload):
     # _Unit125:008085A5..008085BD writes a VALUES row only when the
     # observed PARAM descriptor starts at address 0x3100, not on AUX4700.
     ticks=payload.get("source_values_ticks_address_3100")
-    if ticks is not None and _int(ticks,"actual source 0x3100 VALUES ticks")>frames:
-        raise ValueError("Source VALUES ticks cannot exceed received frames")
+    if (ticks is not None and _int(ticks,"actual source 0x3100 VALUES ticks")
+            >max_source_values_ticks(frames, raw)):
+        raise ValueError("Source VALUES ticks exceed received PARAM capacity")
     return (session_id,tuple(counters),aux,frames,raw)
 
 
@@ -791,7 +792,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                             writer.writerow((
                                 "SOURCE_3100_TICK_INDEX","RECEIVED_FRAME_INDEX",
                                 "REGISTER_ADDRESS","WORD_COUNT","PARAM_PAYLOAD_LE_HEX",
-                                "PARAM_PAYLOAD_SHA256","LATEST_PRECEDING_AUX_INDEX"))
+                                "PARAM_PAYLOAD_SHA256","LATEST_PRECEDING_AUX_INDEX",
+                                "SOURCE_PARAM_DESCRIPTOR_INDEX"))
                             for event in events:
                                 writer.writerow((
                                     event["source_tick_index"],event["frame_index"],
@@ -799,7 +801,8 @@ def export_source_write_windows(ledger:OriginalLiveWriteLedger,
                                     event["register_bytes_hex"],
                                     event["register_payload_sha256"],
                                     event["latest_earlier_aux_index"] if
-                                    event["latest_earlier_aux_index"] is not None else ""))
+                                    event["latest_earlier_aux_index"] is not None else "",
+                                    event["source_param_descriptor_index"]))
                         evidence=target/evidence_name
                         emitted.append({
                             "window":number,"kind":"source_3100_evidence",

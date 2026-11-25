@@ -257,7 +257,7 @@ def verify_native_live_write_data(
                     frame=header+body
                     blocks=list(_parameter_blocks(frame))
                     frozen=param_gate.consume(frame_index=frame_index,frame=frame,
-                        descriptors=len(blocks),values3100=any(a==0x3100 for a,_,_ in blocks))
+                        descriptors=len(blocks),values3100_count=sum(a==0x3100 for a,_,_ in blocks))
                     if physical_enabled:
                         physical_replay.on_param(blocks,frozen)
                     if not frozen:

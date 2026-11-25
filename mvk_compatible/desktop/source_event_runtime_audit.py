@@ -21,7 +21,7 @@ from ..core.original_event_fidelity import (
 from ..core.original_ui_form_contract import ORIGINAL_ROOT_PAGES
 
 DANGEROUS_CONFIG_BUTTONS=(
-    "bConfigDownload","bConfigUpload","bConfigReset")
+    "bConfigDownload","bConfigUpload")
 DANGEROUS_CALIB_BUTTONS=("bCalibStart",)
 
 
@@ -88,7 +88,7 @@ def audit_live_source_event_controls(window,*,editor=None,windowman=None):
         "file_actions":window.original_shell.file_action_tabs.count()==2,
         "calibration_result_tabs":window.original_calib_panel.tabs.count()==2,
         "status_modes":window.original_shell.status_tabs.count()==15,
-        "calibration_steps":window.original_calib_panel.steps.count()==49,
+        "calibration_steps":window.original_calib_panel.steps.count()==55,
         "no_device_command_issued":window.source_view_state.snapshot()[
             "device_command_issued"] is False,
         "unsafe_buttons_disabled":all(unsafe_buttons.values()),

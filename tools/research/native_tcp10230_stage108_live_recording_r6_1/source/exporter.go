@@ -596,7 +596,7 @@ func exportWithPolicy(rawPath, framesPath, summaryPath, dest string, offsetMin i
 				}
 			}
 			// Exactly one VALUES update follows each calculated frame in the two live captures.
-			if size == 76 {
+			if size == 76 && countOriginalValuesDescriptors(blocks) < 2 {
 				if !haveAux {
 					return rep, errors.New("values TACH tick before AUX4700")
 				}

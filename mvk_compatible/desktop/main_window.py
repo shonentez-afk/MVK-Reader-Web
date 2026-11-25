@@ -14,7 +14,7 @@ import math
 import time
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QTimer, QLocale
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QTimer, QLocale, QEvent
 from PySide6.QtGui import QAction, QFont, QFontMetrics, QPainterPath, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,
     QPushButton,QLabel,QComboBox,QTabWidget,QTableWidget,QTableWidgetItem,
@@ -92,7 +92,7 @@ from ..core.mvk_original_scale_tables_idr_candidate import (
     HORIZONTAL_HZ, FFT_WINDOW_SAMPLES, original_h_scale_options,
     original_v_scale_options,original_fft_size_options,validate_source_h_scale,
     original_fft_resolution_caption,original_physical_y_caption,
-    source_spectrum_y_unit,research_spectrum_vscale_auto_basis,
+    source_spectrum_y_unit,source_derived_units,research_spectrum_vscale_auto_basis,
     source_spectrum_h_available)
 from ..core.mvk_spectrum_menu_runtime_idr_candidate import (
     RESEARCH_FFT_SIZES,source_default_vertical_tag,source_vertical_page,
@@ -216,6 +216,8 @@ class MainWindow(QMainWindow):
         self._wave_mouse_pixel=None
         self._wave_hover_window=None  # Lazy, one offline BIN read per displayed window
         self._source_envelope_cursor=None  # Original ADCGrapher full filtered series, not LOD
+        self._offline_cursor_anchors={}
+        self._spec_offline_suspended_h=None
         self._source_wave_trace=None
         self._source_wave_trace_digest=None
         self._source_wave_scale_model=None
@@ -629,6 +631,9 @@ class MainWindow(QMainWindow):
 
         self.wave_envelope_load=QPushButton(
             'Открыть локальный оригинальный IDP для огибающей…')
+        self.wave_envelope_load.setToolTip(
+            'Файл IDP проверяется только локально и не отправляется. '
+            'Загрузка не выбирает фильтр и не запоминается после закрытия.')
         self.wave_envelope_load.clicked.connect(self.choose_private_envelope_idp)
         self.wave_envelope_code=QComboBox()
         # Tag1..31 have exact original IDP UTF-16 labels; the research
@@ -671,7 +676,7 @@ class MainWindow(QMainWindow):
             act.setCheckable(True)
             act.setData(i)
             act.triggered.connect(
-                lambda checked=False,index=i:self.wave_mode.setCurrentIndex(index))
+                lambda checked=False,index=i:self._choose_wave_type(index))
         self.wave_type_button.setMenu(self.wave_type_menu)
         left.addWidget(self.wave_type_button)
 
@@ -750,9 +755,10 @@ class MainWindow(QMainWindow):
         self.wave_plot=self._plot('Время, с','Ускорение, м/с²',source_geometry=True)
         self.wave_plot.setObjectName('pbAdc')
         self.wave_plot.getViewBox().sigRangeChanged.connect(
-            lambda *_:self._invalidate_graph_cursor('adc'))
+            lambda *_:self._offline_graph_view_changed('adc'))
         self.wave_plot.getViewBox().sigResized.connect(
-            lambda *_:self._invalidate_graph_cursor('adc'))
+            lambda *_:self._offline_graph_view_changed('adc'))
+        self.wave_plot.viewport().installEventFilter(self)
         self.wave_plot.scene().sigMouseClicked.connect(self._wave_click)
         self.wave_plot.scene().sigMouseMoved.connect(self._wave_mouse_move)
         wave_graph=QWidget()
@@ -856,20 +862,22 @@ class MainWindow(QMainWindow):
             radio.setEnabled(usable)
             radio.setToolTip(action.toolTip())
         text=source_original_envelope_caption(tag)
+        idp_help=(' Нет коэффициентов? Исследование → открыть локальный IDP.'
+                  if self.envelope_profile is None else '')
         self.wave_filter_button.setText(text)
         self.wave_filter_button.setToolTip(
             f"Source popEnvelopeType Tag{tag}: {text}; "
             "оригинальные две колонки 20+12, оба экрана используют один Tag. "
             "Нажатие открывает меню, но само не переключает код. "
             "FIR только с проверенным локальным IDP; "
-            "текущее окно и частота АЦП проверяются независимо.")
+            "текущее окно и частота АЦП проверяются независимо."+idp_help)
         if hasattr(self,'spec_envelope_button') and self._spectrum_reference is None:
             self.spec_envelope_button.setText(text)
             self.spec_envelope_button.setToolTip(
                 f"Source popEnvelopeType Tag{tag}: {text}; раскрыть две колонки. "
                 "Выбор пункта обновляет ADC + Spectrum и рассчитывает FIR "
                 "только с реальными коэффициентами/историей; "
-                "спектральная калибровка/Delphi x87 не подтверждены.")
+                "спектральная калибровка/Delphi x87 не подтверждены."+idp_help)
 
     def _offline_tach_channel(self) -> bool:
         """Only a checked saved Byte source may opt into offline TACH UI."""
@@ -1223,9 +1231,11 @@ class MainWindow(QMainWindow):
             model=source_adc_vertical_view(
                 flow,self._source_wave_trace,self._wave_vscale_tag,
                 bound_source_sha256=self._source_wave_trace_digest)
+            saved_units=self._saved_wave_channel_units()
             self._sync_original_wave_vertical_popup(
                 baseline=float(model['axis_baseline_m_s2_nominal']),
-                source_bound=model['source_f_range_single'] is not None)
+                source_bound=model['source_f_range_single'] is not None,
+                units='м/с2' if saved_units is None else saved_units)
         self.wave_plot.getViewBox().setYRange(
             model['y_min'],model['y_max'],padding=0)
         self._source_wave_scale_model=model
@@ -1242,6 +1252,10 @@ class MainWindow(QMainWindow):
             return
         self.wave_plot.getViewBox().scaleBy((1,float(factor)))
         self.wave_vscale_button.setText('Шкала Y · исследовательский zoom')
+
+    def _choose_wave_type(self,index):
+        self.wave_mode.setCurrentIndex(index)
+        self._sync_wave_primary_labels()  # QAction reselect does not emit currentIndexChanged
 
     def _sync_wave_primary_labels(self):
         code=int(self.wave_envelope_code.currentData() or 0)
@@ -1357,7 +1371,7 @@ class MainWindow(QMainWindow):
             action.setData(i)
             action.setCheckable(True)
             action.triggered.connect(
-                lambda checked=False, index=i:self.spec_mode.setCurrentIndex(index))
+                lambda checked=False,index=i:self._choose_spectrum_type(index))
             self._spec_type_actions.append(action)
         self.spec_type_button.setMenu(self.spec_type_menu)
         self.spec_type_button.setToolTip(
@@ -1408,7 +1422,7 @@ class MainWindow(QMainWindow):
             a.setData(n)
             a.setCheckable(True)
             a.triggered.connect(
-                lambda checked=False,index=index:self.spec_n.setCurrentIndex(index))
+                lambda checked=False,index=index:self._choose_spectrum_lines(index))
             self._spec_lines_actions.append(a)
         self.spec_lines_button.setMenu(self.spec_lines_menu)
         self.spec_lines_button.setToolTip(
@@ -1657,6 +1671,11 @@ class MainWindow(QMainWindow):
         research_stack=QVBoxLayout(research_body)
         research_stack.setContentsMargins(8,8,8,8)
         research_stack.setSpacing(6)
+        self.spec_envelope_load=QPushButton(self.wave_envelope_load.text())
+        self.spec_envelope_load.setObjectName('loadLocalSpectrumEnvelopeIdp')
+        self.spec_envelope_load.setToolTip(self.wave_envelope_load.toolTip())
+        self.spec_envelope_load.clicked.connect(self.choose_private_envelope_idp)
+        research_stack.addWidget(self.spec_envelope_load)
         self.spec_source_gain_label=QLabel(
             'TSXML / FRange: источник не открыт')
         self.spec_source_gain_label.setObjectName('researchOriginalTsxmlGain')
@@ -1903,9 +1922,10 @@ class MainWindow(QMainWindow):
         chart.setSpacing(0)
         self.spec_plot=self._plot('Частота, Гц','Амплитуда',source_geometry=True)
         self.spec_plot.getViewBox().sigRangeChanged.connect(
-            lambda *_:self._invalidate_graph_cursor('spectrum'))
+            lambda *_:self._offline_graph_view_changed('spectrum'))
         self.spec_plot.getViewBox().sigResized.connect(
-            lambda *_:self._invalidate_graph_cursor('spectrum'))
+            lambda *_:self._offline_graph_view_changed('spectrum'))
+        self.spec_plot.viewport().installEventFilter(self)
         self.spec_plot.setObjectName('pbSpectrum')
         self.spec_plot.scene().sigMouseClicked.connect(self._spec_click)
         self.spec_plot.scene().sigMouseMoved.connect(self._spec_mouse_move)
@@ -1962,6 +1982,14 @@ class MainWindow(QMainWindow):
         self.spec_envelope_code.currentIndexChanged.connect(self._spec_envelope_code_changed)
         self._sync_original_envelope_menu_ui()
 
+    def _choose_spectrum_type(self,index):
+        self.spec_mode.setCurrentIndex(index)
+        self._sync_spec_type_presenter()
+
+    def _choose_spectrum_lines(self,index):
+        self.spec_n.setCurrentIndex(index)
+        self._sync_spec_lines_presentation()
+
     def _sync_spec_type_presenter(self,*_):
         """Mirror source mSpecType1..4 Tag into the primary split button."""
         index=self.spec_mode.currentIndex()
@@ -2006,6 +2034,40 @@ class MainWindow(QMainWindow):
                 original_fft_resolution_caption(count,sample_rate)
                 if sample_rate is not None else 'FFT '+str(count))
 
+    def _saved_wave_channel_units(self):
+        """The saved channel's FUnits describes stored values, not calibration."""
+        if not isinstance(self.session,DirectBinSession) or self._live_active:
+            return None
+        entry=self.session.mode1_adc_source(self._ch())
+        if entry is None:
+            return None
+        units=entry.source_metadata.channel_units_text
+        return "" if units=="Count" else "м/с2" if units=="1" else units
+
+    def _wave_value_units(self):
+        if self._offline_tach_channel():
+            return 'Byte/255'
+        saved=self._saved_wave_channel_units()
+        if saved is not None:
+            return saved
+        return 'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.'
+
+    def _current_spectrum_units(self,mode,*,summary=False):
+        # A log plot is in dB, whereas its three export/summary fields use
+        # the linear channel units. TACH may legitimately have an empty unit.
+        nominal=source_spectrum_y_unit(1 if summary and mode==0 else mode)
+        if self._live_active or self._offline_tach_channel():
+            if isinstance(self._full_spectrum,dict):
+                key='source_summary_unit' if summary else 'unit'
+                return self._full_spectrum.get(key,nominal)
+        if mode==0 and not summary:
+            return nominal
+        saved=self._saved_wave_channel_units()
+        derived=source_derived_units(mode,saved)
+        if derived is None:
+            return nominal
+        return 'м/с²' if derived=='м/с2' else derived
+
     def _sync_spectrum_summary_primary(self):
         """Compact original-looking text with explicit calibration status."""
         summary=self._spectrum_summary
@@ -2023,16 +2085,16 @@ class MainWindow(QMainWindow):
         # summary (VU for Tag0), not the log plot value. Never label
         # that triplet "дБ" or switch its units with the chart Y scale.
         mode=self.spec_mode.currentIndex()
-        summary_unit=('м/с²','м/с²','мм/с','мкм')[mode]
+        summary_unit=self._current_spectrum_units(mode,summary=True)
         saved_tach=self._offline_tach_channel()
-        if (self._live_active or saved_tach) and isinstance(self._full_spectrum,dict):
-            summary_unit=self._full_spectrum.get('source_summary_unit',summary_unit)
         if saved_tach:
             unit=summary_unit
             calibration='TACH Byte/255 · расчёт сохранённого файла, не обороты'
         elif isinstance(self.session,DirectBinSession):
             unit=summary_unit+' (условн.)'
             calibration=(
+                'Калибровка НЕ подтверждена · единицы сохранённого канала'
+                if self._saved_wave_channel_units() is not None else
                 'Калибровка НЕ подтверждена · единицы режима номинальные')
         else:
             unit=summary_unit+' (расч.)'
@@ -2295,11 +2357,7 @@ class MainWindow(QMainWindow):
                 # Without FRange, captions correspond to actual LOCAL
                 # auto-fit graph heights, not meaningless "÷1000" labels.
                 # Units are NOMINAL: BIN calibration remains unverified.
-                units=None
-                if self._live_active and isinstance(self._full_spectrum,dict):
-                    units=self._full_spectrum.get('source_summary_unit')
-                elif self._offline_tach_channel():
-                    units=self._full_spectrum['unit']
+                units=self._current_spectrum_units(mode)
                 caption=original_physical_y_caption(mode,absolute,units=units)
             action.setText(caption)
             action.setToolTip(
@@ -4982,6 +5040,9 @@ class MainWindow(QMainWindow):
         # Source H page is a property of the selected file/ADC context,
         # never silently inherited from the previous archive.
         self._spec_original_hscale_selected=None
+        self._spec_offline_suspended_h=None
+        self._invalidate_graph_cursor('adc')
+        self._invalidate_graph_cursor('spectrum')
         self.spec_hscale_button.setText('Диапазон X')
         for action in self._spec_hscale_actions:
             action.setChecked(False)
@@ -5103,6 +5164,9 @@ class MainWindow(QMainWindow):
         self._source_spectrum_gain=None
         self._spec_source_h_view=None
         self._spec_original_hscale_selected=None
+        self._spec_offline_suspended_h=None
+        self._invalidate_graph_cursor('adc')
+        self._invalidate_graph_cursor('spectrum')
         self.wave_plot.clear_source_tqgr_series()
         self.wave_plot.clear()
         self.spec_core_triplet.setText('Нет подтверждённого расчётного спектра')
@@ -5481,7 +5545,9 @@ class MainWindow(QMainWindow):
         # The original opens with Tag0. Merely loading an IDP must NOT
         # silently preselect Code20 on Spectrum or start FIR on ADC.
         # Programmatic research users can still set Code20 explicitly.
-        self.wave_envelope_load.setText('Локальные коэффициенты готовы (только этот запуск)')
+        label='Локальные коэффициенты готовы · выбрать другой IDP…'
+        self.wave_envelope_load.setText(label)
+        self.spec_envelope_load.setText(label)
         self.wave_hint.setText(
             'Огибающая доступна только по исходному IDR профилю; '
             'курсоры, исходное время и численный паритет оригинальной MVKView ещё не приняты')
@@ -5498,6 +5564,7 @@ class MainWindow(QMainWindow):
                 self._render_live_wave()
             return
         if not self.session:return
+        self._invalidate_graph_cursor('adc')
         flow=self._current_offline_flow()
         try:
             at_mode1_zero=False
@@ -5580,8 +5647,10 @@ class MainWindow(QMainWindow):
                     source_adc_grapher_x(flow,d,self._wave_hscale_tag))
             self.wave_plot.clear_source_tqgr_series()
             self.wave_plot.clear()
+            saved_units=self._saved_wave_channel_units()
             self.wave_plot.setLabel(
                 'left', 'TACH · норм. амплитуда (Byte/255)' if tach else
+                saved_units if saved_units is not None else
                 'Отсчёты BIN (калибровка не проверена)'
                 if isinstance(self.session,DirectBinSession)
                 else 'Ускорение, м/с²')
@@ -5663,9 +5732,7 @@ class MainWindow(QMainWindow):
                 descr + (' · исходный ScrWidth<0, XScale Single; '
                          'Win32 Canvas не аттестован'
                          if self._source_wave_xaxes_model is not None else ''))
-            source_unit=('Byte/255' if tach else
-                         'усл. ед.' if isinstance(self.session,DirectBinSession)
-                         else 'расч. ед.')
+            source_unit=self._wave_value_units()
             self.wave_mean_primary.setText(
                 f'СКЗ сигнала: {(verified_wave["rms_from_core"] if verified_wave is not None else d["rms_m_s2"]):.5g} {source_unit}\n'
                 + ('Калибровка НЕ подтверждена'
@@ -6772,6 +6839,7 @@ class MainWindow(QMainWindow):
             self._render_live_spectrum()
             return
         if not self.session:return
+        self._invalidate_graph_cursor('spectrum')
         flow=self._current_offline_flow()
         self._source_spectrum_readout=None
         # Do not discard an explicit original H preset on each FFT refresh.
@@ -6781,6 +6849,12 @@ class MainWindow(QMainWindow):
         previous_pos=(
             int(round(self.spec_plot.getViewBox().viewRange()[0][0]))
             if previous_h in HORIZONTAL_HZ else 0)
+        previous_full=getattr(self,'_spec_visible_max_hz',float(HORIZONTAL_HZ[0]))
+        suspended=self._spec_offline_suspended_h
+        if (previous_h is None and suspended is not None and
+                suspended[0] is self.session and suspended[1]==flow.channel):
+            _,_,previous_h,previous_pos,previous_full=suspended
+        self._spec_offline_suspended_h=None
         self._spec_original_hscale_selected=None
         self._spec_source_h_view=None
         self._source_spectrum_gain=None
@@ -6940,8 +7014,7 @@ class MainWindow(QMainWindow):
             # Y-axis caption 'дБ'; a verbose label consumes plot width and
             # falsely suggests a different axis unit for log spectra.
             self.spec_plot.setLabel(
-                'left',d['unit'] if tach else
-                source_spectrum_y_unit(self.spec_mode.currentIndex()))
+                'left',self._current_spectrum_units(self.spec_mode.currentIndex()))
             self.spec_plot.getAxis('left').setToolTip(
                 'Единицы оси соответствуют выбранному режиму. '
                 'Физическая калибровка BIN/TSXML не подтверждена; '
@@ -7112,19 +7185,72 @@ class MainWindow(QMainWindow):
             self.spec_cursor_primary.setText('Курсор: —')
             self.spec_mean.setText('Спектр не рассчитан: '+str(e))
             self.spec_hint.setText('Нет действительного спектра: '+str(e))
+            self.spec_hscroll.hide()
+            self.spec_vscroll.hide()
+            for action in self._spec_hscale_actions:
+                action.setEnabled(False)
+            if insufficient_history and previous_h in HORIZONTAL_HZ:
+                self._spec_offline_suspended_h=(
+                    self.session,flow.channel,previous_h,previous_pos,previous_full)
+                self.spec_hscale_button.setText(f'{previous_h} Гц')
+                for action in self._spec_hscale_actions:
+                    action.setChecked(action.data()==previous_h)
+            else:
+                self.spec_hscale_button.setText('Диапазон X')
             if insufficient_history and source_end==0:
                 zero_y=-180. if self.spec_mode.currentIndex()==0 else 0.
-                self.spec_plot.getViewBox().setLimits(xMin=0.,xMax=float(HORIZONTAL_HZ[0]))
-                self.spec_plot.setXRange(0.,float(HORIZONTAL_HZ[0]),padding=0)
+                full=previous_full if self._spec_offline_suspended_h else float(HORIZONTAL_HZ[0])
+                lo,hi=(previous_pos,previous_pos+previous_h) if self._spec_offline_suspended_h else (0.,full)
+                self.spec_plot.getViewBox().setLimits(xMin=0.,xMax=full)
+                self.spec_plot.setXRange(lo,hi,padding=0)
                 # An empty source history is visual only, never a valid
                 # FFT, accepted cursor series, or exportable summary.
-                self.spec_plot.plot([0.,float(HORIZONTAL_HZ[0])],[zero_y,zero_y],
-                                    pen=pg.mkPen('#000000'))
+                self.spec_plot.plot([lo,hi],[zero_y,zero_y],pen=pg.mkPen('#000000'))
                 if zero_y==-180.:
                     self.spec_plot.setYRange(-180.,0.,padding=0)
                 self.spec_hint.setText('Нулевая предыстория · только отображение, экспорт недоступен')
             if not insufficient_history:
                 self._error(e)
+
+    def eventFilter(self,watched,event):
+        if event.type()==QEvent.Type.Leave:
+            for page,name in (('adc','wave_plot'),('spectrum','spec_plot')):
+                plot=getattr(self,name,None)
+                if (plot is not None and watched is plot.viewport() and
+                        self.session is not None and not self._live_active and
+                        self._spectrum_reference is None):
+                    self._invalidate_graph_cursor(page)
+        return super().eventFilter(watched,event)
+
+    def _remember_offline_graph_cursor(self,page,pixel,data):
+        if self.session is not None and data is not None and self._spectrum_reference is None:
+            self._offline_cursor_anchors[page]=(pixel,data,self.session,self._ch())
+
+    def _offline_graph_view_changed(self,page):
+        """Use the same plot-relative X on redraw, not the old bin or frequency."""
+        data=self._source_wave_trace if page=='adc' else self._full_spectrum
+        anchor=self._offline_cursor_anchors.get(page)
+        if (anchor is None or data is not anchor[1] or self.session is not anchor[2] or
+                self._ch()!=anchor[3] or self._live_active or self._spectrum_reference is not None):
+            self._invalidate_graph_cursor(page)
+            return
+        # Qt can emit further range/geometry signals while laying out tick
+        # labels; finish once the ViewBox has applied the new transform.
+        QTimer.singleShot(0,lambda:self._reproject_offline_graph_cursor(page,anchor))
+
+    def _reproject_offline_graph_cursor(self,page,anchor):
+        if self._offline_cursor_anchors.get(page) is not anchor:
+            return
+        data=self._source_wave_trace if page=='adc' else self._full_spectrum
+        if (data is not anchor[1] or self.session is not anchor[2] or
+                self._ch()!=anchor[3] or self._live_active or self._spectrum_reference is not None):
+            self._invalidate_graph_cursor(page)
+            return
+        plot=self.wave_plot if page=='adc' else self.spec_plot
+        rect=plot.getViewBox().sceneBoundingRect()
+        pos=QPointF(rect.left()+anchor[0]+.01,rect.center().y())
+        update=self._wave_at_scene_pos if page=='adc' else self._spec_at_scene_pos
+        update(pos,force=True)
 
     def _invalidate_graph_cursor(self, page):
         """A cursor from the old affine viewport must never survive a pan/resize.
@@ -7132,6 +7258,11 @@ class MainWindow(QMainWindow):
         Source Draw recalculates its canvas coefficients. Qt's same-X shortcut
         must not reuse a value selected with the previous coefficients.
         """
+        had_offline_cursor=self._offline_cursor_anchors.pop(page,None) is not None
+        if had_offline_cursor:
+            hint=getattr(self,'wave_hint' if page=='adc' else 'spec_hint',None)
+            if hint is not None:
+                hint.setText('CursorString: —')
         if page=='adc':
             self._wave_mouse_pixel=None
             self._source_live_cursor_last=None
@@ -7187,6 +7318,7 @@ class MainWindow(QMainWindow):
             if (rect.width()<=2 or
                     (not hit['inside_original_pixel_rect'] if hit is not None
                      else not 0<pixel<rect.width())):
+                self._offline_cursor_anchors.pop('adc',None)
                 self.wave_line.setVisible(False)
                 if self.wave_xor_crosshair is not None:
                     self.wave_xor_crosshair.clear_cursor()
@@ -7202,6 +7334,7 @@ class MainWindow(QMainWindow):
                 # remains unverified.
                 filtered=self._source_envelope_cursor
                 if filtered is None or filtered.channel!=self._ch():
+                    self._offline_cursor_anchors.pop('adc',None)
                     self.wave_line.setVisible(False)
                     if self.wave_xor_crosshair is not None:
                         self.wave_xor_crosshair.clear_cursor()
@@ -7239,8 +7372,8 @@ class MainWindow(QMainWindow):
                     self.wave_xor_crosshair.set_cursor(
                         float(self.wave_line.value()),
                         float(p['value_from_full_filtered_float32']))
-                unit=('усл. ед.' if isinstance(self.session,DirectBinSession)
-                      else 'расч. ед.')
+                self._remember_offline_graph_cursor('adc',pixel,self._source_wave_trace)
+                unit=self._wave_value_units()
                 self.wave_cursor_primary.setText(
                     f"{time_text}\n"
                     f"{p['value_from_full_filtered_float32']:.6g} {unit}")
@@ -7277,8 +7410,8 @@ class MainWindow(QMainWindow):
             if self.wave_xor_crosshair is not None:
                 self.wave_xor_crosshair.set_cursor(
                     float(self.wave_line.value()),float(p['value_m_s2']))
-            unit=('Byte/255' if self._offline_tach_channel() else
-                  'усл. ед.' if isinstance(self.session,DirectBinSession) else 'расч. ед.')
+            unit=self._wave_value_units()
+            self._remember_offline_graph_cursor('adc',pixel,self._source_wave_trace)
             self.wave_cursor_primary.setText(
                 f"{p['original_sample_time_s']:.5g} с\n"
                 f"{p['value_m_s2']:.5g} {unit}")
@@ -7290,6 +7423,7 @@ class MainWindow(QMainWindow):
                    if self._source_wave_xaxes_model is not None else
                    ' · MouseMove IDR-кандидат; координаты оригинального TQGrapher не сверены'))
         except (OSError,KeyError,TypeError,ValueError,RuntimeError) as exc:
+            self._offline_cursor_anchors.pop('adc',None)
             if self.wave_line is not None:self.wave_line.setVisible(False)
             if self.wave_xor_crosshair is not None:
                 self.wave_xor_crosshair.clear_cursor()
@@ -7329,6 +7463,7 @@ class MainWindow(QMainWindow):
             if (rect.width()<=2 or
                     (not hit['inside_original_pixel_rect'] if hit is not None
                      else not 0<pixel_native<rect.width())):
+                self._offline_cursor_anchors.pop('spectrum',None)
                 # Original erases previous X and each active series' Y line
                 # and clears CursorString when CursorPos is out of bounds.
                 if self.spec_line:self.spec_line.setVisible(False)
@@ -7422,9 +7557,9 @@ class MainWindow(QMainWindow):
                 found["live_window_sha256"]=self._full_spectrum["live_window_sha256"]
                 found["live_provisional_not_audited"]=True
             self._spec_last_cursor=found
-            y_name=(self._full_spectrum.get('unit',source_spectrum_y_unit(found['mode']))
-                    if (self._live_active or self._offline_tach_channel())
-                    else source_spectrum_y_unit(found['mode']))
+            if not self._live_active:
+                self._remember_offline_graph_cursor('spectrum',pixel_native,self._full_spectrum)
+            y_name=self._current_spectrum_units(found['mode'])
             cursor_unit=y_name
             local_calibration_warning=(
                 ' · исходный BIN без подтверждённой физической калибровки'
@@ -7446,6 +7581,8 @@ class MainWindow(QMainWindow):
                 ' · подпись может отличаться из-за усреднения; пиксели Delphi НЕ приняты'
                 f"\nCursorString IDR-кандидат (не Delphi RTL):\n{cursor['text']}")
         except (OSError,KeyError,TypeError,ValueError,OverflowError) as e:
+            if self._spectrum_reference is None and not self._live_active:
+                self._invalidate_graph_cursor('spectrum')
             self.statusBar().showMessage(str(e))
 
     def _run_narrowband(self):

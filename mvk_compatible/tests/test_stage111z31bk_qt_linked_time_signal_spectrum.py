@@ -147,8 +147,7 @@ def test_original_view_time_is_only_source_model_and_bin_has_no_fake_dsp(
         assert win._source_spectrum_readout is not None
         assert win._source_spectrum_readout["physical_calibration_verified"] is False
         # No hardware action was enabled by the time slider.
-        for name in ("bConfigSave","bConfigUpload","bConfigReset",
-                     "bConfigDownload"):
+        for name in ("bConfigSave","bConfigUpload","bConfigDownload"):
             assert not shell.config_page.findChild(
                 QPushButton,name).isEnabled()
     finally:

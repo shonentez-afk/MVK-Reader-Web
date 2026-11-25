@@ -36,6 +36,7 @@ class OriginalTask0DownloadDialog(QDialog):
     def __init__(self,device_ip:str,parent=None):
         super().__init__(parent)
         self._device_ip=validate_ipv4(device_ip,field="edIpAddr")
+        self._ip_invalidated=False
         self.setObjectName("originalTask0DownloadDialog")
         self.setWindowTitle("МВК01 — Считать конфигурацию")
         self.resize(540,290)
@@ -121,13 +122,28 @@ class OriginalTask0DownloadDialog(QDialog):
              getattr(owner,"_live_active",False))
         )
 
+    def _current_ip_matches(self):
+        start=getattr(self.parent(),"original_start_controller",None)
+        return not self._ip_invalidated and (
+            start is None or start.workspace.device_ipv4==self._device_ip)
+
+    def invalidate_device_ip(self):
+        self._ip_invalidated=True
+        self.confirm.setChecked(False)
+        self._buttons()
+        self.status.setText(
+            "IP изменён. Ответ старого Task0 не будет применён." if self._busy()
+            else "IP изменён. Выберите чтение Task0 заново.")
+        if not self._busy():
+            self.close()
+
     def _buttons(self,*_):
         free=(not self._busy()
               and self._process.state()==QProcess.NotRunning
               and self._owner_available_for_task0())
         self.refresh_button.setEnabled(free and self._native is not None)
         self.download.setEnabled(
-            free and self._native is not None and
+            free and self._native is not None and self._current_ip_matches() and
             self.confirm.isChecked() and self.interfaces.currentData() is not None)
         self.stop.setEnabled(self._mode=="read")
         self.browse.setEnabled(free)
@@ -162,6 +178,11 @@ class OriginalTask0DownloadDialog(QDialog):
             self._buttons()
 
     def start_read(self):
+        if not self._current_ip_matches():
+            self.confirm.setChecked(False)
+            self.status.setText(
+                "IP изменён. Закройте это окно и заново выберите чтение Task0.")
+            return False
         if not self._owner_available_for_task0():
             self.status.setText(
                 "Task0 запрещён во время измерения: "

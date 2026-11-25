@@ -26,15 +26,16 @@ def test_original_config_two_tabs_64_slots_512_unknown_by_default(qt_app):
         assert not panel.basic_table.isVisible()
         assert panel.page.findChild(
             QTabWidget,"tcConfig").count()==2
-        assert panel.channel_table.rowCount()==8
+        assert panel.channel_table.rowCount()==10
         assert panel.alarm_table.rowCount()==64
         assert panel.alarm_table.columnCount()==11
         assert panel.alarm_table.item(0,3).text()==UNKNOWN
         assert panel.channel_table.item(0,2).text()=="0"
         assert panel.load_button.isEnabled()
         assert panel.load_button.text()==""
+        assert panel.reset_button.isEnabled()
         assert "не подтверждена" in panel.source_note.text().lower()
-        for object_name in ("bConfigSave","bConfigReset","bConfigDownload","bConfigUpload"):
+        for object_name in ("bConfigSave","bConfigDownload","bConfigUpload"):
             action=panel.page.findChild(QPushButton,object_name)
             assert action is not None and not action.isEnabled()
             assert action.text()==""

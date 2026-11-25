@@ -15,6 +15,7 @@ import json
 import re
 
 from .original_source_values_tick_acceptance import verify_source_values_prefix_event
+from .original_values_3100_timeline import MAX_PARAM_DESCRIPTORS
 
 SCHEMA="MVK_SOURCE_LIVE_VALUES_3100_EVENTS_V1"
 AUDIT="SOURCE_LIVE_VALUES_NATIVE_AUDIT.json"
@@ -169,6 +170,14 @@ def verify_original_live_values(
             if not isinstance(event,dict):
                 raise ValueError("Original WriteValues event not an object")
             keys=set(event)
+            descriptor = "source_param_descriptor_index"
+            if descriptor in keys:
+                keys.remove(descriptor)
+                if (_count(event[descriptor], "PARAM descriptor index",
+                           MAX_PARAM_DESCRIPTORS-1) != b.get(descriptor)):
+                    raise ValueError("Original WriteValues PARAM descriptor disagrees with RAW")
+            elif b.get("source_values_3100_descriptor_count") != 1:
+                raise ValueError("Original WriteValues missing repeated PARAM descriptor identity")
             rich=keys==BASE_EVENT_KEYS|{"source_ordered_raw_tick"}
             if not rich and keys!=BASE_EVENT_KEYS:
                 raise ValueError("Original WriteValues unexpected event fields")

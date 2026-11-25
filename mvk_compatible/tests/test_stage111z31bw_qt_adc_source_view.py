@@ -126,10 +126,10 @@ def test_one_native_session_full_seven_page_route_with_readbacks(
         assert w.original_shell.file_channels.count()>=8
         assert w.original_shell.file_export_button.isEnabled()
         assert w.original_shell._file_flow.source_record()["source_bin_sha256"]==selected_sha
-        # PageCalib: 49 test steps, 77x11 grid, never activate hardware.
+        # PageCalib: 55 test steps, 77x11 grid, never activate hardware.
         w.original_root_tabs.setCurrentIndex(6)
         qt_app.processEvents()
-        assert w.original_calib_panel.steps.count()==49
+        assert w.original_calib_panel.steps.count()==55
         assert w.original_calib_panel.page.objectName()=="PageCalib"
         # Third-party original Delphi form types must be instantiated,
         # not merely counted as navigation labels.

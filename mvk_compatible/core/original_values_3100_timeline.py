@@ -29,6 +29,15 @@ MAX_EVENTS_PER_WINDOW = 64
 MAX_WINDOWS = 8
 RAW_SHA = re.compile(r"[0-9a-f]{64}\Z")
 REGISTER_WORDS = 0x4000
+MAX_PARAM_DESCRIPTORS = 4096
+
+
+def max_source_values_ticks(frames: int, raw_bytes: int | None = None) -> int:
+    """Conservative wire bound: envelope and every trigger cost >=8 bytes."""
+    frame_limit = frames * MAX_PARAM_DESCRIPTORS
+    if raw_bytes is None:
+        return frame_limit
+    return min(frame_limit, max(0, raw_bytes - frames * 8) // 8)
 
 
 @dataclass(frozen=True)
@@ -67,7 +76,7 @@ def _parameter_blocks(frame: bytes):
     if len(frame) < 28:
         raise ValueError("Original VALUES 0x3100: truncated PARAM")
     count = struct.unpack_from("<I", frame, 24)[0]
-    if count > 4096:
+    if count > MAX_PARAM_DESCRIPTORS:
         raise ValueError("Original VALUES 0x3100: too many PARAM descriptors")
     pos = 28
     for _ in range(count):
@@ -116,10 +125,11 @@ def scan_original_values_3100(
     total = _counter(expected_raw_bytes, "RAW size", MAX_RAW)
     frames = _counter(expected_frames, "frame count", total // 8)
     final_aux = _counter(expected_aux, "AUX count", frames)
-    final_ticks = _counter(expected_ticks, "source 0x3100 tick count", frames)
+    max_ticks = max_source_values_ticks(frames, total)
+    final_ticks = _counter(expected_ticks, "source 0x3100 tick count", max_ticks)
     final_frozen_param = _counter(expected_frozen_param_frames, "frozen PARAM", frames)
     final_frozen_aux = _counter(expected_frozen_aux, "frozen AUX", frames)
-    final_frozen_values = _counter(expected_frozen_values, "frozen VALUES", frames)
+    final_frozen_values = _counter(expected_frozen_values, "frozen VALUES", max_ticks)
     if (param_gate_path is None and
             (expected_param_gate_sha256 is not None or
              expected_param_gate_records or final_frozen_param or
@@ -188,68 +198,64 @@ def scan_original_values_3100(
             if frame_type != PARAM:
                 continue
             blocks = list(_parameter_blocks(frame))
-            triggers = [(words, data) for addr, words, data in blocks
-                        if addr == 0x3100]
-            if len(triggers) > 1:
-                # Go currently counts at most one 0x3100 tick per frame.
-                # Do not silently diverge from its own independently
-                # authenticated frame-mark / summary counters.
-                raise ValueError("Original VALUES 0x3100: repeated trigger in one PARAM")
+            trigger_count = sum(addr == 0x3100 for addr, _, _ in blocks)
             frozen = gate.consume(
                 frame_index=frame_index + 1, frame=frame,
-                descriptors=len(blocks), values3100=bool(triggers),
+                descriptors=len(blocks), values3100_count=trigger_count,
             ) if gate is not None else False
             if frozen:
-                # Original _Unit125:0080850C reads and discards each
-                # PARAM block while frozen; RAW remains unchanged, but
-                # neither AUX nor 0x3100 advances any VALUES counter.
+                # A frame excluded by the source gate contributes no live
+                # rows, even with more than one trigger descriptor.
                 frozen_param += bool(blocks)
                 frozen_aux += (length == 4700)
-                frozen_values += bool(triggers)
+                frozen_values += trigger_count
                 continue
-            prefix = None
-            if capture_register_prefix:
-                selected = bool(triggers) and any(
-                    begin <= ticks < end for _, begin, end in intervals)
-                current = bytearray(REGISTER_WORDS) if selected else None
-                for addr, count, block in blocks:
-                    end_addr = addr + count
-                    if tach_gate is not None:
-                        tach_gate.state.block(addr,count)
-                    register_data[addr * 2:end_addr * 2] = block
-                    register_valid[addr:end_addr] = bytes([1]) * count
+            needs_snapshot = capture_register_prefix and trigger_count and any(
+                begin < ticks + trigger_count and ticks < end
+                for _, begin, end in intervals)
+            current = bytearray(REGISTER_WORDS) if needs_snapshot else None
+            for descriptor_index, (addr, words, data) in enumerate(blocks):
+                if tach_gate is not None:
+                    tach_gate.state.block(addr, words)
+                if capture_register_prefix:
+                    end_addr = addr + words
+                    register_data[addr * 2:end_addr * 2] = data
+                    register_valid[addr:end_addr] = bytes([1]) * words
                     if current is not None:
-                        current[addr:end_addr] = bytes([1]) * count
-                        if addr == 0x3100:
-                            prefix = RegisterPrefixSnapshot(
-                                bytes(register_data), bytes(register_valid), bytes(current),
-                                tach_gate.state.projection(register_data,register_valid)
-                                if tach_gate is not None else None)
-                            current = None
-                    if addr==0x3100 and tach_gate is not None:
-                        tach_gate.state.tick()
+                        current[addr:end_addr] = bytes([1]) * words
+                if addr != 0x3100:
+                    continue
+                selected = [number for number, begin, end in intervals
+                            if begin <= ticks < end]
+                if selected:
+                    event = {
+                        "source_tick_index": ticks,
+                        "frame_index": frame_index,
+                        "source_param_descriptor_index": descriptor_index,
+                        "source_values_3100_descriptor_count": trigger_count,
+                        "source_register_address": "0x3100",
+                        "register_words": words,
+                        "register_bytes_hex": data.hex(),
+                        "register_payload_sha256": sha256(data).hexdigest(),
+                        "latest_earlier_aux_index": aux - 1 if aux else None,
+                        "source_values_is_not_aux_tick": True,
+                    }
+                    if capture_register_prefix:
+                        event["_register_prefix"] = RegisterPrefixSnapshot(
+                            bytes(register_data), bytes(register_valid), bytes(current),
+                            tach_gate.state.projection(register_data, register_valid)
+                            if tach_gate is not None else None)
+                    for number in selected:
+                        chosen[number].append(event.copy())
+                # The original projects TACH into each row before clearing
+                # both DWORDs; later descriptors can then overwrite them.
+                if tach_gate is not None:
+                    tach_gate.state.tick()
+                ticks += 1
+            # AUX is decoded only after processing the entire PARAM. It is
+            # not available as an earlier snapshot for its own triggers.
             if length == 4700:
                 aux += 1
-            if triggers:
-                words, raw = triggers[0]
-                for number, begin, end in intervals:
-                    if begin <= ticks < end:
-                        event = {
-                            "source_tick_index": ticks,
-                            "frame_index": frame_index,
-                            "source_register_address": "0x3100",
-                            "register_words": words,
-                            "register_bytes_hex": raw.hex(),
-                            "register_payload_sha256": sha256(raw).hexdigest(),
-                            "latest_earlier_aux_index": aux - 1 if aux else None,
-                            "source_values_is_not_aux_tick": True,
-                        }
-                        if capture_register_prefix:
-                            if prefix is None:
-                                raise ValueError("Original VALUES 0x3100: missing prefix proof")
-                            event["_register_prefix"] = prefix
-                        chosen[number].append(event)
-                ticks += 1
         final = src.read(MAX_FRAME)
         if len(final) != tail or src.read(1):
             raise ValueError("Original VALUES 0x3100: terminal RAW tail mismatched")

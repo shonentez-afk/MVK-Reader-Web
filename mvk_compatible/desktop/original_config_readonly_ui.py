@@ -4,13 +4,13 @@ Source DFM has two tcConfig tabs (Channels, Alarms) and a sibling
 tabConfigBasic grid in non-channel Mode. We preserve exactly that.
 bConfigLoad and bConfigSave operate on a selected local original text file;
 Tmvkeditform edits validated source fields in an immutable draft. Hardware
-Download/Upload/Reset stay physically unavailable.
+Download requires explicit consent; Upload stays unavailable. Reset loads only local defaults.
 """
 from __future__ import annotations
 
 import hashlib
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QEvent, Qt
 from PySide6.QtWidgets import (QFileDialog,QLabel,QPushButton,QTableWidget,QTableWidgetItem,
     QTabWidget,QMenu,QInputDialog,QLineEdit,QDialog)
 
@@ -19,7 +19,11 @@ from ..core.original_config_readonly import (
     inspect_original_local_config, alarm_config_register,
 )
 from ..core.original_language_source import source_localize
-from ..core.original_config_semantics import source_section_rows, section_fields
+from ..core.original_config_semantics import (
+    source_section_rows,section_fields,SOURCE_ADVANCED_OPTIONS,
+    SOURCE_CONFIG_ALARM_OPTIONS,
+)
+from ..core.original_config_idp_tables import source_type_description
 from ..core.original_config_input_draft import (
     SourceInputRejected, encode_source_text,
 )
@@ -30,8 +34,9 @@ from ..core.original_task0_config_live import (
 from .original_value_edit_dialog import OriginalValueEditDialog
 
 
-class OriginalConfigReadOnlyPanel:
+class OriginalConfigReadOnlyPanel(QObject):
     def __init__(self,page):
+        super().__init__(page)
         self.page=page
         self.channel_table=page.findChild(QTableWidget,"tabConfigChannels")
         self.alarm_table=page.findChild(QTableWidget,"tabConfigAlarms")
@@ -44,6 +49,7 @@ class OriginalConfigReadOnlyPanel:
         self.reset_button=page.findChild(QPushButton,"bConfigReset")
         self._task0_receipt=None
         self._task0_dialog=None
+        self._task0_ip_epoch=0
         self.workspace=None
         self.selected_adc=1
         self.page_tabs=page.findChild(QTabWidget,"tcConfig")
@@ -68,18 +74,23 @@ class OriginalConfigReadOnlyPanel:
             "Исходный Task0: чтение конфигурации с прибора по разрешённому TCP; "
             "никаких Flash, Reset, SetRate или Upload.")
         self.download_button.clicked.connect(self.download_device_config)
-        for unsafe in (self.upload_button,self.reset_button):
-            if unsafe is not None:
-                unsafe.setEnabled(False)
-                unsafe.setToolTip(
-                    "Аппаратная запись/перезагрузка не разрешена без "
-                    "отдельной аппаратной приёмки.")
+        if self.upload_button is not None:
+            self.upload_button.setEnabled(False)
+            self.upload_button.setToolTip(
+                "Запись конфигурации в прибор отключена.")
+        if self.reset_button is not None:
+            self.reset_button.setEnabled(True)
+            self.reset_button.setToolTip(
+                "Восстановить локальные значения из DefaultConfig.txt. "
+                "Прибор не опрашивается и не перезагружается.")
+            self.reset_button.clicked.connect(self.confirm_local_defaults)
         self.channel_table.cellClicked.connect(self._select_channel)
+        self.channel_table.cellDoubleClicked.connect(self._focus_channel_details)
         self.channel_fields=QTableWidget(0,4,page)
         self.channel_fields.setObjectName("sourceConfigSelectedAdcFields")
         self.channel_fields.setEditTriggers(QTableWidget.NoEditTriggers)
         self.channel_fields.setHorizontalHeaderLabels(
-            ("Поле выбранного АЦП","Адрес","Тип","Локальный кандидат"))
+            ("Поле выбранного канала","Адрес","Тип","Локальное значение"))
         self.channel_fields.cellDoubleClicked.connect(self.show_channel_details)
         self.channel_fields.setMinimumHeight(125)
         self.channel_fields.setMaximumHeight(240)
@@ -101,12 +112,76 @@ class OriginalConfigReadOnlyPanel:
         page.layout().addWidget(self.discard_button)
         self.alarm_table.cellDoubleClicked.connect(self.show_alarm_details)
         self.basic_table.cellDoubleClicked.connect(self.show_basic_details)
+        # Delphi's shared tabKeyPress converts Enter to OnDblClick.
+        for table in (self.channel_table,self.channel_fields,
+                      self.alarm_table,self.basic_table):
+            table.installEventFilter(self)
+            table.viewport().installEventFilter(self)
         # Extra source-audit action is a context menu, not an invented
         # original DFM button. It validates an ephemeral candidate only.
         self.basic_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.basic_table.customContextMenuRequested.connect(
             self._source_validation_context_menu)
         self.refresh()
+
+    def eventFilter(self,watched,event):
+        if (event.type()==QEvent.Type.KeyPress and
+                event.key() in (Qt.Key_Return,Qt.Key_Enter)):
+            for table,handler in (
+                (self.channel_table,self._focus_channel_details),
+                (self.channel_fields,self.show_channel_details),
+                (self.alarm_table,self.show_alarm_details),
+                (self.basic_table,self.show_basic_details),
+            ):
+                if watched in (table,table.viewport()):
+                    if table.currentRow()>=0 and table.currentColumn()>=0:
+                        handler(table.currentRow(),table.currentColumn())
+                    return True
+        return super().eventFilter(watched,event)
+
+    def _focus_channel_details(self,row,column):
+        self._select_channel(row,column)
+        if self.channel_fields.rowCount():
+            self.channel_fields.setCurrentCell(0,3)
+            self.channel_fields.setFocus()
+
+    def _task0_reading(self):
+        return getattr(self._task0_dialog,"_mode",None)=="read"
+
+    def _require_local_change_allowed(self):
+        if self._task0_reading():
+            raise ValueError("Сначала завершите чтение Task0.")
+
+    def confirm_local_defaults(self):
+        """00849CE0: confirmed, local DefaultConfig.txt only; no network."""
+        window=self.page.window()
+        if self._task0_reading():
+            window.original_window_man.spawn_error("Сначала завершите чтение Task0.")
+            return False
+        box=window.original_window_man.create_query(
+            "Восстановить локальные значения из DefaultConfig.txt? "
+            "Несохранённые локальные изменения будут заменены. "
+            "Записи в прибор и перезагрузки не будет.",
+            "Сбросить настройки",yes=True,no=True,cancel=False)
+        if box.exec()!=6:
+            return False
+        try:
+            # Load and verify before changing the existing local workspace.
+            # Keep the current draft if defaults cannot be read.
+            workspace=OriginalLocalConfigWorkspace.load(
+                source_original_default_config_path())
+        except (ValueError,OSError,UnicodeError) as exc:
+            window.original_window_man.spawn_error(
+                "Не удалось загрузить локальный DefaultConfig.txt: "+str(exc))
+            return False
+        self.workspace=workspace
+        self.document=workspace.current
+        self._task0_receipt=None
+        self.refresh()
+        self.source_note.setText(
+            "Восстановлены локальные параметры из DefaultConfig.txt. "
+            "Прибор не опрашивался и не перезагружался.")
+        return True
 
     @staticmethod
     def _cell(table,row,col,value,detail=None):
@@ -132,7 +207,7 @@ class OriginalConfigReadOnlyPanel:
             "IDR регистр", "Локальные поля", "Ожидаемые поля",
             "Подтверждение прибора",
         ))
-        c.setRowCount(len(channel_rows))
+        c.setRowCount(len(channel_rows)+2)
         for r,channel in enumerate(channel_rows):
             for i,value in enumerate((
                 f"ADC{channel['adc']}",channel["source_config_base"],
@@ -140,6 +215,12 @@ class OriginalConfigReadOnlyPanel:
                 channel["expected_alarm_cells"],"НЕ подтверждено",
             )):
                 self._cell(c,r,i,value)
+        for i in range(1,3):
+            fields,base=section_fields("tach",adc=i)
+            present=sum(doc.value(base+f.offset) is not None for f in fields)
+            for j,val in enumerate((f"TACH{i}",f"0x{base:04X}",present,
+                                    len(fields),"НЕ подтверждено")):
+                self._cell(c,7+i,j,val)
 
         a=self.alarm_table
         columns=("АЦП","Слот","Status RAW",*[
@@ -159,8 +240,11 @@ class OriginalConfigReadOnlyPanel:
         self._refresh_basic()
         self._refresh_channel_details()
         self._set_mode_visibility()
-        self.save_button.setEnabled(self.workspace is not None)
-        self.discard_button.setEnabled(bool(self.workspace and self.workspace.changed))
+        self.load_button.setEnabled(not self._task0_reading())
+        self.save_button.setEnabled(
+            self.workspace is not None and not self._task0_reading())
+        self.discard_button.setEnabled(bool(
+            self.workspace and self.workspace.changed and not self._task0_reading()))
         total=report["parsed_cells"]
         count=report["alarm_registers_present"]
         if self.source_mode==6:
@@ -186,8 +270,8 @@ class OriginalConfigReadOnlyPanel:
                 f"Локально прочитано {total} RAW значений. {summary} "
                 f"Изменено в памяти: {pending}. "
                 "Текущая конфигурация прибора НЕ подтверждена. "
-                "Локальное Save доступно после Load; "
-                "приборные Reset/Upload/Calib отключены.")
+                "Локальное сохранение доступно после загрузки; "
+                "запись в прибор и физическая поверка отключены.")
 
 
     def _set_mode_visibility(self,*_):
@@ -196,23 +280,27 @@ class OriginalConfigReadOnlyPanel:
         self.basic_table.setVisible(basic)
         # Task0 is the ONLY restored hardware configuration action.
         self.download_button.setEnabled(self.source_mode==4)
-        for unsafe in (self.upload_button,self.reset_button):
-            if unsafe is not None:unsafe.setEnabled(False)
+        if self.upload_button is not None:self.upload_button.setEnabled(False)
         show_channel=(not basic and self.page_tabs.currentIndex()==0)
         self.channel_fields_caption.setVisible(show_channel)
         self.channel_fields.setVisible(show_channel)
 
     def _select_channel(self,row,column=0):
-        if type(row) is not int or not 0<=row<8:return
+        if type(row) is not int or not 0<=row<10:return
         self.selected_adc=row+1
         self._refresh_channel_details()
 
+    def _selected_channel(self):
+        return (("adc",self.selected_adc) if self.selected_adc<=8
+                else ("tach",self.selected_adc-8))
+
     def _refresh_channel_details(self):
-        rows=source_section_rows(self.document,"adc",adc=self.selected_adc)
+        section,channel=self._selected_channel()
+        rows=source_section_rows(self.document,section,adc=channel)
         t=self.channel_fields
         t.setRowCount(len(rows))
         self.channel_fields_caption.setText(
-            f"ADC{self.selected_adc}: {len(rows)} полей исходного "
+            f"{section.upper()}{channel}: {len(rows)} полей исходного "
             "TMvkCellList. Двойной щелчок — редактор локального проекта.")
         for i,info in enumerate(rows):
             display=source_localize(info["source_key"]).display+info["source_suffix"]
@@ -269,7 +357,9 @@ class OriginalConfigReadOnlyPanel:
         controller=window.original_start_controller
         if not controller.commit_ip():return False
         from .original_task0_download_dialog import OriginalTask0DownloadDialog
-        if self._task0_dialog is not None and self._task0_dialog.isVisible():
+        if self._task0_dialog is not None and (
+                getattr(self._task0_dialog,"_mode",None)=="read" or
+                self._task0_dialog.isVisible()):
             self._task0_dialog.raise_()
             self._task0_dialog.activateWindow()
             return True
@@ -279,9 +369,21 @@ class OriginalConfigReadOnlyPanel:
             return False
         dialog=OriginalTask0DownloadDialog(
             controller.workspace.device_ipv4,window)
-        dialog.readCompleted.connect(self.apply_device_task0_read)
-        dialog.readStarted.connect(self.source_task0_read_started)
-        dialog.readFailed.connect(self.source_task0_read_failed)
+        device_ip=controller.workspace.device_ipv4
+        epoch=self._task0_ip_epoch
+        def forward(callback):
+            def on_signal(*args):
+                # An asynchronous response cannot restore the previous IP.
+                if (self._task0_dialog is dialog and
+                        controller.workspace.device_ipv4==device_ip and
+                        self._task0_ip_epoch==epoch):
+                    callback(*args)
+                elif self._task0_dialog is dialog and not self._task0_reading():
+                    self.refresh()
+            return on_signal
+        dialog.readCompleted.connect(forward(self.apply_device_task0_read))
+        dialog.readStarted.connect(forward(self.source_task0_read_started))
+        dialog.readFailed.connect(forward(self.source_task0_read_failed))
         self._task0_dialog=dialog
         dialog.show()
         return True
@@ -353,6 +455,19 @@ class OriginalConfigReadOnlyPanel:
         self.refresh()
         return self.basic_table.rowCount()
 
+    def invalidate_task0_ip(self):
+        """Called at the committed IP boundary, not only on reopening Mode4."""
+        self._task0_ip_epoch+=1
+        invalidate=getattr(self._task0_dialog,"invalidate_device_ip",None)
+        if callable(invalidate):invalidate()
+        had_proof=self._task0_receipt is not None
+        self._task0_receipt=None
+        if had_proof:
+            self.refresh()
+            self.source_note.setText(
+                "IP изменён. Ответ Task0 от предыдущего прибора скрыт; "
+                "текущая конфигурация не подтверждена.")
+
     def set_source_mode(self,mode):
         if type(mode) is not int or mode not in (4,5,6):
             raise ValueError("Only source Config Mode4/5/6 supported")
@@ -364,6 +479,17 @@ class OriginalConfigReadOnlyPanel:
                     self._task0_receipt.get("device_ipv4")):
                 self._task0_receipt=None
         self.source_mode=mode
+        window=self.page.window()
+        nav=getattr(window,"original_root_tabs",None)
+        if nav is not None:
+            for index in range(nav.count()):
+                if nav.tabData(index)=="PageConfig":
+                    # Actual Russian captions observed in original 1.0.47.
+                    nav.setTabText(index,{
+                        4:"Системные параметры",5:"Калибровочные значения",
+                        6:"Параметры измерительных каналов",
+                    }[mode])
+                    break
         self.refresh()
 
     def basic_detail_dialog(self,row,column):
@@ -400,40 +526,59 @@ class OriginalConfigReadOnlyPanel:
             self.page.window().original_window_man.spawn_error(
                 "Пароль исходного прибора нельзя редактировать локально.")
             return
-        self._prompt_edit_source_field(
-            section,row,field_name=f.key,address=base+f.offset)
+        self._prompt_edit_source_field(section,row,f,base+f.offset)
 
-    def _prompt_edit_source_field(self,section,row,*,field_name,address,
-                                  adc=None):
+    @staticmethod
+    def _choice_setup(advanced,value):
+        if advanced is None:
+            return {},value
+        labels=[]
+        raw_values=[]
+        for option in advanced.values:
+            try:
+                label=source_localize(option.title).display
+            except KeyError:
+                label=option.title
+            labels.append(f"{label} · 0x{option.id:08X}")
+            raw_values.append(f"0x{option.id:08X}")
+        try:
+            value=f"0x{int(value,16):08X}"
+        except (TypeError,ValueError):
+            pass # An unknown ID is not selected or silently coerced.
+        return {"choices":labels,"choice_values":raw_values},value
+
+    def _prompt_edit_source_field(self,section,row,field,address,*,adc=None):
         if self.workspace is None:
             return
         current=self.document.value(address)
         text=current.literal if current is not None else ""
+        options,text=self._choice_setup(
+            SOURCE_ADVANCED_OPTIONS.get(field.advanced),text)
         box=OriginalValueEditDialog(
-            prompt=source_localize(field_name).display+
+            prompt=source_localize(field.key).display+
                    " · локальное изменение (не прибор)",
             value=text,units=f"0x{address:04X}",
-            parent=self.page,read_only=False)
+            parent=self.page,read_only=False,
+            sensitivity_conversion=(section=="adc" and row==0),
+            **options)
         if box.exec()==QDialog.Accepted:
             try:
-                if section=="alarm":
-                    raise ValueError("Choose alarm edit through alarm field")
-                self.edit_local_field(
-                    section,row,box.selected_value(),adc=adc)
+                self.edit_local_field(section,row,box.selected_value(),adc=adc)
             except (SourceInputRejected,ValueError) as exc:
                 self.page.window().original_window_man.spawn_error(
                     "Локальное поле не принято: "+str(exc))
 
     def show_channel_details(self,row,column):
         if column!=3 or self.workspace is None:return
-        fields,base=section_fields("adc",adc=self.selected_adc)
+        section,channel=self._selected_channel()
+        fields,base=section_fields(section,adc=channel)
         if type(row) is not int or not 0<=row<len(fields):return
         f=fields[row]
         self._prompt_edit_source_field(
-            "adc",row,field_name=f.key,address=base+f.offset,
-            adc=self.selected_adc)
+            section,row,f,base+f.offset,adc=channel)
 
     def edit_local_field(self,section,row,text,*,adc=None):
+        self._require_local_change_allowed()
         if self.workspace is None:
             raise ValueError("Open a local original config before editing")
         self.workspace=self.workspace.edit_field(section,row,text,adc=adc)
@@ -442,6 +587,7 @@ class OriginalConfigReadOnlyPanel:
         return self.workspace.describe()
 
     def edit_local_alarm(self,adc,slot,field,text):
+        self._require_local_change_allowed()
         if self.workspace is None:
             raise ValueError("Open a local original config before editing")
         self.workspace=self.workspace.edit_alarm(adc,slot,field,text)
@@ -450,15 +596,19 @@ class OriginalConfigReadOnlyPanel:
         return self.workspace.describe()
 
     def discard_local_changes(self):
-        if self.workspace is None:return
+        if self._task0_reading() or self.workspace is None:return
         self.workspace=self.workspace.discard_changes()
         self.document=self.workspace.current
         self.refresh()
 
     def save_local_file(self,path):
+        self._require_local_change_allowed()
         if self.workspace is None:
             raise ValueError("Open a local source file before saving")
-        result=self.workspace.save_as(path)
+        result=self.workspace.save_as(path,mode=self.source_mode)
+        self.workspace=self.workspace.mark_mode_saved(self.source_mode)
+        self.document=self.workspace.current
+        self.refresh()
         self.source_note.setText(
             self.source_note.text()+" Локальный файл сохранён: "+
             str(result["saved_cells"])+" ячеек; запись в прибор НЕ выполнялась.")
@@ -549,6 +699,7 @@ class OriginalConfigReadOnlyPanel:
 
     def load_local_file(self,path):
         """Fail-closed: a bad/new file never preserves old config evidence."""
+        self._require_local_change_allowed()
         self.workspace=None
         self._task0_receipt=None
         self.document=empty_original_config_inspection()
@@ -591,7 +742,8 @@ class OriginalConfigReadOnlyPanel:
         )
 
     def show_alarm_details(self,row:int,column:int):
-        if column<3:return
+        if not (0<=row<self.alarm_table.rowCount() and
+                3<=column<self.alarm_table.columnCount()):return
         if self.workspace is None:
             self.alarm_detail_dialog(row,column).exec()
             return
@@ -604,11 +756,16 @@ class OriginalConfigReadOnlyPanel:
             # No original FmtChar/type evidence; do not invent one.
             self.alarm_detail_dialog(row,column).exec()
             return
+        options,value=self._choice_setup(
+            SOURCE_CONFIG_ALARM_OPTIONS
+            if field=="parameter_id" and
+               cell.format_char==source_type_description(10)["format_char"]
+            else None,cell.literal)
         box=OriginalValueEditDialog(
             prompt=source_localize(FIELDS[column-3][1]).display+
                    " · только локальный файл",
-            value=cell.literal,units=f"0x{address:04X}",
-            parent=self.page,read_only=False)
+            value=value,units=f"0x{address:04X}",
+            parent=self.page,read_only=False,**options)
         if box.exec()==QDialog.Accepted:
             try:self.edit_local_alarm(adc,slot,field,box.selected_value())
             except (SourceInputRejected,ValueError) as exc:

@@ -55,7 +55,7 @@ func TestValuesTriggerPrefixOrderAndFinalImage(t *testing.T) {
         {"before",[]RegBlock{two,trigger},false,false,false,1,"00000040","00000040","2"},
         {"after",[]RegBlock{trigger,two},false,false,false,1,"0000803f","00000040","1"},
         {"both_sides",[]RegBlock{two,trigger,three},false,false,false,1,"00000040","00004040","2"},
-        {"duplicate",[]RegBlock{trigger,two,trigger},false,false,true,0,"","00000040",""},
+        {"malformed_descriptor",[]RegBlock{trigger,two,{Addr:0x3100,Words:1,Payload:[]byte{0,0,0,0}}},false,false,true,0,"","0000803f",""},
         {"freeze",[]RegBlock{trigger,two},false,true,false,0,"","0000803f",""},
         {"inactive",[]RegBlock{trigger,two},true,false,false,0,"","00000040",""},
         {"no_trigger",[]RegBlock{two},false,false,false,0,"","00000040",""},
@@ -74,7 +74,7 @@ func TestValuesTriggerPrefixOrderAndFinalImage(t *testing.T) {
             if err:=m.ProcessChunk(first,at);err!=nil{t.Fatal(err)}
             m.sourceOriginalRXGate.frozen=tc.frozen
             packet:=makeParam(tc.blocks)
-            if _,err:=decodeBlocks(packet);err!=nil{t.Fatal(err)}
+            if _,err:=decodeBlocks(packet);(err!=nil)!=tc.invalid{t.Fatalf("descriptor validation: %v",err)}
             if err:=m.ProcessChunk(packet,at.Add(time.Second));err!=nil{t.Fatal(err)}
             final:=m.sourceLiveRawDWORD(0x2002)
             if final==nil || *final!=tc.wantFinal{t.Fatalf("final image %v, want %s",final,tc.wantFinal)}
@@ -87,7 +87,7 @@ func TestValuesTriggerPrefixOrderAndFinalImage(t *testing.T) {
                 if !tc.inactive {
                     if b:=prefixTestRead(t,m.dir,"SOURCE_W01_VALUES_3100_RECEIVED.jsonl");len(b)!=0{t.Fatal("unexpected VALUES bytes")}
                 }
-                if tc.invalid && m.sourceLiveValuesWriter.windows[0].Outcome!="INTERRUPTED"{t.Fatal("duplicate error certified a clean window")}
+                if tc.invalid && m.sourceLiveValuesWriter.windows[0].Outcome!="INTERRUPTED"{t.Fatal("malformed descriptor certified a clean window")}
                 return
             }
             ev:=prefixTestEvent(t,m)

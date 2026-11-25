@@ -26,6 +26,7 @@ const sourceLiveValuesAuditName="SOURCE_LIVE_VALUES_NATIVE_AUDIT.json"
 type sourceLiveValuesEvent struct {
     FrameIndex uint64 `json:"frame_index"`
     TickIndex uint64 `json:"source_values_tick_index"`
+    DescriptorIndex int `json:"source_param_descriptor_index"`
     ReceivedUTC string `json:"received_utc"`
     Address string `json:"param_address"`
     Words uint16 `json:"register_words"`
@@ -213,27 +214,21 @@ func anySourceValuesSelected(m frameMarkReceipt)bool{
     // Never arm for historical non-original bits 36..72.
     return false
 }
-func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time,triggerImage *RegisterImage, localTach ...*sourceLocalTachState)error{
+func(w *sourceLiveValuesWriter)onParamDescriptor(m *Monitor, blocks []RegBlock,
+    triggerIndex int, at time.Time, localTach *sourceLocalTachState) error {
     if w==nil || w.closed || w.active==nil{return nil}
-    triggerIndex:=-1
-    for i:=range blocks{
-        if blocks[i].Addr!=0x3100{continue}
-        if triggerIndex>=0{return errors.New("source duplicate 0x3100 in PARAM")}
-        triggerIndex=i
+    if triggerIndex < 0 || triggerIndex >= len(blocks) {
+        return errors.New("source 0x3100 malformed writer descriptor index")
     }
-    if triggerIndex<0{return nil}
     trigger:=&blocks[triggerIndex]
-    if uint64(trigger.Words)*2!=uint64(len(trigger.Payload)) ||
+    if trigger.Addr != 0x3100 || uint64(trigger.Words)*2!=uint64(len(trigger.Payload)) ||
        m.summary.ValuesTicks==0{
         return errors.New("source 0x3100 malformed writer payload/tick")
     }
-    if triggerImage==nil{
-        return errors.New("source 0x3100 missing trigger-prefix register image")
-    }
-    // Restrict both data and per-tick freshness to the inclusive prefix.
-    // Suffix descriptors still update the main image for future frames.
+    // Render synchronously from the live register image BEFORE the next
+    // descriptor writes to it or the caller clears the two TACH latches.
     snapshot,rawLayout,e:=sourceValuesOrderedRawTickFromImage(
-        triggerImage,w.active,blocks[:triggerIndex+1],at,localTach...)
+        &m.image,w.active,blocks[:triggerIndex+1],at,localTach)
     if e!=nil{return e}
     textCandidate,e:=sourceValuesTextCandidateRow(snapshot)
     if e!=nil{return e}
@@ -249,7 +244,7 @@ func(w *sourceLiveValuesWriter)onParam(m *Monitor,blocks []RegBlock,at time.Time
     value:=sourceLiveValuesEvent{
         FrameIndex:m.summary.TotalFrames,TickIndex:m.summary.ValuesTicks-1,
         ReceivedUTC:at.UTC().Format(time.RFC3339Nano),
-        Address:"0x3100",Words:trigger.Words,
+        DescriptorIndex:triggerIndex,Address:"0x3100",Words:trigger.Words,
         PayloadLEHex:hex.EncodeToString(trigger.Payload),
         PayloadSHA256:hex.EncodeToString(digest[:]),
         RawTickEvidence:&snapshot,
