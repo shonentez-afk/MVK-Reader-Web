@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 from contextlib import nullcontext
+from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 from hashlib import sha256
 import math
@@ -51,6 +52,7 @@ from ..core.envelope_spectrum_idr_candidate import (
     source_selected_envelope_fft_plan,
 )
 from ..core.direct_bin_session import DirectBinSession
+from ..core.offline_drag_spectrum import direct_drag_spectrum
 from ..core.offline_measurement_flow import OfflineMeasurementFlow
 from ..core.original_view_time_source import (
     source_view_time, source_wave_readout, source_spectrum_readout,
@@ -62,6 +64,7 @@ from ..core.original_visible_spectrum_pair import compare_visible_original_spect
 from ..core.original_visible_pixel_compare import compare_current_original_pixel_view
 from ..core.original_spectrum_vertical_view import source_spectrum_vertical_view
 from ..core.envelope_idr_candidate import (EnvelopeProfile,ENVELOPE_RATES,
+    ENVELOPE_STAGES,FIR_DECIM,
     envelope_plan,process_original_envelope_candidate)
 from ..core.original_envelope_shared_menu import (
     source_original_envelope_menu,source_original_envelope_selection,
@@ -203,6 +206,15 @@ class MainWindow(QMainWindow):
         self._live_control_states=[]
         self._pagestatus_snapshot=None
         self._source_view_time=None
+        self._offline_requested_time=None
+        self._offline_window_notices={}
+        self._drag_request=None
+        self._drag_executor=None
+        self._drag_future=None
+        self._drag_prepared=None
+        self._drag_poll=QTimer(self)
+        self._drag_poll.setInterval(16)
+        self._drag_poll.timeout.connect(self._apply_offline_drag_result)
         self._source_wave_readout=None
         self._source_spectrum_readout=None
         self._source_spectrum_gain=None
@@ -261,6 +273,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(960,580)
         pg.setConfigOptions(antialias=False,useOpenGL=False)
         self._build()
+        self.original_shell.view_slider.sliderReleased.connect(self._submit_offline_drag)
         self._set_active(False)
 
     @staticmethod
@@ -610,6 +623,7 @@ class MainWindow(QMainWindow):
         # These existing models stay available to all former callbacks,
         # tests and original code-derived GetSignal implementations.
         self.wave_start=self._float(0,300,0)
+        self.wave_start.valueChanged.connect(self._remember_offline_requested_time)
         self.wave_time_label=QLabel("Начало, с")
         self.wave_seconds=self._float(.001,30,1)
         self.wave_mode=QComboBox()
@@ -1055,11 +1069,21 @@ class MainWindow(QMainWindow):
             self.spec_compare_button.setEnabled(tag==0)
         self._sync_original_envelope_menu_ui()
         if self.session is None or (tag==0 or self.spec_envelope_button.isChecked()):
+            active=next((d for d in (self._full_spectrum,self._source_wave_trace)
+                         if isinstance(d,dict) and (
+                             d.get('envelope_code',d.get('original_source_fft_plan',{}).get('envelope_code'))==tag)
+                         and d.get('output_sample_rate_hz')),None)
+            if tag and self.session is not None and (active is None or
+                    self.statusBar().currentMessage() in self._offline_window_notices.values()):
+                # Do not mask a current history/validation error with success.
+                return
+            rate=(active['output_sample_rate_hz'] if active is not None else
+                  receipt['source_target_rate_hz']//FIR_DECIM[ENVELOPE_STAGES[tag]] if tag else 0)
             self.statusBar().showMessage(
                 f"popEnvelopeType Tag{tag}: "
                 + receipt['source_filter_caption']
                 + (' · без FIR' if tag==0 else
-                   f" · FIR выходная Fs {receipt['source_target_rate_hz']} Гц")
+                   f" · FIR выходная Fs {rate:g} Гц")
                 + '; оба исходных экрана синхронизированы; '
                 'Win32 численный паритет пока не подтверждён')
 
@@ -5050,7 +5074,10 @@ class MainWindow(QMainWindow):
         self._wave_hover_window=None
         self.spec_copy_button.setEnabled(False)
         self.spec_save_button.setEnabled(False)
+        self._cancel_offline_drag()
         self.session=s
+        self._offline_requested_time=None
+        self._offline_window_notices.clear()
         self._offline_flow=flow
         self._source_envelope_menu_fs=float(fs)
         # Accepted new file must not inherit a former ZIP VALUES/AUX bank.
@@ -5179,7 +5206,10 @@ class MainWindow(QMainWindow):
         self._leave_original_spectrum_reference()
         self._reset_visible_original_pair()
         self._clear_archive_source_projection()
+        self._cancel_offline_drag()
         self.session=None
+        self._offline_requested_time=None
+        self._offline_window_notices.clear()
         self._offline_flow=None
         self._source_envelope_menu_fs=None
         self._source_original_envelope_receipt=None
@@ -5299,6 +5329,90 @@ class MainWindow(QMainWindow):
         if (self.session is None or self._live_active or
                 self._offline_flow is None):
             return
+        slider=self.original_shell.view_slider
+        signature=self._offline_drag_signature(position)
+        if signature is not None and slider.isSliderDown():
+            self._cancel_offline_drag()
+            self._drag_request=signature
+            clock=self._source_view_time
+            if clock is not None:
+                self._remember_offline_requested_time(int(position)*clock.seconds_per_position)
+            self._spectrum_summary=None
+            self.spec_copy_button.setEnabled(False)
+            self.spec_save_button.setEnabled(False)
+            self.spec_original_copy_compare.setEnabled(False)
+            self.spec_mean_primary.setText('Выбор окна…')
+            clock=self._source_view_time
+            if clock is not None:
+                ms=round(int(position)*clock.seconds_per_position*1000)
+                sec,ms=divmod(ms,1000)
+                minute,sec=divmod(sec,60)
+                hour,minute=divmod(minute,60)
+                self.original_shell.view_time_label.setText(f'{hour:02}:{minute:02}:{sec:02}.{ms:03}')
+            self._invalidate_graph_cursor('adc')
+            self._invalidate_graph_cursor('spectrum')
+            return
+        self._cancel_offline_drag()
+        self._seek_render_now(position)
+
+    def _offline_drag_signature(self,position):
+        if (not isinstance(self.session,DirectBinSession) or self._live_active
+                or self.spec_last.isChecked() or self._spectrum_reference is not None
+                or (not self._offline_tach_channel() and self._saved_mode1_range() is None)):
+            return None
+        code=int(self.spec_envelope_code.currentData() or 0) if self.spec_envelope_button.isChecked() else 0
+        if code and self.envelope_profile is None:
+            return None
+        return (id(self.session),self._ch(),int(position),int(self.spec_n.currentText()),
+                self.spec_mode.currentIndex(),code,id(self.envelope_profile),self._fft_backend(),
+                tuple(self._offline_fft_domain().items()))
+
+    def _cancel_offline_drag(self):
+        self._drag_request=None
+        if self._drag_future is not None:
+            self._drag_future.cancel()
+        self._drag_future=None
+        self._drag_poll.stop()
+
+    def _submit_offline_drag(self):
+        key=self._drag_request
+        if key is None:
+            return
+        position=key[2]
+        if key!=self._offline_drag_signature(self.original_shell.view_slider.value()):
+            self._cancel_offline_drag()
+            return
+        if self._drag_executor is None:
+            self._drag_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='mvk-offline-spectrum')
+        self.spec_mean_primary.setText('Вычисляю спектр для выбранного окна…')
+        self._drag_future=self._drag_executor.submit(
+            direct_drag_spectrum,self._current_offline_flow(),position,key[3],
+            key[4],key[5],self.envelope_profile,key[7],dict(key[8]))
+        self._drag_poll.start()
+
+    def _apply_offline_drag_result(self):
+        future=self._drag_future
+        if future is None or not future.done():
+            return
+        key=self._drag_request
+        self._cancel_offline_drag()
+        actual=self._offline_drag_signature(self.original_shell.view_slider.value())
+        if key is None or key!=actual:
+            if actual is not None and key is not None and key[:3]==actual[:3]:
+                self._drag_request=actual
+                self._submit_offline_drag()
+            return
+        try:
+            data=future.result()
+        except (OSError,ValueError,KeyError,RuntimeError,TypeError):
+            data=None
+        self._drag_prepared=(key,data) if data is not None else None
+        try:
+            self._seek_render_now(key[2])
+        finally:
+            self._drag_prepared=None
+
+    def _seek_render_now(self,position):
         if isinstance(self.session,DirectBinSession):
             with self.session.sample_render_transaction():
                 self._render_source_time_position(position)
@@ -5311,6 +5425,7 @@ class MainWindow(QMainWindow):
             model=self.original_shell.sync_source_view_time(
                 flow,position=int(position))
             self._source_view_time=model
+            self._remember_offline_requested_time(model.selected_start_seconds)
             blocked=self.wave_start.blockSignals(True)
             try:
                 self.wave_start.setValue(model.selected_start_seconds)
@@ -5346,10 +5461,31 @@ class MainWindow(QMainWindow):
             return float(time.selected_start_seconds)
         return float(self.wave_start.value())
 
+    def _remember_offline_requested_time(self,seconds):
+        if isinstance(self.session,DirectBinSession) and not self._live_active:
+            self._offline_requested_time=(self.session,float(seconds))
+
+    def _offline_window_notice(self,kind,message=None):
+        previous=self._offline_window_notices.pop(kind,None)
+        if message is not None:
+            self._offline_window_notices[kind]=message
+            self.statusBar().showMessage(message)
+        elif previous is not None and self.statusBar().currentMessage()==previous:
+            other=next(reversed(self._offline_window_notices.values()),None)
+            if other:
+                self.statusBar().showMessage(other)
+            else:
+                self.statusBar().clearMessage()
+
     def _sync_source_time_from_wave_start(self,flow):
-        """Legacy research spinbox and visible original slider stay paired."""
+        """Do not overwrite the operator's requested position with a short-channel clamp."""
+        anchor=self._offline_requested_time
+        requested=(anchor[1] if anchor and anchor[0] is flow.session
+                   else float(self.wave_start.value()))
         model=self.original_shell.sync_source_view_time(
-            flow,requested_start_s=float(self.wave_start.value()))
+            flow,requested_start_s=requested)
+        if not anchor or anchor[0] is not flow.session:
+            self._remember_offline_requested_time(requested)
         self._source_view_time=model
         blocked=self.wave_start.blockSignals(True)
         try:
@@ -5819,6 +5955,7 @@ class MainWindow(QMainWindow):
                 except (ValueError,TypeError,KeyError):
                     self._source_adc_spectrum_joint_receipt=None
             self._wave_envelope_dirty=False
+            self._offline_window_notice('wave')
         except (OSError,KeyError,ValueError) as e:
             self._source_wave_readout=None
             self._source_envelope_cursor=None
@@ -5844,7 +5981,7 @@ class MainWindow(QMainWindow):
             if quiet or at_mode1_zero:
                 # Never block the offscreen UI or user while changing
                 # source EnvelopeCode and recomputing hidden pages.
-                self.statusBar().showMessage(
+                self._offline_window_notice('wave',
                     'FIR/GetSignal недоступен для выбранного окна: '+str(e))
             else:
                 self._error(e)
@@ -6909,6 +7046,7 @@ class MainWindow(QMainWindow):
         for action in self._spec_hscale_actions:
             action.setChecked(False)
         insufficient_history=False
+        history_detail=None
         source_end=None
         tach=flow.tach_byte
         try:
@@ -6928,6 +7066,7 @@ class MainWindow(QMainWindow):
                 # A checked short file still has a valid signal/time axis.
                 # Never pad FFT or invalidate its already-accepted waveform.
                 insufficient_history=flow.direct_bin
+                history_detail=gate
                 raise ValueError(
                     f"Отсутствует полная реальная история FFT N={n_fft}: "
                     f"нужно {gate['required_real_history_samples']}, "
@@ -6935,7 +7074,13 @@ class MainWindow(QMainWindow):
                     "дополнение нулями запрещено")
             # Use *all* FFT bins as candidate data. pyqtgraph downsamples only
             # the visual trace, never the original TQGrapher cursor series.
-            if partial_preview:
+            prepared=self._drag_prepared
+            current_position=(self._source_view_time.position
+                              if self._source_view_time is not None else None)
+            if (prepared is not None and current_position is not None and
+                    prepared[0]==self._offline_drag_signature(current_position)):
+                d=prepared[1]
+            elif partial_preview:
                 d=flow.session.preview_partial_spectrum(
                     flow.channel,n_fft,self.spec_mode.currentIndex(),source_end,
                     **self._offline_fft_domain())
@@ -7208,6 +7353,7 @@ class MainWindow(QMainWindow):
                     'Original software Spectrum preview fallback Qt: '
                     +str(graphic_error))
             self._spectrum_envelope_dirty=False
+            self._offline_window_notice('spectrum')
         except (OSError,KeyError,ValueError) as e:
             # An archive may change after DirectBinSession.open(). A failed
             # re-read MUST NOT leave its old plot, cursor, or three-value
@@ -7246,6 +7392,19 @@ class MainWindow(QMainWindow):
             self.spec_canvas_geometry_button.setEnabled(False)
             self.spec_pair_button.setEnabled(False)
             self._sync_spectrum_summary_primary()
+            if (insufficient_history and history_detail is not None and
+                    self.spec_envelope_button.isChecked()):
+                self._sync_fft_menu_availability(samples_count=len(samples),sample_rate=fs)
+                resolution=[a.text() for a in self._spec_lines_actions if a.isEnabled()]
+                why=('Недостаточно отсчётов для FIR.\n'
+                     f"Доступно: {history_detail['archive_end_sample']:,}; "
+                     f"нужно: {history_detail['required_real_history_samples']:,}.\n"
+                     +'Выберите доступное разрешение спектра или передвиньте время дальше.')
+                if resolution:
+                    why+='\nДоступно: '+', '.join(resolution)+'.'
+                self.spec_mean_primary.setText(why)
+                self._offline_window_notice('spectrum',
+                    'Недостаточно предыстории для выбранного спектра FIR')
             self.spec_cursor_primary.setText('Курсор: —')
             self.spec_mean.setText('Спектр не рассчитан: '+str(e))
             self.spec_hint.setText('Нет действительного спектра: '+str(e))
@@ -7904,6 +8063,7 @@ class MainWindow(QMainWindow):
         must never be exported as physical measurement data.
         """
         if (self._live_active or self.session is None or
+                self._drag_request is not None or
                 self._spectrum_reference is not None or
                 self._full_spectrum is None):
             raise ValueError("No verified offline GetSpectrum for current ADC")
@@ -8133,6 +8293,10 @@ class MainWindow(QMainWindow):
                 'Принудительное завершение через закрытие программы не допускается.')
             event.ignore()
             return
+        self._cancel_offline_drag()
+        if self._drag_executor is not None:
+            self._drag_executor.shutdown(wait=False,cancel_futures=True)
+            self._drag_executor=None
         super().closeEvent(event)
 
 
