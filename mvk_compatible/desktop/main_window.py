@@ -273,7 +273,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(960,580)
         pg.setConfigOptions(antialias=False,useOpenGL=False)
         self._build()
-        self.original_shell.view_slider.sliderReleased.connect(self._submit_offline_drag)
+        self.original_shell.view_slider.sliderMoved.connect(self._remember_offline_drag_motion)
+        self.original_shell.view_slider.sliderReleased.connect(
+            lambda: QTimer.singleShot(0,self._submit_offline_drag))
         self._set_active(False)
 
     @staticmethod
@@ -5332,28 +5334,37 @@ class MainWindow(QMainWindow):
         slider=self.original_shell.view_slider
         signature=self._offline_drag_signature(position)
         if signature is not None and slider.isSliderDown():
-            self._cancel_offline_drag()
-            self._drag_request=signature
-            clock=self._source_view_time
-            if clock is not None:
-                self._remember_offline_requested_time(int(position)*clock.seconds_per_position)
-            self._spectrum_summary=None
-            self.spec_copy_button.setEnabled(False)
-            self.spec_save_button.setEnabled(False)
-            self.spec_original_copy_compare.setEnabled(False)
-            self.spec_mean_primary.setText('Выбор окна…')
-            clock=self._source_view_time
-            if clock is not None:
-                ms=round(int(position)*clock.seconds_per_position*1000)
-                sec,ms=divmod(ms,1000)
-                minute,sec=divmod(sec,60)
-                hour,minute=divmod(minute,60)
-                self.original_shell.view_time_label.setText(f'{hour:02}:{minute:02}:{sec:02}.{ms:03}')
-            self._invalidate_graph_cursor('adc')
-            self._invalidate_graph_cursor('spectrum')
+            self._remember_offline_drag_motion(position)
+            return
+        # With tracking disabled Qt can commit valueChanged after emitting
+        # sliderReleased. The posted release callback owns this calculation.
+        if signature is not None and signature==self._drag_request:
             return
         self._cancel_offline_drag()
         self._seek_render_now(position)
+
+    def _remember_offline_drag_motion(self,position):
+        signature=self._offline_drag_signature(position)
+        if signature is None or signature==self._drag_request:
+            return
+        self._cancel_offline_drag()
+        self._drag_request=signature
+        self._spectrum_summary=None
+        self.spec_copy_button.setEnabled(False)
+        self.spec_save_button.setEnabled(False)
+        self.spec_original_copy_compare.setEnabled(False)
+        self.spec_mean_primary.setText('Выбор окна…')
+        self.wave_mean_primary.setText('Выбор окна…')
+        clock=self._source_view_time
+        if clock is not None:
+            ms=round(int(position)*clock.seconds_per_position*1000)
+            self._remember_offline_requested_time(ms/1000)
+            sec,ms=divmod(ms,1000)
+            minute,sec=divmod(sec,60)
+            hour,minute=divmod(minute,60)
+            self.original_shell.view_time_label.setText(f'{hour:02}:{minute:02}:{sec:02}.{ms:03}')
+        self._invalidate_graph_cursor('adc')
+        self._invalidate_graph_cursor('spectrum')
 
     def _offline_drag_signature(self,position):
         if (not isinstance(self.session,DirectBinSession) or self._live_active
@@ -5376,7 +5387,7 @@ class MainWindow(QMainWindow):
 
     def _submit_offline_drag(self):
         key=self._drag_request
-        if key is None:
+        if key is None or self._drag_future is not None:
             return
         position=key[2]
         if key!=self._offline_drag_signature(self.original_shell.view_slider.value()):

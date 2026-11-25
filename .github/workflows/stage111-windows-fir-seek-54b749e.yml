@@ -3,7 +3,9 @@ name: MVKView Windows candidate with offline FIR and seek fixes
 on:
   push:
     branches: ['qa/stage111-windows-fir-seek-54b749e']
-    paths: ['.github/workflows/stage111-windows-fir-seek-54b749e.yml']
+    paths:
+      - '.github/workflows/stage111-windows-fir-seek-54b749e.yml'
+      - 'mvk_compatible/**'
 
 permissions:
   contents: read

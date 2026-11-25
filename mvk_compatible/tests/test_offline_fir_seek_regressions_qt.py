@@ -144,3 +144,43 @@ def test_drag_result_from_closed_session_is_not_applied(tmp_path,qt_app,monkeypa
     finally:
         release.set()
         win.close()
+
+
+def test_real_qt_mouse_seek_with_tracking_disabled(tmp_path,qt_app,monkeypatch):
+    from PySide6.QtCore import Qt,QPoint
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QStyleOptionSlider,QStyle
+    adc,_=_adc(tmp_path,1,'м/с2',8,n=65536)
+    win=mw.MainWindow()
+    started=[]
+    original=mw.direct_drag_spectrum
+    def observed(*a,**kw):
+        started.append(threading.get_ident())
+        return original(*a,**kw)
+    monkeypatch.setattr(mw,'direct_drag_spectrum',observed)
+    try:
+        win.resize(1300,850)
+        win.show()
+        win.open_archive(adc)
+        win.spec_n.setCurrentText('8192')
+        win.original_root_tabs.setCurrentIndex(4)
+        qt_app.processEvents()
+        slider=win.original_shell.view_slider
+        assert not slider.hasTracking()
+        style=QStyleOptionSlider()
+        slider.initStyleOption(style)
+        handle=slider.style().subControlRect(QStyle.ComplexControl.CC_Slider,style,QStyle.SubControl.SC_SliderHandle,slider)
+        old=slider.value()
+        QTest.mousePress(slider,Qt.LeftButton,pos=handle.center())
+        point=QPoint(slider.width()//2,handle.center().y())
+        QTest.mouseMove(slider,point,delay=20)
+        assert slider.value()==old and slider.sliderPosition()<old
+        assert win._drag_request is not None and not started
+        assert 'Выбор окна' in win.spec_mean_primary.text()
+        assert not win.spec_copy_button.isEnabled()
+        QTest.mouseRelease(slider,Qt.LeftButton,pos=point)
+        _wait(qt_app,lambda:bool(started) and win._drag_request is None)
+        assert len(started)==1 and started[0]!=threading.get_ident()
+        assert slider.value()<old and win.spec_save_button.isEnabled()
+    finally:
+        win.close()
