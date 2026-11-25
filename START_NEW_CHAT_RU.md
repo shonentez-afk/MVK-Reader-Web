@@ -1,8 +1,17 @@
-# MVKView Compatible — Stage111EN + Mode1 Copy/Save ADC/TACH, актуально на 25.11.2026
+# MVKView Compatible — Stage111, предрелизный патч 815ea99, актуально на 25.11.2026
+
+## Итог интеграции: зелёный CI и Windows Portable (25.11.2026)
+
+- Точный кодовый SHA [815ea99](https://github.com/shonentez-afk/MVK-Reader-Web/commit/815ea990fb782a2073148751f8a057d789b1d98d); [PR #17](https://github.com/shonentez-afk/MVK-Reader-Web/pull/17) Draft, не объединён. Исправления dot внесены в 3a3506f (55/55 Git blob SHA, включая два ранее внесённых файла); 815ea99 изменил только три регрессионных теста и документацию.
+- [Основной CI #45522164658](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45522164658) SUCCESS: Linux Core 2865 PASS / 165 SKIP; Windows Core/Qt 3141 PASS / 21 SKIP, дополнительные Qt 60/53/198 PASS; Go RX/export и Windows QPA/font SUCCESS. Official Windows EXE SKIPPED по provenance guard.
+- [VALUES #45522164781](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45522164781) SUCCESS: Go Linux/Windows, 51 целевой тест, 2870 Core PASS / 160 SKIP. [Offline #45522173967](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45522173967) SUCCESS.
+- [Windows Portable 815ea99 — ZIP artifact 14981556260](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45522212765/artifacts/14981556260), [candidate run #45522212765](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45522212765) SUCCESS. SOURCE_SHA `815ea990fb782a2073148751f8a057d789b1d98d`; packaging branch `qa/stage111-windows-candidate-815ea99`, workflow commit `cb7ac99b9cdb01ef5ed16c94df1579473ae7b1f8`. Проверены точный checkout, 42 Qt smoke, 53 ADC/TACH, 32 Mode1, 37 предрелизных тестов PASS / 1 SKIP, Go test/vet, запуск EXE и SHA256 встроенного Go payload.
+- Артефакт `MVKView_Stage111_UNOFFICIAL_WINDOWS_CANDIDATE_815ea99_portable`, 69 695 002 байта; SHA256 ZIP `125b621be19dec4fb3dfbbabc7880f4ecabaf76c5e9d375f7b1fd01f17694ccc`; доступен до 02.12.2026 01:04:01 UTC.
+- Это не официальный Windows Preview и не доказательство аппаратной совместимости. Остались original SAME-RX на штатной Windows, аппаратная приёмка, 40 исторических связей и пять неподтверждённых диспетчеризаций, отдельные ограничения LIVE SPEC-FREQ, FIR IDP и CALIB. Не повторять уже закрытые тестовые регрессии без нового контрпримера. FIR/FFT не менять без численного доказательства; main не изменять.
 
 ## Исправления по предрелизному аудиту 8b472e1
 
-Сборка 8b472e1 ниже — предыдущий кандидат. Патч dot по Freeze/VALUES, графикам, настройкам, параметрам записи и поверке полностью внесён в [3a3506f](https://github.com/shonentez-afk/MVK-Reader-Web/commit/3a3506f98e696dc9aff4f3487419ed9477a8a623): 55/55 файлов совпали с патчем, два уже внесены 9c6e7c9. [Отчёт](docs/research/STAGE111_PRERELEASE_AUDIT_FIXES_RU.md). Первый CI: [offline SUCCESS](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519516997), Go SUCCESS на Linux/Windows; [VALUES](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519510432) и [Windows/core](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519510384) FAILURE из-за трёх проверок. Последующий коммит уточняет тесты холодного флага папки, точных входных LF-байтов и переноса офлайн-курсора при изменении осей. Результаты повторного CI и новая Portable ещё не подтверждены. FIR/FFT, работа с прибором и программные ограничения не менялись.
+Сборка 8b472e1 ниже — предыдущий кандидат. Патч dot по Freeze/VALUES, графикам, настройкам, параметрам записи и поверке полностью внесён в [3a3506f](https://github.com/shonentez-afk/MVK-Reader-Web/commit/3a3506f98e696dc9aff4f3487419ed9477a8a623): 55/55 файлов совпали с патчем, два уже внесены 9c6e7c9. [Отчёт](docs/research/STAGE111_PRERELEASE_AUDIT_FIXES_RU.md). Первый CI: [offline SUCCESS](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519516997), Go SUCCESS на Linux/Windows; [VALUES](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519510432) и [Windows/core](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45519510384) FAILURE из-за трёх проверок. Последующий коммит уточняет тесты холодного флага папки, точных входных LF-байтов и переноса офлайн-курсора при изменении осей. Повторный CI и новая Portable подтверждены на 815ea99; см. актуальный блок выше. FIR/FFT, работа с прибором и программные ограничения не менялись.
 
 ## Mode1: штатный Copy/Save для исходных BIN/TSXML
 
@@ -17,7 +26,7 @@
 - Отдельный приватный слой Atlas подготовлен; матрица 40, карта рёбер, адресные таблицы и первичные материалы не публикуются. Код и main не изменялись.
 
 
-> **Приоритетный актуальный блок.** Актуален патч 3a3506f и следующий коммит коррекции регрессионных тестов (см. верхний раздел). 8b472e1 — предыдущий зелёный кандидат с portable, а не текущий код. Старые ограничения Direct BIN, UTF-8 SPEC-FREQ, два Windows locale failures и прежние SHA относятся к истории. Не повторять выполненные исправления. Предыдущие снимки: [f5695c0](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f5695c01ea044c96fa73327cc4fefbff7243068d) и [dd28b3d](https://github.com/shonentez-afk/MVK-Reader-Web/commit/dd28b3d1b6e94e28ec0650c5976ea1bf812e8195).
+> **Приоритетный актуальный блок.** Актуален проверенный код 815ea99, включая патч 3a3506f и коррекцию тестов (см. верхний раздел). 8b472e1 — предыдущий зелёный кандидат с portable, а не текущий код. Старые ограничения Direct BIN, UTF-8 SPEC-FREQ, два Windows locale failures и прежние SHA относятся к истории. Не повторять выполненные исправления. Предыдущие снимки: [f5695c0](https://github.com/shonentez-afk/MVK-Reader-Web/commit/f5695c01ea044c96fa73327cc4fefbff7243068d) и [dd28b3d](https://github.com/shonentez-afk/MVK-Reader-Web/commit/dd28b3d1b6e94e28ec0650c5976ea1bf812e8195).
 
 ## 1. Точка продолжения
 
@@ -66,7 +75,7 @@
 
 Windows locale regression закрыта в f5695c0 и не возобновилась на 8b472e1. Старые ошибки 7bb528c исторические; ранее зафиксированный запрет штатного SPEC-FREQ для всех Direct BIN заменён допуском согласованных пар. Не повторять закрытые задачи без доказанного нового расхождения.
 
-### Последняя доступная Windows-сборка
+### Предыдущая Windows-сборка 8b472e1 (история)
 
 - [Windows Portable 8b472e1 — ZIP artifact 14968384789](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45496824533/artifacts/14968384789).
 - [Candidate run #45496824533](https://github.com/shonentez-afk/MVK-Reader-Web/actions/runs/45496824533): SUCCESS; SOURCE_SHA точно `8b472e1e9e4fad2c9460ed4f0a87eadce2849def`; checkout, Qt smoke (42 PASS), ADC/TACH BIN/TSXML (53 PASS), Mode1 scale/timeline/axis/export (32 PASS), Go tests/vet, запуск упакованного приложения, проверка SHA256 встроенного Go payload.
